@@ -1,0 +1,23 @@
+# Development stack for HA Finance Intelligence.
+# This is for local development OUTSIDE Home Assistant. Inside HA, the add-on
+# image (addon/Dockerfile) runs as a single container with ingress.
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: addon/Dockerfile
+    environment:
+      HAFI_DATABASE_PATH: /data/finance.db
+      HAFI_CURRENCY: GBP
+      HAFI_PRIVACY_MODE: strict_local
+      HAFI_MQTT_ENABLED: "false"
+      HAFI_CORS_ORIGINS: "http://localhost:5173"
+      HAFI_LOG_LEVEL: INFO
+    volumes:
+      - finance_data:/data
+    ports:
+      - "8099:8099"
+
+volumes:
+  finance_data:

@@ -1,0 +1,28 @@
+{
+  "version": "0.1",
+  "name": "Default Category Library",
+  "categories": [
+    { "id": "income", "name": "Income", "parent_id": null, "icon": "mdi:cash-plus", "colour": "#2E7D32", "privacy_sensitivity": "sensitive", "is_budgetable": false, "keywords": ["salary", "payroll", "wages", "interest"] },
+    { "id": "transfers", "name": "Transfers", "parent_id": null, "icon": "mdi:bank-transfer", "colour": "#607D8B", "privacy_sensitivity": "sensitive", "is_budgetable": false, "keywords": ["transfer", "payment to", "standing order"] },
+    { "id": "housing", "name": "Housing", "parent_id": null, "icon": "mdi:home", "colour": "#5D4037", "privacy_sensitivity": "sensitive", "is_budgetable": true, "keywords": ["mortgage", "rent", "council tax"] },
+    { "id": "bills", "name": "Bills", "parent_id": null, "icon": "mdi:receipt", "colour": "#455A64", "privacy_sensitivity": "normal", "is_budgetable": true, "keywords": ["electric", "gas", "water", "broadband", "internet", "mobile", "phone"] },
+    { "id": "groceries", "name": "Groceries", "parent_id": null, "icon": "mdi:cart", "colour": "#4CAF50", "privacy_sensitivity": "normal", "is_budgetable": true, "keywords": ["tesco", "sainsbury", "lidl", "aldi", "asda", "morrisons", "waitrose", "co-op", "iceland"] },
+    { "id": "eating_out", "name": "Eating Out", "parent_id": null, "icon": "mdi:silverware-fork-knife", "colour": "#FF7043", "privacy_sensitivity": "normal", "is_budgetable": true, "keywords": ["restaurant", "cafe", "coffee", "costa", "starbucks", "pret", "mcdonald", "kfc", "nando", "deliveroo", "just eat", "uber eats"] },
+    { "id": "transport", "name": "Transport", "parent_id": null, "icon": "mdi:train-car", "colour": "#1976D2", "privacy_sensitivity": "normal", "is_budgetable": true, "keywords": ["tfl", "rail", "trainline", "bus", "uber", "bolt", "parking"] },
+    { "id": "car", "name": "Car", "parent_id": null, "icon": "mdi:car", "colour": "#0D47A1", "privacy_sensitivity": "normal", "is_budgetable": true, "keywords": ["fuel", "petrol", "shell", "bp", "esso", "mot", "garage", "dvla"] },
+    { "id": "shopping", "name": "Shopping", "parent_id": null, "icon": "mdi:shopping", "colour": "#8E24AA", "privacy_sensitivity": "normal", "is_budgetable": true, "keywords": ["amazon", "ebay", "argos", "ikea", "next", "asos"] },
+    { "id": "subscriptions", "name": "Subscriptions", "parent_id": null, "icon": "mdi:repeat", "colour": "#00897B", "privacy_sensitivity": "normal", "is_budgetable": true, "keywords": ["netflix", "spotify", "disney", "prime", "youtube", "icloud", "google storage", "gym"] },
+    { "id": "health", "name": "Health", "parent_id": null, "icon": "mdi:medical-bag", "colour": "#E53935", "privacy_sensitivity": "sensitive", "is_budgetable": true, "keywords": ["pharmacy", "boots", "dentist", "optician", "nhs", "doctor"] },
+    { "id": "insurance", "name": "Insurance", "parent_id": null, "icon": "mdi:shield-check", "colour": "#3949AB", "privacy_sensitivity": "sensitive", "is_budgetable": true, "keywords": ["insurance", "aviva", "axa", "admiral", "direct line"] },
+    { "id": "travel", "name": "Travel", "parent_id": null, "icon": "mdi:airplane", "colour": "#039BE5", "privacy_sensitivity": "normal", "is_budgetable": true, "keywords": ["airline", "ryanair", "easyjet", "british airways", "hotel", "airbnb", "booking.com"] },
+    { "id": "pets", "name": "Pets", "parent_id": null, "icon": "mdi:paw", "colour": "#6D4C41", "privacy_sensitivity": "normal", "is_budgetable": true, "keywords": ["pets at home", "vet", "pet"] },
+    { "id": "entertainment", "name": "Entertainment", "parent_id": null, "icon": "mdi:movie", "colour": "#D81B60", "privacy_sensitivity": "normal", "is_budgetable": true, "keywords": ["cinema", "odeon", "vue", "steam", "playstation", "xbox", "nintendo"] },
+    { "id": "home", "name": "Home", "parent_id": null, "icon": "mdi:home-modern", "colour": "#795548", "privacy_sensitivity": "normal", "is_budgetable": true, "keywords": ["furniture", "appliance", "dunelm"] },
+    { "id": "diy", "name": "DIY", "parent_id": null, "icon": "mdi:hammer-screwdriver", "colour": "#FB8C00", "privacy_sensitivity": "normal", "is_budgetable": true, "keywords": ["screwfix", "b&q", "wickes", "toolstation", "homebase"] },
+    { "id": "garden", "name": "Garden", "parent_id": null, "icon": "mdi:flower", "colour": "#7CB342", "privacy_sensitivity": "normal", "is_budgetable": true, "keywords": ["garden", "plants", "homebase garden"] },
+    { "id": "gifts", "name": "Gifts", "parent_id": null, "icon": "mdi:gift", "colour": "#EC407A", "privacy_sensitivity": "normal", "is_budgetable": true, "keywords": ["gift", "flowers", "card factory"] },
+    { "id": "cash", "name": "Cash", "parent_id": null, "icon": "mdi:cash", "colour": "#9E9E9E", "privacy_sensitivity": "sensitive", "is_budgetable": true, "keywords": ["cash", "atm", "withdrawal"] },
+    { "id": "fees", "name": "Fees", "parent_id": null, "icon": "mdi:bank-minus", "colour": "#757575", "privacy_sensitivity": "normal", "is_budgetable": true, "keywords": ["fee", "charge", "interest charged", "overdraft"] },
+    { "id": "unknown", "name": "Unknown", "parent_id": null, "icon": "mdi:help-circle", "colour": "#BDBDBD", "privacy_sensitivity": "normal", "is_budgetable": false, "keywords": [] }
+  ]
+}
