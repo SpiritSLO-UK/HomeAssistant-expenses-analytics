@@ -72,15 +72,26 @@ Rules (`rule_service`) run on import and re-categorise; a manually-set category
 (confidence 1.0) is never overridden. "Make rule" / `learn_rule` turns a
 correction into a high-priority description rule.
 
-## Decided but not yet built
+## Encryption (#15 — DONE)
 
-- **#15b At-rest DB encryption** — optional SQLCipher (user chooses a key or
-  not); **both** unlock modes (UI prompt *and* stored key). Blocked on this dev
-  box: `sqlcipher3-binary` has **no Windows wheel**, so it can only be built and
-  verified on Linux/WSL or the actual add-on. Needs a startup lock/unlock flow
-  (lazy/rebindable engine). Lost key = unrecoverable data.
-  - **#15a Encrypted backups — DONE.** Passphrase AES-256-GCM
-    (`crypto_service`, scrypt KDF) backup export/restore, pure-Python, verified.
+- **Encrypted backups** (`crypto_service`): passphrase AES-256-GCM + scrypt,
+  pure-Python, works everywhere.
+- **At-rest DB encryption** (`security_service`, SQLCipher): optional; the engine
+  in `db/session.py` is lazy/rebindable (plaintext default; SQLCipher creator
+  when enabled). Lock/unlock lifecycle = `main` lifespan + a 423 middleware while
+  locked; `/api/security/{status,unlock,enable,disable}`; UI unlock gate. Two
+  unlock modes (prompt / stored `HAFI_DB_KEY`). `sqlcipher3-binary` has **no
+  Windows wheel** → optional `encryption` extra (installed in the add-on
+  Dockerfile); on Windows the app runs plaintext and the at-rest tests skip.
+  Built + verified in **WSL** (uv Python 3.12 + sqlcipher3). Lost key = data loss.
+
+### WSL verification env (for SQLCipher / Linux checks)
+
+Use the `Ubuntu-20.04` distro as root (`wsl -d Ubuntu-20.04 -u root`); the
+default distro is Docker's and has no userland. Python 3.12 was provisioned via
+**uv** (deadsnakes doesn't serve focal); venv at `/opt/hafi-venv`
+(`pip install -e backend[dev] sqlcipher3-binary`). Run Linux tests:
+`/opt/hafi-venv/bin/python -m pytest` from `/mnt/c/.../backend`.
 
 ## Open questions / to scope
 
