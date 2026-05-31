@@ -2,6 +2,7 @@ import { useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   categoriseTransaction,
+  getSettings,
   listCategories,
   listTransactions,
   recategorise,
@@ -28,6 +29,8 @@ export default function Transactions() {
   };
 
   const categories = useQuery({ queryKey: ["categories"], queryFn: listCategories });
+  const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
+  const base = settings.data?.base_currency ?? "GBP";
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["transactions", filters],
     queryFn: () => listTransactions(filters),
@@ -109,6 +112,15 @@ export default function Transactions() {
                       </td>
                       <td className={"num " + (t.direction === "credit" ? "amt--pos" : "amt--neg")}>
                         {t.amount}
+                        {t.currency !== base && <span className="muted"> {t.currency}</span>}
+                        {t.currency !== base && t.needs_rate && (
+                          <span className="tag tag--dup">rate?</span>
+                        )}
+                        {t.currency !== base && !t.needs_rate && t.base_amount && (
+                          <div className="muted" style={{ fontSize: "0.78rem" }}>
+                            ≈ {t.base_amount} {base}
+                          </div>
+                        )}
                       </td>
                       <td>
                         <select

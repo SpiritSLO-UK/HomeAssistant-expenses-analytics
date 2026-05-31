@@ -115,6 +115,9 @@ export interface Transaction {
   amount: string;
   currency: string;
   direction: string;
+  base_amount: string | null;
+  fx_rate: string | null;
+  needs_rate: boolean;
   category_id: number | null;
   project_id: number | null;
   is_split: boolean;
@@ -346,4 +349,48 @@ export async function importConfig(
     throw new Error(detail.detail || `Import failed: ${res.status}`);
   }
   return res.json();
+}
+
+// --- Settings + FX (spec §24.2; backlog #29) ---
+
+export interface AppSettings {
+  base_currency: string;
+  fx_mode: string; // manual | frankfurter
+  [key: string]: string;
+}
+
+export function getSettings(): Promise<AppSettings> {
+  return fetchJson<AppSettings>("api/settings");
+}
+
+export function updateSettings(patch: Partial<AppSettings>): Promise<AppSettings & { recompute?: unknown }> {
+  return fetchJson("api/settings", { method: "PUT", body: JSON.stringify(patch) });
+}
+
+export interface FxRate {
+  id: number;
+  rate_date: string;
+  base: string;
+  quote: string;
+  rate: string;
+  source: string;
+}
+
+export function listFxRates(): Promise<FxRate[]> {
+  return fetchJson<FxRate[]>("api/fx/rates");
+}
+
+export function addFxRate(rate_date: string, quote: string, rate: string): Promise<FxRate> {
+  return fetchJson<FxRate>("api/fx/rates", {
+    method: "POST",
+    body: JSON.stringify({ rate_date, quote, rate }),
+  });
+}
+
+export function backfillFx(): Promise<{ checked: number; filled: number; still_missing: number }> {
+  return fetchJson("api/fx/backfill", { method: "POST" });
+}
+
+export function fxMissing(): Promise<{ needs_rate: number }> {
+  return fetchJson("api/fx/missing");
 }

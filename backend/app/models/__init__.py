@@ -10,6 +10,7 @@ from app.models.ai_request import AIRequest
 from app.models.audit_log import AuditLog
 from app.models.budget import Budget
 from app.models.category import Category
+from app.models.fx_rate import FxRate
 from app.models.household import Household
 from app.models.project import Project
 from app.models.receipt import Receipt, ReceiptItem, TransactionReceiptMatch
@@ -29,6 +30,7 @@ __all__ = [
     "AuditLog",
     "Budget",
     "Category",
+    "FxRate",
     "Household",
     "Project",
     "Receipt",

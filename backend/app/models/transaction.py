@@ -64,6 +64,16 @@ class Transaction(Base, TimestampMixin):
     # sha256(account|date|amount|currency|description|posted_date) — spec §14.5
     source_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
+    # Multi-currency (backlog #29): the transaction's amount converted to the
+    # household base currency. base_amount is NULL + needs_rate=True when a
+    # foreign-currency transaction has no FX rate yet. Same-currency rows get
+    # base_amount = amount and fx_rate = 1. Existing converted values are never
+    # rewritten; only missing ones are backfilled.
+    base_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    fx_rate: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    fx_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    needs_rate: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
     splits: Mapped[list["TransactionSplit"]] = relationship(
         back_populates="transaction", cascade="all, delete-orphan"
     )

@@ -25,7 +25,7 @@ from app.models import Account, Statement, Transaction
 from app.parsers import StandardTransaction, detect_parser, get_parser
 from app.parsers.base import ParseError
 from app.parsers.generic_csv import GenericCsvParser
-from app.services import category_service, vendor_service
+from app.services import category_service, fx_service, settings_service, vendor_service
 from app.services.household_service import (
     get_or_create_account,
     get_or_create_default_household,
@@ -215,6 +215,8 @@ def confirm_import(db: Session, import_id: int) -> dict:
     household = get_or_create_default_household(db)
     # Categories must exist for keyword/vendor categorisation (spec §15.1).
     category_service.ensure_default_categories(db)
+    base_currency = settings_service.get_base_currency(db)
+    fx_mode = settings_service.get_fx_mode(db)
 
     existing_hashes = set(
         db.scalars(
@@ -225,6 +227,7 @@ def confirm_import(db: Session, import_id: int) -> dict:
     new_count = 0
     dup_count = 0
     categorised = 0
+    needs_rate = 0
     for txn in parsed:
         h = source_hash(account.id, txn)
         if h in existing_hashes:
@@ -236,6 +239,12 @@ def confirm_import(db: Session, import_id: int) -> dict:
         db.flush()
         if _auto_categorise(db, row):
             categorised += 1
+        # Convert to base currency (backlog #29). In manual mode, foreign rows
+        # with no cached rate are flagged needs_rate for later backfill.
+        if not fx_service.convert_transaction(
+            db, row, base_currency, fx_mode, allow_fetch=(fx_mode == "frankfurter")
+        ):
+            needs_rate += 1
         new_count += 1
 
     statement.status = "imported"
@@ -249,11 +258,12 @@ def confirm_import(db: Session, import_id: int) -> dict:
     db.commit()
 
     logger.info(
-        "Import %s confirmed: %s new, %s duplicates, %s auto-categorised",
+        "Import %s confirmed: %s new, %s duplicates, %s auto-categorised, %s need FX rate",
         import_id,
         new_count,
         dup_count,
         categorised,
+        needs_rate,
     )
     return {
         "import_id": statement.id,

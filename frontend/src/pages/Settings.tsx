@@ -1,12 +1,17 @@
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  addFxRate,
+  backfillFx,
   downloadDatabaseBackup,
   exportConfig,
   getHealth,
+  getSettings,
   importConfig,
+  listFxRates,
   loadDemoData,
   restoreDatabase,
+  updateSettings,
 } from "../api/client";
 
 export default function Settings() {
@@ -66,6 +71,8 @@ export default function Settings() {
         </p>
       </div>
 
+      <CurrencyFx onMessage={ok} onError={fail} />
+
       <div className="card">
         <h2 className="card__title">Demo data</h2>
         <p className="muted">Load a small fabricated dataset to explore the app. Safe to re-run — duplicates are skipped.</p>
@@ -123,11 +130,148 @@ export default function Settings() {
       <div className="card">
         <h2 className="card__title">Coming later</h2>
         <p className="muted">
-          Setup mode, currency, accounts, import profiles, AI providers, OCR, MQTT and Home
-          Assistant sensors arrive in later stages (spec §25.12). Encrypted / cloud backup is on the
-          backlog (#15), pending a master-key decision.
+          Setup mode, accounts, import profiles, AI providers, OCR, MQTT and Home Assistant sensors
+          arrive in later stages (spec §25.12). Encrypted / cloud backup is on the backlog (#15).
         </p>
       </div>
+    </div>
+  );
+}
+
+function CurrencyFx({
+  onMessage,
+  onError,
+}: {
+  onMessage: (m: string) => void;
+  onError: (e: unknown) => void;
+}) {
+  const qc = useQueryClient();
+  const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
+  const rates = useQuery({ queryKey: ["fx-rates"], queryFn: listFxRates });
+  const [rateDate, setRateDate] = useState("");
+  const [quote, setQuote] = useState("");
+  const [rate, setRate] = useState("");
+
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["settings"] });
+    qc.invalidateQueries({ queryKey: ["fx-rates"] });
+    qc.invalidateQueries({ queryKey: ["transactions"] });
+    qc.invalidateQueries({ queryKey: ["summary"] });
+  };
+
+  const save = useMutation({
+    mutationFn: (patch: Record<string, string>) => updateSettings(patch),
+    onSuccess: (r) => {
+      onMessage(
+        r.recompute
+          ? "Base currency changed — re-converted existing transactions."
+          : "Settings saved.",
+      );
+      invalidate();
+    },
+    onError,
+  });
+
+  const addRate = useMutation({
+    mutationFn: () => addFxRate(rateDate, quote, rate),
+    onSuccess: () => {
+      setQuote("");
+      setRate("");
+      onMessage("Rate saved.");
+      invalidate();
+    },
+    onError,
+  });
+
+  const backfill = useMutation({
+    mutationFn: backfillFx,
+    onSuccess: (r) => {
+      onMessage(`Backfill: ${r.filled} filled, ${r.still_missing} still missing.`);
+      invalidate();
+    },
+    onError,
+  });
+
+  const base = settings.data?.base_currency ?? "GBP";
+  const mode = settings.data?.fx_mode ?? "manual";
+
+  return (
+    <div className="card">
+      <h2 className="card__title">Currency &amp; exchange rates</h2>
+      <div className="form-row">
+        <label>
+          Base currency{" "}
+          <input
+            defaultValue={base}
+            maxLength={3}
+            style={{ width: 70, textTransform: "uppercase" }}
+            onBlur={(e) => {
+              const v = e.target.value.trim().toUpperCase();
+              if (v && v !== base) save.mutate({ base_currency: v });
+            }}
+          />
+        </label>
+        <label>
+          FX rates{" "}
+          <select value={mode} onChange={(e) => save.mutate({ fx_mode: e.target.value })}>
+            <option value="manual">Manual (no internet)</option>
+            <option value="frankfurter">Frankfurter (online, ECB)</option>
+          </select>
+        </label>
+      </div>
+      <p className="muted">
+        Amounts are stored in their original currency and converted to your base currency.
+        Manual mode never makes network calls; Frankfurter fetches free ECB rates (opt-in) and
+        caches them. Existing conversions are never rewritten — only missing ones are backfilled.
+      </p>
+
+      <div className="form-row" style={{ marginTop: 8 }}>
+        <input type="date" value={rateDate} onChange={(e) => setRateDate(e.target.value)} />
+        <input
+          placeholder="Currency (e.g. EUR)"
+          maxLength={3}
+          value={quote}
+          style={{ width: 130, textTransform: "uppercase" }}
+          onChange={(e) => setQuote(e.target.value.toUpperCase())}
+        />
+        <input
+          placeholder={`rate (1 unit = ? ${base})`}
+          value={rate}
+          style={{ width: 160 }}
+          onChange={(e) => setRate(e.target.value)}
+        />
+        <button
+          className="btn"
+          disabled={!rateDate || !quote || !rate || addRate.isPending}
+          onClick={() => addRate.mutate()}
+        >
+          Add rate
+        </button>
+        <button className="btn btn--ghost" disabled={backfill.isPending} onClick={() => backfill.mutate()}>
+          {backfill.isPending ? "Backfilling…" : "Backfill missing"}
+        </button>
+      </div>
+
+      {rates.data && rates.data.length > 0 && (
+        <div className="table-wrap" style={{ marginTop: 10 }}>
+          <table className="table">
+            <thead>
+              <tr><th>Date</th><th>From</th><th>To</th><th className="num">Rate</th><th>Source</th></tr>
+            </thead>
+            <tbody>
+              {rates.data.slice(0, 20).map((r) => (
+                <tr key={r.id}>
+                  <td>{r.rate_date}</td>
+                  <td>{r.quote}</td>
+                  <td>{r.base}</td>
+                  <td className="num">{r.rate}</td>
+                  <td className="muted">{r.source}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

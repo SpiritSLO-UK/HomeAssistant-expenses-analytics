@@ -14,6 +14,7 @@ class DashboardSummary(BaseModel):
     total_transactions: int
     uncategorised_transactions: int
     review_items: int
+    needs_rate: int = 0
 
 
 class CategoryBreakdownItem(BaseModel):

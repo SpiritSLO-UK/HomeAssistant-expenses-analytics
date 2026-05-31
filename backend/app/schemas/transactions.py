@@ -22,6 +22,9 @@ class TransactionOut(BaseModel):
     amount: Decimal
     currency: str
     direction: str
+    base_amount: Decimal | None
+    fx_rate: Decimal | None
+    needs_rate: bool
     category_id: int | None
     project_id: int | None
     is_split: bool
