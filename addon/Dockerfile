@@ -18,12 +18,16 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     HAFI_DATABASE_PATH=/data/finance/finance.db
 
-# Install backend + the SQLCipher driver for at-rest encryption (backlog #15b;
-# Linux-only wheel, hence an optional extra) and paho-mqtt for HA sensor
-# publishing (spec §27, the "mqtt" extra).
+# Tesseract for local receipt OCR (spec §21; the "ocr" extra needs the binary).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends tesseract-ocr \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install backend + optional extras: SQLCipher (at-rest encryption, backlog #15b),
+# paho-mqtt (HA sensors, spec §27) and OCR (pytesseract/Pillow/pypdf, spec §21).
 COPY backend/pyproject.toml backend/alembic.ini backend/
 COPY backend/app backend/app
-RUN pip install --no-cache-dir "./backend[encryption,mqtt]"
+RUN pip install --no-cache-dir "./backend[encryption,mqtt,ocr]"
 
 # Bring in the built frontend so app.main can serve it from frontend/dist.
 COPY --from=frontend /build/frontend/dist /app/frontend/dist

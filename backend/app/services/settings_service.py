@@ -16,14 +16,17 @@ from app.models import Setting
 # Known keys and their defaults.
 BASE_CURRENCY = "base_currency"
 FX_MODE = "fx_mode"  # manual | frankfurter
+RECEIPT_MATCH_MODE = "receipt_match_mode"  # suggest | auto
 
 FX_MODES = {"manual", "frankfurter"}
+RECEIPT_MATCH_MODES = {"suggest", "auto"}
 
 
 def _defaults() -> dict[str, str]:
     return {
         BASE_CURRENCY: env_settings.currency,
         FX_MODE: "manual",
+        RECEIPT_MATCH_MODE: "suggest",
     }
 
 

@@ -1,0 +1,114 @@
+"""Local OCR engine (spec §21, §10.4).
+
+Optional and pluggable, like SQLCipher and MQTT: the text-extraction engine is
+imported lazily and the whole app runs fine without it. Two backends:
+
+- **images** (PNG/JPG/…): Tesseract via ``pytesseract`` — needs the ``ocr`` extra
+  *and* the ``tesseract`` binary on PATH (present in the add-on image, usually
+  absent on a bare Windows dev box).
+- **PDF**: embedded text via ``pypdf`` — pure-Python, works for digital receipts/
+  invoices (scanned PDFs yield little text → low confidence → manual/review).
+
+The image→text step lives here; turning text into fields is ``receipt_parser``
+(pure, fully unit-tested without an engine).
+"""
+
+from __future__ import annotations
+
+from functools import lru_cache
+from pathlib import Path
+
+from app.logging import get_logger
+
+logger = get_logger("app.ocr")
+
+IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff", ".gif"}
+PDF_SUFFIXES = {".pdf"}
+
+
+class OcrUnavailable(RuntimeError):
+    """No OCR engine is available for this file type on this install."""
+
+
+@lru_cache(maxsize=1)
+def _tesseract_ok() -> bool:
+    try:
+        import pytesseract  # noqa: F401
+        from PIL import Image  # noqa: F401
+
+        # The Python package can import while the binary is missing — check it.
+        pytesseract.get_tesseract_version()
+        return True
+    except Exception:
+        return False
+
+
+@lru_cache(maxsize=1)
+def _pypdf_ok() -> bool:
+    try:
+        import pypdf  # noqa: F401
+
+        return True
+    except Exception:
+        return False
+
+
+def available() -> bool:
+    return _tesseract_ok() or _pypdf_ok()
+
+
+def status() -> dict:
+    return {
+        "available": available(),
+        "image_ocr": _tesseract_ok(),  # Tesseract
+        "pdf_text": _pypdf_ok(),       # pypdf
+        "image_formats": sorted(s.lstrip(".") for s in IMAGE_SUFFIXES),
+    }
+
+
+def can_handle(filename: str) -> bool:
+    suffix = Path(filename).suffix.lower()
+    if suffix in IMAGE_SUFFIXES:
+        return _tesseract_ok()
+    if suffix in PDF_SUFFIXES:
+        return _pypdf_ok()
+    return False
+
+
+def _ocr_image(path: Path) -> tuple[str, float | None]:
+    import pytesseract
+    from PIL import Image
+
+    image = Image.open(path)
+    data = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
+    words = [w for w in data.get("text", []) if w and w.strip()]
+    confs = [int(c) for c in data.get("conf", []) if str(c).lstrip("-").isdigit() and int(c) >= 0]
+    text = " ".join(words)
+    if not text:
+        text = pytesseract.image_to_string(image)
+    confidence = (sum(confs) / len(confs) / 100.0) if confs else None
+    return text, confidence
+
+
+def _pdf_text(path: Path) -> tuple[str, float | None]:
+    import pypdf
+
+    reader = pypdf.PdfReader(str(path))
+    text = "\n".join((page.extract_text() or "") for page in reader.pages).strip()
+    # Embedded text is exact; scanned PDFs return ~nothing -> low confidence.
+    confidence = 0.95 if len(text) > 20 else 0.0
+    return text, confidence
+
+
+def extract_text(path: Path) -> tuple[str, float | None]:
+    """Return ``(text, confidence0to1)`` or raise :class:`OcrUnavailable`."""
+    suffix = path.suffix.lower()
+    if suffix in IMAGE_SUFFIXES:
+        if not _tesseract_ok():
+            raise OcrUnavailable("Image OCR needs the 'ocr' extra and the tesseract binary")
+        return _ocr_image(path)
+    if suffix in PDF_SUFFIXES:
+        if not _pypdf_ok():
+            raise OcrUnavailable("PDF text extraction needs the 'ocr' extra (pypdf)")
+        return _pdf_text(path)
+    raise OcrUnavailable(f"No OCR backend for '{suffix}' files")

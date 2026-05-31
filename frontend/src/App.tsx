@@ -11,6 +11,7 @@ import Rules from "./pages/Rules";
 import Projects from "./pages/Projects";
 import Budgets from "./pages/Budgets";
 import Subscriptions from "./pages/Subscriptions";
+import Receipts from "./pages/Receipts";
 import ReviewQueue from "./pages/ReviewQueue";
 import Settings from "./pages/Settings";
 import { getSecurityStatus, unlockDatabase } from "./api/client";
@@ -37,6 +38,7 @@ export default function App() {
           <Route path="/projects" element={<Projects />} />
           <Route path="/budgets" element={<Budgets />} />
           <Route path="/subscriptions" element={<Subscriptions />} />
+          <Route path="/receipts" element={<Receipts />} />
           <Route path="/review" element={<ReviewQueue />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Dashboard />} />

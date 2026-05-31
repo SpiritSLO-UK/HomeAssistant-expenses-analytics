@@ -472,6 +472,116 @@ export function getDashboardSubscriptions(): Promise<DashboardSubscriptions> {
   return fetchJson<DashboardSubscriptions>("api/dashboard/subscriptions");
 }
 
+// --- Receipts + OCR (spec §21) ---
+
+export interface ReceiptMatch {
+  transaction_id: number;
+  match_score: number | null;
+  match_status: string;
+  matched_by: string | null;
+}
+
+export interface Receipt {
+  id: number;
+  source_filename: string | null;
+  receipt_date: string | null;
+  merchant_raw: string | null;
+  total_amount: string | null;
+  vat_amount: string | null;
+  currency: string | null;
+  ocr_status: string;
+  ocr_confidence: number | null;
+  needs_review: boolean;
+  matches: ReceiptMatch[];
+}
+
+export interface MatchCandidate {
+  transaction_id: number;
+  score: number;
+  breakdown: Record<string, number>;
+  transaction_date: string;
+  amount: string;
+  description: string;
+}
+
+export interface MatchResult {
+  status: string;
+  best_score: number;
+  candidates: MatchCandidate[];
+}
+
+export interface OcrStatus {
+  available: boolean;
+  image_ocr: boolean;
+  pdf_text: boolean;
+  image_formats: string[];
+}
+
+export function getOcrStatus(): Promise<OcrStatus> {
+  return fetchJson<OcrStatus>("api/receipts/status");
+}
+
+export function listReceipts(): Promise<Receipt[]> {
+  return fetchJson<Receipt[]>("api/receipts");
+}
+
+export async function uploadReceipt(file: File): Promise<Receipt> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(apiUrl("api/receipts/upload"), { method: "POST", body: form });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error(detail.detail || `Upload failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export function updateReceipt(id: number, fields: Record<string, unknown>): Promise<Receipt> {
+  return fetchJson<Receipt>(`api/receipts/${id}`, { method: "PATCH", body: JSON.stringify(fields) });
+}
+
+export function matchReceipt(id: number): Promise<MatchResult> {
+  return fetchJson<MatchResult>(`api/receipts/${id}/match`, { method: "POST" });
+}
+
+export function confirmReceiptMatch(id: number, transactionId: number): Promise<Receipt> {
+  return fetchJson<Receipt>(`api/receipts/${id}/confirm-match`, {
+    method: "POST",
+    body: JSON.stringify({ transaction_id: transactionId }),
+  });
+}
+
+export async function deleteReceipt(id: number): Promise<void> {
+  const res = await fetch(apiUrl(`api/receipts/${id}`), { method: "DELETE" });
+  if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
+}
+
+// --- Review queue (spec §23) ---
+
+export interface ReviewItem {
+  id: number;
+  item_type: string;
+  item_id: number | null;
+  reason: string;
+  severity: string;
+  status: string;
+  suggested_action: string | null;
+  created_at: string;
+  resolved_at: string | null;
+}
+
+export function listReviewItems(status = "open"): Promise<ReviewItem[]> {
+  return fetchJson<ReviewItem[]>(`api/review?status=${status}`);
+}
+
+export function setReviewStatus(id: number, status: string): Promise<ReviewItem> {
+  return fetchJson<ReviewItem>(`api/review/${id}`, { method: "PATCH", body: JSON.stringify({ status }) });
+}
+
+export function getReviewCount(): Promise<{ open: number }> {
+  return fetchJson<{ open: number }>("api/review/count");
+}
+
 // --- Categories (spec §24.5) ---
 
 export interface Category {

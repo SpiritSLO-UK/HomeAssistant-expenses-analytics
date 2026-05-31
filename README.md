@@ -2,10 +2,10 @@
 
 A **local-first, Home Assistant-first personal finance app**. Import bank
 statements, categorise transactions (rules + a vendor/category library), split
-them across categories, track projects, budgets and subscriptions, handle
-multiple currencies, and publish finance sensors to Home Assistant over MQTT —
-with receipts/OCR and optional local/cloud AI to come. All privacy-first, with
-**strict local mode as the default**.
+them across categories, track projects, budgets and subscriptions, scan receipts
+(local OCR), handle multiple currencies, and publish finance sensors to Home
+Assistant over MQTT — with optional local/cloud AI to come. All privacy-first,
+with **strict local mode as the default**.
 
 Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md)
 (the build-status section at the top tracks progress).
@@ -21,10 +21,12 @@ Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md
 | 4 | Split transactions (one charge across several categories) | ✅ |
 | 5 | Projects & tags | ✅ |
 | 6 | Budgets + alerts, and MQTT sensors published to Home Assistant | ✅ |
-| 7 | Recurring payments & subscriptions (auto-detected) | ✅ |
+| 7 | Review queue (resolve/ignore the things the app is unsure about) | ✅ |
+| 8 | Receipts & OCR (upload, optional local OCR, match to a transaction) | ✅ |
+| — | Recurring payments & subscriptions (auto-detected) | ✅ |
 | — | Data-safety: redaction, backup/restore, demo data, security hardening | ✅ |
 | — | Multi-currency + FX; encrypted backups + optional at-rest encryption | ✅ |
-| 8–12 | Review queue, receipts/OCR, local/cloud AI, PDF import, polish | planned ([spec §29](ha_finance_intelligence_spec.md)) |
+| 9–12 | Local/cloud AI, PDF import, polish | planned ([spec §29](ha_finance_intelligence_spec.md)) |
 
 ## What it does today
 
@@ -40,6 +42,11 @@ Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md
   yearly periods, with on-track / near-limit / over status.
 - **Subscriptions** — recurring payments detected automatically, with a monthly
   cost total.
+- **Receipts** — upload a photo/PDF; optional local OCR (Tesseract) reads the
+  merchant/date/total, or enter them by hand, then match to a transaction
+  (amount/date/vendor scoring). OCR runs in the add-on; the rest works anywhere.
+- **Review queue** — a safety net listing anything uncertain (unmatched receipt,
+  low-confidence read, …) to resolve or ignore.
 - **Multi-currency** — original amount kept and converted to your base currency;
   manual rates by default, opt-in online ECB rates (Frankfurter).
 - **Home Assistant sensors** — optional MQTT discovery publishes spend/income/net,
@@ -75,8 +82,9 @@ Home Assistant add-on (single container)
   ├── category / vendor / rule engine
   ├── splits · projects/tags · budgets · subscription detection
   ├── multi-currency (FX) · optional at-rest encryption (SQLCipher)
+  ├── receipts + optional local OCR (Tesseract/pypdf) · review queue
   ├── MQTT publisher → Home Assistant sensors
-  └── (later) receipt OCR, AI gateway
+  └── (later) AI gateway
 ```
 
 ## Repository layout

@@ -63,11 +63,16 @@ HA integration holds no business logic (spec §9.4).
 
 ## Build status (summary)
 
-Stages 0–7 done (skeleton, CSV import, categories/vendors + dashboard, rules &
+Stages 0–8 done (skeleton, CSV import, categories/vendors + dashboard, rules &
 learning, split transactions, projects & tags, budgets + MQTT sensors,
-recurring/subscriptions), plus a data-safety pass (redaction, backup/restore,
-demo data, add-on isolation) and multi-currency. Remaining stages: review queue,
-receipts/OCR (8), and AI (9–10). Full detail in spec §0 and git history.
+recurring/subscriptions, review queue, receipts + OCR), plus a data-safety pass
+(redaction, backup/restore, demo data, add-on isolation) and multi-currency.
+Remaining stages: AI assist (9–10), PDF import, polish. Full detail in spec §0
+and git history.
+
+> Stage-numbering note: the spec §29 order is Stage 7 = review queue, Stage 8 =
+> receipts. We built recurring/subscriptions (§20, not a numbered §29 stage)
+> earlier; the build-status table lists it as a "—" feature row.
 
 Categorisation order (spec §15.1): **manual > rule > vendor default > keyword**.
 Rules (`rule_service`) run on import and re-categorise; a manually-set category
@@ -130,6 +135,30 @@ API: `/api/subscriptions` (list/detect/patch/delete) + `GET /api/dashboard/subsc
 (monthly equivalent of active subs) completes spec §30.11. UI: a Subscriptions
 page (monthly cost, table with per-row status, "Detect now", delete). Per-vendor
 alerts (amount-changed / not-seen-when-expected, §20.3) are deferred.
+
+## Receipts + OCR & review queue (Stage 8 / §21, §23)
+
+**Receipts** (`receipt_service`): upload → store original under the private
+`<data>/receipts/` dir (dedup by content hash) → optional OCR → field extraction
+→ match to a transaction → review item if uncertain (spec §21.1). OCR is
+**optional** and split in two: `ocr_service` does image→text (Tesseract via the
+`ocr` extra + the tesseract binary) and PDF→text (pypdf), reporting availability
+and degrading to "skipped" + manual entry when absent (Windows dev has no
+engine); `receipt_parser` is a **pure** text→fields function (merchant/date/
+total/VAT/currency) so it's fully unit-tested without an engine. Matching follows
+spec §21.4 (amount 50 / date 20 / vendor 20; ≥90 auto if `receipt_match_mode=auto`,
+≥70 suggest, else unmatched → review item). API: `/api/receipts`
+(upload/list/get/ocr/match/confirm-match/patch/delete) + `/api/receipts/status`.
+UI: a Receipts page (upload, per-receipt manual fields, "Find match" → confirm).
+Receipt **line items** (§21.2 level 2) and "apply items to a split" are deferred.
+
+**Review queue** (`review_service`, spec §23): a central list of things the app
+wasn't sure about (`ReviewItem`: unknown_vendor, low_confidence, duplicate,
+receipt_unmatched, …). Services call `add()` (de-duped per type/id/reason);
+receipts file/resolve items through it. API: `GET /api/review`, `PATCH /api/review/{id}`
+(resolve/ignore), `GET /api/review/count`; a Review Queue page resolves/ignores.
+Note: the dashboard's existing `review_items` count is transaction-level
+(`needs_review`), distinct from the `ReviewItem` queue.
 
 ## Budgets + MQTT (Stage 6 — spec §19, §27)
 
