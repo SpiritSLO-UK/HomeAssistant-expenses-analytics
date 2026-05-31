@@ -125,6 +125,7 @@ export interface Transaction {
   is_income: boolean;
   is_duplicate: boolean;
   needs_review: boolean;
+  tags?: Tag[];
 }
 
 export interface TransactionListResponse {
@@ -140,6 +141,8 @@ export interface TransactionFilters {
   date_to?: string;
   amount_min?: string;
   amount_max?: string;
+  project_id?: number;
+  tag_id?: number;
   needs_review?: boolean;
   limit?: number;
   offset?: number;
@@ -175,6 +178,26 @@ export function recategorise(onlyUncategorised = true): Promise<{ recategorised:
   return fetchJson(`api/transactions/recategorise`, {
     method: "POST",
     body: JSON.stringify({ only_uncategorised: onlyUncategorised }),
+  });
+}
+
+export async function updateTransaction(id: number, patch: Record<string, unknown>): Promise<Transaction> {
+  const res = await fetch(apiUrl(`api/transactions/${id}`), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error(detail.detail || `Update failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export function setTransactionTags(id: number, tags: string[]): Promise<Transaction> {
+  return fetchJson<Transaction>(`api/transactions/${id}/tags`, {
+    method: "POST",
+    body: JSON.stringify({ tags }),
   });
 }
 
@@ -313,6 +336,91 @@ export async function publishMqtt(): Promise<{ enabled: boolean; published: numb
     throw new Error(detail.detail || `Publish failed: ${res.status}`);
   }
   return res.json();
+}
+
+// --- Projects (spec §24.8, §18) ---
+
+export interface Project {
+  id: number;
+  name: string;
+  description: string | null;
+  status: string;
+  budget_amount: string | null;
+  start_date: string | null;
+  end_date: string | null;
+}
+
+export interface BreakdownItem {
+  id: number | null;
+  name: string;
+  total: string;
+}
+
+export interface ProjectTotal {
+  project_id: number;
+  name: string;
+  status: string;
+  currency: string;
+  spent: string;
+  budget: string | null;
+  remaining: string | null;
+  percent: number | null;
+}
+
+export interface ProjectSummary extends ProjectTotal {
+  transaction_count: number;
+  first_transaction: string | null;
+  last_transaction: string | null;
+  by_category: BreakdownItem[];
+  by_vendor: BreakdownItem[];
+}
+
+export const PROJECT_STATUSES = ["planned", "active", "paused", "complete", "archived"] as const;
+
+export function listProjects(): Promise<Project[]> {
+  return fetchJson<Project[]>("api/projects");
+}
+
+export function getProjectSummary(id: number): Promise<ProjectSummary> {
+  return fetchJson<ProjectSummary>(`api/projects/${id}/summary`);
+}
+
+export async function createProject(data: Record<string, unknown>): Promise<Project> {
+  const res = await fetch(apiUrl("api/projects"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error(detail.detail || `Create project failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export function updateProject(id: number, data: Record<string, unknown>): Promise<Project> {
+  return fetchJson<Project>(`api/projects/${id}`, { method: "PATCH", body: JSON.stringify(data) });
+}
+
+export async function deleteProject(id: number): Promise<void> {
+  const res = await fetch(apiUrl(`api/projects/${id}`), { method: "DELETE" });
+  if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
+}
+
+export function getDashboardProjects(): Promise<ProjectTotal[]> {
+  return fetchJson<ProjectTotal[]>("api/dashboard/projects");
+}
+
+// --- Tags (spec §18.3) ---
+
+export interface Tag {
+  id: number;
+  name: string;
+  colour: string | null;
+}
+
+export function listTags(): Promise<Tag[]> {
+  return fetchJson<Tag[]>("api/tags");
 }
 
 // --- Categories (spec §24.5) ---

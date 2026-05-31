@@ -22,8 +22,8 @@ _Living section — updated as the project is built (see git history / README)._
 | — | Encryption (backlog #15): encrypted backups (AES-256-GCM) + optional at-rest SQLCipher (§26.5, §28) | ✅ Done |
 | 3 | Rules & learning (§36, §15.1) | ✅ Done |
 | 4 | Split transactions (§17): split service + validation, API, split-aware dashboard, editor UI | ✅ Done |
+| 5 | Projects & tags (§18): project service (split-aware spend, summary, dashboard totals), tags + assignment, CRUD APIs, Projects UI, project/tag controls on Transactions, per-project MQTT sensors | ✅ Done |
 | 6 | Budgets + alerts (§19) and MQTT sensor publishing to Home Assistant (§27): budget service, CRUD/summary API, Budgets UI, MQTT discovery/state | ✅ Done |
-| 5 | Projects & tags (§18) | 📋 Planned |
 | 7–12 | Recurring/subscriptions, review queue, receipts/OCR, local AI, cloud AI, PDF, polish | 📋 Planned |
 
 Notable deviation from the original spec: the database default path moved from `/config/finance/finance.db` (§26.4) to the add-on's **private** `/data/finance/finance.db` for isolation — see `docs/security.md`.

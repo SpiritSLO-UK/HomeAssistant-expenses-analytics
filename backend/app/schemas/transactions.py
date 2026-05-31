@@ -7,6 +7,8 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.tags import TagOut
+
 
 class SplitOut(BaseModel):
     """One persisted split part (spec §12.7)."""
@@ -48,6 +50,7 @@ class TransactionOut(BaseModel):
     review_reason: str | None
     confidence_score: float | None
     created_at: datetime
+    tags: list[TagOut] = []
 
 
 class TransactionDetailOut(TransactionOut):

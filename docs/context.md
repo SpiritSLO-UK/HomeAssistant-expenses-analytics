@@ -63,11 +63,12 @@ HA integration holds no business logic (spec §9.4).
 
 ## Build status (summary)
 
-Stages 0–4 + 6 done (skeleton, CSV import, categories/vendors + dashboard, rules
-& learning, split transactions, budgets + MQTT sensors), plus a data-safety pass
-(redaction, backup/restore, demo data, add-on isolation) and multi-currency.
-Stage 5 (projects/tags) is the main remaining MVP gap. Full detail in spec §0
-and git history.
+Stages 0–6 done (skeleton, CSV import, categories/vendors + dashboard, rules &
+learning, split transactions, projects & tags, budgets + MQTT sensors), plus a
+data-safety pass (redaction, backup/restore, demo data, add-on isolation) and
+multi-currency. That's the MVP feature set; remaining stages are
+recurring/subscriptions (7), review queue, receipts/OCR (8), and AI (9–10). Full
+detail in spec §0 and git history.
 
 Categorisation order (spec §15.1): **manual > rule > vendor default > keyword**.
 Rules (`rule_service`) run on import and re-categorise; a manually-set category
@@ -87,6 +88,32 @@ categories, converted with the parent's FX rate; monthly spend/income totals are
 unchanged because parts sum to the whole. UI: an inline `SplitEditor` (add/remove
 parts, **auto-balance** the remainder) on the Transactions page. Project-level
 split reporting waits for Stage 5 (projects).
+
+## Projects & tags (Stage 5 — spec §18)
+
+`project_service` reports on **projects** (first-class cost collectors:
+renovation, holiday, car, …). A transaction belongs to a project via its
+`project_id` or — for splits — a split part's `project_id` (split transactions
+are driven by their parts, never the whole). `summary(project)` gives total
+spend, by-category, by-vendor, transaction count and timeline (first/last dates),
+plus budget progress when `budget_amount` is set; `totals()` powers
+`GET /api/dashboard/projects` (the "Project totals" card). Spend is money-out,
+base-currency, split-aware — consistent with budgets. API: `/api/projects` CRUD +
+`/api/projects/{id}/summary`. Assigning a transaction to a project is just
+`PATCH /api/transactions/{id} {project_id}` (validated; also a `project_id` list
+filter). Project budgets work through `budget_service` (project_id budgets).
+
+`tag_service` manages **tags** (flexible labels: reimbursable, work, warranty,
+…), many-to-many with transactions, names matched case-insensitively (no
+"Work"/"work" dupes). API: `/api/tags` CRUD + `POST /api/transactions/{id}/tags`
+(replace set, creating new names) + a `tag_id` list filter. Tags are
+selectin-loaded on the transaction list (no N+1) and appear in `TransactionOut`.
+
+UI: a **Projects** page (create, status, optional budget, status-coloured
+progress bar, expandable per-project detail with by-category/by-vendor
+breakdowns) and, on **Transactions**, a project `<select>` + tag chips
+(click-to-remove, "+ tag" prompt) per row. Per-project total sensors are
+published over MQTT (spec §27.3).
 
 ## Budgets + MQTT (Stage 6 — spec §19, §27)
 

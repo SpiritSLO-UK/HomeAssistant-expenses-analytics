@@ -13,9 +13,11 @@ from app.api import (
     routes_health,
     routes_imports,
     routes_mqtt,
+    routes_projects,
     routes_rules,
     routes_security,
     routes_settings,
+    routes_tags,
     routes_transactions,
     routes_vendors,
 )
@@ -28,6 +30,8 @@ api_router.include_router(routes_categories.router)
 api_router.include_router(routes_vendors.router)
 api_router.include_router(routes_dashboard.router)
 api_router.include_router(routes_budgets.router)
+api_router.include_router(routes_projects.router)
+api_router.include_router(routes_tags.router)
 api_router.include_router(routes_mqtt.router)
 api_router.include_router(routes_backup.router)
 api_router.include_router(routes_settings.router)

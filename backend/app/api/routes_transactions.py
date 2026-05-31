@@ -8,10 +8,11 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.db.session import get_db
-from app.models import Transaction
+from app.models import Project, Tag, Transaction
+from app.schemas.tags import SetTagsRequest
 from app.schemas.transactions import (
     SetSplitsRequest,
     SplitsResponse,
@@ -20,7 +21,7 @@ from app.schemas.transactions import (
     TransactionOut,
     TransactionUpdate,
 )
-from app.services import import_service, rule_service, split_service, vendor_service
+from app.services import import_service, rule_service, split_service, tag_service, vendor_service
 from app.services.split_service import SplitError, SplitInput
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
@@ -52,6 +53,7 @@ def list_transactions(
     category_id: int | None = None,
     vendor_id: int | None = None,
     project_id: int | None = None,
+    tag_id: int | None = None,
     needs_review: bool | None = None,
     amount_min: Decimal | None = None,
     amount_max: Decimal | None = None,
@@ -72,6 +74,8 @@ def list_transactions(
         conditions.append(Transaction.merchant_id == vendor_id)
     if project_id is not None:
         conditions.append(Transaction.project_id == project_id)
+    if tag_id is not None:
+        conditions.append(Transaction.tags.any(Tag.id == tag_id))
     if needs_review is not None:
         conditions.append(Transaction.needs_review.is_(needs_review))
     if amount_min is not None:
@@ -93,7 +97,8 @@ def list_transactions(
 
     total = db.scalar(select(func.count()).select_from(base.subquery())) or 0
     rows = db.scalars(
-        base.order_by(Transaction.transaction_date.desc(), Transaction.id.desc())
+        base.options(selectinload(Transaction.tags))  # eager-load tags (no N+1)
+        .order_by(Transaction.transaction_date.desc(), Transaction.id.desc())
         .limit(limit)
         .offset(offset)
     ).all()
@@ -141,7 +146,10 @@ def update_transaction(
     txn = db.get(Transaction, transaction_id)
     if txn is None:
         raise HTTPException(status_code=404, detail="Transaction not found")
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    data = payload.model_dump(exclude_unset=True)
+    if data.get("project_id") is not None and db.get(Project, data["project_id"]) is None:
+        raise HTTPException(status_code=400, detail="Unknown project")
+    for field, value in data.items():
         setattr(txn, field, value)
     db.commit()
     db.refresh(txn)
@@ -222,6 +230,18 @@ def clear_splits(transaction_id: int, db: Session = Depends(get_db)) -> dict:
         raise HTTPException(status_code=404, detail="Transaction not found")
     split_service.clear_splits(db, txn)
     return _splits_response(txn)
+
+
+@router.post("/{transaction_id}/tags", response_model=TransactionDetailOut)
+def set_tags(
+    transaction_id: int, payload: SetTagsRequest, db: Session = Depends(get_db)
+) -> Transaction:
+    """Replace a transaction's tags (spec §18.3); unknown names are created."""
+    txn = db.get(Transaction, transaction_id)
+    if txn is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    tag_service.set_transaction_tags(db, txn, payload.tags)
+    return txn
 
 
 @router.delete("/{transaction_id}", status_code=204)

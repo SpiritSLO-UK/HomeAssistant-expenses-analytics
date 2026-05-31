@@ -4,8 +4,12 @@ import {
   categoriseTransaction,
   getSettings,
   listCategories,
+  listProjects,
   listTransactions,
   recategorise,
+  setTransactionTags,
+  updateTransaction,
+  type Transaction,
   type TransactionFilters,
 } from "../api/client";
 import SplitEditor from "../components/SplitEditor";
@@ -31,6 +35,7 @@ export default function Transactions() {
   };
 
   const categories = useQuery({ queryKey: ["categories"], queryFn: listCategories });
+  const projects = useQuery({ queryKey: ["projects"], queryFn: listProjects });
   const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
   const base = settings.data?.base_currency ?? "GBP";
   const { data, isLoading, isError, error } = useQuery({
@@ -60,6 +65,35 @@ export default function Transactions() {
     mutationFn: () => recategorise(true),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["transactions"] }),
   });
+
+  const setProject = useMutation({
+    mutationFn: (v: { id: number; projectId: number | null }) =>
+      updateTransaction(v.id, { project_id: v.projectId }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["transactions"] });
+      qc.invalidateQueries({ queryKey: ["dashboard-projects"] });
+    },
+  });
+
+  const setTags = useMutation({
+    mutationFn: (v: { id: number; tags: string[] }) => setTransactionTags(v.id, v.tags),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["transactions"] });
+      qc.invalidateQueries({ queryKey: ["tags"] });
+    },
+  });
+
+  // Add a tag via a small prompt, then persist the new full set (spec §18.3).
+  function addTag(t: Transaction) {
+    const name = window.prompt("Add a tag (e.g. reimbursable, work, gift):")?.trim();
+    if (!name) return;
+    const current = (t.tags ?? []).map((x) => x.name);
+    if (current.some((c) => c.toLowerCase() === name.toLowerCase())) return;
+    setTags.mutate({ id: t.id, tags: [...current, name] });
+  }
+  function removeTag(t: Transaction, name: string) {
+    setTags.mutate({ id: t.id, tags: (t.tags ?? []).map((x) => x.name).filter((n) => n !== name) });
+  }
 
   const total = data?.total ?? 0;
   const maxPage = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1);
@@ -110,7 +144,8 @@ export default function Transactions() {
                     <th>Description</th>
                     <th className="num">Amount</th>
                     <th>Category</th>
-                    <th>Flags</th>
+                    <th>Project</th>
+                    <th>Flags &amp; tags</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -172,10 +207,41 @@ export default function Transactions() {
                         )}
                       </td>
                       <td>
+                        <select
+                          className={t.project_id ? "" : "select--empty"}
+                          value={t.project_id ?? ""}
+                          onChange={(e) =>
+                            setProject.mutate({
+                              id: t.id,
+                              projectId: e.target.value ? Number(e.target.value) : null,
+                            })
+                          }
+                        >
+                          <option value="">— none —</option>
+                          {projects.data?.map((p) => (
+                            <option key={p.id} value={p.id}>{p.name}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td>
                         {t.is_split && <span className="tag">split</span>}
                         {t.is_transfer && <span className="tag">transfer</span>}
                         {t.is_income && <span className="tag">income</span>}
                         {t.needs_review && <span className="tag tag--dup">review</span>}
+                        {(t.tags ?? []).map((tag) => (
+                          <span
+                            key={tag.id}
+                            className="tag"
+                            title="Click to remove"
+                            style={{ cursor: "pointer", background: tag.colour ?? undefined }}
+                            onClick={() => removeTag(t, tag.name)}
+                          >
+                            {tag.name} ✕
+                          </span>
+                        ))}
+                        <button className="link-btn" style={{ marginLeft: 6 }} onClick={() => addTag(t)}>
+                          + tag
+                        </button>
                         <button
                           className="link-btn"
                           style={{ marginLeft: 6 }}
@@ -187,7 +253,7 @@ export default function Transactions() {
                     </tr>
                     {splitId === t.id && (
                       <tr>
-                        <td colSpan={5} style={{ background: "rgba(127,127,127,0.06)" }}>
+                        <td colSpan={6} style={{ background: "rgba(127,127,127,0.06)" }}>
                           <SplitEditor
                             txnId={t.id}
                             amount={t.amount}

@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.logging import get_logger
-from app.services import budget_service, dashboard_service, settings_service
+from app.services import budget_service, dashboard_service, project_service, settings_service
 
 logger = get_logger("app.mqtt")
 
@@ -95,6 +95,12 @@ def _sensors(db: Session, ref: date | None = None) -> list[dict]:
         sensors.append(_pct(f"budget_{bid}_percent", f"Budget {b['name']} %", b["percent"], "mdi:chart-arc"))
         sensors.append(
             _money(f"budget_{bid}_spent", f"Budget {b['name']} Spent", b["spent"], b["currency"], "mdi:cash-clock")
+        )
+    # Per-project totals (spec §27.3 "Finance House Project Total").
+    for p in project_service.totals(db):
+        sensors.append(
+            _money(f"project_{p['project_id']}_total", f"Project {p['name']} Total",
+                   p["spent"], p["currency"], "mdi:home-currency-usd")
         )
     return sensors
 
