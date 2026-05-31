@@ -1,0 +1,87 @@
+"""Import API routes (spec §24.3)."""
+
+from __future__ import annotations
+
+import json
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.db.session import get_db
+from app.models import Statement
+from app.parsers import available_parsers
+from app.schemas.imports import (
+    ConfirmResponse,
+    ImportListItem,
+    ParserInfo,
+    UploadResponse,
+)
+from app.services import import_service
+from app.services.import_service import ImportFailed
+
+router = APIRouter(prefix="/imports", tags=["imports"])
+
+
+@router.get("/parsers", response_model=list[ParserInfo])
+def list_parsers() -> list[dict]:
+    return available_parsers()
+
+
+@router.post("/upload", response_model=UploadResponse)
+async def upload(
+    file: UploadFile = File(...),
+    parser_id: str | None = Form(None),
+    account_id: int | None = Form(None),
+    mapping: str | None = Form(None),
+    db: Session = Depends(get_db),
+) -> dict:
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty file")
+    mapping_dict = None
+    if mapping:
+        try:
+            mapping_dict = json.loads(mapping)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid mapping JSON: {exc}") from exc
+    try:
+        return import_service.create_import(
+            db,
+            filename=file.filename or "upload.csv",
+            content=content,
+            parser_id=parser_id or None,
+            account_id=account_id,
+            mapping=mapping_dict,
+        )
+    except ImportFailed as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("", response_model=list[ImportListItem])
+def list_imports(db: Session = Depends(get_db)) -> list[Statement]:
+    return list(db.scalars(select(Statement).order_by(Statement.id.desc())).all())
+
+
+@router.get("/{import_id}", response_model=ImportListItem)
+def get_import(import_id: int, db: Session = Depends(get_db)) -> Statement:
+    statement = db.get(Statement, import_id)
+    if statement is None:
+        raise HTTPException(status_code=404, detail="Import not found")
+    return statement
+
+
+@router.post("/{import_id}/confirm", response_model=ConfirmResponse)
+def confirm(import_id: int, db: Session = Depends(get_db)) -> dict:
+    try:
+        return import_service.confirm_import(db, import_id)
+    except ImportFailed as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.delete("/{import_id}", status_code=204)
+def delete(import_id: int, db: Session = Depends(get_db)) -> None:
+    try:
+        import_service.delete_import(db, import_id)
+    except ImportFailed as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc

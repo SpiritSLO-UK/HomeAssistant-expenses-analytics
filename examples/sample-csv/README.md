@@ -1,0 +1,14 @@
+# Sample CSV files
+
+Anonymised, fabricated bank statement exports used for development, demos and
+tests (spec §32.3). **No real bank data** — every value here is made up.
+
+| File | Parser | Notes |
+|------|--------|-------|
+| `curve-sample.csv` | `curve_csv` | Date, Description, Amount, Currency, Card, Category |
+| `barclays-sample.csv` | `barclays_csv` | Number, Date, Account, Amount, Subcategory, Memo |
+| `lloyds-sample.csv` | `lloyds_csv` | Separate Debit/Credit columns |
+| `monzo-sample.csv` | `monzo_csv` | Wide export; signed Amount |
+| `generic-sample.csv` | `generic_csv` | Unknown bank; Money Out/Money In columns (heuristic mapping) |
+
+Amount convention: negative = money out (debit), positive = money in (credit).

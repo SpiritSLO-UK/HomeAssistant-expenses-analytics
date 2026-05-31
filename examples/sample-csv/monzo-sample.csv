@@ -1,0 +1,8 @@
+Transaction ID,Date,Time,Type,Name,Category,Amount,Currency,Local amount,Local currency,Notes and #tags,Description
+tx_0001AbCd,02/05/2026,08:14:22,Card payment,Pret A Manger,Eating out,-4.20,GBP,-4.20,GBP,,PRET A MANGER 234
+tx_0002EfGh,03/05/2026,12:40:10,Card payment,Lidl,Groceries,-31.66,GBP,-31.66,GBP,weekly shop,LIDL GB DARTFORD
+tx_0003IjKl,05/05/2026,18:02:55,Card payment,Uber,Transport,-9.30,GBP,-9.30,GBP,,UBER *TRIP HELP.UBER.COM
+tx_0004MnOp,10/05/2026,09:00:00,Faster payment,Acme Ltd,Income,2450.00,GBP,2450.00,GBP,May salary,ACME LTD
+tx_0005QrSt,15/05/2026,20:15:33,Card payment,Disney Plus,Entertainment,-7.99,GBP,-7.99,GBP,,DISNEYPLUS
+tx_0006UvWx,19/05/2026,14:22:09,Card payment,Toolstation,Shopping,-46.75,GBP,-46.75,GBP,,TOOLSTATION 421
+tx_0007YzAb,26/05/2026,11:11:11,Card payment,Boots,Health,-14.49,GBP,-14.49,GBP,,BOOTS 1124 DARTFORD
