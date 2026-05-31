@@ -16,7 +16,7 @@ WORKDIR /app
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    HAFI_DATABASE_PATH=/config/finance/finance.db
+    HAFI_DATABASE_PATH=/data/finance/finance.db
 
 # Install backend (dependencies resolved from pyproject.toml).
 COPY backend/pyproject.toml backend/alembic.ini backend/

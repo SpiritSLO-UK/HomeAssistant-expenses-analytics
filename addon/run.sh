@@ -30,15 +30,19 @@ PY
   fi
 }
 
-export HAFI_DATABASE_PATH="$(read_option database_path /config/finance/finance.db)"
+export HAFI_DATABASE_PATH="$(read_option database_path /data/finance/finance.db)"
 export HAFI_CURRENCY="$(read_option currency GBP)"
 export HAFI_PRIVACY_MODE="$(read_option privacy_mode strict_local)"
 export HAFI_MQTT_ENABLED="$(read_option mqtt_enabled false)"
 export HAFI_LOG_LEVEL="$(read_option log_level INFO)"
 export HAFI_PORT="8099"
 
-# Ensure the data directory exists.
-mkdir -p "$(dirname "$HAFI_DATABASE_PATH")"
+# Ensure the data directory exists and is private to this add-on (backlog #26,
+# #27): only the owner may read the finance data directory and database file.
+DATA_DIR="$(dirname "$HAFI_DATABASE_PATH")"
+mkdir -p "$DATA_DIR"
+chmod 700 "$DATA_DIR" || true
+[ -f "$HAFI_DATABASE_PATH" ] && chmod 600 "$HAFI_DATABASE_PATH" || true
 
 echo "[run.sh] Applying database migrations..."
 cd /app/backend

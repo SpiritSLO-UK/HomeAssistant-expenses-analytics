@@ -12,9 +12,20 @@ import tempfile
 from pathlib import Path
 
 # Must be set before importing app.config / app.db.session.
+#
+# We FORCE an isolated temp database and never honour an inherited
+# HAFI_DATABASE_PATH — a test run must never be able to read or write a real
+# database (backlog #30: "ensure tests can't access live data"). The guard
+# below is belt-and-suspenders in case this file is ever edited.
 _TMP = Path(tempfile.mkdtemp(prefix="hafi-test-"))
-os.environ.setdefault("HAFI_DATABASE_PATH", str(_TMP / "test.db"))
+os.environ["HAFI_DATABASE_PATH"] = str(_TMP / "test.db")
 os.environ.setdefault("HAFI_MQTT_ENABLED", "false")
+
+if "hafi-test-" not in os.environ["HAFI_DATABASE_PATH"]:
+    raise RuntimeError(
+        "Refusing to run tests against a non-temporary database: "
+        f"{os.environ['HAFI_DATABASE_PATH']}"
+    )
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402

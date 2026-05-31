@@ -14,11 +14,20 @@ ingress_port: 8099
 panel_icon: mdi:cash-multiple
 panel_title: Finance
 init: false
-map:
-  - addon_config:rw
-  - homeassistant_config:rw
+# --- Isolation hardening (backlog #5, #26, #27; see docs/security.md) ---
+# No shared folder mappings: finance data lives in the add-on's PRIVATE /data
+# volume, so no other add-on or the Home Assistant /config share can read it,
+# and this add-on cannot read your wider HA config (e.g. secrets.yaml).
+# /data is persistent and included in Home Assistant backups.
+host_network: false
+hassio_api: false
+homeassistant_api: false
+auth_api: false
+# To enable the bundled AppArmor profile, copy apparmor.txt.example to
+# apparmor.txt (see docs/security.md) — shipped as an example so an untested
+# profile can't prevent the add-on from starting.
 options:
-  database_path: /config/finance/finance.db
+  database_path: /data/finance/finance.db
   currency: GBP
   privacy_mode: strict_local
   mqtt_enabled: false

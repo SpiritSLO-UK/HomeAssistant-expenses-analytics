@@ -292,3 +292,58 @@ export function getCategoryBreakdown(month?: string): Promise<CategoryBreakdownI
 export function getVendorBreakdown(month?: string): Promise<VendorBreakdownItem[]> {
   return fetchJson<VendorBreakdownItem[]>(`api/dashboard/vendors${month ? `?month=${month}` : ""}`);
 }
+
+// --- Backup / restore / demo (spec §26.5; backlog #9, #10, #16) ---
+
+export function loadDemoData(): Promise<{ rows_detected: number; new: number; duplicates: number }> {
+  return fetchJson("api/backup/demo", { method: "POST" });
+}
+
+// Browser-side file download by clicking a temporary anchor.
+function triggerDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+export async function downloadDatabaseBackup(): Promise<void> {
+  const res = await fetch(apiUrl("api/backup/database"));
+  if (!res.ok) throw new Error(`Backup failed: ${res.status}`);
+  triggerDownload(await res.blob(), "ha-finance-backup.db");
+}
+
+export async function restoreDatabase(file: File): Promise<{ status: string }> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(apiUrl("api/backup/restore"), { method: "POST", body: form });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error(detail.detail || `Restore failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function exportConfig(): Promise<void> {
+  const res = await fetch(apiUrl("api/backup/config"));
+  if (!res.ok) throw new Error(`Export failed: ${res.status}`);
+  const data = await res.json();
+  triggerDownload(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }), "ha-finance-config.json");
+}
+
+export async function importConfig(
+  file: File,
+): Promise<{ categories_added: number; vendors_added: number; settings_set: number }> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(apiUrl("api/backup/config"), { method: "POST", body: form });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error(detail.detail || `Import failed: ${res.status}`);
+  }
+  return res.json();
+}

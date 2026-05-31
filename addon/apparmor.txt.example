@@ -1,0 +1,46 @@
+# AppArmor profile for the HA Finance Intelligence add-on (backlog #5, #26, #27).
+#
+# Shipped as an EXAMPLE. Home Assistant auto-applies an `apparmor.txt` if one is
+# present in the add-on directory, and a wrong profile can stop the add-on from
+# starting. So validate on your own Home Assistant first, then enable by:
+#
+#     cp addon/apparmor.txt.example addon/apparmor.txt
+#
+# This profile confines the add-on to its own files and private /data volume and
+# denies access to the rest of the host. Adjust paths if you change the image.
+
+#include <tunables/global>
+
+profile ha_finance_intelligence flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+  #include <abstractions/python>
+
+  # Capabilities the container legitimately needs.
+  capability setuid,
+  capability setgid,
+  capability dac_override,
+
+  network inet stream,
+  network inet6 stream,
+
+  # The add-on's own code (read/execute only).
+  /app/** r,
+  /usr/bin/python3* ix,
+  /usr/local/bin/** ix,
+  /bin/** ix,
+  /usr/bin/** ix,
+
+  # Private persistent data — the ONLY place finance data is written.
+  /data/** rwk,
+
+  # Add-on options written by the supervisor.
+  /data/options.json r,
+
+  # Deny the wider Home Assistant config share and host secrets outright.
+  deny /config/** rwklx,
+  deny /homeassistant/** rwklx,
+  deny /ssl/** rwklx,
+  deny /addons/** rwklx,
+  deny /share/** rwklx,
+  deny /root/.ssh/** rwklx,
+}

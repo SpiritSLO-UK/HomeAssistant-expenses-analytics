@@ -8,6 +8,25 @@
 
 ---
 
+## 0. Build Status
+
+_Living section — updated as the project is built (see git history / README)._
+
+| Stage (§29) | Scope | Status |
+|------|-------|--------|
+| 0 | Project skeleton: FastAPI + SQLite + SQLAlchemy/Alembic, all data models (§12), React shell, HA add-on | ✅ Done |
+| 1 | CSV import: Curve/Barclays/Lloyds/Monzo/generic parsers, dedup, import preview/confirm, transactions table | ✅ Done |
+| 2 | Categories & vendors: library load, CRUD, vendor aliases, auto-categorisation, dashboard | ✅ Done |
+| — | Data-safety pass (from backlog): redaction (§22.4), backup/restore (§26.5), demo data, add-on isolation (§28) | ✅ Done |
+| 3 | Rules & learning | ⏳ Next |
+| 4–12 | Splits, projects, budgets, review queue, receipts/OCR, local AI, cloud AI, PDF, polish | 📋 Planned |
+
+Notable deviation from the original spec: the database default path moved from `/config/finance/finance.db` (§26.4) to the add-on's **private** `/data/finance/finance.db` for isolation — see `docs/security.md`.
+
+> Note: the canonical spec filename is `ha_finance_intelligence_spec.md` (Markdown). Earlier notes referred to a `.mc` extension — that was a typo.
+
+---
+
 ## 1. Vision
 
 Build a **full personal finance app for Home Assistant**.
