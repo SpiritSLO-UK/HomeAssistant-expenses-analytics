@@ -141,6 +141,28 @@ The [`addon/`](addon/) folder contains everything to run this as a local add-on
 repository packaging and install docs land in Stage 12
 ([spec §29](ha_finance_intelligence_spec.md)).
 
+## Disclaimer
+
+This software is provided **"as is", without warranty of any kind** and is
+**not** financial, accounting, tax, or investment advice. The authors and
+contributors accept **no responsibility or liability** for any loss, damage,
+inaccuracy, or corruption of data arising from its use — you use it, and store
+your data with it, **at your own risk**.
+
+We have taken reasonable, good-faith precautions to protect your data (local-first
+by default, no external calls unless you opt in, private storage, redaction
+before any cloud AI, backup/restore, and tests that never touch live data — see
+[docs/privacy.md](docs/privacy.md) and [docs/security.md](docs/security.md)).
+Even so, **you are responsible for your own backups** and for verifying that any
+figures are correct before relying on them. This disclaimer is in addition to
+the warranty and liability terms of the licence below.
+
+> **Built with AI.** This project is developed with substantial help from an AI
+> coding assistant (Claude). Commits carry a `Co-Authored-By` trailer noting
+> this. Review the code yourself before trusting it with real data.
+
 ## License
 
-Licensed under the [Apache License 2.0](LICENSE).
+Licensed under the [Apache License 2.0](LICENSE) (which itself disclaims
+warranty and limits liability — sections 7 and 8).
+

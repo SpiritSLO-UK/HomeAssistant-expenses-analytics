@@ -69,6 +69,10 @@ export default function Settings() {
           Strict local mode is the default — no external network calls. See the privacy and
           security model in the project docs (docs/privacy.md, docs/security.md).
         </p>
+        <p className="muted" style={{ fontSize: "0.78rem", marginTop: 8 }}>
+          Provided “as is”, no warranty, not financial advice — use at your own risk and keep
+          your own backups. Built with the help of an AI assistant; review before relying on it.
+        </p>
       </div>
 
       <CurrencyFx onMessage={ok} onError={fail} />
