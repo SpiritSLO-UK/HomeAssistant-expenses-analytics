@@ -6,6 +6,7 @@ from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
@@ -16,8 +17,24 @@ from app.schemas.transactions import (
     TransactionOut,
     TransactionUpdate,
 )
+from app.services import import_service, vendor_service
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
+
+
+class CategoriseRequest(BaseModel):
+    category_id: int | None = None
+    # Manual-correction learning (spec §15.3): remember this category for the vendor.
+    learn_vendor: bool = False
+
+
+class BatchCategoriseRequest(BaseModel):
+    transaction_ids: list[int]
+    category_id: int | None = None
+
+
+class RecategoriseRequest(BaseModel):
+    only_uncategorised: bool = True
 
 
 @router.get("", response_model=TransactionListResponse)
@@ -83,6 +100,26 @@ def list_transactions(
     }
 
 
+@router.post("/recategorise")
+def recategorise(payload: RecategoriseRequest, db: Session = Depends(get_db)) -> dict:
+    """Re-run vendor + keyword categorisation (spec §15, §3.3 re-run rules)."""
+    count = import_service.recategorise(db, only_uncategorised=payload.only_uncategorised)
+    return {"recategorised": count}
+
+
+@router.post("/categorise-batch")
+def categorise_batch(payload: BatchCategoriseRequest, db: Session = Depends(get_db)) -> dict:
+    """Bulk-assign a category to many transactions (spec §25.3)."""
+    rows = db.scalars(
+        select(Transaction).where(Transaction.id.in_(payload.transaction_ids))
+    ).all()
+    for txn in rows:
+        txn.category_id = payload.category_id
+        txn.confidence_score = 1.0  # manual assignment (spec §15.2)
+    db.commit()
+    return {"updated": len(rows)}
+
+
 @router.get("/{transaction_id}", response_model=TransactionOut)
 def get_transaction(transaction_id: int, db: Session = Depends(get_db)) -> Transaction:
     txn = db.get(Transaction, transaction_id)
@@ -100,6 +137,24 @@ def update_transaction(
         raise HTTPException(status_code=404, detail="Transaction not found")
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(txn, field, value)
+    db.commit()
+    db.refresh(txn)
+    return txn
+
+
+@router.post("/{transaction_id}/categorise", response_model=TransactionOut)
+def categorise(
+    transaction_id: int, payload: CategoriseRequest, db: Session = Depends(get_db)
+) -> Transaction:
+    txn = db.get(Transaction, transaction_id)
+    if txn is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    txn.category_id = payload.category_id
+    txn.confidence_score = 1.0  # manual assignment (spec §15.2)
+    if payload.learn_vendor and payload.category_id is not None:
+        vendor_service.learn_vendor_category(
+            db, txn.description_raw, txn.merchant_raw, payload.category_id
+        )
     db.commit()
     db.refresh(txn)
     return txn

@@ -21,10 +21,15 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.logging import get_logger
-from app.models import Account, Household, Statement, Transaction
+from app.models import Account, Statement, Transaction
 from app.parsers import StandardTransaction, detect_parser, get_parser
 from app.parsers.base import ParseError
 from app.parsers.generic_csv import GenericCsvParser
+from app.services import category_service, vendor_service
+from app.services.household_service import (
+    get_or_create_account,
+    get_or_create_default_household,
+)
 
 logger = get_logger(__name__)
 
@@ -75,48 +80,6 @@ def source_hash(account_id: int | None, txn: StandardTransaction) -> str:
 
 # --- Bootstrap helpers (single-user MVP still needs a household + account) ---
 
-def get_or_create_default_household(db: Session) -> Household:
-    household = db.scalars(select(Household).limit(1)).first()
-    if household is None:
-        household = Household(
-            name="My Household",
-            currency=settings.currency,
-            mode=settings.setup_mode.value,
-        )
-        db.add(household)
-        db.flush()
-    return household
-
-
-def get_or_create_account(
-    db: Session,
-    household: Household,
-    institution: str,
-    account_id: int | None = None,
-) -> Account:
-    if account_id is not None:
-        account = db.get(Account, account_id)
-        if account is None:
-            raise ImportFailed(f"Account {account_id} not found")
-        return account
-    account = db.scalars(
-        select(Account).where(
-            Account.household_id == household.id, Account.name == institution
-        )
-    ).first()
-    if account is None:
-        account = Account(
-            household_id=household.id,
-            name=institution,
-            institution=institution,
-            account_type="credit_card" if institution == "Curve" else "current_account",
-            currency=household.currency,
-        )
-        db.add(account)
-        db.flush()
-    return account
-
-
 def _resolve_parser(parser_id: str | None, filename: str, content: bytes, mapping: dict | None):
     if parser_id:
         if parser_id == "generic_csv":
@@ -150,7 +113,10 @@ def create_import(
         raise ImportFailed(f"Could not parse file with {parser.parser_id}: {exc}") from exc
 
     household = get_or_create_default_household(db)
-    account = get_or_create_account(db, household, parser.institution, account_id)
+    try:
+        account = get_or_create_account(db, household, parser.institution, account_id)
+    except ValueError as exc:
+        raise ImportFailed(str(exc)) from exc
 
     fhash = file_hash(content)
     warnings: list[str] = []
@@ -247,6 +213,8 @@ def confirm_import(db: Session, import_id: int) -> dict:
 
     account = db.get(Account, statement.account_id)
     household = get_or_create_default_household(db)
+    # Categories must exist for keyword/vendor categorisation (spec §15.1).
+    category_service.ensure_default_categories(db)
 
     existing_hashes = set(
         db.scalars(
@@ -256,13 +224,18 @@ def confirm_import(db: Session, import_id: int) -> dict:
 
     new_count = 0
     dup_count = 0
+    categorised = 0
     for txn in parsed:
         h = source_hash(account.id, txn)
         if h in existing_hashes:
             dup_count += 1
             continue
         existing_hashes.add(h)
-        db.add(_to_transaction(txn, household.id, account.id, statement.id, h))
+        row = _to_transaction(txn, household.id, account.id, statement.id, h)
+        db.add(row)
+        db.flush()
+        if _auto_categorise(db, row):
+            categorised += 1
         new_count += 1
 
     statement.status = "imported"
@@ -275,7 +248,13 @@ def confirm_import(db: Session, import_id: int) -> dict:
         statement.period_end = max(dates)
     db.commit()
 
-    logger.info("Import %s confirmed: %s new, %s duplicates", import_id, new_count, dup_count)
+    logger.info(
+        "Import %s confirmed: %s new, %s duplicates, %s auto-categorised",
+        import_id,
+        new_count,
+        dup_count,
+        categorised,
+    )
     return {
         "import_id": statement.id,
         "status": statement.status,
@@ -313,6 +292,42 @@ def _to_transaction(
         direction=txn.direction,
         source_hash=h,
     )
+
+
+def recategorise(db: Session, only_uncategorised: bool = True) -> int:
+    """Re-run vendor + keyword categorisation across stored transactions.
+
+    Never overwrites an existing category (auto-categorise only fills blanks),
+    so manual choices are preserved. Returns the number newly categorised.
+    """
+    category_service.ensure_default_categories(db)
+    stmt = select(Transaction)
+    if only_uncategorised:
+        stmt = stmt.where(Transaction.category_id.is_(None))
+    count = 0
+    for txn in db.scalars(stmt).all():
+        had_category = txn.category_id is not None
+        _auto_categorise(db, txn)
+        if not had_category and txn.category_id is not None:
+            count += 1
+    db.commit()
+    return count
+
+
+def _auto_categorise(db: Session, txn: Transaction) -> bool:
+    """Apply vendor alias match, then library keyword fallback (spec §15.1).
+
+    Rules, history and AI are later stages. Returns True if a category was set.
+    """
+    vendor_service.normalise_transaction(db, txn)
+    if txn.category_id is not None:
+        return True
+    cat_id, conf = category_service.categorise_text(db, txn.description_raw)
+    if cat_id is not None:
+        txn.category_id = cat_id
+        txn.confidence_score = conf
+        return True
+    return False
 
 
 def _preview_row(txn: StandardTransaction, is_duplicate: bool) -> dict:

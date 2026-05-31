@@ -44,6 +44,12 @@ async def lifespan(_app: FastAPI):
     # Ensure tables exist. Alembic owns migrations in production; create_all is
     # an idempotent safety net so a fresh add-on starts even before migrations.
     Base.metadata.create_all(bind=engine)
+    # Seed the default category library on first run (spec §15.4, §33).
+    from app.db.session import SessionLocal
+    from app.services.category_service import ensure_default_categories
+
+    with SessionLocal() as db:
+        ensure_default_categories(db)
     yield
     logger.info("Shutting down %s", settings.app_name)
 

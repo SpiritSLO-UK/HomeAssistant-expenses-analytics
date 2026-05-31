@@ -1,10 +1,17 @@
 import { useState } from "react";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { listTransactions, type TransactionFilters } from "../api/client";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  categoriseTransaction,
+  listCategories,
+  listTransactions,
+  recategorise,
+  type TransactionFilters,
+} from "../api/client";
 
 const PAGE_SIZE = 50;
 
 export default function Transactions() {
+  const qc = useQueryClient();
   const [search, setSearch] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -20,10 +27,22 @@ export default function Transactions() {
     offset: page * PAGE_SIZE,
   };
 
+  const categories = useQuery({ queryKey: ["categories"], queryFn: listCategories });
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["transactions", filters],
     queryFn: () => listTransactions(filters),
     placeholderData: keepPreviousData,
+  });
+
+  const setCategory = useMutation({
+    mutationFn: (v: { id: number; categoryId: number | null }) =>
+      categoriseTransaction(v.id, v.categoryId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["transactions"] }),
+  });
+
+  const recat = useMutation({
+    mutationFn: () => recategorise(true),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["transactions"] }),
   });
 
   const total = data?.total ?? 0;
@@ -31,30 +50,27 @@ export default function Transactions() {
 
   return (
     <div className="page">
-      <h1 className="page__title">Transactions</h1>
+      <div className="page__head">
+        <h1 className="page__title">Transactions</h1>
+        <button className="btn btn--ghost" disabled={recat.isPending} onClick={() => recat.mutate()}>
+          {recat.isPending ? "Re-categorising…" : "Re-categorise uncategorised"}
+        </button>
+      </div>
+      {recat.isSuccess && (
+        <p className="muted">Re-categorised {recat.data.recategorised} transaction(s).</p>
+      )}
 
       <div className="card">
         <div className="filters">
           <input
             placeholder="Search description / merchant"
             value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(0);
-            }}
+            onChange={(e) => { setSearch(e.target.value); setPage(0); }}
           />
-          <label>
-            From <input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(0); }} />
-          </label>
-          <label>
-            To <input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(0); }} />
-          </label>
+          <label>From <input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(0); }} /></label>
+          <label>To <input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(0); }} /></label>
           <label className="checkbox">
-            <input
-              type="checkbox"
-              checked={needsReview}
-              onChange={(e) => { setNeedsReview(e.target.checked); setPage(0); }}
-            />
+            <input type="checkbox" checked={needsReview} onChange={(e) => { setNeedsReview(e.target.checked); setPage(0); }} />
             Needs review
           </label>
         </div>
@@ -76,9 +92,8 @@ export default function Transactions() {
                   <tr>
                     <th>Date</th>
                     <th>Description</th>
-                    <th>Merchant</th>
                     <th className="num">Amount</th>
-                    <th>Cur</th>
+                    <th>Category</th>
                     <th>Flags</th>
                   </tr>
                 </thead>
@@ -86,12 +101,34 @@ export default function Transactions() {
                   {data.items.map((t) => (
                     <tr key={t.id}>
                       <td>{t.transaction_date}</td>
-                      <td>{t.description_raw}</td>
-                      <td className="muted">{t.merchant_raw ?? ""}</td>
+                      <td>
+                        {t.description_raw}
+                        {t.merchant_raw && t.merchant_raw !== t.description_raw && (
+                          <span className="muted"> · {t.merchant_raw}</span>
+                        )}
+                      </td>
                       <td className={"num " + (t.direction === "credit" ? "amt--pos" : "amt--neg")}>
                         {t.amount}
                       </td>
-                      <td>{t.currency}</td>
+                      <td>
+                        <select
+                          className={t.category_id ? "" : "select--empty"}
+                          value={t.category_id ?? ""}
+                          onChange={(e) =>
+                            setCategory.mutate({
+                              id: t.id,
+                              categoryId: e.target.value ? Number(e.target.value) : null,
+                            })
+                          }
+                        >
+                          <option value="">— uncategorised —</option>
+                          {categories.data?.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
                       <td>
                         {t.is_transfer && <span className="tag">transfer</span>}
                         {t.is_income && <span className="tag">income</span>}
@@ -106,9 +143,7 @@ export default function Transactions() {
               <button className="btn btn--ghost" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
                 ← Prev
               </button>
-              <span className="muted">
-                {total} total · page {page + 1} of {maxPage + 1}
-              </span>
+              <span className="muted">{total} total · page {page + 1} of {maxPage + 1}</span>
               <button className="btn btn--ghost" disabled={page >= maxPage} onClick={() => setPage((p) => p + 1)}>
                 Next →
               </button>
