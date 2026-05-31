@@ -263,6 +263,12 @@ def confirm_import(db: Session, import_id: int) -> dict:
         statement.period_end = max(dates)
     db.commit()
 
+    # Refresh Home Assistant sensors after an import (spec §27.1). Best-effort:
+    # never let a broker hiccup fail a completed import.
+    from app.services import mqtt_service
+
+    mqtt_service.publish_safe(db)
+
     logger.info(
         "Import %s confirmed: %s new, %s duplicates, %s auto-categorised, %s need FX rate",
         import_id,

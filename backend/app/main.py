@@ -52,9 +52,12 @@ async def lifespan(_app: FastAPI):
         Base.metadata.create_all(bind=dbsession.get_engine())
         # Seed the default category library on first run (spec §15.4, §33).
         from app.services.category_service import ensure_default_categories
+        from app.services import mqtt_service
 
         with dbsession.SessionLocal() as db:
             ensure_default_categories(db)
+            # Publish MQTT sensors on startup (spec §27.1). No-op unless enabled.
+            mqtt_service.publish_safe(db)
     yield
     logger.info("Shutting down %s", settings.app_name)
 

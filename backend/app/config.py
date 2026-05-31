@@ -67,6 +67,17 @@ class Settings(BaseSettings):
     ai_enabled: bool = False
     ocr_enabled: bool = False
 
+    # --- MQTT publishing (spec §27; backlog "fully use mqtt") ---
+    # Only used when mqtt_enabled. Defaults target Home Assistant's Mosquitto
+    # add-on (host ``core-mosquitto``). The discovery prefix and base topic
+    # follow HA's MQTT discovery convention (spec §27.2-27.3).
+    mqtt_host: str = "core-mosquitto"
+    mqtt_port: int = 1883
+    mqtt_username: str | None = None
+    mqtt_password: str | None = None
+    mqtt_discovery_prefix: str = "homeassistant"
+    mqtt_base_topic: str = "homeassistant/finance"
+
     # --- At-rest DB encryption (backlog #15b) ---
     # Optional. When the DB is encrypted in "stored" unlock mode, the passphrase
     # is supplied here (env HAFI_DB_KEY) so the add-on can start unattended. In

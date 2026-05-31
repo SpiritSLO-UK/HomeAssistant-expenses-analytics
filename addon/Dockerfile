@@ -19,10 +19,11 @@ ENV PYTHONUNBUFFERED=1 \
     HAFI_DATABASE_PATH=/data/finance/finance.db
 
 # Install backend + the SQLCipher driver for at-rest encryption (backlog #15b;
-# Linux-only wheel, hence an optional extra rather than a core dependency).
+# Linux-only wheel, hence an optional extra) and paho-mqtt for HA sensor
+# publishing (spec §27, the "mqtt" extra).
 COPY backend/pyproject.toml backend/alembic.ini backend/
 COPY backend/app backend/app
-RUN pip install --no-cache-dir "./backend[encryption]"
+RUN pip install --no-cache-dir "./backend[encryption,mqtt]"
 
 # Bring in the built frontend so app.main can serve it from frontend/dist.
 COPY --from=frontend /build/frontend/dist /app/frontend/dist

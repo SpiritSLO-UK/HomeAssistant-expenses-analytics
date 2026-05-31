@@ -63,10 +63,11 @@ HA integration holds no business logic (spec §9.4).
 
 ## Build status (summary)
 
-Stages 0–4 done (skeleton, CSV import, categories/vendors + dashboard, rules &
-learning, split transactions), plus a data-safety pass (redaction,
-backup/restore, demo data, add-on isolation) and multi-currency. Full detail in
-spec §0 and git history.
+Stages 0–4 + 6 done (skeleton, CSV import, categories/vendors + dashboard, rules
+& learning, split transactions, budgets + MQTT sensors), plus a data-safety pass
+(redaction, backup/restore, demo data, add-on isolation) and multi-currency.
+Stage 5 (projects/tags) is the main remaining MVP gap. Full detail in spec §0
+and git history.
 
 Categorisation order (spec §15.1): **manual > rule > vendor default > keyword**.
 Rules (`rule_service`) run on import and re-categorise; a manually-set category
@@ -86,6 +87,32 @@ categories, converted with the parent's FX rate; monthly spend/income totals are
 unchanged because parts sum to the whole. UI: an inline `SplitEditor` (add/remove
 parts, **auto-balance** the remainder) on the Transactions page. Project-level
 split reporting waits for Stage 5 (projects).
+
+## Budgets + MQTT (Stage 6 — spec §19, §27)
+
+`budget_service` caps spend over a period. Three flavours (spec §19.1):
+**category** (`category_id`), **project** (`project_id`), or **total** (neither).
+Spend is base-currency, split-aware (reuses `split_service.split_base_amount`),
+debits only, excludes transfers/duplicates. Periods: weekly/monthly/quarterly/
+yearly/custom (`period_bounds`). Status (§19.2): `over` > 100%, `warn` ≥ alert
+threshold (default 80%), else `ok`. API: `/api/budgets` CRUD + `/api/budgets/summary`.
+UI: Budgets page with a month picker, status-coloured progress bars, and a create
+form. Rollover (§19.4) and "unusual vs last month" alerts are deferred.
+
+`mqtt_service` publishes finance metrics as **Home Assistant MQTT discovery**
+sensors (spec §27): a retained discovery config per sensor at
+`<prefix>/sensor/finance/<object_id>/config` + retained state at
+`<base_topic>/state/<key>`. Sensors = 5 core (spend/income/net this month,
+review_items, uncategorised) + 2 per budget (percent, spent). **Off by default**
+(strict-local); `paho-mqtt` is the optional `mqtt` extra (no-op + reported
+unavailable if missing, like SQLCipher on Windows). Publishing is **best-effort**
+via `publish_safe` (a broker hiccup never breaks an import or startup); triggered
+on **app startup**, **import confirm**, and **budget create/update/delete**
+(spec §27.1). Payload builders (`build_state`/`build_discovery`) are pure and
+broker-free for testing. Broker config is env/add-on-option driven (`mqtt_host`
+default `core-mosquitto`, port, optional user/pass). `/api/mqtt/{status,preview,publish}`;
+Settings has an MQTT card with a "Publish now" button. The subscriptions-total
+sensor (spec §30.11) waits for recurring detection (Stage 7).
 
 ## Encryption (#15 — DONE)
 

@@ -34,6 +34,10 @@ export HAFI_DATABASE_PATH="$(read_option database_path /data/finance/finance.db)
 export HAFI_CURRENCY="$(read_option currency GBP)"
 export HAFI_PRIVACY_MODE="$(read_option privacy_mode strict_local)"
 export HAFI_MQTT_ENABLED="$(read_option mqtt_enabled false)"
+export HAFI_MQTT_HOST="$(read_option mqtt_host core-mosquitto)"
+export HAFI_MQTT_PORT="$(read_option mqtt_port 1883)"
+export HAFI_MQTT_USERNAME="$(read_option mqtt_username '')"
+export HAFI_MQTT_PASSWORD="$(read_option mqtt_password '')"
 export HAFI_LOG_LEVEL="$(read_option log_level INFO)"
 export HAFI_PORT="8099"
 

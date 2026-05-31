@@ -6,11 +6,13 @@ from fastapi import APIRouter
 
 from app.api import (
     routes_backup,
+    routes_budgets,
     routes_categories,
     routes_dashboard,
     routes_fx,
     routes_health,
     routes_imports,
+    routes_mqtt,
     routes_rules,
     routes_security,
     routes_settings,
@@ -25,6 +27,8 @@ api_router.include_router(routes_transactions.router)
 api_router.include_router(routes_categories.router)
 api_router.include_router(routes_vendors.router)
 api_router.include_router(routes_dashboard.router)
+api_router.include_router(routes_budgets.router)
+api_router.include_router(routes_mqtt.router)
 api_router.include_router(routes_backup.router)
 api_router.include_router(routes_settings.router)
 api_router.include_router(routes_fx.router)

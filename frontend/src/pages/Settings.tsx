@@ -9,11 +9,13 @@ import {
   enableEncryption,
   exportConfig,
   getHealth,
+  getMqttStatus,
   getSecurityStatus,
   getSettings,
   importConfig,
   listFxRates,
   loadDemoData,
+  publishMqtt,
   restoreDatabase,
   restoreEncryptedDatabase,
   updateSettings,
@@ -83,6 +85,8 @@ export default function Settings() {
       </div>
 
       <CurrencyFx onMessage={ok} onError={fail} />
+
+      <MqttCard onMessage={ok} onError={fail} />
 
       <SecurityCard onMessage={ok} onError={fail} />
 
@@ -184,10 +188,59 @@ export default function Settings() {
       <div className="card">
         <h2 className="card__title">Coming later</h2>
         <p className="muted">
-          Setup mode, accounts, import profiles, AI providers, OCR, MQTT and Home Assistant sensors
-          arrive in later stages (spec §25.12). Encrypted / cloud backup is on the backlog (#15).
+          Setup mode, accounts, import profiles, AI providers and OCR arrive in later stages
+          (spec §25.12). Cloud backup destinations are on the backlog (#15).
         </p>
       </div>
+    </div>
+  );
+}
+
+function MqttCard({
+  onMessage,
+  onError,
+}: {
+  onMessage: (m: string) => void;
+  onError: (e: unknown) => void;
+}) {
+  const status = useQuery({ queryKey: ["mqtt-status"], queryFn: getMqttStatus });
+  const publish = useMutation({
+    mutationFn: publishMqtt,
+    onSuccess: (r) => onMessage(`Published ${r.published} MQTT message(s) for ${r.sensors ?? "?"} sensors.`),
+    onError,
+  });
+  const s = status.data;
+
+  return (
+    <div className="card">
+      <h2 className="card__title">Home Assistant sensors (MQTT)</h2>
+      {!s && <p className="muted">Loading…</p>}
+      {s && (
+        <>
+          <p className="muted">
+            Publishes spend, income, net, review count and per-budget progress as Home Assistant
+            sensors via MQTT discovery (spec §27). Off by default (strict-local). Enable it with the
+            add-on’s <code>mqtt_enabled</code> option and point it at your broker
+            (<code>{s.host}:{s.port}</code>).
+          </p>
+          <ul className="kv">
+            <li><span>Status</span><span>{s.enabled ? "enabled" : "disabled"}</span></li>
+            <li><span>Driver (paho-mqtt)</span><span>{s.available ? "installed" : "not installed"}</span></li>
+            <li><span>Discovery prefix</span><span>{s.discovery_prefix}</span></li>
+            <li><span>State topic</span><span>{s.base_topic}/state/…</span></li>
+            {s.sensor_count != null && <li><span>Sensors</span><span>{s.sensor_count}</span></li>}
+          </ul>
+          <button
+            className="btn"
+            disabled={!s.enabled || publish.isPending}
+            title={s.enabled ? "Publish sensors now" : "Enable MQTT in the add-on options first"}
+            onClick={() => publish.mutate()}
+          >
+            {publish.isPending ? "Publishing…" : "Publish now"}
+          </button>
+          {!s.enabled && <p className="muted" style={{ fontSize: "0.78rem", marginTop: 6 }}>Enable MQTT in the add-on options to publish.</p>}
+        </>
+      )}
     </div>
   );
 }

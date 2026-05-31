@@ -225,6 +225,96 @@ export function clearSplits(id: number): Promise<SplitsResponse> {
   return fetchJson<SplitsResponse>(`api/transactions/${id}/split`, { method: "DELETE" });
 }
 
+// --- Budgets (spec §24.9, §19) ---
+
+export interface Budget {
+  id: number;
+  name: string;
+  amount: string;
+  currency: string;
+  period: string;
+  category_id: number | null;
+  project_id: number | null;
+  start_date: string | null;
+  end_date: string | null;
+  rollover_enabled: boolean;
+  alert_threshold_percent: number | null;
+}
+
+export interface BudgetSummaryItem {
+  budget_id: number;
+  name: string;
+  category_id: number | null;
+  project_id: number | null;
+  period: string;
+  currency: string;
+  amount: string;
+  spent: string;
+  remaining: string;
+  percent: number;
+  status: "ok" | "warn" | "over";
+  alert_threshold_percent: number | null;
+  period_start: string;
+  period_end: string;
+}
+
+export const BUDGET_PERIODS = ["weekly", "monthly", "quarterly", "yearly", "custom"] as const;
+
+export function listBudgets(): Promise<Budget[]> {
+  return fetchJson<Budget[]>("api/budgets");
+}
+
+export function getBudgetSummary(month?: string): Promise<BudgetSummaryItem[]> {
+  return fetchJson<BudgetSummaryItem[]>(`api/budgets/summary${month ? `?month=${month}` : ""}`);
+}
+
+export async function createBudget(data: Record<string, unknown>): Promise<Budget> {
+  const res = await fetch(apiUrl("api/budgets"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error(detail.detail || `Create budget failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export function updateBudget(id: number, data: Record<string, unknown>): Promise<Budget> {
+  return fetchJson<Budget>(`api/budgets/${id}`, { method: "PATCH", body: JSON.stringify(data) });
+}
+
+export async function deleteBudget(id: number): Promise<void> {
+  const res = await fetch(apiUrl(`api/budgets/${id}`), { method: "DELETE" });
+  if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
+}
+
+// --- MQTT / Home Assistant sensors (spec §27) ---
+
+export interface MqttStatus {
+  enabled: boolean;
+  available: boolean;
+  host: string;
+  port: number;
+  discovery_prefix: string;
+  base_topic: string;
+  sensor_count?: number;
+}
+
+export function getMqttStatus(): Promise<MqttStatus> {
+  return fetchJson<MqttStatus>("api/mqtt/status");
+}
+
+export async function publishMqtt(): Promise<{ enabled: boolean; published: number; sensors?: number }> {
+  const res = await fetch(apiUrl("api/mqtt/publish"), { method: "POST" });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error(detail.detail || `Publish failed: ${res.status}`);
+  }
+  return res.json();
+}
+
 // --- Categories (spec §24.5) ---
 
 export interface Category {
