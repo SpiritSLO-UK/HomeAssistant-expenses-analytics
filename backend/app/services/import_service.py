@@ -263,10 +263,15 @@ def confirm_import(db: Session, import_id: int) -> dict:
         statement.period_end = max(dates)
     db.commit()
 
-    # Refresh Home Assistant sensors after an import (spec §27.1). Best-effort:
-    # never let a broker hiccup fail a completed import.
-    from app.services import mqtt_service
+    # Detect recurring payments / subscriptions from the new data (spec §20.1),
+    # then refresh Home Assistant sensors (spec §27.1). Both best-effort: never
+    # let them fail a completed import.
+    from app.services import mqtt_service, subscription_service
 
+    try:
+        subscription_service.detect(db)
+    except Exception:  # pragma: no cover - detection must never break an import
+        logger.warning("Subscription detection failed (non-fatal)", exc_info=True)
     mqtt_service.publish_safe(db)
 
     logger.info(

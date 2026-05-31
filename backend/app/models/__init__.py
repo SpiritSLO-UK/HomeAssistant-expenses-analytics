@@ -18,6 +18,7 @@ from app.models.review_item import ReviewItem
 from app.models.rule import Rule
 from app.models.setting import Setting
 from app.models.statement import Statement
+from app.models.subscription import Subscription
 from app.models.tag import Tag, transaction_tags
 from app.models.transaction import Transaction, TransactionSplit
 from app.models.user import User
@@ -40,6 +41,7 @@ __all__ = [
     "Rule",
     "Setting",
     "Statement",
+    "Subscription",
     "Tag",
     "transaction_tags",
     "Transaction",

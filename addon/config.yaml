@@ -3,7 +3,7 @@ name: HA Finance Intelligence
 version: "0.1.0"
 slug: ha_finance_intelligence
 description: Local-first personal finance app for Home Assistant
-url: https://github.com/your-org/ha-finance-intelligence
+url: https://github.com/SpiritSLO-UK/HomeAssistant-expenses-analytics
 arch:
   - aarch64
   - amd64

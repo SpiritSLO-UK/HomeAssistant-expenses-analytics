@@ -28,7 +28,13 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.logging import get_logger
-from app.services import budget_service, dashboard_service, project_service, settings_service
+from app.services import (
+    budget_service,
+    dashboard_service,
+    project_service,
+    settings_service,
+    subscription_service,
+)
 
 logger = get_logger("app.mqtt")
 
@@ -89,6 +95,8 @@ def _sensors(db: Session, ref: date | None = None) -> list[dict]:
         _money("net_this_month", "Net This Month", summary["net_this_month"], currency, "mdi:cash"),
         _count("review_items", "Review Items", summary["review_items"], "mdi:alert-circle"),
         _count("uncategorised", "Uncategorised", summary["uncategorised_transactions"], "mdi:help-circle"),
+        _money("subscriptions_total", "Subscriptions (monthly)",
+               subscription_service.monthly_total(db), currency, "mdi:autorenew"),
     ]
     for b in budget_service.summary(db, ref):
         bid = b["budget_id"]

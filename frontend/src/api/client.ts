@@ -423,6 +423,55 @@ export function listTags(): Promise<Tag[]> {
   return fetchJson<Tag[]>("api/tags");
 }
 
+// --- Subscriptions / recurring payments (spec §20) ---
+
+export interface Subscription {
+  id: number;
+  vendor_id: number | null;
+  category_id: number | null;
+  name: string;
+  amount: string;
+  currency: string;
+  frequency: string;
+  monthly_amount: string;
+  interval_days: number;
+  next_expected_date: string | null;
+  last_seen_date: string | null;
+  confidence_score: number | null;
+  occurrences: number;
+  status: string;
+}
+
+export interface DashboardSubscriptions {
+  currency: string;
+  monthly_total: string;
+  count: number;
+  subscriptions: Subscription[];
+}
+
+export const SUBSCRIPTION_STATUSES = ["active", "possible", "cancelled", "ignored"] as const;
+
+export function listSubscriptions(): Promise<Subscription[]> {
+  return fetchJson<Subscription[]>("api/subscriptions");
+}
+
+export function detectSubscriptions(): Promise<{ created: number; updated: number; total: number }> {
+  return fetchJson("api/subscriptions/detect", { method: "POST" });
+}
+
+export function updateSubscription(id: number, patch: Record<string, unknown>): Promise<Subscription> {
+  return fetchJson<Subscription>(`api/subscriptions/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
+}
+
+export async function deleteSubscription(id: number): Promise<void> {
+  const res = await fetch(apiUrl(`api/subscriptions/${id}`), { method: "DELETE" });
+  if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
+}
+
+export function getDashboardSubscriptions(): Promise<DashboardSubscriptions> {
+  return fetchJson<DashboardSubscriptions>("api/dashboard/subscriptions");
+}
+
 // --- Categories (spec §24.5) ---
 
 export interface Category {

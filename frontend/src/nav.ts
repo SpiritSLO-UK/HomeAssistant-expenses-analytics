@@ -16,6 +16,7 @@ export const NAV_ITEMS: NavItem[] = [
   { path: "/rules", label: "Rules", icon: "⚙️" },
   { path: "/projects", label: "Projects", icon: "📁" },
   { path: "/budgets", label: "Budgets", icon: "🎯" },
+  { path: "/subscriptions", label: "Subscriptions", icon: "🔁" },
   { path: "/review", label: "Review Queue", icon: "🔎" },
   { path: "/settings", label: "Settings", icon: "🔧" },
 ];

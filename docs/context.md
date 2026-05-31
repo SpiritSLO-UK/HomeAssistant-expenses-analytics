@@ -63,12 +63,11 @@ HA integration holds no business logic (spec §9.4).
 
 ## Build status (summary)
 
-Stages 0–6 done (skeleton, CSV import, categories/vendors + dashboard, rules &
-learning, split transactions, projects & tags, budgets + MQTT sensors), plus a
-data-safety pass (redaction, backup/restore, demo data, add-on isolation) and
-multi-currency. That's the MVP feature set; remaining stages are
-recurring/subscriptions (7), review queue, receipts/OCR (8), and AI (9–10). Full
-detail in spec §0 and git history.
+Stages 0–7 done (skeleton, CSV import, categories/vendors + dashboard, rules &
+learning, split transactions, projects & tags, budgets + MQTT sensors,
+recurring/subscriptions), plus a data-safety pass (redaction, backup/restore,
+demo data, add-on isolation) and multi-currency. Remaining stages: review queue,
+receipts/OCR (8), and AI (9–10). Full detail in spec §0 and git history.
 
 Categorisation order (spec §15.1): **manual > rule > vendor default > keyword**.
 Rules (`rule_service`) run on import and re-categorise; a manually-set category
@@ -114,6 +113,23 @@ progress bar, expandable per-project detail with by-category/by-vendor
 breakdowns) and, on **Transactions**, a project `<select>` + tag chips
 (click-to-remove, "+ tag" prompt) per row. Per-project total sensors are
 published over MQTT (spec §27.3).
+
+## Subscriptions / recurring payments (Stage 7 — spec §20)
+
+`subscription_service.detect()` groups spend by vendor (or normalised merchant
+name when no vendor matched) and flags groups that recur at a regular interval
+with a steady amount: median gap → frequency band (weekly/monthly/quarterly/
+yearly), amount deviation ≤ 35%, confidence from gap regularity + amount
+consistency (+0.1 if the category name contains "subscription"). It **upserts**
+(idempotent) and **never overwrites** a user's `cancelled`/`ignored` status.
+Amounts/totals are base-currency (only transactions with `base_amount`). New
+`Subscription` model + migration `b7c1d2e3f4a5`. Detection runs **on import
+confirm** (best-effort, never breaks an import) and via `POST /api/subscriptions/detect`.
+API: `/api/subscriptions` (list/detect/patch/delete) + `GET /api/dashboard/subscriptions`
+(active subs + monthly-equivalent total). A `subscriptions_total` MQTT sensor
+(monthly equivalent of active subs) completes spec §30.11. UI: a Subscriptions
+page (monthly cost, table with per-row status, "Detect now", delete). Per-vendor
+alerts (amount-changed / not-seen-when-expected, §20.3) are deferred.
 
 ## Budgets + MQTT (Stage 6 — spec §19, §27)
 

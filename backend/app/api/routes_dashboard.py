@@ -14,7 +14,8 @@ from app.schemas.dashboard import (
     VendorBreakdownItem,
 )
 from app.schemas.projects import ProjectTotal
-from app.services import dashboard_service, project_service
+from app.schemas.subscriptions import DashboardSubscriptions
+from app.services import dashboard_service, project_service, subscription_service
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -43,3 +44,9 @@ def projects(db: Session = Depends(get_db)) -> list[dict]:
     """Per-project totals for the dashboard "Project totals" card (spec §25.1).
     Projects span time, so this is all-time spend, not a single month."""
     return project_service.totals(db)
+
+
+@router.get("/subscriptions", response_model=DashboardSubscriptions)
+def subscriptions(db: Session = Depends(get_db)) -> dict:
+    """Active subscriptions + monthly-equivalent total (spec §25.1)."""
+    return subscription_service.dashboard_summary(db)
