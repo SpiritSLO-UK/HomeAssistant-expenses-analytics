@@ -5,7 +5,20 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class SplitOut(BaseModel):
+    """One persisted split part (spec §12.7)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    amount: Decimal
+    category_id: int | None
+    project_id: int | None
+    description: str | None
+    notes: str | None
 
 
 class TransactionOut(BaseModel):
@@ -37,6 +50,13 @@ class TransactionOut(BaseModel):
     created_at: datetime
 
 
+class TransactionDetailOut(TransactionOut):
+    """Single-transaction view, including its splits (spec §17). Kept separate
+    from the list schema so listing doesn't lazy-load splits for every row."""
+
+    splits: list[SplitOut] = []
+
+
 class TransactionListResponse(BaseModel):
     items: list[TransactionOut]
     total: int
@@ -54,3 +74,28 @@ class TransactionUpdate(BaseModel):
     is_income: bool | None = None
     needs_review: bool | None = None
     review_reason: str | None = None
+
+
+# --- Splits (spec §17, §24.4 POST /transactions/{id}/split) ---
+
+
+class SplitIn(BaseModel):
+    """One proposed split part. Amount is in the transaction's own currency."""
+
+    amount: Decimal
+    category_id: int | None = None
+    project_id: int | None = None
+    description: str | None = Field(default=None, max_length=300)
+    notes: str | None = None
+
+
+class SetSplitsRequest(BaseModel):
+    splits: list[SplitIn]
+
+
+class SplitsResponse(BaseModel):
+    transaction_id: int
+    is_split: bool
+    currency: str
+    total: Decimal
+    splits: list[SplitOut]

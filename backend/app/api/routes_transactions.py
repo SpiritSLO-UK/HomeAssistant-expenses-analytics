@@ -13,11 +13,15 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.models import Transaction
 from app.schemas.transactions import (
+    SetSplitsRequest,
+    SplitsResponse,
+    TransactionDetailOut,
     TransactionListResponse,
     TransactionOut,
     TransactionUpdate,
 )
-from app.services import import_service, rule_service, vendor_service
+from app.services import import_service, rule_service, split_service, vendor_service
+from app.services.split_service import SplitError, SplitInput
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 
@@ -122,7 +126,7 @@ def categorise_batch(payload: BatchCategoriseRequest, db: Session = Depends(get_
     return {"updated": len(rows)}
 
 
-@router.get("/{transaction_id}", response_model=TransactionOut)
+@router.get("/{transaction_id}", response_model=TransactionDetailOut)
 def get_transaction(transaction_id: int, db: Session = Depends(get_db)) -> Transaction:
     txn = db.get(Transaction, transaction_id)
     if txn is None:
@@ -165,6 +169,59 @@ def categorise(
     db.commit()
     db.refresh(txn)
     return txn
+
+
+def _splits_response(txn: Transaction) -> dict:
+    return {
+        "transaction_id": txn.id,
+        "is_split": txn.is_split,
+        "currency": txn.currency,
+        "total": txn.amount,
+        "splits": list(txn.splits),
+    }
+
+
+@router.get("/{transaction_id}/splits", response_model=SplitsResponse)
+def get_splits(transaction_id: int, db: Session = Depends(get_db)) -> dict:
+    txn = db.get(Transaction, transaction_id)
+    if txn is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return _splits_response(txn)
+
+
+@router.post("/{transaction_id}/split", response_model=SplitsResponse)
+def set_splits(
+    transaction_id: int, payload: SetSplitsRequest, db: Session = Depends(get_db)
+) -> dict:
+    """Split a transaction across categories/projects (spec §17.2 validation)."""
+    txn = db.get(Transaction, transaction_id)
+    if txn is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    parts = [
+        SplitInput(
+            amount=s.amount,
+            category_id=s.category_id,
+            project_id=s.project_id,
+            description=s.description,
+            notes=s.notes,
+        )
+        for s in payload.splits
+    ]
+    try:
+        split_service.set_splits(db, txn, parts)
+    except SplitError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _splits_response(txn)
+
+
+@router.delete("/{transaction_id}/split", response_model=SplitsResponse)
+def clear_splits(transaction_id: int, db: Session = Depends(get_db)) -> dict:
+    """Remove a transaction's splits (spec §17.3); its own category applies again."""
+    txn = db.get(Transaction, transaction_id)
+    if txn is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    split_service.clear_splits(db, txn)
+    return _splits_response(txn)
 
 
 @router.delete("/{transaction_id}", status_code=204)

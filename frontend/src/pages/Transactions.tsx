@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   categoriseTransaction,
@@ -8,6 +8,7 @@ import {
   recategorise,
   type TransactionFilters,
 } from "../api/client";
+import SplitEditor from "../components/SplitEditor";
 
 const PAGE_SIZE = 50;
 
@@ -18,6 +19,7 @@ export default function Transactions() {
   const [dateTo, setDateTo] = useState("");
   const [needsReview, setNeedsReview] = useState(false);
   const [page, setPage] = useState(0);
+  const [splitId, setSplitId] = useState<number | null>(null);
 
   const filters: TransactionFilters = {
     search: search || undefined,
@@ -113,7 +115,8 @@ export default function Transactions() {
                 </thead>
                 <tbody>
                   {data.items.map((t) => (
-                    <tr key={t.id}>
+                    <Fragment key={t.id}>
+                    <tr>
                       <td>{t.transaction_date}</td>
                       <td>
                         {t.description_raw}
@@ -134,40 +137,69 @@ export default function Transactions() {
                         )}
                       </td>
                       <td>
-                        <select
-                          className={t.category_id ? "" : "select--empty"}
-                          value={t.category_id ?? ""}
-                          onChange={(e) =>
-                            setCategory.mutate({
-                              id: t.id,
-                              categoryId: e.target.value ? Number(e.target.value) : null,
-                            })
-                          }
-                        >
-                          <option value="">— uncategorised —</option>
-                          {categories.data?.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.name}
-                            </option>
-                          ))}
-                        </select>
-                        {t.category_id !== null && (
-                          <button
-                            className="link-btn"
-                            title="Create a rule so similar transactions auto-categorise"
-                            style={{ marginLeft: 6 }}
-                            onClick={() => makeRule.mutate({ id: t.id, categoryId: t.category_id! })}
-                          >
-                            + rule
-                          </button>
+                        {t.is_split ? (
+                          <span className="muted">Split across categories</span>
+                        ) : (
+                          <>
+                            <select
+                              className={t.category_id ? "" : "select--empty"}
+                              value={t.category_id ?? ""}
+                              onChange={(e) =>
+                                setCategory.mutate({
+                                  id: t.id,
+                                  categoryId: e.target.value ? Number(e.target.value) : null,
+                                })
+                              }
+                            >
+                              <option value="">— uncategorised —</option>
+                              {categories.data?.map((c) => (
+                                <option key={c.id} value={c.id}>
+                                  {c.name}
+                                </option>
+                              ))}
+                            </select>
+                            {t.category_id !== null && (
+                              <button
+                                className="link-btn"
+                                title="Create a rule so similar transactions auto-categorise"
+                                style={{ marginLeft: 6 }}
+                                onClick={() => makeRule.mutate({ id: t.id, categoryId: t.category_id! })}
+                              >
+                                + rule
+                              </button>
+                            )}
+                          </>
                         )}
                       </td>
                       <td>
+                        {t.is_split && <span className="tag">split</span>}
                         {t.is_transfer && <span className="tag">transfer</span>}
                         {t.is_income && <span className="tag">income</span>}
                         {t.needs_review && <span className="tag tag--dup">review</span>}
+                        <button
+                          className="link-btn"
+                          style={{ marginLeft: 6 }}
+                          onClick={() => setSplitId(splitId === t.id ? null : t.id)}
+                        >
+                          {t.is_split ? "edit split" : "split"}
+                        </button>
                       </td>
                     </tr>
+                    {splitId === t.id && (
+                      <tr>
+                        <td colSpan={5} style={{ background: "rgba(127,127,127,0.06)" }}>
+                          <SplitEditor
+                            txnId={t.id}
+                            amount={t.amount}
+                            currency={t.currency}
+                            isSplit={t.is_split}
+                            categories={categories.data ?? []}
+                            onDone={() => setSplitId(null)}
+                          />
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>

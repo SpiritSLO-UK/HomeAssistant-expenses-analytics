@@ -178,6 +178,53 @@ export function recategorise(onlyUncategorised = true): Promise<{ recategorised:
   });
 }
 
+// --- Splits (spec §17) ---
+
+export interface Split {
+  id: number;
+  amount: string;
+  category_id: number | null;
+  project_id: number | null;
+  description: string | null;
+  notes: string | null;
+}
+
+export interface SplitsResponse {
+  transaction_id: number;
+  is_split: boolean;
+  currency: string;
+  total: string;
+  splits: Split[];
+}
+
+export interface SplitInput {
+  amount: string;
+  category_id?: number | null;
+  project_id?: number | null;
+  description?: string | null;
+}
+
+export function getSplits(id: number): Promise<SplitsResponse> {
+  return fetchJson<SplitsResponse>(`api/transactions/${id}/splits`);
+}
+
+export async function setSplits(id: number, splits: SplitInput[]): Promise<SplitsResponse> {
+  const res = await fetch(apiUrl(`api/transactions/${id}/split`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ splits }),
+  });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error(detail.detail || `Split failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export function clearSplits(id: number): Promise<SplitsResponse> {
+  return fetchJson<SplitsResponse>(`api/transactions/${id}/split`, { method: "DELETE" });
+}
+
 // --- Categories (spec §24.5) ---
 
 export interface Category {

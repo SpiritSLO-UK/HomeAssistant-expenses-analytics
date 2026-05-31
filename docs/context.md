@@ -63,14 +63,29 @@ HA integration holds no business logic (spec §9.4).
 
 ## Build status (summary)
 
-Stages 0–3 done (skeleton, CSV import, categories/vendors + dashboard, rules &
-learning), plus a data-safety pass (redaction, backup/restore, demo data, add-on
-isolation) and multi-currency. Full detail in spec §0 and git history.
+Stages 0–4 done (skeleton, CSV import, categories/vendors + dashboard, rules &
+learning, split transactions), plus a data-safety pass (redaction,
+backup/restore, demo data, add-on isolation) and multi-currency. Full detail in
+spec §0 and git history.
 
 Categorisation order (spec §15.1): **manual > rule > vendor default > keyword**.
 Rules (`rule_service`) run on import and re-categorise; a manually-set category
 (confidence 1.0) is never overridden. "Make rule" / `learn_rule` turns a
 correction into a high-priority description rule.
+
+## Splits (Stage 4 — spec §17)
+
+`split_service` divides one transaction across categories/projects. Validation
+(spec §17.2): ≥2 parts, parts sum to the transaction total **to the penny**
+(integer-cents comparison), every part has a category and/or project, and all
+parts share the transaction's sign. The transaction stays the source of truth
+(`is_split` flag; splits cascade-delete). API: `GET /api/transactions/{id}/splits`,
+`POST /…/split` (replace), `DELETE /…/split` (clear). The **dashboard category
+breakdown** is split-aware (spec §37.4) — split parts contribute to their own
+categories, converted with the parent's FX rate; monthly spend/income totals are
+unchanged because parts sum to the whole. UI: an inline `SplitEditor` (add/remove
+parts, **auto-balance** the remainder) on the Transactions page. Project-level
+split reporting waits for Stage 5 (projects).
 
 ## Encryption (#15 — DONE)
 

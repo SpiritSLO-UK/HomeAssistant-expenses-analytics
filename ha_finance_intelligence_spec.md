@@ -18,8 +18,11 @@ _Living section — updated as the project is built (see git history / README)._
 | 1 | CSV import: Curve/Barclays/Lloyds/Monzo/generic parsers, dedup, import preview/confirm, transactions table | ✅ Done |
 | 2 | Categories & vendors: library load, CRUD, vendor aliases, auto-categorisation, dashboard | ✅ Done |
 | — | Data-safety pass (from backlog): redaction (§22.4), backup/restore (§26.5), demo data, add-on isolation (§28) | ✅ Done |
-| 3 | Rules & learning | ⏳ Next |
-| 4–12 | Splits, projects, budgets, review queue, receipts/OCR, local AI, cloud AI, PDF, polish | 📋 Planned |
+| — | Multi-currency + historical FX (backlog #29): original + base amount, manual rates, opt-in Frankfurter (§12.3, §13) | ✅ Done |
+| — | Encryption (backlog #15): encrypted backups (AES-256-GCM) + optional at-rest SQLCipher (§26.5, §28) | ✅ Done |
+| 3 | Rules & learning (§36, §15.1) | ✅ Done |
+| 4 | Split transactions (§17): split service + validation, API, split-aware dashboard, editor UI | ✅ Done |
+| 5–12 | Projects, budgets, review queue, receipts/OCR, local AI, cloud AI, PDF, polish | 📋 Planned |
 
 Notable deviation from the original spec: the database default path moved from `/config/finance/finance.db` (§26.4) to the add-on's **private** `/data/finance/finance.db` for isolation — see `docs/security.md`.
 
