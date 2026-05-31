@@ -74,9 +74,13 @@ correction into a high-priority description rule.
 
 ## Decided but not yet built
 
-- **#15 Encryption / cloud backup** — optional SQLCipher at-rest (user chooses a
-  key or not); **both** unlock modes (UI prompt *and* stored key); **local**
-  encrypted backups now, cloud later. Lost key = unrecoverable data.
+- **#15b At-rest DB encryption** — optional SQLCipher (user chooses a key or
+  not); **both** unlock modes (UI prompt *and* stored key). Blocked on this dev
+  box: `sqlcipher3-binary` has **no Windows wheel**, so it can only be built and
+  verified on Linux/WSL or the actual add-on. Needs a startup lock/unlock flow
+  (lazy/rebindable engine). Lost key = unrecoverable data.
+  - **#15a Encrypted backups — DONE.** Passphrase AES-256-GCM
+    (`crypto_service`, scrypt KDF) backup export/restore, pure-Python, verified.
 
 ## Open questions / to scope
 

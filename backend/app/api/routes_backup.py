@@ -4,14 +4,15 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 
 from app.db.session import get_db
-from app.services import backup_service, demo_service
+from app.services import backup_service, crypto_service, demo_service
 from app.services.backup_service import RestoreError
+from app.services.crypto_service import DecryptError
 
 router = APIRouter(prefix="/backup", tags=["backup"])
 
@@ -37,6 +38,44 @@ async def restore_database(
     content = await file.read()
     try:
         backup_service.restore_database(content)
+    except RestoreError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"status": "restored"}
+
+
+@router.post("/database/encrypted")
+def download_encrypted_database(passphrase: str = Form(...)) -> Response:
+    """Download a passphrase-encrypted snapshot of the database (backlog #15).
+
+    AES-256-GCM; only someone with the passphrase can read it. There is NO
+    recovery if the passphrase is lost.
+    """
+    if not passphrase:
+        raise HTTPException(status_code=400, detail="A passphrase is required.")
+    snapshot = backup_service.snapshot_database()
+    try:
+        blob = crypto_service.encrypt(snapshot.read_bytes(), passphrase)
+    finally:
+        snapshot.unlink(missing_ok=True)
+    return Response(
+        content=blob,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": 'attachment; filename="ha-finance-backup.db.enc"'},
+    )
+
+
+@router.post("/restore/encrypted")
+async def restore_encrypted_database(
+    file: UploadFile = File(...), passphrase: str = Form(...), _db: Session = Depends(get_db)
+) -> dict:
+    """Decrypt an encrypted backup with the passphrase and restore it."""
+    content = await file.read()
+    try:
+        plaintext = crypto_service.decrypt(content, passphrase)
+    except DecryptError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    try:
+        backup_service.restore_database(plaintext)
     except RestoreError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"status": "restored"}

@@ -4,6 +4,7 @@ import {
   addFxRate,
   backfillFx,
   downloadDatabaseBackup,
+  downloadEncryptedBackup,
   exportConfig,
   getHealth,
   getSettings,
@@ -11,6 +12,7 @@ import {
   listFxRates,
   loadDemoData,
   restoreDatabase,
+  restoreEncryptedDatabase,
   updateSettings,
 } from "../api/client";
 
@@ -19,8 +21,10 @@ export default function Settings() {
   const health = useQuery({ queryKey: ["health"], queryFn: getHealth });
   const restoreInput = useRef<HTMLInputElement>(null);
   const configInput = useRef<HTMLInputElement>(null);
+  const encRestoreInput = useRef<HTMLInputElement>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [passphrase, setPassphrase] = useState("");
 
   function ok(m: string) {
     setMsg(m);
@@ -107,6 +111,47 @@ export default function Settings() {
           />
           <button className="btn btn--ghost" onClick={() => restoreInput.current?.click()}>
             ⬆ Restore from backup…
+          </button>
+        </div>
+
+        <h3 style={{ margin: "16px 0 6px", fontSize: "0.95rem" }}>Encrypted backup</h3>
+        <p className="muted">
+          Protect a backup with a passphrase (AES-256-GCM) — safe to keep off-device or in the
+          cloud. <strong>If you lose the passphrase the backup is unrecoverable.</strong>
+        </p>
+        <div className="form-row">
+          <input
+            type="password"
+            placeholder="Passphrase"
+            value={passphrase}
+            onChange={(e) => setPassphrase(e.target.value)}
+            style={{ minWidth: 200 }}
+          />
+          <button
+            className="btn"
+            disabled={!passphrase}
+            onClick={() => downloadEncryptedBackup(passphrase).then(() => ok("Encrypted backup downloaded.")).catch(fail)}
+          >
+            ⬇ Download encrypted
+          </button>
+          <input
+            ref={encRestoreInput}
+            type="file"
+            accept=".enc,application/octet-stream"
+            style={{ display: "none" }}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f && passphrase &&
+                  confirm("Restore will REPLACE your current database (backed up to <db>.bak first). Continue?")) {
+                restoreEncryptedDatabase(f, passphrase)
+                  .then(() => { ok("Database restored from encrypted backup."); qc.invalidateQueries(); })
+                  .catch(fail);
+              }
+              if (encRestoreInput.current) encRestoreInput.current.value = "";
+            }}
+          />
+          <button className="btn btn--ghost" disabled={!passphrase} onClick={() => encRestoreInput.current?.click()}>
+            ⬆ Restore encrypted…
           </button>
         </div>
       </div>

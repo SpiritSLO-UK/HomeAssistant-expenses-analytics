@@ -335,6 +335,26 @@ export async function restoreDatabase(file: File): Promise<{ status: string }> {
   return res.json();
 }
 
+export async function downloadEncryptedBackup(passphrase: string): Promise<void> {
+  const form = new FormData();
+  form.append("passphrase", passphrase);
+  const res = await fetch(apiUrl("api/backup/database/encrypted"), { method: "POST", body: form });
+  if (!res.ok) throw new Error(`Encrypted backup failed: ${res.status}`);
+  triggerDownload(await res.blob(), "ha-finance-backup.db.enc");
+}
+
+export async function restoreEncryptedDatabase(file: File, passphrase: string): Promise<{ status: string }> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("passphrase", passphrase);
+  const res = await fetch(apiUrl("api/backup/restore/encrypted"), { method: "POST", body: form });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error(detail.detail || `Restore failed: ${res.status}`);
+  }
+  return res.json();
+}
+
 export async function exportConfig(): Promise<void> {
   const res = await fetch(apiUrl("api/backup/config"));
   if (!res.ok) throw new Error(`Export failed: ${res.status}`);
