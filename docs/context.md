@@ -6,6 +6,7 @@ This complements:
 
 - [`ha_finance_intelligence_spec.md`](../ha_finance_intelligence_spec.md) — the full product/architecture spec (see §0 Build Status).
 - [`README.md`](../README.md) — how to run/develop/test.
+- [`docs/architecture.md`](architecture.md) — system / flow / data-model diagrams (Mermaid).
 - [`docs/privacy.md`](privacy.md) / [`docs/security.md`](security.md) — privacy & isolation model.
 - `things-to-add-change-consider.md` — the owner's backlog (kept local/untracked).
 
