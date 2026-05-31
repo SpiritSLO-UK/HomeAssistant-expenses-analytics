@@ -12,6 +12,7 @@ from app.api import (
     routes_health,
     routes_imports,
     routes_rules,
+    routes_security,
     routes_settings,
     routes_transactions,
     routes_vendors,
@@ -28,3 +29,4 @@ api_router.include_router(routes_backup.router)
 api_router.include_router(routes_settings.router)
 api_router.include_router(routes_fx.router)
 api_router.include_router(routes_rules.router)
+api_router.include_router(routes_security.router)

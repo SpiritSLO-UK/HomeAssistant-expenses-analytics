@@ -29,6 +29,12 @@ dev = [
 mqtt = [
     "paho-mqtt>=2.1",
 ]
+# At-rest DB encryption (backlog #15b). Kept optional: sqlcipher3-binary has no
+# Windows wheel, so it must not be a core dependency. Installed in the add-on
+# image (Linux) and in CI/Linux dev.
+encryption = [
+    "sqlcipher3-binary>=0.5",
+]
 
 [build-system]
 requires = ["setuptools>=68"]

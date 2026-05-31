@@ -519,3 +519,41 @@ code {
   font-size: 0.82rem;
   width: 120px;
 }
+
+/* --- unlock gate (encrypted DB locked) --- */
+.unlock {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+.unlock__card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 32px;
+  max-width: 420px;
+  width: 90%;
+  text-align: center;
+}
+
+.unlock__card h1 {
+  margin: 0 0 8px;
+  font-size: 1.4rem;
+}
+
+.unlock__card form {
+  display: flex;
+  gap: 8px;
+  margin: 16px 0 8px;
+}
+
+.unlock__card input {
+  flex: 1;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.95rem;
+}

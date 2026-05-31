@@ -10,16 +10,16 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
 from app.api.router import api_router
 from app.config import settings
+from app.db import session as dbsession
 from app.db.base import Base
-from app.db.session import engine
 from app.logging import configure_logging, get_logger
 
 # Import models so every table is registered on Base.metadata.
@@ -41,15 +41,20 @@ async def lifespan(_app: FastAPI):
         settings.privacy_mode.value,
         settings.database_path,
     )
-    # Ensure tables exist. Alembic owns migrations in production; create_all is
-    # an idempotent safety net so a fresh add-on starts even before migrations.
-    Base.metadata.create_all(bind=engine)
-    # Seed the default category library on first run (spec §15.4, §33).
-    from app.db.session import SessionLocal
-    from app.services.category_service import ensure_default_categories
+    # Decide the engine state (plaintext, or encrypted+unlocked, or locked) from
+    # the encryption marker (backlog #15b).
+    dbsession.init()
+    if dbsession.is_locked():
+        logger.warning("Database is locked — waiting for unlock before serving data.")
+    else:
+        # Ensure tables exist. Alembic owns migrations in production; create_all
+        # is an idempotent safety net so a fresh add-on starts.
+        Base.metadata.create_all(bind=dbsession.get_engine())
+        # Seed the default category library on first run (spec §15.4, §33).
+        from app.services.category_service import ensure_default_categories
 
-    with SessionLocal() as db:
-        ensure_default_categories(db)
+        with dbsession.SessionLocal() as db:
+            ensure_default_categories(db)
     yield
     logger.info("Shutting down %s", settings.app_name)
 
@@ -68,6 +73,28 @@ if settings.cors_origins:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+
+# When the database is locked (encrypted, awaiting unlock), block data APIs with
+# 423 — but allow health and the security/unlock endpoints through (#15b).
+_LOCK_EXEMPT = ("/api/health", "/api/security")
+
+
+@app.middleware("http")
+async def _lock_guard(request: Request, call_next):
+    if dbsession.is_locked() and request.url.path.startswith("/api/"):
+        if not request.url.path.startswith(_LOCK_EXEMPT):
+            return JSONResponse(
+                status_code=423,
+                content={"detail": "Database is locked. Unlock with your passphrase."},
+            )
+    return await call_next(request)
+
+
+@app.exception_handler(dbsession.DatabaseLocked)
+async def _locked_handler(_request: Request, _exc: dbsession.DatabaseLocked):
+    return JSONResponse(status_code=423, content={"detail": "Database is locked."})
+
 
 app.include_router(api_router)
 

@@ -1,13 +1,22 @@
 """Database engine / session management.
 
-SQLite for the MVP (spec §9.2, §10.1). PostgreSQL can be swapped in later by
-changing the URL — the rest of the app uses the SQLAlchemy session only.
+SQLite for the MVP (spec §9.2, §10.1). The engine is normally plaintext. When
+**at-rest encryption** is enabled (backlog #15b) the engine is built over
+SQLCipher via a connection ``creator`` that issues ``PRAGMA key``. The engine is
+rebindable so it can be (un)locked at runtime:
+
+- encryption disabled  -> plaintext engine (default; unchanged behaviour)
+- enabled + key known   -> SQLCipher engine
+- enabled + no key yet  -> locked (no engine until the user unlocks)
+
+The plaintext path is the common case and is identical to before, so non-
+encrypted setups (and all of Windows dev, where SQLCipher has no wheel) are
+unaffected.
 """
 
 from __future__ import annotations
 
 from collections.abc import Generator
-from pathlib import Path
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
@@ -19,35 +28,108 @@ from app.logging import get_logger
 logger = get_logger(__name__)
 
 
+class DatabaseLocked(Exception):
+    """Raised when a DB session is requested while the database is locked."""
+
+
 def _ensure_database_dir() -> None:
-    """Create the parent directory for the SQLite file if needed."""
-    db_file: Path = settings.database_file
-    db_file.parent.mkdir(parents=True, exist_ok=True)
+    settings.database_file.parent.mkdir(parents=True, exist_ok=True)
 
 
 _ensure_database_dir()
 
-engine: Engine = create_engine(
-    settings.database_url,
-    connect_args={"check_same_thread": False},  # SQLite + FastAPI threads
-    future=True,
-)
+# One sessionmaker, rebound to whichever engine is active via .configure().
+SessionLocal = sessionmaker(autoflush=False, autocommit=False, future=True)
+
+_engine: Engine | None = None
+_locked: bool = False
 
 
-@event.listens_for(engine, "connect")
+def get_engine() -> Engine | None:
+    return _engine
+
+
+def is_locked() -> bool:
+    return _locked
+
+
 def _set_sqlite_pragma(dbapi_connection, _connection_record) -> None:
-    """Enable foreign keys and WAL for SQLite (off by default in SQLite)."""
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA foreign_keys=ON")
     cursor.execute("PRAGMA journal_mode=WAL")
     cursor.close()
 
 
-SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+def _build_plaintext_engine() -> Engine:
+    engine = create_engine(
+        settings.database_url,
+        connect_args={"check_same_thread": False},
+        future=True,
+    )
+    event.listen(engine, "connect", _set_sqlite_pragma)
+    return engine
+
+
+def _build_encrypted_engine(passphrase: str) -> Engine:
+    """Engine backed by SQLCipher. Requires the optional ``sqlcipher3`` driver
+    (present on Linux/the add-on; not available as a Windows wheel)."""
+    import sqlcipher3  # optional; only imported when encryption is in use
+
+    db_path = str(settings.database_file)
+    safe = passphrase.replace("'", "''")  # escape for the PRAGMA literal
+
+    def _creator():
+        conn = sqlcipher3.connect(db_path, check_same_thread=False)
+        conn.execute(f"PRAGMA key='{safe}'")
+        conn.execute("PRAGMA foreign_keys=ON")
+        return conn
+
+    return create_engine("sqlite://", creator=_creator, future=True)
+
+
+def configure(passphrase: str | None = None) -> None:
+    """(Re)build the active engine. ``passphrase=None`` -> plaintext."""
+    global _engine, _locked
+    if _engine is not None:
+        _engine.dispose()
+    _engine = _build_plaintext_engine() if passphrase is None else _build_encrypted_engine(passphrase)
+    SessionLocal.configure(bind=_engine)
+    _locked = False
+
+
+def lock() -> None:
+    """Drop the engine and refuse sessions until unlocked."""
+    global _engine, _locked
+    if _engine is not None:
+        _engine.dispose()
+    _engine = None
+    _locked = True
+
+
+def init() -> None:
+    """Decide the initial engine state at startup from the encryption marker."""
+    from app.services import security_service
+
+    state = security_service.read_marker()
+    if not state or not state.get("enabled"):
+        configure(None)
+        return
+    if not security_service.sqlcipher_available():
+        logger.error("DB encryption is enabled but the SQLCipher driver is unavailable — locking.")
+        lock()
+        return
+    if settings.db_key:  # stored-key mode: unattended unlock
+        configure(settings.db_key)
+        logger.info("Database unlocked from stored key.")
+        return
+    logger.info("Database is encrypted and locked; awaiting unlock.")
+    lock()
 
 
 def get_db() -> Generator[Session, None, None]:
     """FastAPI dependency that yields a database session."""
+    if _locked or _engine is None:
+        raise DatabaseLocked()
     db = SessionLocal()
     try:
         yield db

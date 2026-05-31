@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from app.config import settings
-from app.db.session import engine
+from app.db import session as dbsession
 
 
 def test_database_is_temporary():
     assert "hafi-test-" in settings.database_path
-    assert "hafi-test-" in str(engine.url)
+    assert "hafi-test-" in str(dbsession.get_engine().url)
 
 
 def test_not_pointing_at_dev_database():

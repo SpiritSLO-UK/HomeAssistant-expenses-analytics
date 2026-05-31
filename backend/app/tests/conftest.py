@@ -30,23 +30,28 @@ if "hafi-test-" not in os.environ["HAFI_DATABASE_PATH"]:
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
+from app.db import session as dbsession  # noqa: E402
 from app.db.base import Base  # noqa: E402
-from app.db.session import SessionLocal, engine  # noqa: E402
+from app.db.session import SessionLocal  # noqa: E402
 from app.main import app  # noqa: E402
+
+# Tests always run plaintext (encryption is verified separately). Build the
+# engine up front so the fixtures have one to drop/create against.
+dbsession.configure(None)
 
 
 @pytest.fixture()
 def client() -> TestClient:
-    Base.metadata.drop_all(engine)
-    Base.metadata.create_all(engine)
+    Base.metadata.drop_all(dbsession.get_engine())
+    Base.metadata.create_all(dbsession.get_engine())
     with TestClient(app) as test_client:
         yield test_client
 
 
 @pytest.fixture()
 def db():
-    Base.metadata.drop_all(engine)
-    Base.metadata.create_all(engine)
+    Base.metadata.drop_all(dbsession.get_engine())
+    Base.metadata.create_all(dbsession.get_engine())
     session = SessionLocal()
     try:
         yield session

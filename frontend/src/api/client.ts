@@ -483,3 +483,31 @@ export function testRule(condition_type: string, condition_value: string): Promi
     body: JSON.stringify({ condition_type, condition_value }),
   });
 }
+
+// --- Security / at-rest encryption (backlog #15b) ---
+
+export interface SecurityStatus {
+  encryption_available: boolean;
+  encryption_enabled: boolean;
+  unlock_mode: string | null;
+  locked: boolean;
+}
+
+export function getSecurityStatus(): Promise<SecurityStatus> {
+  return fetchJson<SecurityStatus>("api/security/status");
+}
+
+export function unlockDatabase(passphrase: string): Promise<{ status: string }> {
+  return fetchJson("api/security/unlock", { method: "POST", body: JSON.stringify({ passphrase }) });
+}
+
+export function enableEncryption(passphrase: string, unlock_mode: string): Promise<{ status: string }> {
+  return fetchJson("api/security/enable", {
+    method: "POST",
+    body: JSON.stringify({ passphrase, unlock_mode }),
+  });
+}
+
+export function disableEncryption(passphrase: string): Promise<{ status: string }> {
+  return fetchJson("api/security/disable", { method: "POST", body: JSON.stringify({ passphrase }) });
+}

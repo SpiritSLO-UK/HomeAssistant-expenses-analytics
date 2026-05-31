@@ -3,10 +3,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   addFxRate,
   backfillFx,
+  disableEncryption,
   downloadDatabaseBackup,
   downloadEncryptedBackup,
+  enableEncryption,
   exportConfig,
   getHealth,
+  getSecurityStatus,
   getSettings,
   importConfig,
   listFxRates,
@@ -80,6 +83,8 @@ export default function Settings() {
       </div>
 
       <CurrencyFx onMessage={ok} onError={fail} />
+
+      <SecurityCard onMessage={ok} onError={fail} />
 
       <div className="card">
         <h2 className="card__title">Demo data</h2>
@@ -320,6 +325,105 @@ function CurrencyFx({
             </tbody>
           </table>
         </div>
+      )}
+    </div>
+  );
+}
+
+function SecurityCard({
+  onMessage,
+  onError,
+}: {
+  onMessage: (m: string) => void;
+  onError: (e: unknown) => void;
+}) {
+  const qc = useQueryClient();
+  const status = useQuery({ queryKey: ["security-status"], queryFn: getSecurityStatus });
+  const [pass, setPass] = useState("");
+  const [unlockMode, setUnlockMode] = useState("prompt");
+
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["security-status"] });
+    setPass("");
+  };
+  const enable = useMutation({
+    mutationFn: () => enableEncryption(pass, unlockMode),
+    onSuccess: () => { onMessage("Database encrypted."); invalidate(); },
+    onError,
+  });
+  const disable = useMutation({
+    mutationFn: () => disableEncryption(pass),
+    onSuccess: () => { onMessage("Encryption disabled (database decrypted)."); invalidate(); },
+    onError,
+  });
+
+  const s = status.data;
+
+  return (
+    <div className="card">
+      <h2 className="card__title">Database encryption (at rest)</h2>
+      {!s && <p className="muted">Loading…</p>}
+
+      {s && !s.encryption_available && (
+        <p className="muted">
+          At-rest encryption needs the SQLCipher driver, which is available on Linux / the Home
+          Assistant add-on but not on this platform. (Encrypted <em>backups</em> above work
+          everywhere.)
+        </p>
+      )}
+
+      {s && s.encryption_available && !s.encryption_enabled && (
+        <>
+          <p className="muted">
+            Encrypt the database on disk so nothing but this app (with your passphrase) can read it.
+            <strong> If you lose the passphrase, the data is unrecoverable.</strong>
+          </p>
+          <div className="form-row">
+            <input
+              type="password"
+              placeholder="New passphrase"
+              value={pass}
+              onChange={(e) => setPass(e.target.value)}
+              style={{ minWidth: 200 }}
+            />
+            <label>
+              On restart{" "}
+              <select value={unlockMode} onChange={(e) => setUnlockMode(e.target.value)}>
+                <option value="prompt">Prompt me (most secure)</option>
+                <option value="stored">Use stored key (unattended)</option>
+              </select>
+            </label>
+            <button className="btn" disabled={!pass || enable.isPending} onClick={() => enable.mutate()}>
+              {enable.isPending ? "Encrypting…" : "Encrypt database"}
+            </button>
+          </div>
+          {unlockMode === "stored" && (
+            <p className="muted" style={{ fontSize: "0.78rem" }}>
+              Stored mode also needs the passphrase set as the add-on’s <code>HAFI_DB_KEY</code> option
+              so it can start unattended.
+            </p>
+          )}
+        </>
+      )}
+
+      {s && s.encryption_enabled && (
+        <>
+          <p className="status status--ok">
+            🔒 Encrypted · unlock mode: {s.unlock_mode}
+          </p>
+          <div className="form-row">
+            <input
+              type="password"
+              placeholder="Passphrase to disable"
+              value={pass}
+              onChange={(e) => setPass(e.target.value)}
+              style={{ minWidth: 200 }}
+            />
+            <button className="btn btn--ghost" disabled={!pass || disable.isPending} onClick={() => disable.mutate()}>
+              {disable.isPending ? "Decrypting…" : "Disable encryption"}
+            </button>
+          </div>
+        </>
       )}
     </div>
   );

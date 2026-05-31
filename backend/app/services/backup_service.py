@@ -23,7 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.db.session import engine
+from app.db import session as dbsession
 from app.logging import get_logger
 from app.models import Category, Setting, Vendor, VendorAlias
 
@@ -95,7 +95,8 @@ def restore_database(content: bytes) -> None:
             )
 
         # Release SQLAlchemy's pooled connections before replacing the file.
-        engine.dispose()
+        if dbsession.get_engine() is not None:
+            dbsession.get_engine().dispose()
         dest = settings.database_file
         dest.parent.mkdir(parents=True, exist_ok=True)
         if dest.exists():

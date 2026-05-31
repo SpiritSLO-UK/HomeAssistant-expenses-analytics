@@ -67,6 +67,12 @@ class Settings(BaseSettings):
     ai_enabled: bool = False
     ocr_enabled: bool = False
 
+    # --- At-rest DB encryption (backlog #15b) ---
+    # Optional. When the DB is encrypted in "stored" unlock mode, the passphrase
+    # is supplied here (env HAFI_DB_KEY) so the add-on can start unattended. In
+    # "prompt" mode this stays empty and the user unlocks via the UI each start.
+    db_key: str | None = None
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def _split_cors(cls, value: object) -> object:
