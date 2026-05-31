@@ -159,11 +159,15 @@ export function listTransactions(filters: TransactionFilters = {}): Promise<Tran
 export function categoriseTransaction(
   id: number,
   categoryId: number | null,
-  learnVendor = false,
+  opts: { learnVendor?: boolean; learnRule?: boolean } = {},
 ): Promise<Transaction> {
   return fetchJson<Transaction>(`api/transactions/${id}/categorise`, {
     method: "POST",
-    body: JSON.stringify({ category_id: categoryId, learn_vendor: learnVendor }),
+    body: JSON.stringify({
+      category_id: categoryId,
+      learn_vendor: opts.learnVendor ?? false,
+      learn_rule: opts.learnRule ?? false,
+    }),
   });
 }
 
@@ -393,4 +397,69 @@ export function backfillFx(): Promise<{ checked: number; filled: number; still_m
 
 export function fxMissing(): Promise<{ needs_rate: number }> {
   return fetchJson("api/fx/missing");
+}
+
+// --- Rules (spec §24.7) ---
+
+export interface Rule {
+  id: number;
+  name: string;
+  priority: number;
+  enabled: boolean;
+  condition_type: string;
+  condition_value: string;
+  action_type: string;
+  action_value: string | null;
+  created_from: string | null;
+}
+
+export const RULE_CONDITION_TYPES = [
+  "description_contains",
+  "merchant_contains",
+  "vendor_equals",
+  "account_equals",
+  "category_equals",
+  "amount_equals",
+  "amount_between",
+] as const;
+
+export const RULE_ACTION_TYPES = [
+  "set_category",
+  "set_vendor",
+  "set_project",
+  "mark_transfer",
+  "mark_income",
+  "mark_subscription",
+  "require_review",
+  "block_cloud_ai",
+] as const;
+
+export function listRules(): Promise<Rule[]> {
+  return fetchJson<Rule[]>("api/rules");
+}
+
+export function createRule(data: Record<string, unknown>): Promise<Rule> {
+  return fetchJson<Rule>("api/rules", { method: "POST", body: JSON.stringify(data) });
+}
+
+export function updateRule(id: number, data: Record<string, unknown>): Promise<Rule> {
+  return fetchJson<Rule>(`api/rules/${id}`, { method: "PATCH", body: JSON.stringify(data) });
+}
+
+export async function deleteRule(id: number): Promise<void> {
+  const res = await fetch(apiUrl(`api/rules/${id}`), { method: "DELETE" });
+  if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
+}
+
+export interface RuleTestResult {
+  match_count: number;
+  total: number;
+  sample: { id: number; transaction_date: string; description_raw: string; amount: string }[];
+}
+
+export function testRule(condition_type: string, condition_value: string): Promise<RuleTestResult> {
+  return fetchJson<RuleTestResult>("api/rules/test", {
+    method: "POST",
+    body: JSON.stringify({ condition_type, condition_value }),
+  });
 }

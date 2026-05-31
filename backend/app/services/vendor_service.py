@@ -74,7 +74,9 @@ def normalise_transaction(db: Session, txn: Transaction) -> bool:
     vendor, match_type = match_vendor(db, txn.description_raw)
     if vendor is None:
         return False
-    txn.merchant_id = vendor.id
+    # Don't overwrite a vendor already set explicitly (e.g. by a rule).
+    if txn.merchant_id is None:
+        txn.merchant_id = vendor.id
     vendor.last_seen_at = datetime.now(timezone.utc)
     if txn.category_id is None and vendor.default_category_id is not None:
         txn.category_id = vendor.default_category_id

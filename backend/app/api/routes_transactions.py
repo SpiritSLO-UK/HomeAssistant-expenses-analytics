@@ -17,15 +17,17 @@ from app.schemas.transactions import (
     TransactionOut,
     TransactionUpdate,
 )
-from app.services import import_service, vendor_service
+from app.services import import_service, rule_service, vendor_service
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 
 
 class CategoriseRequest(BaseModel):
     category_id: int | None = None
-    # Manual-correction learning (spec §15.3): remember this category for the vendor.
-    learn_vendor: bool = False
+    # Manual-correction learning (spec §15.3):
+    learn_vendor: bool = False  # remember this category for the vendor
+    learn_rule: bool = False  # also create a description rule so future ones auto-categorise
+    rule_match_value: str | None = None  # optional override of the rule's match text
 
 
 class BatchCategoriseRequest(BaseModel):
@@ -151,10 +153,15 @@ def categorise(
         raise HTTPException(status_code=404, detail="Transaction not found")
     txn.category_id = payload.category_id
     txn.confidence_score = 1.0  # manual assignment (spec §15.2)
-    if payload.learn_vendor and payload.category_id is not None:
-        vendor_service.learn_vendor_category(
-            db, txn.description_raw, txn.merchant_raw, payload.category_id
-        )
+    if payload.category_id is not None:
+        if payload.learn_vendor:
+            vendor_service.learn_vendor_category(
+                db, txn.description_raw, txn.merchant_raw, payload.category_id
+            )
+        if payload.learn_rule:
+            rule_service.create_rule_from_correction(
+                db, txn, payload.category_id, payload.rule_match_value
+            )
     db.commit()
     db.refresh(txn)
     return txn

@@ -62,9 +62,14 @@ HA integration holds no business logic (spec §9.4).
 
 ## Build status (summary)
 
-Stages 0–2 done (skeleton, CSV import, categories/vendors + dashboard), plus a
-data-safety pass (redaction, backup/restore, demo data, add-on isolation) and
-multi-currency. Full detail in spec §0 and git history.
+Stages 0–3 done (skeleton, CSV import, categories/vendors + dashboard, rules &
+learning), plus a data-safety pass (redaction, backup/restore, demo data, add-on
+isolation) and multi-currency. Full detail in spec §0 and git history.
+
+Categorisation order (spec §15.1): **manual > rule > vendor default > keyword**.
+Rules (`rule_service`) run on import and re-categorise; a manually-set category
+(confidence 1.0) is never overridden. "Make rule" / `learn_rule` turns a
+correction into a high-priority description rule.
 
 ## Decided but not yet built
 

@@ -43,6 +43,17 @@ export default function Transactions() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["transactions"] }),
   });
 
+  // "Make rule": keep this category AND create a rule so similar future
+  // transactions auto-categorise (spec §15.3).
+  const makeRule = useMutation({
+    mutationFn: (v: { id: number; categoryId: number }) =>
+      categoriseTransaction(v.id, v.categoryId, { learnRule: true }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["transactions"] });
+      qc.invalidateQueries({ queryKey: ["rules"] });
+    },
+  });
+
   const recat = useMutation({
     mutationFn: () => recategorise(true),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["transactions"] }),
@@ -140,6 +151,16 @@ export default function Transactions() {
                             </option>
                           ))}
                         </select>
+                        {t.category_id !== null && (
+                          <button
+                            className="link-btn"
+                            title="Create a rule so similar transactions auto-categorise"
+                            style={{ marginLeft: 6 }}
+                            onClick={() => makeRule.mutate({ id: t.id, categoryId: t.category_id! })}
+                          >
+                            + rule
+                          </button>
+                        )}
                       </td>
                       <td>
                         {t.is_transfer && <span className="tag">transfer</span>}

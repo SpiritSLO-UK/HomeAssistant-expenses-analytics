@@ -25,7 +25,13 @@ from app.models import Account, Statement, Transaction
 from app.parsers import StandardTransaction, detect_parser, get_parser
 from app.parsers.base import ParseError
 from app.parsers.generic_csv import GenericCsvParser
-from app.services import category_service, fx_service, settings_service, vendor_service
+from app.services import (
+    category_service,
+    fx_service,
+    rule_service,
+    settings_service,
+    vendor_service,
+)
 from app.services.household_service import (
     get_or_create_account,
     get_or_create_default_household,
@@ -325,13 +331,15 @@ def recategorise(db: Session, only_uncategorised: bool = True) -> int:
 
 
 def _auto_categorise(db: Session, txn: Transaction) -> bool:
-    """Apply vendor alias match, then library keyword fallback (spec §15.1).
-
-    Rules, history and AI are later stages. Returns True if a category was set.
-    """
+    """Categorisation order (spec §15.1): manual > rule > vendor default >
+    keyword. Returns True if the transaction ends up with a category."""
+    # 1. Rules (highest precedence after manual; may also set vendor/flags).
+    rule_service.apply_rules(db, txn)
+    # 2. Vendor alias match (sets merchant; category only if still unset).
     vendor_service.normalise_transaction(db, txn)
     if txn.category_id is not None:
         return True
+    # 3. Category-library keyword fallback.
     cat_id, conf = category_service.categorise_text(db, txn.description_raw)
     if cat_id is not None:
         txn.category_id = cat_id
