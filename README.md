@@ -1,9 +1,11 @@
 # HA Finance Intelligence
 
 A **local-first, Home Assistant-first personal finance app**. Import bank
-statements, categorise transactions, build a vendor/category library, track
-spending, and (later) scan receipts and use optional local/cloud AI — all
-privacy-first, with **strict local mode as the default**.
+statements, categorise transactions (rules + a vendor/category library), split
+them across categories, track projects, budgets and subscriptions, handle
+multiple currencies, and publish finance sensors to Home Assistant over MQTT —
+with receipts/OCR and optional local/cloud AI to come. All privacy-first, with
+**strict local mode as the default**.
 
 Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md)
 (the build-status section at the top tracks progress).
@@ -15,8 +17,36 @@ Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md
 | 0 | Project skeleton (FastAPI + SQLite + React + add-on) | ✅ |
 | 1 | CSV import (Curve/Barclays/Lloyds/Monzo/generic), dedup, transactions | ✅ |
 | 2 | Categories, vendors, auto-categorisation, dashboard | ✅ |
-| — | Data-safety pass: redaction, backup/restore, demo data, security hardening | ✅ |
-| 3+ | Rules, splits, projects, budgets, review queue, receipts, AI | planned ([spec §29](ha_finance_intelligence_spec.md)) |
+| 3 | Rules & learning (a correction can become a rule) | ✅ |
+| 4 | Split transactions (one charge across several categories) | ✅ |
+| 5 | Projects & tags | ✅ |
+| 6 | Budgets + alerts, and MQTT sensors published to Home Assistant | ✅ |
+| 7 | Recurring payments & subscriptions (auto-detected) | ✅ |
+| — | Data-safety: redaction, backup/restore, demo data, security hardening | ✅ |
+| — | Multi-currency + FX; encrypted backups + optional at-rest encryption | ✅ |
+| 8–12 | Review queue, receipts/OCR, local/cloud AI, PDF import, polish | planned ([spec §29](ha_finance_intelligence_spec.md)) |
+
+## What it does today
+
+- **Import** bank statements (Curve, Barclays, Lloyds, Monzo, or a generic CSV
+  mapper) with duplicate detection on re-upload.
+- **Categorise** automatically (priority order: manual > rule > vendor default >
+  keyword); correct one transaction and optionally turn it into a **rule**.
+- **Split** a transaction across several categories/projects; the dashboard uses
+  the split parts.
+- **Projects & tags** — collect spend toward a goal (renovation, holiday, car)
+  with per-project totals and breakdowns; flexible tags on transactions.
+- **Budgets** — per-category, per-project or total budgets over weekly →
+  yearly periods, with on-track / near-limit / over status.
+- **Subscriptions** — recurring payments detected automatically, with a monthly
+  cost total.
+- **Multi-currency** — original amount kept and converted to your base currency;
+  manual rates by default, opt-in online ECB rates (Frankfurter).
+- **Home Assistant sensors** — optional MQTT discovery publishes spend/income/net,
+  review count, per-budget progress, per-project totals and monthly subscriptions.
+- **Privacy & safety** — strict local by default, redaction, backup/restore,
+  encrypted backups, optional at-rest encryption, and tests that never touch live
+  data.
 
 ## Design principles
 
@@ -43,7 +73,10 @@ Home Assistant add-on (single container)
   ├── SQLite database (SQLAlchemy + Alembic)
   ├── CSV import + parser engine
   ├── category / vendor / rule engine
-  └── (later) MQTT publisher, OCR, AI gateway
+  ├── splits · projects/tags · budgets · subscription detection
+  ├── multi-currency (FX) · optional at-rest encryption (SQLCipher)
+  ├── MQTT publisher → Home Assistant sensors
+  └── (later) receipt OCR, AI gateway
 ```
 
 ## Repository layout
@@ -130,15 +163,20 @@ else. Duplicate rows (and re-uploaded files) are detected and skipped
 - **Security & isolation:** [docs/security.md](docs/security.md) — the database
   lives in the add-on's private `/data` volume; file permissions, AppArmor, and
   the honest limits of isolation inside Home Assistant.
-- **Backup/restore:** Settings page — download/restore the database and
-  export/import your config + library as JSON. Encrypted/cloud backup is on the
-  roadmap (backlog #15).
+- **Backup/restore & encryption:** Settings page — download/restore the
+  database, export/import your config + library as JSON, **encrypted backups**
+  (passphrase, AES-256-GCM), and optional **at-rest database encryption**
+  (SQLCipher; Linux / the add-on). Cloud backup *destinations* (G-Drive/S3/
+  Backblaze) are still on the roadmap (backlog #15).
 
 ## Home Assistant add-on
 
 The [`addon/`](addon/) folder contains everything to run this as a local add-on
-(ingress sidebar panel on port 8099, private `/data` storage). Add-on
-repository packaging and install docs land in Stage 12
+(ingress sidebar panel on port 8099, private `/data` storage). Enable **MQTT** in
+the add-on options to publish finance sensors (spend/income/net, review count,
+per-budget progress, per-project totals, monthly subscriptions) to Home Assistant
+via MQTT discovery — off by default, point it at your broker (e.g. the Mosquitto
+add-on). Add-on repository packaging and one-click install docs land in Stage 12
 ([spec §29](ha_finance_intelligence_spec.md)).
 
 ## Disclaimer
