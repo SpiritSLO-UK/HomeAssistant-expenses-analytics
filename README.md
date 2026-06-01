@@ -46,6 +46,9 @@ Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md
   with per-project totals and breakdowns; flexible tags on transactions.
 - **Budgets** — per-category, per-project or total budgets over weekly →
   yearly periods, with on-track / near-limit / over status.
+- **Savings** — track savings-account balances over time (manual snapshots, with
+  a growth sparkline) and set **goals** with progress bars; a goal can follow a
+  savings account's latest balance or be tracked by hand.
 - **Subscriptions** — recurring payments detected automatically, with a monthly
   cost total, plus **alerts** for renewals due soon and payments that look
   missed (also surfaced in the dashboard heads-up).

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
+import Sparkline from "../components/Sparkline";
 import {
   getCategoryBreakdown,
   getMe,
@@ -116,26 +117,6 @@ export default function Dashboard() {
         </div>
       )}
     </div>
-  );
-}
-
-function Sparkline({ values, color = "#6aa9ff" }: { values: number[]; color?: string }) {
-  const w = 132, h = 34, pad = 3;
-  if (values.length < 2) return <svg width={w} height={h} aria-hidden />;
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const span = max - min || 1;
-  const xy = (v: number, i: number): [number, number] => [
-    pad + (i / (values.length - 1)) * (w - 2 * pad),
-    h - pad - ((v - min) / span) * (h - 2 * pad),
-  ];
-  const pts = values.map((v, i) => xy(v, i).map((n) => n.toFixed(1)).join(",")).join(" ");
-  const [lx, ly] = xy(values[values.length - 1], values.length - 1);
-  return (
-    <svg width={w} height={h} aria-hidden style={{ display: "block" }}>
-      <polyline points={pts} fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round" />
-      <circle cx={lx} cy={ly} r={2.5} fill={color} />
-    </svg>
   );
 }
 

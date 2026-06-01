@@ -76,6 +76,7 @@ export async function fetchJson<T>(endpoint: string, init?: RequestInit): Promis
     const detail = typeof body?.detail === "string" ? body.detail : `${res.status} ${res.statusText}`;
     throw new ApiError(res.status, body, `API ${endpoint} failed: ${detail}`);
   }
+  if (res.status === 204) return undefined as T; // no content (e.g. DELETE)
   return (await res.json()) as T;
 }
 
@@ -921,6 +922,85 @@ export function getMonthlySeries(months = 6, month?: string): Promise<MonthlySer
 
 export function getOutliers(month?: string): Promise<OutliersResponse> {
   return fetchJson<OutliersResponse>(`api/dashboard/outliers${month ? `?month=${month}` : ""}`);
+}
+
+// --- Savings (spec §12.4; backlog #96, #91) ---
+
+export interface SavingsAccount {
+  id: number;
+  name: string;
+  institution: string | null;
+  currency: string;
+  latest_balance: string | null;
+  balance_count: number;
+}
+
+export interface SavingsBalance {
+  id: number;
+  account_id: number;
+  as_of_date: string;
+  balance: string;
+  currency: string;
+  note: string | null;
+}
+
+export interface SavingsGoal {
+  id: number;
+  name: string;
+  target_amount: string;
+  target_date: string | null;
+  account_id: number | null;
+  current_amount: string;
+  current: string;
+  remaining: string;
+  percent: number;
+  currency: string;
+  status: string;
+}
+
+export interface SavingsSummary {
+  currency: string;
+  total_savings: string;
+  accounts: SavingsAccount[];
+  goals: SavingsGoal[];
+}
+
+export function getSavingsSummary(): Promise<SavingsSummary> {
+  return fetchJson<SavingsSummary>("api/savings/summary");
+}
+
+export function createSavingsAccount(data: {
+  name: string;
+  institution?: string;
+  currency?: string;
+}): Promise<SavingsAccount> {
+  return fetchJson("api/savings/accounts", { method: "POST", body: JSON.stringify(data) });
+}
+
+export function getBalanceHistory(accountId: number): Promise<SavingsBalance[]> {
+  return fetchJson<SavingsBalance[]>(`api/savings/accounts/${accountId}/balances`);
+}
+
+export function recordBalance(
+  accountId: number,
+  data: { as_of_date: string; balance: string; note?: string },
+): Promise<SavingsBalance> {
+  return fetchJson(`api/savings/accounts/${accountId}/balances`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function createSavingsGoal(data: Record<string, unknown>): Promise<SavingsGoal> {
+  return fetchJson("api/savings/goals", { method: "POST", body: JSON.stringify(data) });
+}
+
+export function updateSavingsGoal(id: number, data: Record<string, unknown>): Promise<SavingsGoal> {
+  return fetchJson(`api/savings/goals/${id}`, { method: "PATCH", body: JSON.stringify(data) });
+}
+
+export function deleteSavingsGoal(id: number): Promise<void> {
+  return fetchJson(`api/savings/goals/${id}`, { method: "DELETE" });
 }
 
 // --- Backup / restore / demo (spec §26.5; backlog #9, #10, #16) ---
