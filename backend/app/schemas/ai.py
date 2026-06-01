@@ -45,6 +45,33 @@ class BatchResult(BaseModel):
     suggestions: list[BatchSuggestion]
 
 
+class CloudBatchItem(BaseModel):
+    ai_request_id: int
+    transaction_id: int
+    description: str  # redacted — exactly what would be sent
+    amount: str
+    currency: str
+    payload: dict  # the full redacted payload that would leave the device
+
+
+class CloudBatchPreview(BaseModel):
+    considered: int
+    count: int
+    items: list[CloudBatchItem]
+
+
+class CloudBatchSendRequest(BaseModel):
+    approve_ids: list[int]
+    reject_ids: list[int] = []
+
+
+class CloudBatchSendResult(BaseModel):
+    count: int
+    suggestions: list[BatchSuggestion]
+    failed: list[int]
+    rejected: int
+
+
 class ApplyItem(BaseModel):
     transaction_id: int
     category_id: int

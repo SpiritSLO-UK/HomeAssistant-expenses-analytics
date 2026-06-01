@@ -59,11 +59,13 @@ Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md
   low-confidence read, …) to resolve or ignore.
 - **AI assistant (opt-in)** — off by default; when enabled, suggests a category
   for a transaction via any OpenAI-compatible LLM (local Ollama/LM Studio or
-  cloud). It only *suggests* — you confirm. With a local LLM you can also
-  **batch-categorise** uncategorised transactions and bulk-approve the
-  suggestions. Cloud payloads are minimised and redacted; in cloud-manual mode
-  you preview and approve (or reject) each request; categories you mark
-  *never-cloud* are never sent; and every call is audited.
+  cloud). It only *suggests* — you confirm. You can **batch-categorise**
+  uncategorised transactions either with a **local LLM** (on-device; scan →
+  bulk-approve) or with **cloud AI** (review the exact redacted payloads that
+  would be sent → approve the whole list at once → review the returned
+  suggestions → apply). Cloud payloads are minimised and redacted; in
+  cloud-manual mode you preview and approve (or reject) each request; categories
+  you mark *never-cloud* are never sent; and every call is audited.
 - **Multi-currency** — original amount kept and converted to your base currency;
   manual rates by default, opt-in online ECB rates (Frankfurter).
 - **Multi-user & roles** — identity comes from Home Assistant (the first person

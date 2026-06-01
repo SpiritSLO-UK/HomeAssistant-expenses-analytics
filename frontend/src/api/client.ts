@@ -752,6 +752,47 @@ export function applyAiCategories(
   return fetchJson("api/ai/apply", { method: "POST", body: JSON.stringify({ items }) });
 }
 
+// --- Cloud batch AI (backlog #154) ---
+// Two stages: prepare (preview the redacted payloads that would be sent, nothing
+// leaves the device) → send (approve the whole list at once, then review the
+// returned suggestions and apply with applyAiCategories).
+
+export interface CloudBatchItem {
+  ai_request_id: number;
+  transaction_id: number;
+  description: string; // redacted — exactly what would be sent
+  amount: string;
+  currency: string;
+  payload: Record<string, unknown>;
+}
+
+export interface CloudBatchPreview {
+  considered: number;
+  count: number;
+  items: CloudBatchItem[];
+}
+
+export interface CloudBatchSendResult {
+  count: number;
+  suggestions: BatchSuggestion[];
+  failed: number[];
+  rejected: number;
+}
+
+export function cloudBatchPrepare(limit = 25): Promise<CloudBatchPreview> {
+  return fetchJson<CloudBatchPreview>(`api/ai/cloud-batch/prepare?limit=${limit}`, { method: "POST" });
+}
+
+export function cloudBatchSend(
+  approveIds: number[],
+  rejectIds: number[] = [],
+): Promise<CloudBatchSendResult> {
+  return fetchJson<CloudBatchSendResult>("api/ai/cloud-batch/send", {
+    method: "POST",
+    body: JSON.stringify({ approve_ids: approveIds, reject_ids: rejectIds }),
+  });
+}
+
 // --- Categories (spec §24.5) ---
 
 export interface Category {

@@ -189,6 +189,22 @@ transaction whose category is `never_cloud` (§28). The AI audit log is visible 
 the Settings AI card. Only `classify_transaction` is implemented;
 enrich_vendor/parse_receipt/match_receipt are deferred.
 
+**Cloud batch (Stage 12 / §22.3, §22.5; #154):** the cloud sibling of the local
+batch — review the whole list, then approve in one go. Two service stages (fake
+provider injected in tests, no network):
+- `cloud_batch_prepare(limit)` — requires a cloud mode; for each uncategorised
+  transaction it builds the **redacted** payload and records a *pending*
+  `AIRequest` (no per-item review-queue entries — the batch panel is the approval
+  surface), then returns the redacted previews. **Nothing is sent.**
+- `cloud_batch_send(approve_ids, reject_ids)` — sends the approved pending
+  requests via the provider (reusing `_run`), marks the rest rejected, and returns
+  suggestions (same shape as the local batch). Apply via `POST /api/ai/apply`.
+- API: `POST /api/ai/cloud-batch/{prepare,send}`. UI: `CloudAiBatchPanel`
+  (Transactions, shown when `is_cloud`) — stage 1 lists the redacted payloads with
+  a "view payload" toggle + per-row include checkbox; stage 2 shows suggestions
+  pre-ticked by a confidence threshold → Apply. `_uncategorised_for_batch` is the
+  shared query used by both batches.
+
 ## PDF statement import (Stage 11 / §11)
 
 `parsers/generic_pdf.py` adds a PDF path to the existing parser interface.

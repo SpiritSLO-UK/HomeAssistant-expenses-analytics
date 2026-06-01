@@ -14,6 +14,9 @@ from app.schemas.ai import (
     ApplyResult,
     BatchResult,
     ClassifyResult,
+    CloudBatchPreview,
+    CloudBatchSendRequest,
+    CloudBatchSendResult,
 )
 from app.services import ai_service
 from app.services.ai_provider import AIError
@@ -91,3 +94,29 @@ def apply(payload: ApplyRequest, db: Session = Depends(get_db)) -> dict:
     """Apply user-approved AI category suggestions (treated as manual choices)."""
     items = [{"transaction_id": i.transaction_id, "category_id": i.category_id} for i in payload.items]
     return {"applied": ai_service.apply_suggestions(db, items)}
+
+
+@router.post("/cloud-batch/prepare", response_model=CloudBatchPreview)
+def cloud_batch_prepare(limit: int = Query(default=25, ge=1, le=100), db: Session = Depends(get_db)) -> dict:
+    """Stage 1 of a cloud batch (spec §22.3, §22.5): preview the redacted payloads
+    that *would* be sent for uncategorised transactions. Nothing is sent yet."""
+    try:
+        return ai_service.cloud_batch_prepare(db, limit=limit)
+    except AIDisabled as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except AIError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.post("/cloud-batch/send", response_model=CloudBatchSendResult)
+def cloud_batch_send(payload: CloudBatchSendRequest, db: Session = Depends(get_db)) -> dict:
+    """Stage 2 of a cloud batch: send the approved redacted requests, reject the
+    rest, and return suggestions to review (apply via /api/ai/apply)."""
+    try:
+        return ai_service.cloud_batch_send(
+            db, approve_ids=payload.approve_ids, reject_ids=payload.reject_ids
+        )
+    except AIDisabled as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except AIError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
