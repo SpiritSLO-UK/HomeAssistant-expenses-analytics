@@ -43,12 +43,18 @@ def update_settings(payload: SettingsUpdate, db: Session = Depends(get_db)) -> d
 
     if payload.privacy_mode is not None:
         if payload.privacy_mode not in settings_service.PRIVACY_MODES:
-            raise HTTPException(status_code=400, detail=f"privacy_mode must be one of {sorted(settings_service.PRIVACY_MODES)}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"privacy_mode must be one of {sorted(settings_service.PRIVACY_MODES)}",
+            )
         settings_service.set_value(db, settings_service.PRIVACY_MODE, payload.privacy_mode)
 
     if payload.ai_provider is not None:
         if payload.ai_provider not in settings_service.AI_PROVIDERS:
-            raise HTTPException(status_code=400, detail=f"ai_provider must be one of {sorted(settings_service.AI_PROVIDERS)}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"ai_provider must be one of {sorted(settings_service.AI_PROVIDERS)}",
+            )
         settings_service.set_value(db, settings_service.AI_PROVIDER, payload.ai_provider)
 
     if payload.ai_base_url is not None:

@@ -8,7 +8,7 @@ category to a transaction.
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from difflib import SequenceMatcher
 
 from sqlalchemy import func, select
@@ -77,7 +77,7 @@ def normalise_transaction(db: Session, txn: Transaction) -> bool:
     # Don't overwrite a vendor already set explicitly (e.g. by a rule).
     if txn.merchant_id is None:
         txn.merchant_id = vendor.id
-    vendor.last_seen_at = datetime.now(timezone.utc)
+    vendor.last_seen_at = datetime.now(UTC)
     if txn.category_id is None and vendor.default_category_id is not None:
         txn.category_id = vendor.default_category_id
         txn.confidence_score = _MATCH_CONFIDENCE.get(match_type or "contains", 0.90)

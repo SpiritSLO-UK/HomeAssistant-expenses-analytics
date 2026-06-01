@@ -30,7 +30,7 @@ class Vendor(Base, TimestampMixin):
     created_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    aliases: Mapped[list["VendorAlias"]] = relationship(
+    aliases: Mapped[list[VendorAlias]] = relationship(
         back_populates="vendor", cascade="all, delete-orphan"
     )
 
@@ -49,4 +49,4 @@ class VendorAlias(Base, TimestampMixin):
     source: Mapped[str | None] = mapped_column(String(32), nullable=True)
     confidence_score: Mapped[float | None] = mapped_column(Float, nullable=True)
 
-    vendor: Mapped["Vendor"] = relationship(back_populates="aliases")
+    vendor: Mapped[Vendor] = relationship(back_populates="aliases")

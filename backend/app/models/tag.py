@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from sqlalchemy import Column, ForeignKey, String, Table
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin
-from sqlalchemy.orm import Mapped, mapped_column
 
 # Many-to-many association between transactions and tags.
 transaction_tags = Table(

@@ -16,7 +16,7 @@ Privacy gating (spec §7, §22):
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -118,12 +118,12 @@ def _run(db: Session, req: AIRequest, provider: AIProvider, payload: dict, cats:
     except AIError as exc:
         req.status = "failed"
         req.error_message = str(exc)
-        req.completed_at = datetime.now(timezone.utc)
+        req.completed_at = datetime.now(UTC)
         raise
     req.status = "completed"
     req.response_payload = json.dumps(result)
     req.confidence_score = result.get("confidence")
-    req.completed_at = datetime.now(timezone.utc)
+    req.completed_at = datetime.now(UTC)
     return _suggest(req, result, cats)
 
 
@@ -207,7 +207,7 @@ def reject_request(db: Session, ai_request: AIRequest) -> AIRequest:
     """Reject a pending cloud request — nothing is sent (spec §22.5)."""
     ai_request.status = "rejected"
     ai_request.approval_status = "rejected"
-    ai_request.completed_at = datetime.now(timezone.utc)
+    ai_request.completed_at = datetime.now(UTC)
     review_service.resolve_for(db, item_type="ai_request", item_id=ai_request.id,
                                reason="cloud_ai_approval_required")
     db.commit()

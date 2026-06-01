@@ -7,7 +7,6 @@ import pytest
 from app.services import crypto_service
 from app.services.crypto_service import DecryptError
 
-
 # --- crypto unit ---
 
 def test_encrypt_decrypt_roundtrip():

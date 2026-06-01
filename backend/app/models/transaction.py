@@ -74,10 +74,10 @@ class Transaction(Base, TimestampMixin):
     fx_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
     needs_rate: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
-    splits: Mapped[list["TransactionSplit"]] = relationship(
+    splits: Mapped[list[TransactionSplit]] = relationship(
         back_populates="transaction", cascade="all, delete-orphan"
     )
-    tags: Mapped[list["Tag"]] = relationship(secondary=transaction_tags)
+    tags: Mapped[list[Tag]] = relationship(secondary=transaction_tags)
 
 
 class TransactionSplit(Base, TimestampMixin):
@@ -97,7 +97,7 @@ class TransactionSplit(Base, TimestampMixin):
     description: Mapped[str | None] = mapped_column(String(300), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    transaction: Mapped["Transaction"] = relationship(back_populates="splits")
+    transaction: Mapped[Transaction] = relationship(back_populates="splits")
 
 
 # Imported here so ``relationship("Tag", ...)`` resolves when models load.

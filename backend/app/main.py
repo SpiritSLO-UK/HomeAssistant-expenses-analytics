@@ -15,15 +15,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+# Import models so every table is registered on Base.metadata.
+import app.models  # noqa: F401
 from app import __version__
 from app.api.router import api_router
 from app.config import settings
 from app.db import session as dbsession
 from app.db.base import Base
 from app.logging import configure_logging, get_logger
-
-# Import models so every table is registered on Base.metadata.
-import app.models  # noqa: F401
 
 configure_logging(settings.log_level)
 logger = get_logger("app.main")
@@ -51,8 +50,8 @@ async def lifespan(_app: FastAPI):
         # is an idempotent safety net so a fresh add-on starts.
         Base.metadata.create_all(bind=dbsession.get_engine())
         # Seed the default category library on first run (spec §15.4, §33).
-        from app.services.category_service import ensure_default_categories
         from app.services import mqtt_service
+        from app.services.category_service import ensure_default_categories
 
         with dbsession.SessionLocal() as db:
             ensure_default_categories(db)

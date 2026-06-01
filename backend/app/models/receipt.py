@@ -41,7 +41,7 @@ class Receipt(Base, TimestampMixin):
     ocr_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     needs_review: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
-    items: Mapped[list["ReceiptItem"]] = relationship(
+    items: Mapped[list[ReceiptItem]] = relationship(
         back_populates="receipt", cascade="all, delete-orphan"
     )
 
@@ -65,7 +65,7 @@ class ReceiptItem(Base, TimestampMixin):
     )
     confidence_score: Mapped[float | None] = mapped_column(Float, nullable=True)
 
-    receipt: Mapped["Receipt"] = relationship(back_populates="items")
+    receipt: Mapped[Receipt] = relationship(back_populates="items")
 
 
 class TransactionReceiptMatch(Base, TimestampMixin):

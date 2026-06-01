@@ -60,6 +60,10 @@ HA integration holds no business logic (spec §9.4).
 - `sqlite3.connect(...)` in a `with` block commits but does **not close** — close explicitly or the file stays locked on Windows (bit us in backup snapshot).
 - Hit the running server at `http://127.0.0.1:8099`, not `localhost` (IPv6 `::1` vs IPv4 bind).
 - Run everything via `scripts/test.sh` (pytest + tsc) and `scripts/dev.sh`.
+- **CI** (`.github/workflows/ci.yml`): ruff + backend pytest + frontend build on
+  every push/PR; Linux CI installs all extras so encryption/MQTT/OCR/PDF run for
+  real. Ruff config in `backend/pyproject.toml` (line-length 120; FastAPI
+  injectors whitelisted for B008; E501 ignored in tests).
 
 ## Build status (summary)
 

@@ -8,7 +8,7 @@ Review Queue page. The dashboard's review count comes from the open items here.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -65,7 +65,7 @@ def resolve_for(db: Session, *, item_type: str, item_id: int, reason: str | None
     items = db.scalars(select(ReviewItem).where(*conds)).all()
     for item in items:
         item.status = "resolved"
-        item.resolved_at = datetime.now(timezone.utc)
+        item.resolved_at = datetime.now(UTC)
     return len(items)
 
 
@@ -78,7 +78,7 @@ def list_items(db: Session, status: str | None = "open") -> list[ReviewItem]:
 
 def set_status(db: Session, item: ReviewItem, status: str) -> ReviewItem:
     item.status = status
-    item.resolved_at = datetime.now(timezone.utc) if status != "open" else None
+    item.resolved_at = datetime.now(UTC) if status != "open" else None
     db.commit()
     db.refresh(item)
     return item

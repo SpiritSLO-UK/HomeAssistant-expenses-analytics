@@ -13,7 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import select
@@ -256,7 +256,7 @@ def confirm_import(db: Session, import_id: int) -> dict:
     statement.status = "imported"
     statement.transaction_count = new_count
     statement.duplicate_count = dup_count
-    statement.imported_at = datetime.now(timezone.utc)
+    statement.imported_at = datetime.now(UTC)
     if parsed:
         dates = [t.transaction_date for t in parsed]
         statement.period_start = min(dates)

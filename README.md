@@ -1,5 +1,7 @@
 # HA Finance Intelligence
 
+[![CI](https://github.com/SpiritSLO-UK/HomeAssistant-expenses-analytics/actions/workflows/ci.yml/badge.svg)](https://github.com/SpiritSLO-UK/HomeAssistant-expenses-analytics/actions/workflows/ci.yml)
+
 A **local-first, Home Assistant-first personal finance app**. Import bank
 statements, categorise transactions (rules + a vendor/category library), split
 them across categories, track projects, budgets and subscriptions, scan receipts
@@ -166,6 +168,11 @@ cd backend && .venv/bin/python -m pytest # backend only
 Tests run against a throwaway temporary database and **refuse to start against
 a real one** — they can never read or modify your finance data
 ([docs/privacy.md](docs/privacy.md), backlog #30).
+
+**CI:** [GitHub Actions](.github/workflows/ci.yml) runs `ruff` + the backend
+tests and the frontend type-check/build on every push and pull request. On Linux
+CI installs all optional extras, so the at-rest encryption, MQTT, OCR and PDF
+paths are exercised for real.
 
 ## Importing your own statements
 

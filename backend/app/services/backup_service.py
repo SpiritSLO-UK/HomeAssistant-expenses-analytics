@@ -12,7 +12,6 @@ a decision on master-key management. See docs/security.md.
 
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import sqlite3

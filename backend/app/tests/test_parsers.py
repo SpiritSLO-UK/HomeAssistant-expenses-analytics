@@ -8,13 +8,12 @@ from decimal import Decimal
 import pytest
 
 from app.parsers import detect_parser, get_parser
-from app.parsers.base import parse_amount, parse_date
 from app.parsers.barclays_csv import BarclaysCsvParser
+from app.parsers.base import parse_amount, parse_date
 from app.parsers.curve_csv import CurveCsvParser
 from app.parsers.generic_csv import GenericCsvParser
 from app.parsers.lloyds_csv import LloydsCsvParser
 from app.parsers.monzo_csv import MonzoCsvParser
-
 
 # --- helpers ---
 
