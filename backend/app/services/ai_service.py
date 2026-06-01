@@ -229,17 +229,7 @@ def classify_batch(db: Session, *, limit: int = 25, provider=None) -> dict:
     if not provider.available():
         raise AIDisabled("No AI provider configured")
 
-    txns = db.scalars(
-        select(Transaction)
-        .where(
-            Transaction.category_id.is_(None),
-            Transaction.is_transfer.is_(False),
-            Transaction.is_duplicate.is_(False),
-            Transaction.is_split.is_(False),
-        )
-        .order_by(Transaction.transaction_date.desc())
-        .limit(limit)
-    ).all()
+    txns = _uncategorised_for_batch(db, limit)
 
     suggestions = []
     for txn in txns:
@@ -260,6 +250,129 @@ def classify_batch(db: Session, *, limit: int = 25, provider=None) -> dict:
                 }
             )
     return {"considered": len(txns), "count": len(suggestions), "suggestions": suggestions}
+
+
+def _uncategorised_for_batch(db: Session, limit: int) -> list[Transaction]:
+    return list(
+        db.scalars(
+            select(Transaction)
+            .where(
+                Transaction.category_id.is_(None),
+                Transaction.is_transfer.is_(False),
+                Transaction.is_duplicate.is_(False),
+                Transaction.is_split.is_(False),
+            )
+            .order_by(Transaction.transaction_date.desc())
+            .limit(limit)
+        ).all()
+    )
+
+
+def cloud_batch_prepare(db: Session, *, limit: int = 25, provider=None) -> dict:
+    """Stage 1 of a cloud batch (spec §22.3, §22.5; backlog #154).
+
+    Builds the **redacted** payload that *would* be sent for each uncategorised
+    transaction and records a pending :class:`AIRequest` per item — but sends
+    nothing. The user reviews the whole list (what leaves the device) and approves
+    in one go via :func:`cloud_batch_send`. This is the batch sibling of the
+    per-call ``cloud_manual`` approval flow; no per-item review-queue entries are
+    created (the batch panel itself is the approval surface).
+    """
+    mode = settings_service.get_privacy_mode(db)
+    if mode not in CLOUD_MODES:
+        raise AIDisabled("Cloud batch needs a cloud privacy mode (cloud_manual / cloud_auto).")
+    provider = provider or get_provider(db)
+    if not provider.available():
+        raise AIDisabled("No AI provider configured")
+
+    cat_names = [c.name for c in _candidate_categories(db)]
+    txns = _uncategorised_for_batch(db, limit)
+    items = []
+    for txn in txns:
+        payload = {
+            "description": txn.description_raw,
+            "amount": str(txn.amount),
+            "currency": txn.currency,
+            "candidate_categories": cat_names,
+        }
+        to_send = redaction.redact_for_cloud(payload)
+        req = _audit(db, provider, mode, approval_status="pending", payload=to_send,
+                     status="pending", transaction_id=txn.id)
+        items.append({
+            "ai_request_id": req.id,
+            "transaction_id": txn.id,
+            "description": to_send.get("description", ""),
+            "amount": str(txn.amount),
+            "currency": txn.currency,
+            "payload": to_send,
+        })
+    db.commit()
+    return {"considered": len(txns), "count": len(items), "items": items}
+
+
+def _batch_suggestion(db: Session, req: AIRequest, payload: dict, res: dict) -> dict:
+    txn = db.get(Transaction, req.transaction_id) if req.transaction_id else None
+    return {
+        "transaction_id": req.transaction_id,
+        "description": txn.description_raw if txn else payload.get("description", ""),
+        "amount": str(txn.amount) if txn else payload.get("amount", ""),
+        "category_id": res["category_id"],
+        "category_name": res["category_name"],
+        "confidence": res.get("confidence"),
+        "rationale": res.get("rationale"),
+    }
+
+
+def _send_one_approved(
+    db: Session, rid: int, provider: AIProvider, cats: list[Category],
+    suggestions: list[dict], failed: list[int],
+) -> None:
+    """Send a single approved pending request; record its suggestion or failure."""
+    req = db.get(AIRequest, rid)
+    if req is None or req.status != "pending":
+        return  # already sent/rejected, or unknown — skip defensively
+    req.approval_status = "approved"
+    payload = json.loads(req.redacted_payload or "{}")
+    try:
+        res = _run(db, req, provider, payload, cats)
+    except AIError:
+        failed.append(rid)
+        return
+    if res.get("category_id"):
+        suggestions.append(_batch_suggestion(db, req, payload, res))
+
+
+def _reject_pending(db: Session, rid: int) -> bool:
+    req = db.get(AIRequest, rid)
+    if req is not None and req.status == "pending":
+        req.status = "rejected"
+        req.approval_status = "rejected"
+        req.completed_at = datetime.now(UTC)
+        return True
+    return False
+
+
+def cloud_batch_send(
+    db: Session, *, approve_ids: list[int], reject_ids: list[int] | None = None, provider=None
+) -> dict:
+    """Stage 2 of a cloud batch: send the **approved** pending requests to the
+    cloud provider (redacted payload already stored + audited), reject the rest,
+    and return suggestions to review. Still applies nothing — the user ticks and
+    applies via :func:`apply_suggestions`."""
+    provider = provider or get_provider(db)
+    if not provider.available():
+        raise AIDisabled("No AI provider configured")
+    cats = _candidate_categories(db)
+
+    suggestions: list[dict] = []
+    failed: list[int] = []
+    for rid in approve_ids:
+        _send_one_approved(db, rid, provider, cats, suggestions, failed)
+
+    rejected = sum(_reject_pending(db, rid) for rid in reject_ids or [])
+
+    db.commit()
+    return {"count": len(suggestions), "suggestions": suggestions, "failed": failed, "rejected": rejected}
 
 
 def apply_suggestions(db: Session, items: list[dict]) -> int:

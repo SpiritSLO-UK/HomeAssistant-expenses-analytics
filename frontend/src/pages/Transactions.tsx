@@ -18,6 +18,7 @@ import {
 } from "../api/client";
 import SplitEditor from "../components/SplitEditor";
 import AiBatchPanel from "../components/AiBatchPanel";
+import CloudAiBatchPanel from "../components/CloudAiBatchPanel";
 
 const PAGE_SIZE = 50;
 
@@ -30,6 +31,7 @@ export default function Transactions() {
   const [page, setPage] = useState(0);
   const [splitId, setSplitId] = useState<number | null>(null);
   const [showAiBatch, setShowAiBatch] = useState(false);
+  const [showCloudBatch, setShowCloudBatch] = useState(false);
 
   const filters: TransactionFilters = {
     search: search || undefined,
@@ -145,6 +147,11 @@ export default function Transactions() {
               {showAiBatch ? "Hide AI categorise" : "✨ AI categorise…"}
             </button>
           )}
+          {aiStatus.data?.enabled && aiStatus.data?.is_cloud && (
+            <button className="btn btn--ghost" onClick={() => setShowCloudBatch((v) => !v)}>
+              {showCloudBatch ? "Hide cloud AI" : "☁️ AI categorise (cloud)…"}
+            </button>
+          )}
           <button className="btn btn--ghost" disabled={recat.isPending} onClick={() => recat.mutate()}>
             {recat.isPending ? "Re-categorising…" : "Re-categorise uncategorised"}
           </button>
@@ -163,6 +170,7 @@ export default function Transactions() {
       )}
 
       {showAiBatch && <AiBatchPanel base={base} onClose={() => setShowAiBatch(false)} />}
+      {showCloudBatch && <CloudAiBatchPanel base={base} onClose={() => setShowCloudBatch(false)} />}
 
       <div className="card">
         <div className="filters">
