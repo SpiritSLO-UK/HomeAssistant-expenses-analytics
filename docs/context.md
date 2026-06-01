@@ -367,6 +367,28 @@ now exists, optional).
 
 The security/multi-user cluster (S1–S4) is **complete**.
 
+## Trends & outliers (Stage 12 — spec §24.12, §37; #146, #150)
+
+`analytics_service` (read-only, base-currency, dashboard-consistent — transfers/
+duplicates excluded, split-aware category figures):
+
+- **`monthly_series(ref, months)`** → `GET /api/dashboard/monthly?months=N` (N
+  clamped 2–24): spend/income/net per month (oldest→newest) + a `trend` summary
+  comparing the latest month to the previous one (`delta`, `pct`, `direction`
+  up/down/flat). Drives the dashboard sparklines + arrows.
+- **`outliers(ref)`** → `GET /api/dashboard/outliers`: a "heads-up" list from four
+  detectors — **large charges** (≥3× the median charge over a 6-month lookback,
+  needs ≥8 charges to set a baseline), **category spikes** (this month >1.5× and
+  ≥£30 over the prior-3-month average, needs ≥2 months of history), **new
+  merchants** (not seen in the prior 3 months, ≥£20, skipped when there's no
+  history), and **budget alerts** (reuses `budget_service.summary` warn/over).
+  Each item is `{type, severity, title, detail, amount, …ids}`. **Conservative by
+  design + gated on history** so a fresh import doesn't light up with false
+  positives (see `test_no_false_positives_without_history`).
+- **UI:** a "Trends" card (3 inline-SVG sparklines, no chart dep) and a non-nagging
+  "Heads-up" card on the Dashboard that only renders when there's something to
+  flag. No new tables/migration — pure analytics over existing data.
+
 ## Open questions / to scope
 
 - **#78 Data retention/expiry** — purge vs archive? which data (transactions,

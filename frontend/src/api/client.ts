@@ -855,6 +855,56 @@ export function getVendorBreakdown(month?: string): Promise<VendorBreakdownItem[
   return fetchJson<VendorBreakdownItem[]>(`api/dashboard/vendors${month ? `?month=${month}` : ""}`);
 }
 
+// --- Trends & outliers (backlog #146, #150) ---
+
+export interface MonthlyPoint {
+  month: string; // YYYY-MM
+  spend: string;
+  income: string;
+  net: string;
+}
+
+export interface TrendMetric {
+  current: string;
+  previous: string;
+  delta: string;
+  pct: number | null;
+  direction: "up" | "down" | "flat";
+}
+
+export interface MonthlySeries {
+  currency: string;
+  months: MonthlyPoint[];
+  trend: Record<string, TrendMetric>;
+}
+
+export interface OutlierItem {
+  type: "large_charge" | "category_spike" | "new_merchant" | "budget";
+  severity: "warn" | "info";
+  title: string;
+  detail: string;
+  amount: string | null;
+  transaction_id: number | null;
+  category_id: number | null;
+  budget_id: number | null;
+}
+
+export interface OutliersResponse {
+  month: string;
+  currency: string;
+  items: OutlierItem[];
+}
+
+export function getMonthlySeries(months = 6, month?: string): Promise<MonthlySeries> {
+  const q = new URLSearchParams({ months: String(months) });
+  if (month) q.set("month", month);
+  return fetchJson<MonthlySeries>(`api/dashboard/monthly?${q.toString()}`);
+}
+
+export function getOutliers(month?: string): Promise<OutliersResponse> {
+  return fetchJson<OutliersResponse>(`api/dashboard/outliers${month ? `?month=${month}` : ""}`);
+}
+
 // --- Backup / restore / demo (spec §26.5; backlog #9, #10, #16) ---
 
 export function loadDemoData(): Promise<{ rows_detected: number; new: number; duplicates: number }> {

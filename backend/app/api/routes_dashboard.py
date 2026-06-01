@@ -11,11 +11,18 @@ from app.db.session import get_db
 from app.schemas.dashboard import (
     CategoryBreakdownItem,
     DashboardSummary,
+    MonthlySeries,
+    OutliersResponse,
     VendorBreakdownItem,
 )
 from app.schemas.projects import ProjectTotal
 from app.schemas.subscriptions import DashboardSubscriptions
-from app.services import dashboard_service, project_service, subscription_service
+from app.services import (
+    analytics_service,
+    dashboard_service,
+    project_service,
+    subscription_service,
+)
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -50,3 +57,19 @@ def projects(db: Session = Depends(get_db)) -> list[dict]:
 def subscriptions(db: Session = Depends(get_db)) -> dict:
     """Active subscriptions + monthly-equivalent total (spec §25.1)."""
     return subscription_service.dashboard_summary(db)
+
+
+@router.get("/monthly", response_model=MonthlySeries)
+def monthly(
+    months: int = 6, month: date | None = None, db: Session = Depends(get_db)
+) -> dict:
+    """Spend/income/net time-series for the last N months + a trend summary
+    (backlog #146). ``months`` is clamped to a sane 2–24."""
+    return analytics_service.monthly_series(db, _ref(month), months=max(2, min(months, 24)))
+
+
+@router.get("/outliers", response_model=OutliersResponse)
+def outliers(month: date | None = None, db: Session = Depends(get_db)) -> dict:
+    """Heads-up list: large charges, category spikes, new merchants, budget
+    alerts (backlog #150). Conservative + gated on having enough history."""
+    return analytics_service.outliers(db, _ref(month))
