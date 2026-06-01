@@ -44,18 +44,60 @@ you prefer that visibility over isolation, set `database_path` back to
 5. **Ingress auth.** The UI is served through Home Assistant ingress, so HA
    handles authentication — the app is not exposed on a public port.
 
+## Access control, MFA & multi-user (Stage 12)
+
+Identity is supplied by **Home Assistant ingress**, which sets
+`X-Remote-User-Id` / `-Name` / `-Display-Name` on every request after HA has
+authenticated the user. The app maps that to a `User` row. With no header
+(standalone/dev) it falls back to a single local owner, so single-user installs
+behave exactly as before.
+
+- **Roles (RBAC).** `owner` (administrator), `member` (read/write), `viewer` and
+  `child` (read-only). A user's role is **always read from their stored row** —
+  never from the request — so a client can't assert a role by sending a header.
+  A single `_auth_guard` middleware enforces: pending/disabled → 403, read-only
+  roles → only safe (GET) methods, and user-management endpoints additionally
+  require the `owner` role.
+- **New-user approval.** The first user ever seen becomes the owner; everyone
+  after appears **pending** with no data access until the owner approves them.
+- **Last-owner guard.** The household's last active owner can't be demoted,
+  disabled or deleted (you can never lock yourself out of administration).
+- **Optional MFA (TOTP).** Per user, off by default. When on, a 6-digit code is
+  required to open the app (a per-device session token, SHA-256-hashed in the DB,
+  12-hour TTL) and a **fresh** code is required to confirm admin actions
+  (step-up, 10-minute window). The MFA secret/sessions live inside the database,
+  so the at-rest unlock (below) necessarily runs **first** and without MFA — the
+  order is always *passphrase → then code*, never a deadlock.
+- **Failed-unlock visibility.** Because the DB is sealed during an unlock attempt,
+  failures are recorded to a small file beside it and surfaced on the unlock
+  screen and in the security-health panel.
+- **Security-health panel.** An owner-only, non-nagging panel lists protections
+  that are off (no at-rest encryption, no MFA, repeated failed unlocks, …) with a
+  one-line fix; each item can be dismissed or snoozed.
+
+> **Trust boundary — important.** Identity is only as trustworthy as the proxy in
+> front of the app. The `X-Remote-User-*` headers are set by Home Assistant
+> ingress and a browser cannot override them. **Do not expose the add-on's port
+> directly** — the add-on is ingress-only by default (`host_network: false`, no
+> port mapped). If you bypass ingress and reach the app directly, a client could
+> forge those headers and impersonate any user. Keep it behind ingress.
+
 ## What this does NOT protect against (be honest)
 
 - **Anyone with host / root access** to the machine running Home Assistant can
   read the file. Container isolation is not a defense against the host admin.
 - **Home Assistant full backups** contain the database. Protect your backups
   (and any off-site copies) accordingly.
-- **Unencrypted at rest.** The database is currently plain SQLite. True
-  protection against someone reading the raw file (e.g. a stolen disk or an
-  untrusted backup destination) requires **encryption at rest** with a
-  master key — that is backlog item #15 and is deferred pending a decision on
-  key management (where the key lives, how it's entered on restart). When added,
-  it will pair with the encrypted/cloud backup feature.
+- **At rest, if you leave encryption off.** By default the database is plain
+  SQLite, so anyone who can read the raw file (stolen disk, an untrusted backup
+  destination) can read your data. **Optional at-rest encryption** (SQLCipher) is
+  now available — Settings → "Database encryption" — and closes this gap when
+  enabled; it's optional because the driver has no Windows wheel (it ships in the
+  Linux add-on image). Lost passphrase = unrecoverable.
+- **Forged identity if you bypass ingress.** Identity comes from the HA ingress
+  proxy headers. If you expose the add-on's raw port instead of going through
+  ingress, a client could forge those headers and impersonate a user. Keep the
+  add-on ingress-only (the default). See "Trust boundary" above.
 
 ## Testing never touches live data
 

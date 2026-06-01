@@ -72,11 +72,11 @@ learning, split transactions, projects & tags, budgets + MQTT sensors,
 recurring/subscriptions, review queue, receipts + OCR, local AI, cloud AI
 approval, PDF statement import), plus a data-safety pass (redaction,
 backup/restore, demo data, add-on isolation) and multi-currency. That's the full
-spec §29 roadmap. **Stage 12 polish** is now underway — security/multi-user
-cluster: **S1** (multi-user identity + RBAC + new-user approval), **S2** (optional
-TOTP MFA + admin step-up), and **S3** (security-health panel + failed-unlock
-alerts) done; see "Multi-user & access control" below. Full detail in spec §0 and
-git history.
+spec §29 roadmap. **Stage 12 polish** is underway — the **security/multi-user
+cluster (S1–S4) is complete**: S1 multi-user identity + RBAC + approval, S2
+optional TOTP MFA + admin step-up, S3 security-health panel + failed-unlock
+alerts, S4 hardening pass + docs. See "Multi-user & access control" below. Full
+detail in spec §0 and git history.
 
 > Stage-numbering note: the spec §29 order is Stage 7 = review queue, Stage 8 =
 > receipts. We built recurring/subscriptions (§20, not a numbered §29 stage)
@@ -352,8 +352,20 @@ digits, 30s).
   linking to Settings, and the failed-attempt note on the unlock gate. No
   migration (uses the settings table + the JSON file).
 
-- **Still to come in this cluster:** hardening pass (S4 / #74) —
-  privilege-escalation tests, never-trust-client-role review, doc/spec pass.
+### Hardening pass (Stage 12-S4 — #74)
+
+Adversarial test suite (`tests/test_security_hardening.py`) pinning the negative
+cases: a member can't manage users or self-promote; **forged identity headers**
+(`X-Remote-User-Role`, etc.) confer nothing — a new identity is only ever pending,
+and the role is read from the stored row; MFA **session tokens are bound to their
+user and expiry** (a foreign/forged/expired token is rejected); invalid
+role/status values are 400; disabled accounts and the read-only `child` role are
+enforced. Documented the **trust boundary** in docs/security.md: identity is only
+as good as the ingress proxy, so the add-on stays ingress-only — don't expose the
+raw port. Also refreshed the stale "unencrypted at rest" note (at-rest encryption
+now exists, optional).
+
+The security/multi-user cluster (S1–S4) is **complete**.
 
 ## Open questions / to scope
 
