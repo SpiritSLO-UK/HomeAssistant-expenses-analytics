@@ -717,8 +717,9 @@ export async function rejectAiRequest(requestId: number): Promise<void> {
   if (!res.ok) throw new Error(`Reject failed: ${res.status}`);
 }
 
-export function listAiRequests(): Promise<AIRequestRow[]> {
-  return fetchJson<AIRequestRow[]>("api/ai/requests");
+export function listAiRequests(opts?: { includeArchived?: boolean }): Promise<AIRequestRow[]> {
+  const qs = opts?.includeArchived ? "?include_archived=true" : "";
+  return fetchJson<AIRequestRow[]>(`api/ai/requests${qs}`);
 }
 
 export interface BatchSuggestion {
@@ -1397,16 +1398,82 @@ export interface AuditLogRow {
   details: Record<string, unknown> | null;
 }
 
-export function listActivityLog(opts?: { limit?: number; action?: string }): Promise<AuditLogRow[]> {
+export function listActivityLog(
+  opts?: { limit?: number; action?: string; includeArchived?: boolean },
+): Promise<AuditLogRow[]> {
   const params = new URLSearchParams();
   if (opts?.limit) params.set("limit", String(opts.limit));
   if (opts?.action) params.set("action", opts.action);
+  if (opts?.includeArchived) params.set("include_archived", "true");
   const qs = params.toString();
   return fetchJson<AuditLogRow[]>(`api/logs/activity${qs ? `?${qs}` : ""}`);
 }
 
 export function listAuditActions(): Promise<string[]> {
   return fetchJson<string[]>("api/logs/actions");
+}
+
+// --- Data retention (spec §28; backlog #78, #147) ---
+
+export interface RetentionTypePolicy {
+  archive_after_days?: number | null;
+  purge_after_days?: number | null;
+  auto_purge?: boolean;
+}
+
+export interface BackupTrim {
+  max_age_days: number;
+  max_total_mb: number;
+  min_keep: number;
+}
+
+export interface RetentionPolicyResponse {
+  policy: Record<string, RetentionTypePolicy>;
+  data_types: string[];
+  archivable: string[];
+  receipt_delete_after_processing: boolean;
+  backup_trim: BackupTrim;
+}
+
+export interface RetentionTypePlan {
+  archive_due: number;
+  purge_due: number;
+  auto_purge: boolean;
+}
+
+export interface RetentionPlan {
+  pending_purge: number;
+  [dataType: string]: RetentionTypePlan | number;
+}
+
+export interface RetentionRunResult {
+  counts: Record<string, { archived: number; purged: number }>;
+  backup_taken: boolean;
+}
+
+export interface RetentionPolicyUpdate {
+  policy?: Record<string, RetentionTypePolicy>;
+  receipt_delete_after_processing?: boolean;
+  backup_trim?: Partial<BackupTrim>;
+}
+
+export function getRetentionPolicy(): Promise<RetentionPolicyResponse> {
+  return fetchJson<RetentionPolicyResponse>("api/retention/policy");
+}
+
+export function updateRetentionPolicy(patch: RetentionPolicyUpdate): Promise<RetentionPolicyResponse> {
+  return fetchJson<RetentionPolicyResponse>("api/retention/policy", {
+    method: "PUT",
+    body: JSON.stringify(patch),
+  });
+}
+
+export function previewRetention(): Promise<RetentionPlan> {
+  return fetchJson<RetentionPlan>("api/retention/preview");
+}
+
+export function runRetention(): Promise<RetentionRunResult> {
+  return fetchJson<RetentionRunResult>("api/retention/run", { method: "POST" });
 }
 
 // --- CSV export (backlog #132) ---

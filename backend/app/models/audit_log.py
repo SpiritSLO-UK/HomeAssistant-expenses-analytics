@@ -28,3 +28,6 @@ class AuditLog(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
+    # Set by the retention engine (backlog #78): archived entries are hidden from
+    # the activity-log viewer but kept until a later purge. NULL = active.
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

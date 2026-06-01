@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -32,10 +32,31 @@ SUGGEST_MATCH = 70
 DATE_WINDOW_DAYS = 10
 
 
+def _now() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
 def receipts_dir() -> Path:
     d = Path(settings.database_path).parent / "receipts"
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+def drop_original(db: Session, receipt: Receipt, *, commit: bool = True) -> None:
+    """Delete the stored original file but keep the row + extracted fields
+    (retention / 'delete original after processing', backlog #78/#147).
+
+    Idempotent: re-running is harmless. ``archived_at`` records that the original
+    is gone; the merchant/date/total/matches stay queryable, but re-OCR is no
+    longer possible. ``commit=False`` lets a caller batch this into its own commit.
+    """
+    if receipt.storage_path:
+        Path(receipt.storage_path).unlink(missing_ok=True)
+        receipt.storage_path = None
+    if receipt.archived_at is None:
+        receipt.archived_at = _now()
+    if commit:
+        db.commit()
 
 
 def _hash(content: bytes) -> str:
@@ -256,6 +277,9 @@ def match(db: Session, receipt: Receipt, mode: str | None = None) -> dict:
         if auto:
             receipt.needs_review = False
             review_service.resolve_for(db, item_type="receipt", item_id=receipt.id, reason="receipt_unmatched")
+            # Processed & matched → optionally drop the original (backlog #147).
+            if settings_service.get_receipt_delete_after_processing(db):
+                drop_original(db, receipt, commit=False)
     else:
         receipt.needs_review = True
         _flag(db, receipt, "receipt_unmatched", "No good transaction match — match it manually.")
@@ -290,6 +314,9 @@ def confirm_match(db: Session, receipt: Receipt, transaction_id: int) -> Transac
     receipt.needs_review = False
     review_service.resolve_for(db, item_type="receipt", item_id=receipt.id, reason="receipt_unmatched")
     review_service.resolve_for(db, item_type="receipt", item_id=receipt.id, reason="low_confidence")
+    # Processed & matched → optionally drop the original (backlog #147).
+    if settings_service.get_receipt_delete_after_processing(db):
+        drop_original(db, receipt, commit=False)
     db.commit()
     db.refresh(chosen)
     return chosen

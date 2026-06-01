@@ -190,6 +190,11 @@ body {
   border: 1px solid var(--border);
 }
 
+.btn--danger {
+  background: #c0392b;
+  color: #fff;
+}
+
 /* --- forms / filters --- */
 .form-row,
 .filters {

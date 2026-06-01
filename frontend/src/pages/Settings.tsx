@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   addFxRate,
@@ -29,6 +29,17 @@ import {
   restoreDatabase,
   restoreEncryptedDatabase,
   updateSettings,
+  getRetentionPolicy,
+  updateRetentionPolicy,
+  previewRetention,
+  runRetention,
+  isStepUpError,
+  mfaStepUp,
+  type RetentionPolicyResponse,
+  type RetentionTypePolicy,
+  type RetentionPlan,
+  type RetentionTypePlan,
+  type BackupTrim,
 } from "../api/client";
 import { isCloudAiAcknowledged, setCloudAiAcknowledged } from "../prefs";
 import CloudAiDisclaimerDialog from "../components/CloudAiDisclaimerDialog";
@@ -107,6 +118,8 @@ export default function Settings() {
       <SecurityHealthCard onError={fail} />
 
       <SecurityCard onMessage={ok} onError={fail} />
+
+      <RetentionCard onMessage={ok} onError={fail} />
 
       <div className="card">
         <h2 className="card__title">Demo data</h2>
@@ -411,7 +424,7 @@ function AiCard({
   const qc = useQueryClient();
   const status = useQuery({ queryKey: ["ai-status"], queryFn: getAiStatus });
   const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
-  const requests = useQuery({ queryKey: ["ai-requests"], queryFn: listAiRequests });
+  const requests = useQuery({ queryKey: ["ai-requests"], queryFn: () => listAiRequests() });
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [showDisclaimer, setShowDisclaimer] = useState(false);
 
@@ -824,6 +837,320 @@ function SecurityCard({
             </button>
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+const RETENTION_LABELS: Record<string, string> = {
+  ai_requests: "AI request logs",
+  audit_logs: "Activity (audit) logs",
+  receipts: "Receipt files",
+  failed_unlock: "Failed-unlock records",
+};
+
+function RetentionCard({
+  onMessage,
+  onError,
+}: {
+  onMessage: (m: string) => void;
+  onError: (e: unknown) => void;
+}) {
+  const qc = useQueryClient();
+  const me = useQuery({ queryKey: ["me"], queryFn: getMe });
+  const isAdmin = me.data?.is_admin === true;
+  const policy = useQuery({
+    queryKey: ["retention-policy"],
+    queryFn: getRetentionPolicy,
+    enabled: isAdmin,
+  });
+
+  const [draft, setDraft] = useState<RetentionPolicyResponse | null>(null);
+  const [plan, setPlan] = useState<RetentionPlan | null>(null);
+
+  // Admin actions can be challenged for a fresh MFA code (#124); replay on success.
+  const lastAction = useRef<(() => void) | null>(null);
+  const [stepUpOpen, setStepUpOpen] = useState(false);
+  const [stepCode, setStepCode] = useState("");
+
+  // Seed the editable draft once the policy loads.
+  useEffect(() => {
+    if (policy.data && draft === null) setDraft(policy.data);
+  }, [policy.data, draft]);
+
+  const handleError = (e: unknown) => {
+    if (isStepUpError(e)) {
+      setStepUpOpen(true);
+      return;
+    }
+    onError(e);
+  };
+
+  const save = useMutation({
+    mutationFn: () =>
+      updateRetentionPolicy({
+        policy: draft!.policy,
+        receipt_delete_after_processing: draft!.receipt_delete_after_processing,
+        backup_trim: draft!.backup_trim,
+      }),
+    onSuccess: (resp) => {
+      setDraft(resp);
+      onMessage("Retention settings saved.");
+      qc.invalidateQueries({ queryKey: ["retention-policy"] });
+      previewRetention().then(setPlan).catch(() => {});
+    },
+    onError: handleError,
+  });
+
+  const run = useMutation({
+    mutationFn: runRetention,
+    onSuccess: (r) => {
+      const archived = Object.values(r.counts).reduce((n, c) => n + c.archived, 0);
+      const purged = Object.values(r.counts).reduce((n, c) => n + c.purged, 0);
+      onMessage(
+        `Cleanup done — archived ${archived}, purged ${purged}.` +
+          (r.backup_taken ? " A safety backup was taken first." : ""),
+      );
+      previewRetention().then(setPlan).catch(() => {});
+      // Aged-out rows may have vanished from the log/receipt views.
+      qc.invalidateQueries({ queryKey: ["activity-log"] });
+      qc.invalidateQueries({ queryKey: ["ai-requests"] });
+      qc.invalidateQueries({ queryKey: ["receipts"] });
+      qc.invalidateQueries({ queryKey: ["security-health"] });
+    },
+    onError: handleError,
+  });
+
+  const stepUp = useMutation({
+    mutationFn: () => mfaStepUp(stepCode),
+    onSuccess: () => {
+      setStepUpOpen(false);
+      setStepCode("");
+      lastAction.current?.();
+    },
+    onError: () => onError("That code didn't match. Try again."),
+  });
+
+  const doSave = () => {
+    lastAction.current = () => save.mutate();
+    save.mutate();
+  };
+  const doRun = () => {
+    if (!confirm(
+      "Run data cleanup now? Archiving is reversible, but PURGING permanently deletes aged-out " +
+      "data. A timestamped safety backup is taken before any purge. Continue?"
+    )) return;
+    lastAction.current = () => run.mutate();
+    run.mutate();
+  };
+
+  if (me.data && !isAdmin) return null; // owner-only
+
+  const setField = (dtype: string, field: keyof RetentionTypePolicy, value: number | boolean | null) =>
+    setDraft((d) =>
+      d ? { ...d, policy: { ...d.policy, [dtype]: { ...d.policy[dtype], [field]: value } } } : d,
+    );
+
+  const setTrim = (field: keyof BackupTrim, value: number) =>
+    setDraft((d) => (d ? { ...d, backup_trim: { ...d.backup_trim, [field]: value } } : d));
+
+  const daysValue = (n: number | null | undefined) => (n === null || n === undefined ? "" : String(n));
+  const parseDays = (v: string): number | null => {
+    const t = v.trim();
+    if (t === "") return null;
+    const n = parseInt(t, 10);
+    return isNaN(n) ? null : Math.max(0, n);
+  };
+
+  return (
+    <div className="card">
+      <h2 className="card__title">Data retention</h2>
+      <p className="muted">
+        Age out old data on your own schedule. For each type you can <strong>archive after</strong> a
+        number of days (reversible — hidden from view, kept) and/or <strong>purge after</strong> a
+        number of days (permanent delete). Leave a box blank to turn that stage off. Everything is
+        off by default. Archiving runs automatically on startup; purging only runs when you click
+        <em> Run cleanup now</em> below — unless you tick <strong>auto-purge</strong> for a type.
+      </p>
+
+      {!draft && <p className="muted">Loading…</p>}
+
+      {draft && (
+        <>
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Data</th><th>Archive after (days)</th><th>Purge after (days)</th><th>Auto-purge</th>
+                </tr>
+              </thead>
+              <tbody>
+                {draft.data_types.map((dtype) => {
+                  const pol = draft.policy[dtype] ?? {};
+                  const archivable = draft.archivable.includes(dtype);
+                  return (
+                    <tr key={dtype}>
+                      <td>{RETENTION_LABELS[dtype] ?? dtype}</td>
+                      <td>
+                        {archivable ? (
+                          <input
+                            inputMode="numeric"
+                            placeholder="off"
+                            value={daysValue(pol.archive_after_days)}
+                            style={{ width: 80 }}
+                            onChange={(e) => setField(dtype, "archive_after_days", parseDays(e.target.value))}
+                          />
+                        ) : (
+                          <span className="muted">—</span>
+                        )}
+                      </td>
+                      <td>
+                        <input
+                          inputMode="numeric"
+                          placeholder="off"
+                          value={daysValue(pol.purge_after_days)}
+                          style={{ width: 80 }}
+                          onChange={(e) => setField(dtype, "purge_after_days", parseDays(e.target.value))}
+                        />
+                      </td>
+                      <td style={{ textAlign: "center" }}>
+                        <input
+                          type="checkbox"
+                          checked={pol.auto_purge ?? false}
+                          onChange={(e) => setField(dtype, "auto_purge", e.target.checked)}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <label className="muted" style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
+            <input
+              type="checkbox"
+              checked={draft.receipt_delete_after_processing}
+              onChange={(e) => setDraft((d) => (d ? { ...d, receipt_delete_after_processing: e.target.checked } : d))}
+            />
+            Delete a receipt's original file once it's processed &amp; matched (keeps the extracted fields)
+          </label>
+
+          <h3 style={{ margin: "16px 0 6px", fontSize: "0.95rem" }}>Safety-backup limits</h3>
+          <p className="muted" style={{ fontSize: "0.82rem", marginTop: 0 }}>
+            A timestamped backup is taken before every purge. These limits keep that history from
+            growing without bound (the most recent few are always kept).
+          </p>
+          <div className="form-row" style={{ gap: 12, flexWrap: "wrap" }}>
+            <label>
+              Max age (days){" "}
+              <input
+                inputMode="numeric"
+                value={String(draft.backup_trim.max_age_days)}
+                style={{ width: 80 }}
+                onChange={(e) => setTrim("max_age_days", Math.max(1, parseInt(e.target.value, 10) || 1))}
+              />
+            </label>
+            <label>
+              Max total (MB){" "}
+              <input
+                inputMode="numeric"
+                value={String(draft.backup_trim.max_total_mb)}
+                style={{ width: 80 }}
+                onChange={(e) => setTrim("max_total_mb", Math.max(1, parseInt(e.target.value, 10) || 1))}
+              />
+            </label>
+            <label>
+              Always keep last{" "}
+              <input
+                inputMode="numeric"
+                value={String(draft.backup_trim.min_keep)}
+                style={{ width: 80 }}
+                onChange={(e) => setTrim("min_keep", Math.max(1, parseInt(e.target.value, 10) || 1))}
+              />
+            </label>
+          </div>
+
+          <div className="form-row" style={{ marginTop: 14, gap: 8 }}>
+            <button className="btn" disabled={save.isPending} onClick={doSave}>
+              {save.isPending ? "Saving…" : "Save retention settings"}
+            </button>
+            <button
+              className="btn btn--ghost"
+              onClick={() => previewRetention().then(setPlan).catch(onError)}
+            >
+              Preview removal plan
+            </button>
+            <button className="btn btn--danger" disabled={run.isPending} onClick={doRun}>
+              {run.isPending ? "Running…" : "Run cleanup now"}
+            </button>
+          </div>
+
+          {plan && <RetentionPlanView plan={plan} types={draft.data_types} />}
+        </>
+      )}
+
+      {stepUpOpen && (
+        <div className="card" style={{ borderLeft: "3px solid #2d7", marginTop: 12 }}>
+          <h2 className="card__title">🔐 Confirm it's you</h2>
+          <p className="muted">
+            Changing retention or running a purge needs a fresh two-factor code. Enter the current
+            code — your last action will run automatically.
+          </p>
+          <form
+            className="form-row"
+            onSubmit={(e) => { e.preventDefault(); if (stepCode) stepUp.mutate(); }}
+          >
+            <input
+              inputMode="numeric"
+              autoFocus
+              placeholder="123456"
+              maxLength={8}
+              value={stepCode}
+              onChange={(e) => setStepCode(e.target.value.replace(/[^0-9]/g, ""))}
+              style={{ width: 120 }}
+            />
+            <button className="btn" type="submit" disabled={!stepCode || stepUp.isPending}>
+              {stepUp.isPending ? "Verifying…" : "Verify"}
+            </button>
+            <button className="btn btn--ghost" type="button" onClick={() => { setStepUpOpen(false); setStepCode(""); }}>
+              Cancel
+            </button>
+          </form>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RetentionPlanView({ plan, types }: { plan: RetentionPlan; types: string[] }) {
+  const rows = types
+    .map((t) => ({ t, p: plan[t] as RetentionTypePlan }))
+    .filter((r) => r.p && (r.p.archive_due > 0 || r.p.purge_due > 0));
+
+  return (
+    <div style={{ marginTop: 12 }}>
+      <h3 style={{ margin: "0 0 6px", fontSize: "0.95rem" }}>Removal plan (right now)</h3>
+      {plan.pending_purge > 0 && (
+        <p className="status status--warn">
+          {plan.pending_purge} item(s) are past their purge age and awaiting your confirmation.
+        </p>
+      )}
+      {rows.length === 0 ? (
+        <p className="muted">Nothing is due for archive or purge right now.</p>
+      ) : (
+        <ul className="kv">
+          {rows.map(({ t, p }) => (
+            <li key={t}>
+              <span>{RETENTION_LABELS[t] ?? t}</span>
+              <span>
+                {p.archive_due > 0 ? `${p.archive_due} to archive` : ""}
+                {p.archive_due > 0 && p.purge_due > 0 ? " · " : ""}
+                {p.purge_due > 0 ? `${p.purge_due} to purge${p.auto_purge ? " (auto)" : ""}` : ""}
+              </span>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

@@ -15,7 +15,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import User
-from app.services import security_service, settings_service
+from app.services import retention_service, security_service, settings_service
 
 DISMISSALS_KEY = "security_dismissals"
 
@@ -125,6 +125,19 @@ def evaluate(db: Session, user: User) -> dict:
              severity="info", actionable=True,
              recommendation="AI is set to cloud_auto — redacted requests are sent automatically. "
              "Use cloud_manual to approve each one, or a local LLM to keep data on-device.")
+
+    # Data scheduled for removal awaiting confirmation (backlog #78). This is how
+    # the owner is told *before* a confirm-required purge happens — the startup
+    # sweep only archived these; the delete needs an explicit Run.
+    try:
+        pending_purge = retention_service.preview(db)["pending_purge"]
+    except Exception:  # pragma: no cover - never let a health check break the page
+        pending_purge = 0
+    if pending_purge:
+        _add(checks, dismissals, id="retention_pending", title="Data scheduled for removal",
+             severity="info", actionable=True,
+             recommendation=f"{pending_purge} item(s) are past their purge age and waiting for you "
+             "to confirm removal. Review the plan in Settings → Data retention.")
 
     return {
         "checks": checks,

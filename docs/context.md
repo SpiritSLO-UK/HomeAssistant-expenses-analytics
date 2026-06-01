@@ -540,7 +540,8 @@ to stdout (the HA add-on **Log** panel) at the configured `log_level` and are
 - UI: an owner-only **Logs** page (nav 📜) — Activity table (When/Who/Action/Item/
   Details) with an action filter + row-count selector + refresh, plus the AI-requests
   table. Non-owners who route directly to `/logs` get a friendly "owner only" note.
-- **Deferred:** retention/purge of audit + AI logs (ties into #78 data-expiry).
+- **Retention:** archive/purge of audit + AI logs is now built (see "Data retention"
+  below, #78) — both viewers hide archived rows unless `include_archived`.
 
 ## CSV export (Stage 12 — spec §24.4, §25.1; #132)
 
@@ -580,10 +581,43 @@ private-mode):
   Frontend-only — no backend/no migration; not synced across devices (a view
   preference / local acknowledgement, not household data).
 
+## Data retention & expiration (Stage 12 — spec §28; #78, #147)
+
+A two-stage **archive → purge** lifecycle per data type, **off by default**. The
+policy lives in one JSON setting (`retention_policy`); per type it carries
+`archive_after_days`, `purge_after_days` and an `auto_purge` flag.
+
+- **Engine** `retention_service`: `validate_policy` (ints ≥ 0, `archive ≤ purge`,
+  bool `auto_purge`, unknown type → `ValueError`), `preview` (the authoritative
+  **removal plan** — per-type `archive_due`/`purge_due` + top-level `pending_purge`
+  = purge-due where `auto_purge` is off, the "awaiting confirm" total; never
+  writes), `run(purge_mode)` (`"all"` = owner-confirmed manual run purges every due
+  type; `"auto"` = startup sweep purges only `auto_purge` types). Archive always
+  runs for every due archivable type. `archived_at` (new nullable column on
+  `ai_requests`, `audit_logs`, `receipts`) marks archived; the log viewers
+  (`audit_service.recent`, `ai_service.list_requests`) hide archived rows unless
+  `include_archived`. Receipt archive = drop the original file, keep the row
+  (`receipt_service.drop_original`); receipt purge = `receipt_service.delete`.
+  `failed_unlock` is purge-only (`security_service.prune_failed_unlocks`).
+- **Safety:** before *any* purge that would delete rows, `run` takes a timestamped
+  `backup_service.create_safety_backup("retention")` into `<data>/backups/` then
+  `prune_backups` (trim by `BACKUP_MAX_AGE_DAYS`/`BACKUP_MAX_TOTAL_MB`, never below
+  `BACKUP_MIN_KEEP` most-recent). If the backup fails, the purge is skipped.
+- **Triggers:** the startup sweep (`main.py` lifespan, `run_safe`, `purge_mode="auto"`)
+  archives + auto-purges; the manual `POST /api/retention/run` (`require_owner_step_up`)
+  is `purge_mode="all"`. `GET/PUT /policy` + `GET /preview` are owner-only; **PUT and
+  run are owner + MFA step-up** (the user's call — owner-only always, fresh code when
+  MFA is on, no lockout otherwise).
+- **Notification:** `security_health_service` adds a dismissible `retention_pending`
+  item when `preview().pending_purge > 0` — how the owner is told *before* a
+  confirm-required purge (the sweep only archived those).
+- **#147 receipt drop-after-processing:** `receipt_delete_after_processing` setting
+  (default **on**) — `confirm_match` / auto-confirm call `drop_original`, keeping the
+  extracted fields. **Transactions** archive/purge (excluding archived txns from the
+  aggregates, via the existing `account_ids` threading) is the follow-up PR (#12).
+
 ## Open questions / to scope
 
-- **#78 Data retention/expiry** — purge vs archive? which data (transactions,
-  receipts, AI logs)? per-category retention?
 - **#29 FX coverage** — Frankfurter is ECB (~30 currencies); add a wider source
   (e.g. fawazahmed0 API) if exotic currencies are needed.
 

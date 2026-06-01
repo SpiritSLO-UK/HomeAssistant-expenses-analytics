@@ -6,10 +6,10 @@ features have somewhere to attach.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, Float, ForeignKey, Numeric, String
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin
@@ -40,6 +40,10 @@ class Receipt(Base, TimestampMixin):
     ocr_status: Mapped[str] = mapped_column(String(16), nullable=False, default="not_processed")
     ocr_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     needs_review: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Set by the retention engine / "delete original after processing" (#78, #147):
+    # the stored original file has been dropped (storage_path cleared) while the row
+    # and extracted fields are kept. NULL = original still on disk.
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     items: Mapped[list[ReceiptItem]] = relationship(
         back_populates="receipt", cascade="all, delete-orphan"

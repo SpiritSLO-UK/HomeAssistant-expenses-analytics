@@ -241,6 +241,41 @@ def record_successful_unlock() -> None:
     _write_events(events)
 
 
+def prune_failed_unlocks(older_than_days: int) -> int:
+    """Drop recorded failed-unlock timestamps older than the cutoff (retention,
+    backlog #78). Returns the number removed. Unparseable rows are dropped too."""
+    events = _read_events()
+    stored = events.get("failed_unlocks", [])
+    cutoff = _now() - timedelta(days=older_than_days)
+    kept: list[str] = []
+    for value in stored:
+        try:
+            if datetime.fromisoformat(value) >= cutoff:
+                kept.append(value)
+        except (ValueError, TypeError):  # pragma: no cover - bad row → drop it
+            continue
+    removed = len(stored) - len(kept)
+    if removed:
+        events["failed_unlocks"] = kept
+        _write_events(events)
+    return removed
+
+
+def count_failed_unlocks_older_than(older_than_days: int) -> int:
+    """How many recorded failed-unlock timestamps are older than the cutoff (used
+    by the retention preview). Unparseable rows count as prunable."""
+    events = _read_events()
+    cutoff = _now() - timedelta(days=older_than_days)
+    n = 0
+    for value in events.get("failed_unlocks", []):
+        try:
+            if datetime.fromisoformat(value) < cutoff:
+                n += 1
+        except (ValueError, TypeError):  # pragma: no cover - bad row
+            n += 1
+    return n
+
+
 def failed_unlock_summary(window_minutes: int = 60) -> dict:
     events = _read_events()
     cutoff = _now() - timedelta(minutes=window_minutes)

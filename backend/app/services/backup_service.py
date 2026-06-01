@@ -16,6 +16,8 @@ import os
 import shutil
 import sqlite3
 import tempfile
+import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import select
@@ -25,6 +27,7 @@ from app.config import settings
 from app.db import session as dbsession
 from app.logging import get_logger
 from app.models import Category, Setting, Vendor, VendorAlias
+from app.services import settings_service
 
 logger = get_logger(__name__)
 
@@ -107,6 +110,65 @@ def restore_database(content: bytes) -> None:
         logger.info("Database restored from upload (%s bytes)", len(content))
     finally:
         tmp.unlink(missing_ok=True)
+
+
+# --- Safety backups + trim (backlog #78) ---
+#
+# The retention engine takes a timestamped snapshot before any purge so a botched
+# cleanup is recoverable. These live in a dedicated ``backups/`` dir beside the
+# private database and are trimmed by age/size so they can't grow without bound.
+
+def backups_dir() -> Path:
+    d = settings.database_file.parent / "backups"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def create_safety_backup(label: str) -> Path:
+    """Snapshot the live DB into ``backups/<label>-<timestamp>.db`` and return it.
+
+    Uses microsecond precision so two backups in the same second don't collide.
+    """
+    snap = snapshot_database()
+    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S-%f")
+    dest = backups_dir() / f"{label}-{stamp}.db"
+    shutil.move(str(snap), str(dest))
+    logger.info("Wrote safety backup %s (%d bytes)", dest.name, dest.stat().st_size)
+    return dest
+
+
+def prune_backups(db: Session) -> dict:
+    """Trim the safety-backup history to the configured age/size limits, but never
+    drop below ``min_keep`` most-recent files (so there's always a safety net)."""
+    policy = settings_service.get_backup_trim_policy(db)
+    files = sorted(backups_dir().glob("*.db"), key=lambda p: p.stat().st_mtime, reverse=True)
+    protected = files[: policy["min_keep"]]
+    deletable = files[policy["min_keep"]:]  # oldest beyond the keep-floor (still newest-first)
+
+    removed = 0
+    age_cutoff = time.time() - policy["max_age_days"] * 86400
+    survivors: list[Path] = []
+    for p in deletable:
+        if p.stat().st_mtime < age_cutoff:
+            p.unlink(missing_ok=True)
+            removed += 1
+        else:
+            survivors.append(p)
+
+    max_bytes = policy["max_total_mb"] * 1024 * 1024
+
+    def total_size() -> int:
+        return sum(x.stat().st_size for x in [*protected, *survivors] if x.exists())
+
+    # survivors is newest-first; pop the oldest until under the size cap.
+    while survivors and total_size() > max_bytes:
+        survivors.pop().unlink(missing_ok=True)
+        removed += 1
+
+    kept = len([p for p in files if p.exists()])
+    if removed:
+        logger.info("Pruned %d old safety backup(s); %d kept.", removed, kept)
+    return {"removed": removed, "kept": kept}
 
 
 # --- Config / library export-import (portable JSON) ---
