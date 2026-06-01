@@ -146,4 +146,4 @@ def test_full_flow_applies_after_send(client):
         groceries = next(
             t for t in db.scalars(select(Transaction)).all() if t.category_id is not None
         )
-        assert groceries.confidence_score == 1.0  # treated as a manual decision
+        assert groceries.confidence_score == pytest.approx(1.0)  # treated as a manual decision

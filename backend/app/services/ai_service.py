@@ -310,6 +310,48 @@ def cloud_batch_prepare(db: Session, *, limit: int = 25, provider=None) -> dict:
     return {"considered": len(txns), "count": len(items), "items": items}
 
 
+def _batch_suggestion(db: Session, req: AIRequest, payload: dict, res: dict) -> dict:
+    txn = db.get(Transaction, req.transaction_id) if req.transaction_id else None
+    return {
+        "transaction_id": req.transaction_id,
+        "description": txn.description_raw if txn else payload.get("description", ""),
+        "amount": str(txn.amount) if txn else payload.get("amount", ""),
+        "category_id": res["category_id"],
+        "category_name": res["category_name"],
+        "confidence": res.get("confidence"),
+        "rationale": res.get("rationale"),
+    }
+
+
+def _send_one_approved(
+    db: Session, rid: int, provider: AIProvider, cats: list[Category],
+    suggestions: list[dict], failed: list[int],
+) -> None:
+    """Send a single approved pending request; record its suggestion or failure."""
+    req = db.get(AIRequest, rid)
+    if req is None or req.status != "pending":
+        return  # already sent/rejected, or unknown — skip defensively
+    req.approval_status = "approved"
+    payload = json.loads(req.redacted_payload or "{}")
+    try:
+        res = _run(db, req, provider, payload, cats)
+    except AIError:
+        failed.append(rid)
+        return
+    if res.get("category_id"):
+        suggestions.append(_batch_suggestion(db, req, payload, res))
+
+
+def _reject_pending(db: Session, rid: int) -> bool:
+    req = db.get(AIRequest, rid)
+    if req is not None and req.status == "pending":
+        req.status = "rejected"
+        req.approval_status = "rejected"
+        req.completed_at = datetime.now(UTC)
+        return True
+    return False
+
+
 def cloud_batch_send(
     db: Session, *, approve_ids: list[int], reject_ids: list[int] | None = None, provider=None
 ) -> dict:
@@ -325,36 +367,9 @@ def cloud_batch_send(
     suggestions: list[dict] = []
     failed: list[int] = []
     for rid in approve_ids:
-        req = db.get(AIRequest, rid)
-        if req is None or req.status != "pending":
-            continue  # already sent/rejected, or unknown — skip defensively
-        req.approval_status = "approved"
-        payload = json.loads(req.redacted_payload or "{}")
-        try:
-            res = _run(db, req, provider, payload, cats)
-        except AIError:
-            failed.append(rid)
-            continue
-        if res.get("category_id"):
-            txn = db.get(Transaction, req.transaction_id) if req.transaction_id else None
-            suggestions.append({
-                "transaction_id": req.transaction_id,
-                "description": txn.description_raw if txn else payload.get("description", ""),
-                "amount": str(txn.amount) if txn else payload.get("amount", ""),
-                "category_id": res["category_id"],
-                "category_name": res["category_name"],
-                "confidence": res.get("confidence"),
-                "rationale": res.get("rationale"),
-            })
+        _send_one_approved(db, rid, provider, cats, suggestions, failed)
 
-    rejected = 0
-    for rid in reject_ids or []:
-        req = db.get(AIRequest, rid)
-        if req is not None and req.status == "pending":
-            req.status = "rejected"
-            req.approval_status = "rejected"
-            req.completed_at = datetime.now(UTC)
-            rejected += 1
+    rejected = sum(_reject_pending(db, rid) for rid in reject_ids or [])
 
     db.commit()
     return {"count": len(suggestions), "suggestions": suggestions, "failed": failed, "rejected": rejected}
