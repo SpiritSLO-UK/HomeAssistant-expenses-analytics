@@ -1419,6 +1419,59 @@ export function listAuditActions(): Promise<string[]> {
   return fetchJson<string[]>("api/logs/actions");
 }
 
+// --- Travel / spend-abroad (backlog: holidays by country/currency) ---
+
+export interface CurrencySpend {
+  currency: string;
+  place: string;
+  original_total: string;
+  base_total: string;
+  count: number;
+  first: string;
+  last: string;
+}
+
+export interface TravelByCurrency {
+  base_currency: string;
+  currencies: CurrencySpend[];
+}
+
+export interface Trip {
+  first: string;
+  last: string;
+  currencies: string[];
+  places: string[];
+  label: string;
+  base_total: string;
+  base_currency: string;
+  transaction_count: number;
+  transaction_ids: number[];
+}
+
+export function getTravelByCurrency(): Promise<TravelByCurrency> {
+  return fetchJson<TravelByCurrency>("api/travel/by-currency");
+}
+
+export function getTravelTrips(gapDays?: number): Promise<Trip[]> {
+  const qs = gapDays ? `?gap_days=${gapDays}` : "";
+  return fetchJson<Trip[]>(`api/travel/trips${qs}`);
+}
+
+export function createProjectFromTrip(
+  name: string,
+  transactionIds: number[],
+  budgetAmount?: string,
+): Promise<{ project_id: number; name: string }> {
+  return fetchJson("api/travel/trips/project", {
+    method: "POST",
+    body: JSON.stringify({
+      name,
+      transaction_ids: transactionIds,
+      budget_amount: budgetAmount || null,
+    }),
+  });
+}
+
 // --- Data retention (spec §28; backlog #78, #147) ---
 
 export interface RetentionTypePolicy {
