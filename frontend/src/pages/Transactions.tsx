@@ -4,6 +4,7 @@ import {
   approveAiRequest,
   categoriseTransaction,
   classifyWithAi,
+  exportTransactionsCsv,
   getAiStatus,
   getSettings,
   listCategories,
@@ -70,6 +71,13 @@ export default function Transactions() {
   const recat = useMutation({
     mutationFn: () => recategorise(true),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["transactions"] }),
+  });
+
+  // Export the *filtered* set (the client drops limit/offset so it's not just
+  // the current page).
+  const exportCsv = useMutation({
+    mutationFn: () => exportTransactionsCsv(filters),
+    onError: (e) => window.alert(String(e instanceof Error ? e.message : e)),
   });
 
   const setProject = useMutation({
@@ -139,6 +147,14 @@ export default function Transactions() {
           )}
           <button className="btn btn--ghost" disabled={recat.isPending} onClick={() => recat.mutate()}>
             {recat.isPending ? "Re-categorising…" : "Re-categorise uncategorised"}
+          </button>
+          <button
+            className="btn btn--ghost"
+            disabled={exportCsv.isPending || (data?.total ?? 0) === 0}
+            title="Download these transactions as CSV (honours the filters below)"
+            onClick={() => exportCsv.mutate()}
+          >
+            {exportCsv.isPending ? "Exporting…" : "⬇ Export CSV"}
           </button>
         </div>
       </div>

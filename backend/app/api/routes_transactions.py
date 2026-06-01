@@ -7,11 +7,11 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.db.session import get_db
-from app.models import Project, Tag, Transaction, User
+from app.models import Project, Transaction, User
 from app.schemas.tags import SetTagsRequest
 from app.schemas.transactions import (
     SetSplitsRequest,
@@ -23,6 +23,7 @@ from app.schemas.transactions import (
 )
 from app.services import (
     audit_service,
+    export_service,
     import_service,
     rule_service,
     split_service,
@@ -69,35 +70,19 @@ def list_transactions(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
 ) -> dict:
-    conditions = []
-    if date_from is not None:
-        conditions.append(Transaction.transaction_date >= date_from)
-    if date_to is not None:
-        conditions.append(Transaction.transaction_date <= date_to)
-    if account_id is not None:
-        conditions.append(Transaction.account_id == account_id)
-    if category_id is not None:
-        conditions.append(Transaction.category_id == category_id)
-    if vendor_id is not None:
-        conditions.append(Transaction.merchant_id == vendor_id)
-    if project_id is not None:
-        conditions.append(Transaction.project_id == project_id)
-    if tag_id is not None:
-        conditions.append(Transaction.tags.any(Tag.id == tag_id))
-    if needs_review is not None:
-        conditions.append(Transaction.needs_review.is_(needs_review))
-    if amount_min is not None:
-        conditions.append(Transaction.amount >= amount_min)
-    if amount_max is not None:
-        conditions.append(Transaction.amount <= amount_max)
-    if search:
-        like = f"%{search}%"
-        conditions.append(
-            or_(
-                Transaction.description_raw.ilike(like),
-                Transaction.merchant_raw.ilike(like),
-            )
-        )
+    conditions = export_service.build_transaction_filters(
+        date_from=date_from,
+        date_to=date_to,
+        account_id=account_id,
+        category_id=category_id,
+        vendor_id=vendor_id,
+        project_id=project_id,
+        tag_id=tag_id,
+        needs_review=needs_review,
+        amount_min=amount_min,
+        amount_max=amount_max,
+        search=search,
+    )
 
     base = select(Transaction)
     if conditions:

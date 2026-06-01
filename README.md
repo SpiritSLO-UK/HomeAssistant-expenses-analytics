@@ -83,6 +83,11 @@ Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md
   load, user role/approval changes, MFA enable/disable — filterable by action)
   plus the AI-call log. Low-level runtime/debug logs stream to the Home Assistant
   add-on **Log** panel at your chosen `log_level`.
+- **CSV export** — download your transactions (the "Export CSV" button on the
+  Transactions page honours the active filters and exports the whole filtered
+  set), plus the data behind the dashboard charts (spending-by-category and the
+  monthly spend/income/net trend) from small "⬇ CSV" links. Files carry a UTF-8
+  BOM so they open cleanly in Excel.
 - **Trends & heads-up** — the dashboard shows month-over-month spend/income/net
   sparklines with up/down arrows, and a non-nagging "heads-up" card that flags
   unusually large charges, categories spending well above their recent average,

@@ -3,6 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import Sparkline from "../components/Sparkline";
 import {
+  exportCategoriesCsv,
+  exportMonthlyCsv,
   getCategoryBreakdown,
   getMe,
   getMonthlySeries,
@@ -13,6 +15,10 @@ import {
   type MonthlyPoint,
   type TrendMetric,
 } from "../api/client";
+
+function downloadOrAlert(p: Promise<void>): void {
+  p.catch((e) => window.alert(String(e instanceof Error ? e.message : e)));
+}
 
 function thisMonth(): string {
   const now = new Date();
@@ -68,7 +74,14 @@ export default function Dashboard() {
 
       <div className="cols">
         <div className="card">
-          <h2 className="card__title">Spending by category</h2>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+            <h2 className="card__title" style={{ margin: 0 }}>Spending by category</h2>
+            {categories.data && categories.data.length > 0 && (
+              <button className="link-btn" onClick={() => downloadOrAlert(exportCategoriesCsv(monthDate))}>
+                ⬇ CSV
+              </button>
+            )}
+          </div>
           {categories.isLoading && <p className="muted">Loading…</p>}
           {categories.data && categories.data.length === 0 && <p className="muted">No spending this month.</p>}
           <ul className="bars">
@@ -163,7 +176,15 @@ function TrendsCard({ monthDate }: { monthDate: string }) {
   const labels = { spend: "Spend", income: "Income", net: "Net" };
   return (
     <div className="card">
-      <h2 className="card__title">Trends · last {data.months.length} months</h2>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+        <h2 className="card__title" style={{ margin: 0 }}>Trends · last {data.months.length} months</h2>
+        <button
+          className="link-btn"
+          onClick={() => downloadOrAlert(exportMonthlyCsv(data.months.length, monthDate))}
+        >
+          ⬇ CSV
+        </button>
+      </div>
       <div className="stat-grid">
         {keys.map((k) => (
           <TrendMini
