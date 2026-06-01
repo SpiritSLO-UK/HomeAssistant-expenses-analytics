@@ -483,6 +483,21 @@ the visuals.
   plain `<a download>` wouldn't carry it.
 - **Deferred:** image/PDF export of the charts themselves.
 
+## Per-device UI prefs & cloud-AI disclaimer (Stage 12 — #86, #42)
+
+`frontend/src/prefs.ts` holds small, non-sensitive, **per-browser** prefs in
+localStorage (kept separate from `api/client.ts`, all access defensive for
+private-mode):
+- **Dashboard show/hide (#86):** the Dashboard's "⚙ Customise" toggle hides/shows
+  the optional cards (`headsup`, `trends`, `categories`, `vendors`) via
+  `get/setHiddenDashboardCards`. Core stat tiles + security banner always render;
+  hidden cards aren't mounted (so their queries don't run).
+- **Cloud-AI disclaimer (#42):** the first time the user saves a cloud privacy
+  mode, `CloudAiDisclaimerDialog` is shown and the save is gated until they
+  confirm; `isCloudAiAcknowledged`/`setCloudAiAcknowledged` make it one-time.
+  Frontend-only — no backend/no migration; not synced across devices (a view
+  preference / local acknowledgement, not household data).
+
 ## Open questions / to scope
 
 - **#78 Data retention/expiry** — purge vs archive? which data (transactions,
