@@ -1334,3 +1334,27 @@ export async function mfaVerify(code: string): Promise<{ token: string }> {
 export function mfaStepUp(code: string): Promise<{ status: string }> {
   return fetchJson("api/auth/mfa/step-up", { method: "POST", body: JSON.stringify({ code }) });
 }
+
+// --- Activity log / audit viewer (owner-only, backlog #92) ---
+
+export interface AuditLogRow {
+  id: number;
+  created_at: string;
+  actor: string | null;
+  action: string;
+  entity_type: string | null;
+  entity_id: number | null;
+  details: Record<string, unknown> | null;
+}
+
+export function listActivityLog(opts?: { limit?: number; action?: string }): Promise<AuditLogRow[]> {
+  const params = new URLSearchParams();
+  if (opts?.limit) params.set("limit", String(opts.limit));
+  if (opts?.action) params.set("action", opts.action);
+  const qs = params.toString();
+  return fetchJson<AuditLogRow[]>(`api/logs/activity${qs ? `?${qs}` : ""}`);
+}
+
+export function listAuditActions(): Promise<string[]> {
+  return fetchJson<string[]>("api/logs/actions");
+}

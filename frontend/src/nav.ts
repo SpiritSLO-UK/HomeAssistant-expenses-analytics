@@ -22,5 +22,6 @@ export const NAV_ITEMS: NavItem[] = [
   { path: "/receipts", label: "Receipts", icon: "🧾" },
   { path: "/review", label: "Review Queue", icon: "🔎" },
   { path: "/users", label: "Users", icon: "👥", ownerOnly: true },
+  { path: "/logs", label: "Logs", icon: "📜", ownerOnly: true },
   { path: "/settings", label: "Settings", icon: "🔧" },
 ];

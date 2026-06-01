@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 
-from sqlalchemy import select
+from sqlalchemy import distinct, select
 from sqlalchemy.orm import Session
 
 from app.logging import get_logger
@@ -52,3 +52,28 @@ def recent(db: Session, *, limit: int = 100, action_prefix: str | None = None) -
     if action_prefix:
         stmt = stmt.where(AuditLog.action.like(f"{action_prefix}%"))
     return list(db.scalars(stmt.limit(limit)).all())
+
+
+def distinct_actions(db: Session) -> list[str]:
+    """The set of action names that appear in the log (for a filter dropdown)."""
+    stmt = select(distinct(AuditLog.action)).order_by(AuditLog.action)
+    return list(db.scalars(stmt).all())
+
+
+def to_dict(entry: AuditLog) -> dict:
+    """Serialise an audit row for the API, parsing the JSON detail blob."""
+    details: dict | None = None
+    if entry.details_json:
+        try:
+            details = json.loads(entry.details_json)
+        except (ValueError, TypeError):  # pragma: no cover - tolerate legacy/bad rows
+            details = {"raw": entry.details_json}
+    return {
+        "id": entry.id,
+        "created_at": entry.created_at,
+        "actor": entry.actor,
+        "action": entry.action,
+        "entity_type": entry.entity_type,
+        "entity_id": entry.entity_id,
+        "details": details,
+    }

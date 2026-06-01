@@ -78,6 +78,11 @@ Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md
 - **Security health** — an owner-only panel flags protections that are off
   (no at-rest encryption, no MFA, repeated failed unlock attempts, …) with a
   one-line fix for each. It never nags: dismiss or snooze any item.
+- **Logs / activity** — an owner-only **Logs** page shows an activity log of
+  important actions (statement import & delete, transaction delete, demo-data
+  load, user role/approval changes, MFA enable/disable — filterable by action)
+  plus the AI-call log. Low-level runtime/debug logs stream to the Home Assistant
+  add-on **Log** panel at your chosen `log_level`.
 - **Trends & heads-up** — the dashboard shows month-over-month spend/income/net
   sparklines with up/down arrows, and a non-nagging "heads-up" card that flags
   unusually large charges, categories spending well above their recent average,
