@@ -1,7 +1,8 @@
 import { NavLink } from "react-router-dom";
 import { NAV_ITEMS } from "../nav";
 
-export default function Sidebar() {
+export default function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
+  const items = NAV_ITEMS.filter((item) => !item.ownerOnly || isAdmin);
   return (
     <aside className="sidebar">
       <div className="sidebar__brand">
@@ -9,7 +10,7 @@ export default function Sidebar() {
         <span className="sidebar__brand-text">Finance</span>
       </div>
       <nav className="sidebar__nav">
-        {NAV_ITEMS.map((item) => (
+        {items.map((item) => (
           <NavLink
             key={item.path}
             to={item.path}

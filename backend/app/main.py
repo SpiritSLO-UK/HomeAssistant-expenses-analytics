@@ -81,6 +81,13 @@ if settings.cors_origins:
 # 423 — but allow health and the security/unlock endpoints through (#15b).
 _LOCK_EXEMPT = ("/api/health", "/api/security")
 
+# Endpoints reachable regardless of approval status: health, the lock/unlock
+# routes, and ``/api/users/me`` (so a pending user can learn they're pending).
+_GATE_EXEMPT = ("/api/health", "/api/security", "/api/users/me")
+
+# Methods that don't mutate data (read-only roles are allowed these).
+_SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
+
 
 @app.middleware("http")
 async def _lock_guard(request: Request, call_next):
@@ -90,6 +97,53 @@ async def _lock_guard(request: Request, call_next):
                 status_code=423,
                 content={"detail": "Database is locked. Unlock with your passphrase."},
             )
+    return await call_next(request)
+
+
+@app.middleware("http")
+async def _auth_guard(request: Request, call_next):
+    """Resolve the current user (HA ingress identity → User) and enforce access
+    control on data APIs: pending/disabled accounts are blocked, and read-only
+    roles (viewer/child) may only issue safe methods (spec §28; backlog #82/#126).
+    """
+    path = request.url.path
+    # Skip non-API paths and anything while the DB is locked (the lock guard owns
+    # that case and the auth lookup needs a live DB).
+    if not path.startswith("/api/") or dbsession.is_locked():
+        return await call_next(request)
+
+    from app.services import auth_service
+
+    with dbsession.SessionLocal() as db:
+        user = auth_service.resolve_current_user(db, request)
+        db.commit()
+        request.state.user_id = user.id
+        request.state.user_role = user.role
+        request.state.user_status = user.status
+        request.state.user_name = user.display_name
+
+    if path.startswith(_GATE_EXEMPT):
+        return await call_next(request)
+
+    if request.state.user_status != "approved":
+        return JSONResponse(
+            status_code=403,
+            content={
+                "detail": (
+                    "Your account is awaiting approval by an administrator."
+                    if request.state.user_status == "pending"
+                    else "Your account has been disabled."
+                ),
+                "account_status": request.state.user_status,
+            },
+        )
+
+    if request.method not in _SAFE_METHODS and not auth_service.can_write(request.state.user_role):
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "Your role is read-only and cannot make changes."},
+        )
+
     return await call_next(request)
 
 

@@ -62,6 +62,12 @@ Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md
   *never-cloud* are never sent; and every call is audited.
 - **Multi-currency** — original amount kept and converted to your base currency;
   manual rates by default, opt-in online ECB rates (Frankfurter).
+- **Multi-user & roles** — identity comes from Home Assistant (the first person
+  becomes the **owner/administrator**); anyone new appears **pending** and has no
+  access until the owner approves them. Roles are *owner* (admin), *member*
+  (read/write), and *viewer*/*child* (read-only). Read-only roles can't change
+  anything, and the last owner can't be removed. (Standalone, with no HA in front,
+  it runs single-user exactly as before.)
 - **Home Assistant sensors** — optional MQTT discovery publishes spend/income/net,
   review count, per-budget progress, per-project totals and monthly subscriptions.
 - **Privacy & safety** — strict local by default, redaction, backup/restore,

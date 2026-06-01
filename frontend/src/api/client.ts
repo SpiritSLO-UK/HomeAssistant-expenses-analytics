@@ -1016,3 +1016,49 @@ export function enableEncryption(passphrase: string, unlock_mode: string): Promi
 export function disableEncryption(passphrase: string): Promise<{ status: string }> {
   return fetchJson("api/security/disable", { method: "POST", body: JSON.stringify({ passphrase }) });
 }
+
+// --- Users & access control (spec §6, §28; backlog #82, #126) ---
+
+export interface Me {
+  id: number;
+  display_name: string;
+  role: string;
+  status: string;
+  is_admin: boolean;
+  can_write: boolean;
+}
+
+export interface User {
+  id: number;
+  display_name: string;
+  email: string | null;
+  role: string;
+  status: string;
+  is_active: boolean;
+  external_id: string | null;
+  last_seen_at: string | null;
+  created_at: string;
+}
+
+export function getMe(): Promise<Me> {
+  return fetchJson<Me>("api/users/me");
+}
+
+export function listUsers(): Promise<User[]> {
+  return fetchJson<User[]>("api/users");
+}
+
+export function updateUser(
+  id: number,
+  patch: { role?: string; status?: string; display_name?: string; email?: string },
+): Promise<User> {
+  return fetchJson<User>(`api/users/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
+}
+
+export function approveUser(id: number): Promise<User> {
+  return fetchJson<User>(`api/users/${id}/approve`, { method: "POST" });
+}
+
+export function deleteUser(id: number): Promise<{ status: string; id: number }> {
+  return fetchJson(`api/users/${id}`, { method: "DELETE" });
+}

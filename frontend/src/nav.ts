@@ -5,6 +5,7 @@ export interface NavItem {
   path: string;
   label: string;
   icon: string;
+  ownerOnly?: boolean; // shown only to the owner (administrator)
 }
 
 export const NAV_ITEMS: NavItem[] = [
@@ -19,5 +20,6 @@ export const NAV_ITEMS: NavItem[] = [
   { path: "/subscriptions", label: "Subscriptions", icon: "🔁" },
   { path: "/receipts", label: "Receipts", icon: "🧾" },
   { path: "/review", label: "Review Queue", icon: "🔎" },
+  { path: "/users", label: "Users", icon: "👥", ownerOnly: true },
   { path: "/settings", label: "Settings", icon: "🔧" },
 ];

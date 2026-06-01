@@ -1,0 +1,223 @@
+"""Identity & access control (spec §6, §8.2, §28; backlog #82, #126, #74).
+
+Home Assistant authenticates the user *before* the request reaches this add-on
+and forwards their identity via ingress headers (``X-Remote-User-Id`` /
+``X-Remote-User-Name`` / ``X-Remote-User-Display-Name``). We map that to a
+:class:`User` row. Running standalone (no HA, e.g. local dev) there is no header,
+so we fall back to a single ``"local"`` owner — behaviour identical to the old
+single-user app.
+
+Bootstrap rule: the **first** user ever seen becomes the ``owner`` and is
+auto-approved. Anyone who appears afterwards starts as a ``member`` with status
+``pending`` and has no data access until the owner approves them (#126).
+
+This module never trusts a client-supplied role — the role always comes from the
+stored row, keyed by the proxy-supplied identity (#74).
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+
+from fastapi import Depends, HTTPException, Request, status
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from app.db.session import get_db
+from app.models import User
+from app.models.user import ADMIN_ROLES, ROLES, STATUSES, WRITE_ROLES
+from app.services import audit_service
+from app.services.household_service import get_or_create_default_household
+
+# HA ingress identity headers (lower-cased lookup; Starlette headers are
+# case-insensitive). ``X-Remote-User-Id`` is the stable key.
+HEADER_ID = "x-remote-user-id"
+HEADER_NAME = "x-remote-user-name"
+HEADER_DISPLAY = "x-remote-user-display-name"
+
+# Standalone / dev fallback identity (no HA in front).
+LOCAL_EXTERNAL_ID = "local"
+
+
+def _now() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
+def _identity_from_request(request: Request) -> tuple[str, str]:
+    """Return ``(external_id, display_name)`` from ingress headers or the local
+    fallback. Never raises — an unauthenticated edge resolves to the local user."""
+    headers = request.headers
+    ext_id = (headers.get(HEADER_ID) or "").strip()
+    display = (headers.get(HEADER_DISPLAY) or headers.get(HEADER_NAME) or "").strip()
+    if not ext_id:
+        return LOCAL_EXTERNAL_ID, (display or "Local User")
+    return ext_id, (display or "Home Assistant user")
+
+
+def resolve_current_user(db: Session, request: Request) -> User:
+    """Find or create the user for this request and refresh ``last_seen_at``.
+
+    First user → owner+approved (bootstrap). Later users → member+pending (#126).
+    The caller is responsible for committing the session.
+    """
+    ext_id, display = _identity_from_request(request)
+    user = db.scalars(select(User).where(User.external_id == ext_id)).first()
+
+    if user is None:
+        # Adopt a pre-existing single-user row (created before multi-user) so an
+        # upgraded install keeps its owner instead of spawning a duplicate.
+        if ext_id == LOCAL_EXTERNAL_ID:
+            user = db.scalars(
+                select(User).where(User.external_id.is_(None)).order_by(User.id).limit(1)
+            ).first()
+
+    if user is None:
+        is_first = db.scalar(select(func.count(User.id))) == 0
+        household = get_or_create_default_household(db)
+        user = User(
+            household_id=household.id,
+            external_id=ext_id,
+            display_name=display,
+            role="owner" if is_first else "member",
+            status="approved" if is_first else "pending",
+            is_active=True,
+        )
+        db.add(user)
+        db.flush()
+    else:
+        if user.external_id is None:
+            user.external_id = ext_id
+        if display and user.display_name != display and ext_id != LOCAL_EXTERNAL_ID:
+            user.display_name = display
+
+    user.last_seen_at = _now()
+    return user
+
+
+# --- Role helpers (single source of truth) ---
+
+
+def can_write(role: str) -> bool:
+    return role in WRITE_ROLES
+
+
+def is_admin(role: str) -> bool:
+    return role in ADMIN_ROLES
+
+
+# --- FastAPI dependencies ---
+
+
+def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
+    """The authenticated user for this request.
+
+    The auth middleware resolves the user up front and stashes the id on
+    ``request.state``; we re-load it on the route's own session. If state is
+    absent (e.g. a route hit before the middleware, or in a unit test) we resolve
+    directly.
+    """
+    uid = getattr(request.state, "user_id", None)
+    if uid is not None:
+        user = db.get(User, uid)
+        if user is not None:
+            return user
+    user = resolve_current_user(db, request)
+    db.commit()
+    return user
+
+
+def require_owner(user: User = Depends(get_current_user)) -> User:
+    """Gate admin-only endpoints (user management, system actions)."""
+    if not is_admin(user.role):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This action requires the owner (administrator) role.",
+        )
+    return user
+
+
+# --- User administration (owner only; guarded against losing the last owner) ---
+
+
+def list_users(db: Session) -> list[User]:
+    return list(db.scalars(select(User).order_by(User.id)).all())
+
+
+def approved_owner_count(db: Session) -> int:
+    return db.scalar(
+        select(func.count(User.id)).where(User.role == "owner", User.status == "approved")
+    ) or 0
+
+
+def _is_last_owner(db: Session, target: User) -> bool:
+    return (
+        target.role == "owner"
+        and target.status == "approved"
+        and approved_owner_count(db) <= 1
+    )
+
+
+def update_user(
+    db: Session,
+    *,
+    actor: User,
+    target: User,
+    role: str | None = None,
+    new_status: str | None = None,
+    display_name: str | None = None,
+    email: str | None = None,
+) -> User:
+    """Apply an owner-initiated change to ``target``. Raises ``ValueError`` on a
+    bad value or if the change would strip the household's last active owner."""
+    if role is not None and role not in ROLES:
+        raise ValueError(f"role must be one of {list(ROLES)}")
+    if new_status is not None and new_status not in STATUSES:
+        raise ValueError(f"status must be one of {list(STATUSES)}")
+
+    effective_role = role if role is not None else target.role
+    effective_status = new_status if new_status is not None else target.status
+    remains_active_owner = effective_role == "owner" and effective_status == "approved"
+    if _is_last_owner(db, target) and not remains_active_owner:
+        raise ValueError("Cannot demote, disable, or remove the last active owner.")
+
+    changes: dict = {}
+    if role is not None and role != target.role:
+        changes["role"] = [target.role, role]
+        target.role = role
+    if new_status is not None and new_status != target.status:
+        changes["status"] = [target.status, new_status]
+        target.status = new_status
+        target.is_active = new_status != "disabled"
+    if display_name is not None and display_name.strip():
+        target.display_name = display_name.strip()
+    if email is not None:
+        target.email = email.strip() or None
+
+    audit_service.record(
+        db,
+        actor=actor.display_name,
+        action="update_user",
+        entity_type="user",
+        entity_id=target.id,
+        details={"changes": changes},
+        household_id=target.household_id,
+    )
+    db.commit()
+    db.refresh(target)
+    return target
+
+
+def delete_user(db: Session, *, actor: User, target: User) -> None:
+    if _is_last_owner(db, target):
+        raise ValueError("Cannot delete the last active owner.")
+    audit_service.record(
+        db,
+        actor=actor.display_name,
+        action="delete_user",
+        entity_type="user",
+        entity_id=target.id,
+        details={"display_name": target.display_name, "role": target.role},
+        household_id=target.household_id,
+    )
+    db.delete(target)
+    db.commit()

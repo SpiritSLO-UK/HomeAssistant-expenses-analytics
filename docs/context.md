@@ -72,8 +72,9 @@ learning, split transactions, projects & tags, budgets + MQTT sensors,
 recurring/subscriptions, review queue, receipts + OCR, local AI, cloud AI
 approval, PDF statement import), plus a data-safety pass (redaction,
 backup/restore, demo data, add-on isolation) and multi-currency. That's the full
-spec §29 roadmap; remaining is Stage 12 polish. Full detail in spec §0 and git
-history.
+spec §29 roadmap. **Stage 12 polish** is now underway — first sub-stage done:
+multi-user identity + RBAC + new-user approval (see "Multi-user & access control"
+below). Full detail in spec §0 and git history.
 
 > Stage-numbering note: the spec §29 order is Stage 7 = review queue, Stage 8 =
 > receipts. We built recurring/subscriptions (§20, not a numbered §29 stage)
@@ -265,12 +266,45 @@ default distro is Docker's and has no userland. Python 3.12 was provisioned via
 (`pip install -e backend[dev] sqlcipher3-binary`). Run Linux tests:
 `/opt/hafi-venv/bin/python -m pytest` from `/mnt/c/.../backend`.
 
+## Multi-user & access control (Stage 12-S1 — spec §6, §8.2, §28; #82/#126/#74)
+
+Identity is **not** owned by this app — Home Assistant authenticates the user at
+the ingress edge and forwards `X-Remote-User-Id` / `-Name` / `-Display-Name`.
+`auth_service.resolve_current_user` maps that header to a `User` row; with **no
+header** (standalone/local dev) it falls back to a single `"local"` owner, so the
+old single-user behaviour is unchanged. An upgraded install's pre-existing
+single-user row (null `external_id`) is **adopted** as the local owner rather than
+duplicated.
+
+- **Bootstrap rule:** the first user ever seen → `owner` + `approved`. Everyone
+  after → `member` + `pending` (no access until the owner approves — #126).
+- **Roles** (`models/user.py`): `owner` (admin), `member` (read/write), `viewer`,
+  `child` (read-only). `WRITE_ROLES = {owner, member}`, `ADMIN_ROLES = {owner}`.
+- **Enforcement** is a single `_auth_guard` middleware in `main.py` (runs after
+  the lock guard; skips when the DB is locked): resolves the user, stashes
+  `request.state.user_*`, then for `/api/*` (except `/health`, `/security`,
+  `/users/me`) returns **403** if the account isn't `approved`, and **403
+  read-only** if a non-`WRITE_ROLES` user issues a non-GET. Per-route admin
+  actions additionally use the `require_owner` dependency.
+- **API** `routes_users`: `GET /users/me` (always reachable), `GET /users`
+  (owner), `PATCH /users/{id}`, `POST /users/{id}/approve`, `DELETE /users/{id}`.
+  Guard (#74): can't demote/disable/delete the **last active owner**; the role is
+  always read from the stored row, never trusted from the client.
+- **Audit:** `audit_service.record()` (new — the `audit_logs` table existed but
+  was unwritten) logs user-management actions; reused for failed-unlock/sensitive
+  actions in S3.
+- **UI:** owner-only **Users** page (approve queue + role/status/remove); a
+  pending/disabled user sees an `AccountGate` instead of the app; the Users nav
+  item is owner-only. Migration `d1e2f3a4b5c6` adds `users.external_id`/`status`/
+  `last_seen_at`.
+- **Still to come in this cluster:** MFA/TOTP gate + admin step-up (S2 / #124),
+  security-health panel + failed-unlock alerts (S3 / #128/#130), hardening pass
+  (S4 / #74).
+
 ## Open questions / to scope
 
 - **#78 Data retention/expiry** — purge vs archive? which data (transactions,
   receipts, AI logs)? per-category retention?
-- **#79 Multi-user roles** — admin / member / viewer / child; individual vs
-  group/shared views; per-account permissions.
 - **#29 FX coverage** — Frankfurter is ECB (~30 currencies); add a wider source
   (e.g. fawazahmed0 API) if exotic currencies are needed.
 
