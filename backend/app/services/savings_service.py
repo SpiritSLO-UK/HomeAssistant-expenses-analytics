@@ -25,14 +25,13 @@ TWO_DP = Decimal("0.01")
 # --- Accounts ----------------------------------------------------------------
 
 
-def list_accounts(db: Session) -> list[Account]:
-    return list(
-        db.scalars(
-            select(Account)
-            .where(Account.account_type == SAVINGS_TYPE, Account.is_active.is_(True))
-            .order_by(Account.name)
-        ).all()
+def list_accounts(db: Session, *, owner_user_id: int | None = None) -> list[Account]:
+    stmt = select(Account).where(
+        Account.account_type == SAVINGS_TYPE, Account.is_active.is_(True)
     )
+    if owner_user_id is not None:
+        stmt = stmt.where(Account.owner_user_id == owner_user_id)
+    return list(db.scalars(stmt.order_by(Account.name)).all())
 
 
 def create_account(db: Session, *, name: str, institution: str | None = None,
@@ -97,10 +96,10 @@ def latest_balance(db: Session, account_id: int) -> Decimal | None:
     return Decimal(row.balance) if row else None
 
 
-def total_savings(db: Session) -> Decimal:
+def total_savings(db: Session, *, owner_user_id: int | None = None) -> Decimal:
     """Sum of the latest snapshot of every savings account (base currency assumed)."""
     total = Decimal("0.00")
-    for account in list_accounts(db):
+    for account in list_accounts(db, owner_user_id=owner_user_id):
         bal = latest_balance(db, account.id)
         if bal is not None:
             total += bal

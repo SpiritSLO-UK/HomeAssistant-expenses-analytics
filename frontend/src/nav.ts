@@ -6,6 +6,9 @@ export interface NavItem {
   label: string;
   icon: string;
   ownerOnly?: boolean; // shown only to the owner (administrator)
+  // Shown to the restricted `child` role (which sees nothing else). Mirrors
+  // `_CHILD_ALLOWED_PREFIXES` in backend/app/main.py — keep the two in sync.
+  childVisible?: boolean;
 }
 
 export const NAV_ITEMS: NavItem[] = [
@@ -18,6 +21,7 @@ export const NAV_ITEMS: NavItem[] = [
   { path: "/projects", label: "Projects", icon: "📁" },
   { path: "/budgets", label: "Budgets", icon: "🎯" },
   { path: "/savings", label: "Savings", icon: "💰" },
+  { path: "/allowance", label: "Allowance", icon: "🧸", childVisible: true },
   { path: "/subscriptions", label: "Subscriptions", icon: "🔁" },
   { path: "/receipts", label: "Receipts", icon: "🧾" },
   { path: "/review", label: "Review Queue", icon: "🔎" },

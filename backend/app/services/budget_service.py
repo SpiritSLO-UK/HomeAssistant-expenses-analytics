@@ -138,6 +138,12 @@ def status_for(db: Session, budget: Budget, ref: date) -> dict:
 
 
 def summary(db: Session, ref: date) -> list[dict]:
-    """Status for every budget (spec §24.9 GET /api/budgets/summary)."""
-    budgets = db.scalars(select(Budget).order_by(Budget.name)).all()
+    """Status for every *household* budget (spec §24.9 GET /api/budgets/summary).
+
+    Child-owned budgets (``owner_user_id`` set) are a kid's-allowance concern and
+    are surfaced only on the child's allowance view, so they're excluded here.
+    """
+    budgets = db.scalars(
+        select(Budget).where(Budget.owner_user_id.is_(None)).order_by(Budget.name)
+    ).all()
     return [status_for(db, b, ref) for b in budgets]

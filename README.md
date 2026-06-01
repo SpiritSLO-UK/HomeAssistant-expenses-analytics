@@ -73,9 +73,14 @@ Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md
 - **Multi-user & roles** — identity comes from Home Assistant (the first person
   becomes the **owner/administrator**); anyone new appears **pending** and has no
   access until the owner approves them. Roles are *owner* (admin), *member*
-  (read/write), and *viewer*/*child* (read-only). Read-only roles can't change
-  anything, and the last owner can't be removed. (Standalone, with no HA in front,
-  it runs single-user exactly as before.)
+  (read/write), *viewer* (read-only), and *child* (allowance-only). Read-only
+  roles can't change anything, and the last owner can't be removed. (Standalone,
+  with no HA in front, it runs single-user exactly as before.)
+- **Kids' allowance** — the *child* role is a friendly pocket-money view: a child
+  sees only **their** budgets (candy, toys…), **their** savings, and an itemized
+  list of purchases attributed to them. Parents attribute spend from the
+  Transactions page (a whole purchase or just part) or add manual items — and it
+  shows on the kid **without changing the parent's own expenses or budgets**.
 - **Two-factor (optional)** — each user can turn on TOTP MFA (Google
   Authenticator, Aegis, 1Password…): a 6-digit code to open the app, and a fresh
   code to confirm admin actions. Time-based, on-device, off by default.

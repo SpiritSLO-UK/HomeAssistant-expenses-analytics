@@ -391,6 +391,42 @@ now exists, optional).
 
 The security/multi-user cluster (S1–S4) is **complete**.
 
+## Child allowance view (Stage 12 — spec §6, §19; #82)
+
+A kid's pocket-money tracker. The `child` role is a narrow allowance view; parents
+attribute their own spend to a child **non-destructively** ("remain on parent's
+expense, show on kid").
+
+- **Overlay, not a reassignment:** `ChildAllocation` rows (`child_allocations`
+  table, migration `a1b2c3d4e5f6`; also adds `Budget.owner_user_id`) reference but
+  never mutate the parent's transaction, and **no normal aggregation reads them** —
+  dashboards/household budgets/analytics are untouched. Three shapes: **whole**
+  (`transaction_id`, amount = txn base), **split** (`+ transaction_split_id`,
+  amount = `split_service.split_base_amount`), **manual** (no txn refs). Amounts are
+  positive money-out in base currency.
+- **`allowance_service`**: `create_allocation` / `list_allocations` /
+  `delete_allocation`; `child_budget_status` (a child budget's spend = sum of that
+  child's allocations in the category over `budget_service.period_bounds`);
+  `summary(user)` = the child's budgets + their savings (savings accounts where
+  `Account.owner_user_id == child`, via `savings_service.list_accounts(owner_user_id=)`)
+  + the itemized list.
+- **Child budgets** are `Budget` rows with `owner_user_id` set; `budget_service.summary`
+  filters `owner_user_id IS NULL` so they never show on the household budgets page.
+- **API** `routes_allowance` (`/api/allowance`): `GET /summary` (current user; a
+  parent — `can_write` — may pass `?user_id=` to view a child, otherwise it's
+  ignored so a child only ever sees their own); `POST/GET/DELETE /allocations`.
+  Child budgets are created via the budgets API with `owner_user_id` set.
+- **Child gate** (`main.py` `_auth_guard`): `_CHILD_ALLOWED_PREFIXES =
+  ("/api/allowance/summary",)` — a `child` is 403 everywhere else (after the
+  read-only gate; `/users/me`,`/security`,`/auth/mfa` stay reachable via the
+  existing exemptions). Mirrored by `childVisible` in `nav.ts`; `App.tsx` mounts
+  only the Allowance route for a child.
+- **Frontend**: role-aware `pages/Allowance.tsx` (child = read-only "My money";
+  parent = pick-a-child management: budgets, savings, item list, add-budget +
+  add-manual-item forms) + `components/AssignToChildButton.tsx` on Transactions
+  ("→ child", whole or partial). `prefs`/queries keyed `["allowance", id]`.
+- **Stage B (designed, not built):** shared vs private accounts + per-user views.
+
 ## Trends & outliers (Stage 12 — spec §24.12, §37; #146, #150)
 
 `analytics_service` (read-only, base-currency, dashboard-consistent — transfers/

@@ -19,6 +19,7 @@ import {
 import SplitEditor from "../components/SplitEditor";
 import AiBatchPanel from "../components/AiBatchPanel";
 import CloudAiBatchPanel from "../components/CloudAiBatchPanel";
+import AssignToChildButton from "../components/AssignToChildButton";
 
 const PAGE_SIZE = 50;
 
@@ -321,6 +322,7 @@ export default function Transactions() {
                         >
                           {t.is_split ? "edit split" : "split"}
                         </button>
+                        <AssignToChildButton txn={t} base={base} />
                       </td>
                     </tr>
                     {splitId === t.id && (
