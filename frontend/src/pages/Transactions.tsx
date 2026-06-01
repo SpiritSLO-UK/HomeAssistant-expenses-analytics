@@ -2,6 +2,8 @@ import { Fragment, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   categoriseTransaction,
+  classifyWithAi,
+  getAiStatus,
   getSettings,
   listCategories,
   listProjects,
@@ -37,6 +39,7 @@ export default function Transactions() {
   const categories = useQuery({ queryKey: ["categories"], queryFn: listCategories });
   const projects = useQuery({ queryKey: ["projects"], queryFn: listProjects });
   const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
+  const aiStatus = useQuery({ queryKey: ["ai-status"], queryFn: getAiStatus });
   const base = settings.data?.base_currency ?? "GBP";
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["transactions", filters],
@@ -93,6 +96,29 @@ export default function Transactions() {
   }
   function removeTag(t: Transaction, name: string) {
     setTags.mutate({ id: t.id, tags: (t.tags ?? []).map((x) => x.name).filter((n) => n !== name) });
+  }
+
+  // AI suggests a category (never auto-applies). Cloud-manual mode previews the
+  // redacted payload and asks for approval first (spec §22.5).
+  async function suggestAi(t: Transaction) {
+    try {
+      let res = await classifyWithAi(t.id);
+      if (res.status === "approval_required") {
+        const preview = JSON.stringify(res.payload ?? {}, null, 2);
+        if (!window.confirm(`Cloud AI needs approval. Only this redacted payload is sent:\n\n${preview}\n\nApprove?`)) return;
+        res = await classifyWithAi(t.id, true);
+      }
+      if (res.status === "ok" && res.category_id) {
+        const pct = res.confidence != null ? ` (${Math.round(res.confidence * 100)}%)` : "";
+        if (window.confirm(`AI suggests: ${res.category_name}${pct}\n${res.rationale ?? ""}\n\nApply this category?`)) {
+          setCategory.mutate({ id: t.id, categoryId: res.category_id });
+        }
+      } else {
+        window.alert("AI couldn't suggest a category for this transaction.");
+      }
+    } catch (e) {
+      window.alert(String(e instanceof Error ? e.message : e));
+    }
   }
 
   const total = data?.total ?? 0;
@@ -201,6 +227,16 @@ export default function Transactions() {
                                 onClick={() => makeRule.mutate({ id: t.id, categoryId: t.category_id! })}
                               >
                                 + rule
+                              </button>
+                            )}
+                            {t.category_id === null && aiStatus.data?.enabled && (
+                              <button
+                                className="link-btn"
+                                title="Ask the AI assistant to suggest a category"
+                                style={{ marginLeft: 6 }}
+                                onClick={() => suggestAi(t)}
+                              >
+                                ✨ suggest
                               </button>
                             )}
                           </>

@@ -1,0 +1,130 @@
+"""AI gateway tests (spec §22 — Stage 9).
+
+No real LLM: a fake provider is injected into the gateway, so we test gating,
+redaction, auditing, the approval flow and the never-override guarantee without
+any network call.
+"""
+
+from __future__ import annotations
+
+from app.db.session import SessionLocal
+from app.models import Transaction
+from app.services import ai_service
+
+
+class FakeProvider:
+    name = "fake"
+    model = "fake-model"
+
+    def __init__(self, category="Groceries", confidence=0.9):
+        self.category = category
+        self.confidence = confidence
+        self.calls: list[dict] = []
+
+    def available(self) -> bool:
+        return True
+
+    def classify_transaction(self, description, amount, currency, candidate_categories):
+        self.calls.append({"description": description, "candidate_categories": candidate_categories})
+        return {"category": self.category, "confidence": self.confidence, "rationale": "because"}
+
+
+def _curve(rows):
+    head = "Date,Description,Amount,Currency,Card,Category\n"
+    return (head + "".join(f"{d},{desc},{amt},GBP,Visa,\n" for d, desc, amt in rows)).encode()
+
+
+def _import_txn(client, desc="ZZQ MARKET", amt="-12.00"):
+    up = client.post("/api/imports/upload", files={"file": ("a.csv", _curve([("2026-05-02", desc, amt)]), "text/csv")},
+                     data={"parser_id": "curve_csv"}).json()
+    client.post(f"/api/imports/{up['import_id']}/confirm")
+    return client.get("/api/transactions").json()["items"][0]["id"]
+
+
+def _set_mode(client, mode, base="http://localhost:11434/v1", model="llama3"):
+    client.put("/api/settings", json={
+        "privacy_mode": mode, "ai_provider": "openai_compatible",
+        "ai_base_url": base, "ai_model": model,
+    })
+
+
+def _classify(txn_id, **kwargs):
+    with SessionLocal() as db:
+        txn = db.get(Transaction, txn_id)
+        return ai_service.classify_transaction(db, txn, **kwargs)
+
+
+# --- gating ---
+
+def test_ai_off_by_default(client):
+    txn_id = _import_txn(client)
+    r = client.post(f"/api/ai/classify/{txn_id}")  # privacy_mode defaults to strict_local
+    assert r.status_code == 400
+    assert client.get("/api/ai/status").json()["enabled"] is False
+
+
+def test_status_reflects_settings(client):
+    _set_mode(client, "local_llm")
+    st = client.get("/api/ai/status").json()
+    assert st["enabled"] is True
+    assert st["is_cloud"] is False
+    assert st["model"] == "llama3"
+
+
+# --- local classification (suggestion only) ---
+
+def test_local_classify_suggests_without_applying(client):
+    txn_id = _import_txn(client)  # ZZQ MARKET -> uncategorised
+    _set_mode(client, "local_llm")
+    fake = FakeProvider(category="Groceries", confidence=0.8)
+    res = _classify(txn_id, provider=fake)
+
+    assert res["status"] == "ok"
+    assert res["category_name"] == "Groceries"
+    assert res["confidence"] == 0.8
+    # AI must NOT apply the category itself (spec §22.1).
+    assert client.get(f"/api/transactions/{txn_id}").json()["category_id"] is None
+    # audited as completed (spec §22.6)
+    reqs = client.get("/api/ai/requests").json()
+    assert reqs[0]["status"] == "completed"
+    assert reqs[0]["task_type"] == "classify_transaction"
+    assert reqs[0]["privacy_mode"] == "local_llm"
+
+
+def test_unknown_category_name_maps_to_none(client):
+    txn_id = _import_txn(client)
+    _set_mode(client, "local_llm")
+    res = _classify(txn_id, provider=FakeProvider(category="Not A Real Category"))
+    assert res["category_id"] is None
+
+
+# --- cloud redaction + approval (spec §22.4, §22.5) ---
+
+def test_cloud_payload_is_redacted(client):
+    txn_id = _import_txn(client, desc="CARD 4111 1111 1111 1111 PAYMENT")
+    _set_mode(client, "cloud_auto")
+    fake = FakeProvider()
+    _classify(txn_id, approved=True, provider=fake)
+    sent = fake.calls[0]["description"]
+    assert "[card]" in sent          # redacted before leaving the device
+    assert "4111 1111 1111" not in sent
+
+
+def test_cloud_manual_requires_approval(client):
+    txn_id = _import_txn(client)
+    _set_mode(client, "cloud_manual")
+    fake = FakeProvider()
+
+    first = _classify(txn_id, approved=False, provider=fake)
+    assert first["status"] == "approval_required"
+    assert fake.calls == []  # nothing sent yet
+    reasons = {i["reason"] for i in client.get("/api/review?status=open").json()}
+    assert "cloud_ai_approval_required" in reasons
+
+    approved = _classify(txn_id, approved=True, provider=fake)
+    assert approved["status"] == "ok"
+    assert len(fake.calls) == 1
+
+
+def test_invalid_privacy_mode_rejected(client):
+    assert client.put("/api/settings", json={"privacy_mode": "telepathy"}).status_code == 400

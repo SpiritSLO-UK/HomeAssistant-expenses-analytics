@@ -27,7 +27,9 @@ _Living section — updated as the project is built (see git history / README)._
 | 7 | Review queue (§23): review_service + API, Review Queue UI (resolve/ignore), fed by receipts (and ready for low-confidence/duplicate items) | ✅ Done |
 | 8 | Receipts & OCR (§21): upload/store, optional Tesseract/pypdf OCR (`ocr` extra), field extraction, transaction matching (§21.4), manual entry, Receipts UI | ✅ Done |
 | — | Recurring payments & subscriptions (§20): detection, CRUD/detect API, dashboard total, Subscriptions UI, subscriptions_total MQTT sensor | ✅ Done |
-| 9–12 | Local AI, cloud AI, PDF import, polish | 📋 Planned |
+| 9 | Local AI (§22): provider abstraction (NoAI + OpenAI-compatible), classify-transaction task, privacy gating, audit log, AI settings + "suggest" UI; off by default, suggestion-only | ✅ Done |
+| 10 | Cloud AI approval (§22.5): redaction + audit + manual-approval flow are wired in the gateway; cloud approval UI/sensitive-category blocking still to finish | 🟡 Partial |
+| 11–12 | PDF import, polish | 📋 Planned |
 
 Notable deviation from the original spec: the database default path moved from `/config/finance/finance.db` (§26.4) to the add-on's **private** `/data/finance/finance.db` for isolation — see `docs/security.md`.
 

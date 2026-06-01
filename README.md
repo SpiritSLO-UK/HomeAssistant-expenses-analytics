@@ -4,8 +4,8 @@ A **local-first, Home Assistant-first personal finance app**. Import bank
 statements, categorise transactions (rules + a vendor/category library), split
 them across categories, track projects, budgets and subscriptions, scan receipts
 (local OCR), handle multiple currencies, and publish finance sensors to Home
-Assistant over MQTT — with optional local/cloud AI to come. All privacy-first,
-with **strict local mode as the default**.
+Assistant over MQTT — with **optional, opt-in** local/cloud AI to suggest
+categories. All privacy-first, with **strict local mode as the default**.
 
 Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md)
 (the build-status section at the top tracks progress).
@@ -23,10 +23,12 @@ Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md
 | 6 | Budgets + alerts, and MQTT sensors published to Home Assistant | ✅ |
 | 7 | Review queue (resolve/ignore the things the app is unsure about) | ✅ |
 | 8 | Receipts & OCR (upload, optional local OCR, match to a transaction) | ✅ |
+| 9 | Local AI (opt-in): category suggestions via any OpenAI-compatible LLM | ✅ |
 | — | Recurring payments & subscriptions (auto-detected) | ✅ |
 | — | Data-safety: redaction, backup/restore, demo data, security hardening | ✅ |
 | — | Multi-currency + FX; encrypted backups + optional at-rest encryption | ✅ |
-| 9–12 | Local/cloud AI, PDF import, polish | planned ([spec §29](ha_finance_intelligence_spec.md)) |
+| 10 | Cloud AI approval (redaction/audit/approval wired; approval UI to finish) | 🟡 |
+| 11–12 | PDF import, polish | planned ([spec §29](ha_finance_intelligence_spec.md)) |
 
 ## What it does today
 
@@ -47,6 +49,10 @@ Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md
   (amount/date/vendor scoring). OCR runs in the add-on; the rest works anywhere.
 - **Review queue** — a safety net listing anything uncertain (unmatched receipt,
   low-confidence read, …) to resolve or ignore.
+- **AI assistant (opt-in)** — off by default; when enabled, suggests a category
+  for a transaction via any OpenAI-compatible LLM (local Ollama/LM Studio or
+  cloud). It only *suggests* — you confirm. Cloud payloads are minimised and
+  redacted, and every call is audited.
 - **Multi-currency** — original amount kept and converted to your base currency;
   manual rates by default, opt-in online ECB rates (Frankfurter).
 - **Home Assistant sensors** — optional MQTT discovery publishes spend/income/net,
@@ -84,7 +90,8 @@ Home Assistant add-on (single container)
   ├── multi-currency (FX) · optional at-rest encryption (SQLCipher)
   ├── receipts + optional local OCR (Tesseract/pypdf) · review queue
   ├── MQTT publisher → Home Assistant sensors
-  └── (later) AI gateway
+  ├── AI gateway (optional, opt-in: local/cloud OpenAI-compatible LLM)
+  └── (later) cloud-approval UI, PDF import
 ```
 
 ## Repository layout

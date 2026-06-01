@@ -63,12 +63,13 @@ HA integration holds no business logic (spec §9.4).
 
 ## Build status (summary)
 
-Stages 0–8 done (skeleton, CSV import, categories/vendors + dashboard, rules &
+Stages 0–9 done (skeleton, CSV import, categories/vendors + dashboard, rules &
 learning, split transactions, projects & tags, budgets + MQTT sensors,
-recurring/subscriptions, review queue, receipts + OCR), plus a data-safety pass
-(redaction, backup/restore, demo data, add-on isolation) and multi-currency.
-Remaining stages: AI assist (9–10), PDF import, polish. Full detail in spec §0
-and git history.
+recurring/subscriptions, review queue, receipts + OCR, local AI), plus a
+data-safety pass (redaction, backup/restore, demo data, add-on isolation) and
+multi-currency. Stage 10 (cloud AI approval) is partly wired in the gateway.
+Remaining: finish cloud-AI approval UI, PDF import, polish. Full detail in spec
+§0 and git history.
 
 > Stage-numbering note: the spec §29 order is Stage 7 = review queue, Stage 8 =
 > receipts. We built recurring/subscriptions (§20, not a numbered §29 stage)
@@ -135,6 +136,30 @@ API: `/api/subscriptions` (list/detect/patch/delete) + `GET /api/dashboard/subsc
 (monthly equivalent of active subs) completes spec §30.11. UI: a Subscriptions
 page (monthly cost, table with per-row status, "Detect now", delete). Per-vendor
 alerts (amount-changed / not-seen-when-expected, §20.3) are deferred.
+
+## AI assistant (Stage 9 / §22)
+
+**Off by default** and **suggestion-only** — AI never writes a category itself
+(spec §22.1, §43); routing stays rules → vendor → keyword first. `ai_service` is
+the single gateway: it gates by **privacy mode** (`strict_local`/`no_ai` → refuse;
+`local_llm` → on-device call; `cloud_manual` → per-call approval; `cloud_auto` →
+auto), redacts cloud payloads through `redaction.redact_for_cloud` (the one choke
+point — description/amount/currency/candidate-categories only), and **audits
+every call** to `AIRequest` (provider/model/task/mode/approval/payload/response/
+status, spec §22.6). `ai_provider` has `NoAIProvider` + `OpenAICompatibleProvider`
+(httpx → `/chat/completions`, JSON-validated) which covers Ollama / LM Studio /
+llama.cpp / HA LLM / cloud — local vs cloud is just base URL + key. The API key
+is **env-only** (`HAFI_AI_API_KEY`), never in the DB; endpoint/model are DB
+settings. API: `GET /api/ai/status`, `POST /api/ai/classify/{txn}?approve=`,
+`GET /api/ai/requests`. UI: an AI Settings card (mode/provider/URL/model) and a
+"✨ suggest" link on uncategorised transactions (shows rationale + confidence;
+the user confirms to apply via the normal manual-categorise path).
+
+**Stage 10 (cloud approval) status:** redaction, audit and the manual-approval
+return (`approval_required` + a `cloud_ai_approval_required` review item) are
+wired in the gateway; the dedicated cloud-approval UI and sensitive-category
+blocking are still to finish. Only `classify_transaction` is implemented;
+enrich_vendor/parse_receipt/match_receipt are deferred.
 
 ## Receipts + OCR & review queue (Stage 8 / §21, §23)
 

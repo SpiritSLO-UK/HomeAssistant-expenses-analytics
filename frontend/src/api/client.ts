@@ -582,6 +582,44 @@ export function getReviewCount(): Promise<{ open: number }> {
   return fetchJson<{ open: number }>("api/review/count");
 }
 
+// --- AI gateway (spec §22) ---
+
+export interface AIStatus {
+  privacy_mode: string;
+  enabled: boolean;
+  is_cloud: boolean;
+  provider: string | null;
+  base_url: string | null;
+  model: string | null;
+  configured: boolean;
+  has_api_key: boolean;
+}
+
+export interface ClassifyResult {
+  status: string; // ok | approval_required
+  ai_request_id: number;
+  category_id: number | null;
+  category_name: string | null;
+  confidence: number | null;
+  rationale: string | null;
+  payload?: Record<string, unknown> | null;
+}
+
+export const PRIVACY_MODES = ["strict_local", "local_llm", "cloud_manual", "cloud_auto", "no_ai"] as const;
+
+export function getAiStatus(): Promise<AIStatus> {
+  return fetchJson<AIStatus>("api/ai/status");
+}
+
+export async function classifyWithAi(transactionId: number, approve = false): Promise<ClassifyResult> {
+  const res = await fetch(apiUrl(`api/ai/classify/${transactionId}?approve=${approve}`), { method: "POST" });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error(detail.detail || `AI request failed: ${res.status}`);
+  }
+  return res.json();
+}
+
 // --- Categories (spec §24.5) ---
 
 export interface Category {

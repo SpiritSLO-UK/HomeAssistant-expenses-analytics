@@ -78,6 +78,13 @@ class Settings(BaseSettings):
     mqtt_discovery_prefix: str = "homeassistant"
     mqtt_base_topic: str = "homeassistant/finance"
 
+    # --- AI gateway (spec §22). Off by default; opt-in via privacy_mode. ---
+    # The API key for a cloud (or auth'd local) LLM is a secret, so it comes from
+    # the environment (HAFI_AI_API_KEY), never stored in the DB. The endpoint and
+    # model are non-secret and live in DB settings (settings_service).
+    ai_api_key: str | None = None
+    ai_timeout_seconds: float = 30.0
+
     # --- At-rest DB encryption (backlog #15b) ---
     # Optional. When the DB is encrypted in "stored" unlock mode, the passphrase
     # is supplied here (env HAFI_DB_KEY) so the add-on can start unattended. In

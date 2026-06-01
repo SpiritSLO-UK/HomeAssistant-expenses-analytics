@@ -8,6 +8,7 @@ import {
   downloadEncryptedBackup,
   enableEncryption,
   exportConfig,
+  getAiStatus,
   getHealth,
   getMqttStatus,
   getSecurityStatus,
@@ -15,6 +16,7 @@ import {
   importConfig,
   listFxRates,
   loadDemoData,
+  PRIVACY_MODES,
   publishMqtt,
   restoreDatabase,
   restoreEncryptedDatabase,
@@ -87,6 +89,8 @@ export default function Settings() {
       <CurrencyFx onMessage={ok} onError={fail} />
 
       <MqttCard onMessage={ok} onError={fail} />
+
+      <AiCard onMessage={ok} onError={fail} />
 
       <SecurityCard onMessage={ok} onError={fail} />
 
@@ -378,6 +382,91 @@ function CurrencyFx({
             </tbody>
           </table>
         </div>
+      )}
+    </div>
+  );
+}
+
+function AiCard({
+  onMessage,
+  onError,
+}: {
+  onMessage: (m: string) => void;
+  onError: (e: unknown) => void;
+}) {
+  const qc = useQueryClient();
+  const status = useQuery({ queryKey: ["ai-status"], queryFn: getAiStatus });
+  const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
+  const [draft, setDraft] = useState<Record<string, string>>({});
+
+  const s = settings.data;
+  const value = (key: string) => draft[key] ?? (s?.[key] ?? "");
+
+  const save = useMutation({
+    mutationFn: () => updateSettings(draft),
+    onSuccess: () => {
+      setDraft({});
+      onMessage("AI settings saved.");
+      qc.invalidateQueries({ queryKey: ["settings"] });
+      qc.invalidateQueries({ queryKey: ["ai-status"] });
+    },
+    onError,
+  });
+
+  const st = status.data;
+  const isCloud = (value("privacy_mode") || "").startsWith("cloud");
+
+  return (
+    <div className="card">
+      <h2 className="card__title">AI assistant</h2>
+      <p className="muted">
+        <strong>Off by default.</strong> AI only ever <em>suggests</em> — it never changes a category on
+        its own. Local mode keeps data on your device; cloud modes send a <strong>minimal, redacted</strong>
+        payload (description/amount/currency/candidate categories only). Works with any OpenAI-compatible
+        endpoint (Ollama, LM Studio, Home Assistant LLM, or a cloud API).
+      </p>
+      <div className="form-row" style={{ flexWrap: "wrap", gap: 8 }}>
+        <label>
+          Mode{" "}
+          <select value={value("privacy_mode")} onChange={(e) => setDraft((d) => ({ ...d, privacy_mode: e.target.value }))}>
+            {PRIVACY_MODES.map((m) => <option key={m} value={m}>{m}</option>)}
+          </select>
+        </label>
+        <label>
+          Provider{" "}
+          <select value={value("ai_provider")} onChange={(e) => setDraft((d) => ({ ...d, ai_provider: e.target.value }))}>
+            <option value="none">none</option>
+            <option value="openai_compatible">openai_compatible</option>
+          </select>
+        </label>
+        <input
+          placeholder="Base URL (e.g. http://localhost:11434/v1)"
+          value={value("ai_base_url")}
+          style={{ minWidth: 240 }}
+          onChange={(e) => setDraft((d) => ({ ...d, ai_base_url: e.target.value }))}
+        />
+        <input
+          placeholder="Model (e.g. llama3)"
+          value={value("ai_model")}
+          style={{ width: 140 }}
+          onChange={(e) => setDraft((d) => ({ ...d, ai_model: e.target.value }))}
+        />
+        <button className="btn" disabled={Object.keys(draft).length === 0 || save.isPending} onClick={() => save.mutate()}>
+          {save.isPending ? "Saving…" : "Save AI settings"}
+        </button>
+      </div>
+      {st && (
+        <ul className="kv" style={{ marginTop: 8 }}>
+          <li><span>Status</span><span>{st.enabled ? "enabled" : "disabled"}</span></li>
+          <li><span>Configured</span><span>{st.configured ? "yes" : "no (set provider + URL + model)"}</span></li>
+          {isCloud && <li><span>API key (HAFI_AI_API_KEY)</span><span>{st.has_api_key ? "set" : "not set"}</span></li>}
+        </ul>
+      )}
+      {isCloud && (
+        <p className="muted" style={{ fontSize: "0.78rem" }}>
+          Cloud mode: set the API key as the add-on’s <code>HAFI_AI_API_KEY</code> option (never stored in the
+          database). <code>cloud_manual</code> asks you to approve each request; <code>cloud_auto</code> sends automatically.
+        </p>
       )}
     </div>
   );

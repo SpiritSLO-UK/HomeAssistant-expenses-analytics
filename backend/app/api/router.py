@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.api import (
+    routes_ai,
     routes_backup,
     routes_budgets,
     routes_categories,
@@ -38,6 +39,7 @@ api_router.include_router(routes_tags.router)
 api_router.include_router(routes_subscriptions.router)
 api_router.include_router(routes_receipts.router)
 api_router.include_router(routes_review.router)
+api_router.include_router(routes_ai.router)
 api_router.include_router(routes_mqtt.router)
 api_router.include_router(routes_backup.router)
 api_router.include_router(routes_settings.router)
