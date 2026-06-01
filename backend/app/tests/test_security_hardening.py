@@ -77,15 +77,17 @@ def test_disabled_user_is_blocked(client):
     assert blocked.json()["account_status"] == "disabled"
 
 
-def test_child_role_is_read_only(client):
+def test_child_role_is_confined_to_allowance(client):
+    # The child role is a narrow allowance view (backlog #82): it may read only its
+    # own allowance summary, never the household data, and never write.
     client.get("/api/users/me")
     client.get("/api/users/me", headers=_hdr("ha-kid"))
     kid_id = next(u["id"] for u in client.get("/api/users").json() if u["external_id"] == "ha-kid")
     client.patch(f"/api/users/{kid_id}", json={"role": "child", "status": "approved"})
 
-    assert client.get("/api/transactions", headers=_hdr("ha-kid")).status_code == 200
-    write = client.post("/api/tags", json={"name": "x"}, headers=_hdr("ha-kid"))
-    assert write.status_code == 403 and "read-only" in write.json()["detail"].lower()
+    assert client.get("/api/allowance/summary", headers=_hdr("ha-kid")).status_code == 200
+    assert client.get("/api/transactions", headers=_hdr("ha-kid")).status_code == 403
+    assert client.post("/api/tags", json={"name": "x"}, headers=_hdr("ha-kid")).status_code == 403
 
 
 def test_garbage_mfa_token_is_rejected(client):

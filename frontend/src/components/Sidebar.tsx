@@ -1,8 +1,13 @@
 import { NavLink } from "react-router-dom";
 import { NAV_ITEMS } from "../nav";
 
-export default function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
-  const items = NAV_ITEMS.filter((item) => !item.ownerOnly || isAdmin);
+export default function Sidebar({ role = "owner" }: { role?: string }) {
+  const isAdmin = role === "owner";
+  const isChild = role === "child";
+  const items = NAV_ITEMS.filter((item) => {
+    if (isChild) return item.childVisible; // child sees only its allowance
+    return !item.ownerOnly || isAdmin;
+  });
   return (
     <aside className="sidebar">
       <div className="sidebar__brand">

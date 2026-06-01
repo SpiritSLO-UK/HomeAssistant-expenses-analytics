@@ -17,6 +17,9 @@ class BudgetIn(BaseModel):
     period: str = "monthly"  # weekly | monthly | quarterly | yearly | custom
     category_id: int | None = None
     project_id: int | None = None
+    # Set to a child user's id to make this a kid's-allowance budget (its spend is
+    # computed from that child's allocations, and it's hidden from the household view).
+    owner_user_id: int | None = None
     currency: str | None = None  # defaults to the household base currency
     start_date: date | None = None
     end_date: date | None = None
@@ -30,6 +33,7 @@ class BudgetUpdate(BaseModel):
     period: str | None = None
     category_id: int | None = None
     project_id: int | None = None
+    owner_user_id: int | None = None
     currency: str | None = None
     start_date: date | None = None
     end_date: date | None = None
@@ -47,6 +51,7 @@ class BudgetOut(BaseModel):
     period: str
     category_id: int | None
     project_id: int | None
+    owner_user_id: int | None
     start_date: date | None
     end_date: date | None
     rollover_enabled: bool

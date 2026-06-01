@@ -18,6 +18,12 @@ class Budget(Base, TimestampMixin):
     household_id: Mapped[int | None] = mapped_column(
         ForeignKey("households.id", ondelete="CASCADE"), nullable=True
     )
+    # When set, this is a *child* budget (a kid's allowance line, e.g. candy):
+    # its spend is computed from that child's allocations, and it is hidden from
+    # the household budgets view. NULL = a normal household budget.
+    owner_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     category_id: Mapped[int | None] = mapped_column(
         ForeignKey("categories.id", ondelete="SET NULL"), nullable=True
     )

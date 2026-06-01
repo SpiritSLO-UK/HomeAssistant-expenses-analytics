@@ -1458,3 +1458,67 @@ export function exportCategoriesCsv(month?: string): Promise<void> {
 export function exportMonthlyCsv(months?: number, month?: string): Promise<void> {
   return downloadCsv(`api/export/monthly.csv${exportParams({ months, month })}`, "monthly.csv");
 }
+
+// --- Child allowance (backlog #82) ---
+
+export interface AllowanceItem {
+  id: number;
+  as_of_date: string;
+  description: string | null;
+  category_id: number | null;
+  category_name: string | null;
+  amount: string;
+  currency: string;
+  transaction_id: number | null;
+}
+
+export interface ChildBudgetStatus {
+  budget_id: number;
+  name: string;
+  category_id: number | null;
+  period: string;
+  currency: string;
+  amount: string;
+  spent: string;
+  remaining: string;
+  percent: number;
+  status: string;
+  period_start: string;
+  period_end: string;
+}
+
+export interface AllowanceSummary {
+  user_id: number;
+  display_name: string;
+  currency: string;
+  budgets: ChildBudgetStatus[];
+  savings: { total_savings: string; accounts: SavingsAccount[]; goals: SavingsGoal[] };
+  items: AllowanceItem[];
+}
+
+// Pass userId only as a parent (owner/member) to view a child; a child always
+// gets their own regardless.
+export function getAllowanceSummary(userId?: number): Promise<AllowanceSummary> {
+  return fetchJson<AllowanceSummary>(`api/allowance/summary${userId ? `?user_id=${userId}` : ""}`);
+}
+
+export interface AllocationInput {
+  child_id: number;
+  transaction_id?: number;
+  split_id?: number;
+  category_id?: number | null;
+  amount?: string;
+  description?: string;
+  as_of?: string;
+}
+
+export function createAllocation(data: AllocationInput): Promise<AllowanceItem> {
+  return fetchJson<AllowanceItem>("api/allowance/allocations", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function deleteAllocation(id: number): Promise<void> {
+  return fetchJson(`api/allowance/allocations/${id}`, { method: "DELETE" });
+}

@@ -93,6 +93,12 @@ _SELF_SERVICE = ("/api/auth/mfa",)
 # Methods that don't mutate data (read-only roles are allowed these).
 _SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
 
+# The `child` role is a deliberately narrow allowance view: it may only reach its
+# own allowance summary (plus the gate-exempt /users/me, /security, /auth/mfa).
+# Everything else under /api is 403 for a child. Mirrors `childVisible` in
+# frontend/src/nav.ts — keep the two in sync.
+_CHILD_ALLOWED_PREFIXES = ("/api/allowance/summary",)
+
 
 @app.middleware("http")
 async def _lock_guard(request: Request, call_next):
@@ -161,6 +167,14 @@ async def _auth_guard(request: Request, call_next):
         return JSONResponse(
             status_code=403,
             content={"detail": "Your role is read-only and cannot make changes."},
+        )
+
+    # Child role: confined to its own allowance view (defence in depth — the nav
+    # also hides everything else, but the API must not rely on the client).
+    if request.state.user_role == "child" and not path.startswith(_CHILD_ALLOWED_PREFIXES):
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "This area isn't available for your account."},
         )
 
     return await call_next(request)

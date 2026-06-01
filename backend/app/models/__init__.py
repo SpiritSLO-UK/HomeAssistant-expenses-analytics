@@ -10,6 +10,7 @@ from app.models.ai_request import AIRequest
 from app.models.audit_log import AuditLog
 from app.models.budget import Budget
 from app.models.category import Category
+from app.models.child_allocation import ChildAllocation
 from app.models.fx_rate import FxRate
 from app.models.household import Household
 from app.models.project import Project
@@ -33,6 +34,7 @@ __all__ = [
     "AuditLog",
     "Budget",
     "Category",
+    "ChildAllocation",
     "FxRate",
     "Household",
     "Project",

@@ -6,6 +6,7 @@ from fastapi import APIRouter
 
 from app.api import (
     routes_ai,
+    routes_allowance,
     routes_auth,
     routes_backup,
     routes_budgets,
@@ -56,3 +57,4 @@ api_router.include_router(routes_users.router)
 api_router.include_router(routes_auth.router)
 api_router.include_router(routes_logs.router)
 api_router.include_router(routes_export.router)
+api_router.include_router(routes_allowance.router)

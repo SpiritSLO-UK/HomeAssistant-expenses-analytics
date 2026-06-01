@@ -11,6 +11,7 @@ import Rules from "./pages/Rules";
 import Projects from "./pages/Projects";
 import Budgets from "./pages/Budgets";
 import Savings from "./pages/Savings";
+import Allowance from "./pages/Allowance";
 import Subscriptions from "./pages/Subscriptions";
 import Receipts from "./pages/Receipts";
 import ReviewQueue from "./pages/ReviewQueue";
@@ -38,9 +39,24 @@ export default function App() {
     return <MfaGate />;
   }
 
+  // The child role is a narrow allowance view — only that route is mounted.
+  if (me.data?.role === "child") {
+    return (
+      <div className="layout">
+        <Sidebar role="child" />
+        <main className="content">
+          <Routes>
+            <Route path="/allowance" element={<Allowance />} />
+            <Route path="*" element={<Allowance />} />
+          </Routes>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="layout">
-      <Sidebar isAdmin={me.data?.is_admin ?? false} />
+      <Sidebar role={me.data?.role ?? "owner"} />
       <main className="content">
         <Routes>
           <Route path="/" element={<Dashboard />} />
@@ -52,6 +68,7 @@ export default function App() {
           <Route path="/projects" element={<Projects />} />
           <Route path="/budgets" element={<Budgets />} />
           <Route path="/savings" element={<Savings />} />
+          <Route path="/allowance" element={<Allowance />} />
           <Route path="/subscriptions" element={<Subscriptions />} />
           <Route path="/receipts" element={<Receipts />} />
           <Route path="/review" element={<ReviewQueue />} />
