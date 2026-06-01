@@ -12,10 +12,22 @@ import {
   getSecurityHealth,
   getSummary,
   getVendorBreakdown,
+  listAccounts,
   type MonthlyPoint,
   type TrendMetric,
 } from "../api/client";
-import { getHiddenDashboardCards, setHiddenDashboardCards } from "../prefs";
+import {
+  getDashboardView,
+  getHiddenDashboardCards,
+  setDashboardView,
+  setHiddenDashboardCards,
+} from "../prefs";
+
+const VIEWS: { key: string; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "mine", label: "Mine" },
+  { key: "shared", label: "Shared" },
+];
 
 const OPTIONAL_CARDS: { key: string; label: string }[] = [
   { key: "headsup", label: "Heads-up" },
@@ -54,14 +66,24 @@ export default function Dashboard() {
       return next;
     });
 
-  const summary = useQuery({ queryKey: ["summary", monthDate], queryFn: () => getSummary(monthDate) });
+  // Mine/Shared/All view toggle (#66/#82) — only meaningful once some account has
+  // an owner, so it's hidden in the common all-shared (single-user) case.
+  const [view, setView] = useState<string>(() => getDashboardView());
+  const accounts = useQuery({ queryKey: ["accounts"], queryFn: listAccounts });
+  const hasOwned = (accounts.data ?? []).some((a) => a.owner_user_id !== null);
+  const chooseView = (v: string) => {
+    setView(v);
+    setDashboardView(v);
+  };
+
+  const summary = useQuery({ queryKey: ["summary", monthDate, view], queryFn: () => getSummary(monthDate, view) });
   const categories = useQuery({
-    queryKey: ["dash-categories", monthDate],
-    queryFn: () => getCategoryBreakdown(monthDate),
+    queryKey: ["dash-categories", monthDate, view],
+    queryFn: () => getCategoryBreakdown(monthDate, view),
   });
   const vendors = useQuery({
-    queryKey: ["dash-vendors", monthDate],
-    queryFn: () => getVendorBreakdown(monthDate),
+    queryKey: ["dash-vendors", monthDate, view],
+    queryFn: () => getVendorBreakdown(monthDate, view),
   });
 
   const maxCat = Math.max(1, ...(categories.data ?? []).map((c) => Number(c.total)));
@@ -70,7 +92,20 @@ export default function Dashboard() {
     <div className="page">
       <div className="page__head">
         <h1 className="page__title">Dashboard</h1>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          {hasOwned && (
+            <div className="form-row" style={{ gap: 4 }} title="Whose accounts to include">
+              {VIEWS.map((v) => (
+                <button
+                  key={v.key}
+                  className={"btn btn--sm" + (view === v.key ? "" : " btn--ghost")}
+                  onClick={() => chooseView(v.key)}
+                >
+                  {v.label}
+                </button>
+              ))}
+            </div>
+          )}
           <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
           <button className="btn btn--ghost" onClick={() => setCustomise((v) => !v)}>
             {customise ? "Done" : "⚙ Customise"}
@@ -104,7 +139,7 @@ export default function Dashboard() {
       </div>
 
       {show("headsup") && <HeadsUpCard monthDate={monthDate} />}
-      {show("trends") && <TrendsCard monthDate={monthDate} />}
+      {show("trends") && <TrendsCard monthDate={monthDate} view={view} />}
 
       {summary.data && summary.data.total_transactions === 0 && (
         <div className="card">
@@ -212,10 +247,10 @@ function TrendMini({ label, values, metric, currency, key_ }: {
   );
 }
 
-function TrendsCard({ monthDate }: { monthDate: string }) {
+function TrendsCard({ monthDate, view }: { monthDate: string; view: string }) {
   const q = useQuery({
-    queryKey: ["dash-monthly", monthDate],
-    queryFn: () => getMonthlySeries(6, monthDate),
+    queryKey: ["dash-monthly", monthDate, view],
+    queryFn: () => getMonthlySeries(6, monthDate, view),
   });
   const data = q.data;
   if (!data || data.months.length < 2) return null;

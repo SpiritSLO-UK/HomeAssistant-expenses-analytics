@@ -903,16 +903,24 @@ export interface VendorBreakdownItem {
   count: number;
 }
 
-export function getSummary(month?: string): Promise<DashboardSummary> {
-  return fetchJson<DashboardSummary>(`api/dashboard/summary${month ? `?month=${month}` : ""}`);
+function dashQuery(month?: string, view?: string): string {
+  const q = new URLSearchParams();
+  if (month) q.set("month", month);
+  if (view && view !== "all") q.set("view", view);  // Mine/Shared/All toggle (#66)
+  const qs = q.toString();
+  return qs ? `?${qs}` : "";
 }
 
-export function getCategoryBreakdown(month?: string): Promise<CategoryBreakdownItem[]> {
-  return fetchJson<CategoryBreakdownItem[]>(`api/dashboard/categories${month ? `?month=${month}` : ""}`);
+export function getSummary(month?: string, view?: string): Promise<DashboardSummary> {
+  return fetchJson<DashboardSummary>(`api/dashboard/summary${dashQuery(month, view)}`);
 }
 
-export function getVendorBreakdown(month?: string): Promise<VendorBreakdownItem[]> {
-  return fetchJson<VendorBreakdownItem[]>(`api/dashboard/vendors${month ? `?month=${month}` : ""}`);
+export function getCategoryBreakdown(month?: string, view?: string): Promise<CategoryBreakdownItem[]> {
+  return fetchJson<CategoryBreakdownItem[]>(`api/dashboard/categories${dashQuery(month, view)}`);
+}
+
+export function getVendorBreakdown(month?: string, view?: string): Promise<VendorBreakdownItem[]> {
+  return fetchJson<VendorBreakdownItem[]>(`api/dashboard/vendors${dashQuery(month, view)}`);
 }
 
 // --- Trends & outliers (backlog #146, #150) ---
@@ -955,9 +963,10 @@ export interface OutliersResponse {
   items: OutlierItem[];
 }
 
-export function getMonthlySeries(months = 6, month?: string): Promise<MonthlySeries> {
+export function getMonthlySeries(months = 6, month?: string, view?: string): Promise<MonthlySeries> {
   const q = new URLSearchParams({ months: String(months) });
   if (month) q.set("month", month);
+  if (view && view !== "all") q.set("view", view);
   return fetchJson<MonthlySeries>(`api/dashboard/monthly?${q.toString()}`);
 }
 
@@ -1521,4 +1530,30 @@ export function createAllocation(data: AllocationInput): Promise<AllowanceItem> 
 
 export function deleteAllocation(id: number): Promise<void> {
   return fetchJson(`api/allowance/allocations/${id}`, { method: "DELETE" });
+}
+
+// --- Accounts (shared vs private; backlog #66/#82) ---
+
+export interface Account {
+  id: number;
+  name: string;
+  institution: string | null;
+  account_type: string;
+  currency: string;
+  is_active: boolean;
+  owner_user_id: number | null;
+  owner_name: string | null;
+  is_shared: boolean;
+  is_private: boolean;
+}
+
+export function listAccounts(): Promise<Account[]> {
+  return fetchJson<Account[]>("api/accounts");
+}
+
+export function updateAccount(
+  id: number,
+  patch: { name?: string; account_type?: string; is_shared?: boolean; owner_user_id?: number | null },
+): Promise<Account> {
+  return fetchJson<Account>(`api/accounts/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
 }
