@@ -65,6 +65,7 @@ class OutlierItem(BaseModel):
     transaction_id: int | None = None
     category_id: int | None = None
     budget_id: int | None = None
+    subscription_id: int | None = None
 
 
 class OutliersResponse(BaseModel):

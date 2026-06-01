@@ -12,6 +12,7 @@ from app.schemas.subscriptions import (
     FREQUENCIES,
     STATUSES,
     DetectResult,
+    SubscriptionAlerts,
     SubscriptionOut,
     SubscriptionUpdate,
 )
@@ -24,6 +25,12 @@ router = APIRouter(prefix="/subscriptions", tags=["subscriptions"])
 def list_subscriptions(db: Session = Depends(get_db)) -> list[dict]:
     subs = db.scalars(select(Subscription).order_by(Subscription.name)).all()
     return [subscription_service.to_dict(s) for s in subs]
+
+
+@router.get("/alerts", response_model=SubscriptionAlerts)
+def subscription_alerts(within_days: int = 7, db: Session = Depends(get_db)) -> dict:
+    """Upcoming renewals + missed payments for active subscriptions (spec §20.3)."""
+    return subscription_service.alerts(db, within_days=max(1, min(within_days, 60)))
 
 
 @router.post("/detect", response_model=DetectResult)

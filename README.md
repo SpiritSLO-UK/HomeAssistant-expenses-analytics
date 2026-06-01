@@ -47,7 +47,8 @@ Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md
 - **Budgets** — per-category, per-project or total budgets over weekly →
   yearly periods, with on-track / near-limit / over status.
 - **Subscriptions** — recurring payments detected automatically, with a monthly
-  cost total.
+  cost total, plus **alerts** for renewals due soon and payments that look
+  missed (also surfaced in the dashboard heads-up).
 - **Receipts** — upload a photo/PDF; optional local OCR (Tesseract) reads the
   merchant/date/total, or enter them by hand, then match to a transaction
   (amount/date/vendor scoring). OCR runs in the add-on; the rest works anywhere.

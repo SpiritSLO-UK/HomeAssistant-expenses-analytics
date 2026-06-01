@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import statistics
 from collections import defaultdict
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 
 from sqlalchemy import func, select
@@ -215,4 +215,40 @@ def dashboard_summary(db: Session) -> dict:
         "monthly_total": str(monthly_total(db)),
         "count": len(items),
         "subscriptions": items,
+    }
+
+
+def alerts(
+    db: Session,
+    ref: date | None = None,
+    *,
+    within_days: int = 7,
+    overdue_grace: int = 3,
+) -> dict:
+    """Renewal reminders + missed-payment warnings for **active** subscriptions
+    (spec §20.3). ``upcoming`` = next charge due within ``within_days`` (or just
+    passed, within the grace window); ``overdue`` = expected more than
+    ``overdue_grace`` days ago and not seen since (a missed payment, or a sub the
+    user forgot to cancel). ``ref`` defaults to today."""
+    ref = ref or date.today()
+    upcoming: list[dict] = []
+    overdue: list[dict] = []
+    for sub in db.scalars(select(Subscription).where(Subscription.status == "active")).all():
+        if sub.next_expected_date is None:
+            continue
+        days = (sub.next_expected_date - ref).days
+        item = to_dict(sub)
+        if days < -overdue_grace:
+            overdue.append({**item, "days_overdue": -days, "expected_date": sub.next_expected_date.isoformat()})
+        elif days <= within_days:
+            upcoming.append({**item, "days_until": days})
+
+    upcoming.sort(key=lambda x: x["days_until"])
+    overdue.sort(key=lambda x: x["days_overdue"], reverse=True)
+    return {
+        "currency": settings_service.get_base_currency(db),
+        "ref": ref.isoformat(),
+        "within_days": within_days,
+        "upcoming": upcoming,
+        "overdue": overdue,
     }

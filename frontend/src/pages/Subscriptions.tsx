@@ -6,6 +6,7 @@ import {
   detectSubscriptions,
   getDashboardSubscriptions,
   getSettings,
+  getSubscriptionAlerts,
   listSubscriptions,
   updateSubscription,
   type Subscription,
@@ -24,12 +25,14 @@ export default function Subscriptions() {
 
   const subs = useQuery({ queryKey: ["subscriptions"], queryFn: listSubscriptions });
   const dash = useQuery({ queryKey: ["dashboard-subscriptions"], queryFn: getDashboardSubscriptions });
+  const alerts = useQuery({ queryKey: ["subscription-alerts"], queryFn: () => getSubscriptionAlerts(7) });
   const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
   const base = settings.data?.base_currency ?? "GBP";
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["subscriptions"] });
     qc.invalidateQueries({ queryKey: ["dashboard-subscriptions"] });
+    qc.invalidateQueries({ queryKey: ["subscription-alerts"] });
   };
 
   const detect = useMutation({
@@ -69,6 +72,31 @@ export default function Subscriptions() {
             <strong>{dash.data.monthly_total} {base}</strong>{" "}
             <span className="muted">/ month · {dash.data.count} active subscription(s)</span>
           </p>
+        </div>
+      )}
+
+      {alerts.data && (alerts.data.upcoming.length > 0 || alerts.data.overdue.length > 0) && (
+        <div className="card" style={{ borderLeft: "3px solid #e0a800" }}>
+          <h2 className="card__title">Alerts</h2>
+          <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 6 }}>
+            {alerts.data.overdue.map((s) => (
+              <li key={`o-${s.id}`}>
+                ⚠️ <strong>{s.name}</strong>{" "}
+                <span className="muted">
+                  expected {s.expected_date} ({s.days_overdue} day(s) ago) — {s.amount} {base}. Missed, or cancel it?
+                </span>
+              </li>
+            ))}
+            {alerts.data.upcoming.map((s) => (
+              <li key={`u-${s.id}`}>
+                🔔 <strong>{s.name}</strong>{" "}
+                <span className="muted">
+                  {s.days_until != null && s.days_until <= 0 ? "due now" : `due in ${s.days_until} day(s)`}
+                  {" "}({s.next_expected_date}) — {s.amount} {base}
+                </span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 

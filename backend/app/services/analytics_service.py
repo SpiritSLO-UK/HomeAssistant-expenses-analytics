@@ -25,7 +25,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Transaction
-from app.services import budget_service, dashboard_service, settings_service
+from app.services import budget_service, dashboard_service, settings_service, subscription_service
 
 # Outlier thresholds (base-currency units / multipliers).
 LARGE_CHARGE_FLOOR = Decimal("50")       # ignore anything below this, however rare
@@ -266,6 +266,39 @@ def _budget_alerts(db: Session, ref: date) -> list[dict]:
     return items
 
 
+def _subscription_alerts(db: Session) -> list[dict]:
+    """Surface upcoming-renewal / missed-payment subscription alerts (spec §20.3)
+    in the heads-up card. Always relative to *today* (a "now" concern), regardless
+    of the month being viewed."""
+    data = subscription_service.alerts(db)
+    items = []
+    for sub in data["overdue"]:
+        items.append(
+            {
+                "type": "subscription",
+                "severity": "warn",
+                "title": f"Subscription not seen: {sub['name']}",
+                "detail": f"{sub['amount']} was expected {sub['expected_date']} "
+                f"({sub['days_overdue']} day(s) ago) — check it wasn't missed or cancelled",
+                "amount": sub["amount"],
+                "subscription_id": sub["id"],
+            }
+        )
+    for sub in data["upcoming"]:
+        when = "due now" if sub["days_until"] <= 0 else f"due in {sub['days_until']} day(s)"
+        items.append(
+            {
+                "type": "subscription",
+                "severity": "info",
+                "title": f"Subscription {when}: {sub['name']}",
+                "detail": f"{sub['amount']} on {sub['next_expected_date']}",
+                "amount": sub["amount"],
+                "subscription_id": sub["id"],
+            }
+        )
+    return items
+
+
 def outliers(db: Session, ref: date, *, history_months: int = 3, lookback: int = 6) -> dict:
     cur_start, cur_end = dashboard_service.month_bounds(ref)
     items: list[dict] = []
@@ -273,6 +306,7 @@ def outliers(db: Session, ref: date, *, history_months: int = 3, lookback: int =
     items += _category_spikes(db, ref, history_months)
     items += _new_merchants(db, cur_start, cur_end, ref, history_months)
     items += _budget_alerts(db, ref)
+    items += _subscription_alerts(db)
 
     severity_rank = {"warn": 0, "info": 1}
     items.sort(key=lambda i: (severity_rank.get(i["severity"], 2), -float(i.get("amount") or 0)))

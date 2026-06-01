@@ -141,8 +141,16 @@ confirm** (best-effort, never breaks an import) and via `POST /api/subscriptions
 API: `/api/subscriptions` (list/detect/patch/delete) + `GET /api/dashboard/subscriptions`
 (active subs + monthly-equivalent total). A `subscriptions_total` MQTT sensor
 (monthly equivalent of active subs) completes spec §30.11. UI: a Subscriptions
-page (monthly cost, table with per-row status, "Detect now", delete). Per-vendor
-alerts (amount-changed / not-seen-when-expected, §20.3) are deferred.
+page (monthly cost, table with per-row status, "Detect now", delete).
+
+**Alerts (Stage 12 / §20.3):** `subscription_service.alerts(ref, within_days=7,
+overdue_grace=3)` over **active** subs with a `next_expected_date` →
+`{upcoming, overdue}` (upcoming = due within the window or just passed; overdue =
+expected > grace days ago and not seen since — a missed payment or a forgotten
+cancellation). `GET /api/subscriptions/alerts`; shown as an "Alerts" card on the
+Subscriptions page. Also folded into the **dashboard heads-up** via
+`analytics_service._subscription_alerts` (always relative to *today*), so renewals
+and misses appear alongside the other outliers.
 
 ## AI assistant (Stage 9 / §22)
 

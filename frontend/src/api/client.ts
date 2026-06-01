@@ -522,6 +522,24 @@ export function getDashboardSubscriptions(): Promise<DashboardSubscriptions> {
   return fetchJson<DashboardSubscriptions>("api/dashboard/subscriptions");
 }
 
+export interface SubscriptionAlert extends Subscription {
+  days_until: number | null;
+  days_overdue: number | null;
+  expected_date: string | null;
+}
+
+export interface SubscriptionAlerts {
+  currency: string;
+  ref: string;
+  within_days: number;
+  upcoming: SubscriptionAlert[];
+  overdue: SubscriptionAlert[];
+}
+
+export function getSubscriptionAlerts(withinDays = 7): Promise<SubscriptionAlerts> {
+  return fetchJson<SubscriptionAlerts>(`api/subscriptions/alerts?within_days=${withinDays}`);
+}
+
 // --- Receipts + OCR (spec §21) ---
 
 export interface ReceiptMatch {
