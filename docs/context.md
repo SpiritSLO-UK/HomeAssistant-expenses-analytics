@@ -444,6 +444,29 @@ to stdout (the HA add-on **Log** panel) at the configured `log_level` and are
   table. Non-owners who route directly to `/logs` get a friendly "owner only" note.
 - **Deferred:** retention/purge of audit + AI logs (ties into #78 data-expiry).
 
+## CSV export (Stage 12 — spec §24.4, §25.1; #132)
+
+A CSV can't embed charts, so we export the *data* and keep the in-app charts for
+the visuals.
+
+- `export_service`: `build_transaction_filters(**params)` is the **single source
+  of truth** for the transaction filter list — both `GET /api/transactions` and
+  the export call it, so "export" always matches "what you see" (a test asserts
+  `rows == list total`). `transactions_csv` resolves category/project/account/
+  vendor names via id→name maps built once (no N+1) and caps at `MAX_EXPORT_ROWS`
+  (100k). `category_breakdown_csv` / `monthly_series_csv` reuse `dashboard_service`
+  / `analytics_service`.
+- API (`routes_export`, prefix `/api/export`): `transactions.csv` (same query
+  params as the list view), `categories.csv?month=`, `monthly.csv?months=&month=`.
+  Responses are `utf-8-sig` (BOM → Excel reads £/é correctly) with a dated
+  `Content-Disposition` filename.
+- UI: an "⬇ Export CSV" button on Transactions (passes the active filters; the
+  client drops limit/offset so it's the whole set) and small "⬇ CSV" links on the
+  dashboard category + trends cards. Downloads go through `fetch` (client
+  `downloadCsv`) so the `X-HAFI-Session` MFA header travels with the request — a
+  plain `<a download>` wouldn't carry it.
+- **Deferred:** image/PDF export of the charts themselves.
+
 ## Open questions / to scope
 
 - **#78 Data retention/expiry** — purge vs archive? which data (transactions,

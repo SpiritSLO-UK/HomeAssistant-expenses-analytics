@@ -11,6 +11,7 @@ from app.api import (
     routes_budgets,
     routes_categories,
     routes_dashboard,
+    routes_export,
     routes_fx,
     routes_health,
     routes_imports,
@@ -54,3 +55,4 @@ api_router.include_router(routes_security.router)
 api_router.include_router(routes_users.router)
 api_router.include_router(routes_auth.router)
 api_router.include_router(routes_logs.router)
+api_router.include_router(routes_export.router)

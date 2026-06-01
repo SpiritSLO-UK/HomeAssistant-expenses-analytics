@@ -1358,3 +1358,62 @@ export function listActivityLog(opts?: { limit?: number; action?: string }): Pro
 export function listAuditActions(): Promise<string[]> {
   return fetchJson<string[]>("api/logs/actions");
 }
+
+// --- CSV export (backlog #132) ---
+// Fetched (not a plain <a download>) so the MFA session header travels with the
+// request; the response is turned into a blob and downloaded client-side.
+
+async function downloadCsv(endpoint: string, fallbackName: string): Promise<void> {
+  const token = getSessionToken();
+  const res = await fetch(apiUrl(endpoint), {
+    headers: { ...(token ? { "X-HAFI-Session": token } : {}) },
+  });
+  if (!res.ok) {
+    let body: Record<string, unknown> | null = null;
+    try {
+      body = await res.json();
+    } catch {
+      /* non-JSON error body */
+    }
+    const detail = typeof body?.detail === "string" ? body.detail : `${res.status} ${res.statusText}`;
+    throw new ApiError(res.status, body, `Export failed: ${detail}`);
+  }
+  const blob = await res.blob();
+  const disposition = res.headers.get("Content-Disposition") ?? "";
+  const match = /filename="?([^"]+)"?/.exec(disposition);
+  const name = match?.[1] ?? fallbackName;
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = name;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+function exportParams(filters: Record<string, unknown>): string {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== undefined && value !== null && value !== "" && value !== false) {
+      params.append(key, String(value));
+    }
+  }
+  const qs = params.toString();
+  return qs ? `?${qs}` : "";
+}
+
+export function exportTransactionsCsv(filters: TransactionFilters = {}): Promise<void> {
+  const rest: Record<string, unknown> = { ...filters };
+  delete rest.limit; // export all matching rows, not just the page
+  delete rest.offset;
+  return downloadCsv(`api/export/transactions.csv${exportParams(rest)}`, "transactions.csv");
+}
+
+export function exportCategoriesCsv(month?: string): Promise<void> {
+  return downloadCsv(`api/export/categories.csv${exportParams({ month })}`, "categories.csv");
+}
+
+export function exportMonthlyCsv(months?: number, month?: string): Promise<void> {
+  return downloadCsv(`api/export/monthly.csv${exportParams({ months, month })}`, "monthly.csv");
+}
