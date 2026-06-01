@@ -28,6 +28,35 @@ class ClassifyResult(BaseModel):
     payload: dict | None = None  # set when approval is required (preview)
 
 
+class BatchSuggestion(BaseModel):
+    transaction_id: int
+    description: str
+    amount: str
+    category_id: int
+    category_name: str
+    confidence: float | None
+    rationale: str | None
+
+
+class BatchResult(BaseModel):
+    considered: int
+    count: int
+    suggestions: list[BatchSuggestion]
+
+
+class ApplyItem(BaseModel):
+    transaction_id: int
+    category_id: int
+
+
+class ApplyRequest(BaseModel):
+    items: list[ApplyItem]
+
+
+class ApplyResult(BaseModel):
+    applied: int
+
+
 class AIRequestOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

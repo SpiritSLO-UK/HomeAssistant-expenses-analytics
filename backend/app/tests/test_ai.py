@@ -128,3 +128,36 @@ def test_cloud_manual_requires_approval(client):
 
 def test_invalid_privacy_mode_rejected(client):
     assert client.put("/api/settings", json={"privacy_mode": "telepathy"}).status_code == 400
+
+
+# --- batch auto-apply (local only) ---
+
+def _import_rows(client, rows):
+    up = client.post("/api/imports/upload", files={"file": ("b.csv", _curve(rows), "text/csv")},
+                     data={"parser_id": "curve_csv"}).json()
+    client.post(f"/api/imports/{up['import_id']}/confirm")
+
+
+def test_classify_batch_local_suggests_without_applying(client):
+    _import_rows(client, [("2026-05-02", "ZZQ MARKET", "-12.00"), ("2026-05-03", "QQX DEPOT", "-8.00")])
+    _set_mode(client, "local_llm")
+    with SessionLocal() as db:
+        res = ai_service.classify_batch(db, provider=FakeProvider(category="Groceries", confidence=0.9))
+    assert res["considered"] == 2
+    assert res["count"] == 2
+    # Nothing applied yet — suggestions only.
+    assert all(t["category_id"] is None for t in client.get("/api/transactions").json()["items"])
+
+
+def test_classify_batch_refused_in_cloud(client):
+    _import_rows(client, [("2026-05-02", "ZZQ MARKET", "-12.00")])
+    _set_mode(client, "cloud_auto")
+    assert client.post("/api/ai/classify-batch").status_code == 400  # local_llm only
+
+
+def test_apply_suggestions_endpoint(client):
+    txn_id = _import_txn(client)
+    groceries = next(c["id"] for c in client.get("/api/categories").json() if c["name"] == "Groceries")
+    r = client.post("/api/ai/apply", json={"items": [{"transaction_id": txn_id, "category_id": groceries}]})
+    assert r.json()["applied"] == 1
+    assert client.get(f"/api/transactions/{txn_id}").json()["category_id"] == groceries

@@ -160,6 +160,70 @@ def classify_transaction(db: Session, txn: Transaction, *, approved: bool = Fals
     }
 
 
+def classify_batch(db: Session, *, limit: int = 25, provider=None) -> dict:
+    """Suggest categories for many uncategorised transactions at once.
+
+    **local_llm only** — keeps everything on-device. Auto-batching to a cloud
+    provider would bypass the per-call approval cloud modes require, so it's
+    refused. Returns suggestions; nothing is applied here (the user approves and
+    applies via :func:`apply_suggestions`). Bounded by ``limit`` to cap LLM calls.
+    """
+    mode = settings_service.get_privacy_mode(db)
+    if mode != "local_llm":
+        raise AIDisabled("Batch AI categorisation runs in local_llm mode only (keeps data on-device).")
+    provider = provider or get_provider(db)
+    if not provider.available():
+        raise AIDisabled("No AI provider configured")
+
+    txns = db.scalars(
+        select(Transaction)
+        .where(
+            Transaction.category_id.is_(None),
+            Transaction.is_transfer.is_(False),
+            Transaction.is_duplicate.is_(False),
+            Transaction.is_split.is_(False),
+        )
+        .order_by(Transaction.transaction_date.desc())
+        .limit(limit)
+    ).all()
+
+    suggestions = []
+    for txn in txns:
+        try:
+            res = classify_transaction(db, txn, provider=provider)
+        except AIError:
+            continue  # skip a failed item, keep going through the batch
+        if res.get("status") == "ok" and res.get("category_id"):
+            suggestions.append(
+                {
+                    "transaction_id": txn.id,
+                    "description": txn.description_raw,
+                    "amount": str(txn.amount),
+                    "category_id": res["category_id"],
+                    "category_name": res["category_name"],
+                    "confidence": res.get("confidence"),
+                    "rationale": res.get("rationale"),
+                }
+            )
+    return {"considered": len(txns), "count": len(suggestions), "suggestions": suggestions}
+
+
+def apply_suggestions(db: Session, items: list[dict]) -> int:
+    """Apply user-approved AI category suggestions. Treated as a manual decision
+    (confidence 1.0) — the user signed off, so rules won't later override it."""
+    applied = 0
+    for item in items:
+        txn = db.get(Transaction, item["transaction_id"])
+        category = db.get(Category, item["category_id"])
+        if txn is None or category is None:
+            continue
+        txn.category_id = category.id
+        txn.confidence_score = 1.0
+        applied += 1
+    db.commit()
+    return applied
+
+
 def list_requests(db: Session, limit: int = 50) -> list[AIRequest]:
     return list(
         db.scalars(select(AIRequest).order_by(AIRequest.created_at.desc()).limit(limit)).all()

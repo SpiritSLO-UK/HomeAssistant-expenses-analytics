@@ -155,6 +155,14 @@ settings. API: `GET /api/ai/status`, `POST /api/ai/classify/{txn}?approve=`,
 "✨ suggest" link on uncategorised transactions (shows rationale + confidence;
 the user confirms to apply via the normal manual-categorise path).
 
+**Batch auto-apply (local only):** `classify_batch` runs the local LLM over many
+uncategorised transactions and returns suggestions; `apply_suggestions` applies
+the user-approved ones (treated as manual → confidence 1.0). It's **`local_llm`
+only** (auto-batching to cloud would bypass per-call approval) and never applies
+silently — the UI (`AiBatchPanel`) pre-ticks high-confidence rows by a threshold,
+but the user clicks Apply. API: `POST /api/ai/classify-batch?limit=`,
+`POST /api/ai/apply`.
+
 **Stage 10 (cloud approval) status:** redaction, audit and the manual-approval
 return (`approval_required` + a `cloud_ai_approval_required` review item) are
 wired in the gateway; the dedicated cloud-approval UI and sensitive-category

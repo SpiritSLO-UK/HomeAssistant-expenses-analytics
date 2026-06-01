@@ -620,6 +620,37 @@ export async function classifyWithAi(transactionId: number, approve = false): Pr
   return res.json();
 }
 
+export interface BatchSuggestion {
+  transaction_id: number;
+  description: string;
+  amount: string;
+  category_id: number;
+  category_name: string;
+  confidence: number | null;
+  rationale: string | null;
+}
+
+export interface BatchResult {
+  considered: number;
+  count: number;
+  suggestions: BatchSuggestion[];
+}
+
+export async function classifyBatch(limit = 25): Promise<BatchResult> {
+  const res = await fetch(apiUrl(`api/ai/classify-batch?limit=${limit}`), { method: "POST" });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error(detail.detail || `Batch AI failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export function applyAiCategories(
+  items: { transaction_id: number; category_id: number }[],
+): Promise<{ applied: number }> {
+  return fetchJson("api/ai/apply", { method: "POST", body: JSON.stringify({ items }) });
+}
+
 // --- Categories (spec §24.5) ---
 
 export interface Category {

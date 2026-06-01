@@ -7,7 +7,14 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models import Transaction
-from app.schemas.ai import AIRequestOut, AIStatus, ClassifyResult
+from app.schemas.ai import (
+    AIRequestOut,
+    AIStatus,
+    ApplyRequest,
+    ApplyResult,
+    BatchResult,
+    ClassifyResult,
+)
 from app.services import ai_service
 from app.services.ai_provider import AIError
 from app.services.ai_service import AIDisabled
@@ -42,3 +49,22 @@ def classify(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except AIError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.post("/classify-batch", response_model=BatchResult)
+def classify_batch(limit: int = Query(default=25, ge=1, le=100), db: Session = Depends(get_db)) -> dict:
+    """Suggest categories for uncategorised transactions (local_llm only).
+    Suggestions only — apply with /api/ai/apply after the user approves."""
+    try:
+        return ai_service.classify_batch(db, limit=limit)
+    except AIDisabled as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except AIError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.post("/apply", response_model=ApplyResult)
+def apply(payload: ApplyRequest, db: Session = Depends(get_db)) -> dict:
+    """Apply user-approved AI category suggestions (treated as manual choices)."""
+    items = [{"transaction_id": i.transaction_id, "category_id": i.category_id} for i in payload.items]
+    return {"applied": ai_service.apply_suggestions(db, items)}

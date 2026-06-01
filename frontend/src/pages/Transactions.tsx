@@ -15,6 +15,7 @@ import {
   type TransactionFilters,
 } from "../api/client";
 import SplitEditor from "../components/SplitEditor";
+import AiBatchPanel from "../components/AiBatchPanel";
 
 const PAGE_SIZE = 50;
 
@@ -26,6 +27,7 @@ export default function Transactions() {
   const [needsReview, setNeedsReview] = useState(false);
   const [page, setPage] = useState(0);
   const [splitId, setSplitId] = useState<number | null>(null);
+  const [showAiBatch, setShowAiBatch] = useState(false);
 
   const filters: TransactionFilters = {
     search: search || undefined,
@@ -128,13 +130,22 @@ export default function Transactions() {
     <div className="page">
       <div className="page__head">
         <h1 className="page__title">Transactions</h1>
-        <button className="btn btn--ghost" disabled={recat.isPending} onClick={() => recat.mutate()}>
-          {recat.isPending ? "Re-categorising…" : "Re-categorise uncategorised"}
-        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          {aiStatus.data?.enabled && aiStatus.data?.privacy_mode === "local_llm" && (
+            <button className="btn btn--ghost" onClick={() => setShowAiBatch((v) => !v)}>
+              {showAiBatch ? "Hide AI categorise" : "✨ AI categorise…"}
+            </button>
+          )}
+          <button className="btn btn--ghost" disabled={recat.isPending} onClick={() => recat.mutate()}>
+            {recat.isPending ? "Re-categorising…" : "Re-categorise uncategorised"}
+          </button>
+        </div>
       </div>
       {recat.isSuccess && (
         <p className="muted">Re-categorised {recat.data.recategorised} transaction(s).</p>
       )}
+
+      {showAiBatch && <AiBatchPanel base={base} onClose={() => setShowAiBatch(false)} />}
 
       <div className="card">
         <div className="filters">
