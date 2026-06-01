@@ -85,6 +85,11 @@ _LOCK_EXEMPT = ("/api/health", "/api/security")
 # routes, and ``/api/users/me`` (so a pending user can learn they're pending).
 _GATE_EXEMPT = ("/api/health", "/api/security", "/api/users/me")
 
+# Self-service account endpoints (MFA enrol/verify/disable): a user must reach
+# these to satisfy the MFA gate or manage their own factor, so they bypass the
+# MFA-presence and read-only gates (still approval-gated).
+_SELF_SERVICE = ("/api/auth/mfa",)
+
 # Methods that don't mutate data (read-only roles are allowed these).
 _SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
 
@@ -112,7 +117,7 @@ async def _auth_guard(request: Request, call_next):
     if not path.startswith("/api/") or dbsession.is_locked():
         return await call_next(request)
 
-    from app.services import auth_service
+    from app.services import auth_service, mfa_service
 
     with dbsession.SessionLocal() as db:
         user = auth_service.resolve_current_user(db, request)
@@ -121,6 +126,10 @@ async def _auth_guard(request: Request, call_next):
         request.state.user_role = user.role
         request.state.user_status = user.status
         request.state.user_name = user.display_name
+        # MFA presence for the entry gate (only matters if the user enabled it).
+        mfa_ok = not user.mfa_enabled or mfa_service.has_valid_session(
+            db, user.id, request.headers.get(auth_service.SESSION_HEADER)
+        )
 
     if path.startswith(_GATE_EXEMPT):
         return await call_next(request)
@@ -138,7 +147,17 @@ async def _auth_guard(request: Request, call_next):
             },
         )
 
-    if request.method not in _SAFE_METHODS and not auth_service.can_write(request.state.user_role):
+    if not mfa_ok and not path.startswith(_SELF_SERVICE):
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "Two-factor verification required.", "mfa_required": True},
+        )
+
+    if (
+        request.method not in _SAFE_METHODS
+        and not auth_service.can_write(request.state.user_role)
+        and not path.startswith(_SELF_SERVICE)
+    ):
         return JSONResponse(
             status_code=403,
             content={"detail": "Your role is read-only and cannot make changes."},

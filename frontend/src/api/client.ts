@@ -18,13 +18,63 @@ export function apiUrl(endpoint: string): string {
   return INGRESS_BASE + clean;
 }
 
+// --- MFA session token (backlog #124) ---
+// Issued by the backend after a TOTP challenge and sent on every request as the
+// X-HAFI-Session header. Stored per-browser in localStorage.
+const SESSION_KEY = "hafi_session";
+
+export function getSessionToken(): string | null {
+  try {
+    return window.localStorage.getItem(SESSION_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setSessionToken(token: string | null): void {
+  try {
+    if (token) window.localStorage.setItem(SESSION_KEY, token);
+    else window.localStorage.removeItem(SESSION_KEY);
+  } catch {
+    /* localStorage unavailable (private mode) — requests just won't carry it */
+  }
+}
+
+/** Error thrown by fetchJson on a non-2xx response, carrying the parsed body. */
+export class ApiError extends Error {
+  status: number;
+  body: Record<string, unknown> | null;
+  constructor(status: number, body: Record<string, unknown> | null, message: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.body = body;
+  }
+}
+
+export function isStepUpError(e: unknown): boolean {
+  return e instanceof ApiError && e.status === 403 && e.body?.detail === "step_up_required";
+}
+
 export async function fetchJson<T>(endpoint: string, init?: RequestInit): Promise<T> {
+  const token = getSessionToken();
   const res = await fetch(apiUrl(endpoint), {
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { "X-HAFI-Session": token } : {}),
+      ...(init?.headers ?? {}),
+    },
     ...init,
   });
   if (!res.ok) {
-    throw new Error(`API ${endpoint} failed: ${res.status} ${res.statusText}`);
+    let body: Record<string, unknown> | null = null;
+    try {
+      body = await res.json();
+    } catch {
+      /* non-JSON error body */
+    }
+    const detail = typeof body?.detail === "string" ? body.detail : `${res.status} ${res.statusText}`;
+    throw new ApiError(res.status, body, `API ${endpoint} failed: ${detail}`);
   }
   return (await res.json()) as T;
 }
@@ -1026,6 +1076,8 @@ export interface Me {
   status: string;
   is_admin: boolean;
   can_write: boolean;
+  mfa_enabled: boolean;
+  mfa_required: boolean;
 }
 
 export interface User {
@@ -1061,4 +1113,36 @@ export function approveUser(id: number): Promise<User> {
 
 export function deleteUser(id: number): Promise<{ status: string; id: number }> {
   return fetchJson(`api/users/${id}`, { method: "DELETE" });
+}
+
+// --- MFA (TOTP, backlog #124) ---
+
+export interface MfaSetup {
+  secret: string;
+  otpauth_uri: string;
+}
+
+export function mfaSetup(): Promise<MfaSetup> {
+  return fetchJson<MfaSetup>("api/auth/mfa/setup", { method: "POST" });
+}
+
+export function mfaEnable(code: string): Promise<{ status: string }> {
+  return fetchJson("api/auth/mfa/enable", { method: "POST", body: JSON.stringify({ code }) });
+}
+
+export function mfaDisable(code: string): Promise<{ status: string }> {
+  return fetchJson("api/auth/mfa/disable", { method: "POST", body: JSON.stringify({ code }) });
+}
+
+export async function mfaVerify(code: string): Promise<{ token: string }> {
+  const res = await fetchJson<{ token: string; expires_in_seconds: number }>(
+    "api/auth/mfa/verify",
+    { method: "POST", body: JSON.stringify({ code }) },
+  );
+  setSessionToken(res.token);
+  return res;
+}
+
+export function mfaStepUp(code: string): Promise<{ status: string }> {
+  return fetchJson("api/auth/mfa/step-up", { method: "POST", body: JSON.stringify({ code }) });
 }

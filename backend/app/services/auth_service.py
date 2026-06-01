@@ -35,6 +35,9 @@ HEADER_ID = "x-remote-user-id"
 HEADER_NAME = "x-remote-user-name"
 HEADER_DISPLAY = "x-remote-user-display-name"
 
+# Per-device MFA session token (issued after a TOTP challenge, backlog #124).
+SESSION_HEADER = "x-hafi-session"
+
 # Standalone / dev fallback identity (no HA in front).
 LOCAL_EXTERNAL_ID = "local"
 
@@ -133,6 +136,24 @@ def require_owner(user: User = Depends(get_current_user)) -> User:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="This action requires the owner (administrator) role.",
         )
+    return user
+
+
+def require_owner_step_up(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_owner),
+) -> User:
+    """Owner endpoints that also need a recent MFA step-up when the owner has MFA
+    enabled (backlog #124 — "re-enter for admin stuff"). A no-op for owners
+    without MFA. Signals ``step_up_required`` so the UI can prompt for a code."""
+    if user.mfa_enabled:
+        from app.services import mfa_service
+
+        token = request.headers.get(SESSION_HEADER)
+        session = mfa_service.get_valid_session(db, user.id, token)
+        if not mfa_service.has_recent_step_up(session):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="step_up_required")
     return user
 
 

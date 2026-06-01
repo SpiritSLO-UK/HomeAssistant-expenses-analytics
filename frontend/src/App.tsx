@@ -15,7 +15,7 @@ import Receipts from "./pages/Receipts";
 import ReviewQueue from "./pages/ReviewQueue";
 import Settings from "./pages/Settings";
 import Users from "./pages/Users";
-import { getMe, getSecurityStatus, unlockDatabase } from "./api/client";
+import { getMe, getSecurityStatus, mfaVerify, unlockDatabase } from "./api/client";
 
 export default function App() {
   // If the database is encrypted and locked, gate the whole app behind unlock.
@@ -30,6 +30,10 @@ export default function App() {
 
   if (me.data && me.data.status !== "approved") {
     return <AccountGate status={me.data.status} name={me.data.display_name} />;
+  }
+
+  if (me.data?.mfa_required) {
+    return <MfaGate />;
   }
 
   return (
@@ -53,6 +57,46 @@ export default function App() {
           <Route path="*" element={<Dashboard />} />
         </Routes>
       </main>
+    </div>
+  );
+}
+
+function MfaGate() {
+  const qc = useQueryClient();
+  const [code, setCode] = useState("");
+  const verify = useMutation({
+    mutationFn: () => mfaVerify(code),
+    onSuccess: () => {
+      setCode("");
+      qc.invalidateQueries(); // refetch /me (clears the gate) + all data
+    },
+  });
+
+  return (
+    <div className="unlock">
+      <div className="unlock__card">
+        <h1>🔐 Two-factor verification</h1>
+        <p className="muted">Enter the 6-digit code from your authenticator app.</p>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (code) verify.mutate();
+          }}
+        >
+          <input
+            inputMode="numeric"
+            autoFocus
+            placeholder="123456"
+            value={code}
+            maxLength={8}
+            onChange={(e) => setCode(e.target.value.replace(/[^0-9]/g, ""))}
+          />
+          <button className="btn" type="submit" disabled={!code || verify.isPending}>
+            {verify.isPending ? "Verifying…" : "Verify"}
+          </button>
+        </form>
+        {verify.isError && <p className="status status--error">That code didn't match. Try again.</p>}
+      </div>
     </div>
   );
 }

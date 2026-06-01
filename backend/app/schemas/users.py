@@ -32,6 +32,10 @@ class MeOut(BaseModel):
     status: str
     is_admin: bool
     can_write: bool
+    mfa_enabled: bool
+    # True when the user has MFA on but this request lacks a valid session — the
+    # frontend then shows the MFA entry gate.
+    mfa_required: bool
 
 
 class UserUpdate(BaseModel):

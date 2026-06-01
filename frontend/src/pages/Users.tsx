@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   approveUser,
   deleteUser,
   getMe,
+  isStepUpError,
   listUsers,
+  mfaStepUp,
   updateUser,
   type User,
 } from "../api/client";
@@ -23,6 +25,12 @@ export default function Users() {
   const qc = useQueryClient();
   const [err, setErr] = useState<string | null>(null);
 
+  // Admin actions can require a fresh MFA step-up (#124). When one is challenged
+  // we stash the action and replay it after the user enters a code.
+  const lastAction = useRef<(() => void) | null>(null);
+  const [stepUpOpen, setStepUpOpen] = useState(false);
+  const [stepCode, setStepCode] = useState("");
+
   const me = useQuery({ queryKey: ["me"], queryFn: getMe });
   const users = useQuery({
     queryKey: ["users"],
@@ -35,22 +43,54 @@ export default function Users() {
     qc.invalidateQueries({ queryKey: ["me"] });
   };
 
+  const onError = (e: unknown) => {
+    if (isStepUpError(e)) {
+      setStepUpOpen(true); // re-prompt; lastAction replays on success
+      return;
+    }
+    setErr(humanError(e));
+  };
+
   const patch = useMutation({
     mutationFn: (v: { id: number; patch: { role?: string; status?: string } }) =>
       updateUser(v.id, v.patch),
     onSuccess: () => { setErr(null); invalidate(); },
-    onError: (e) => setErr(humanError(e)),
+    onError,
   });
   const approve = useMutation({
     mutationFn: (id: number) => approveUser(id),
     onSuccess: () => { setErr(null); invalidate(); },
-    onError: (e) => setErr(humanError(e)),
+    onError,
   });
   const remove = useMutation({
     mutationFn: (id: number) => deleteUser(id),
     onSuccess: () => { setErr(null); invalidate(); },
-    onError: (e) => setErr(humanError(e)),
+    onError,
   });
+
+  const stepUp = useMutation({
+    mutationFn: () => mfaStepUp(stepCode),
+    onSuccess: () => {
+      setStepUpOpen(false);
+      setStepCode("");
+      lastAction.current?.(); // replay the challenged action
+    },
+    onError: () => setErr("That code didn't match. Try again."),
+  });
+
+  // Record then run an admin action so it can be replayed after a step-up.
+  const doPatch = (id: number, p: { role?: string; status?: string }) => {
+    lastAction.current = () => patch.mutate({ id, patch: p });
+    patch.mutate({ id, patch: p });
+  };
+  const doApprove = (id: number) => {
+    lastAction.current = () => approve.mutate(id);
+    approve.mutate(id);
+  };
+  const doRemove = (id: number) => {
+    lastAction.current = () => remove.mutate(id);
+    remove.mutate(id);
+  };
 
   if (me.data && !me.data.is_admin) {
     return (
@@ -77,6 +117,36 @@ export default function Users() {
       </p>
       {err && <p className="status status--error">{err}</p>}
 
+      {stepUpOpen && (
+        <div className="card" style={{ borderLeft: "3px solid #2d7" }}>
+          <h2 className="card__title">🔐 Confirm it's you</h2>
+          <p className="muted">
+            Admin actions need a fresh two-factor code. Enter the current code to continue —
+            your last action will run automatically.
+          </p>
+          <form
+            className="form-row"
+            onSubmit={(e) => { e.preventDefault(); if (stepCode) stepUp.mutate(); }}
+          >
+            <input
+              inputMode="numeric"
+              autoFocus
+              placeholder="123456"
+              maxLength={8}
+              value={stepCode}
+              onChange={(e) => setStepCode(e.target.value.replace(/[^0-9]/g, ""))}
+              style={{ width: 120 }}
+            />
+            <button className="btn" type="submit" disabled={!stepCode || stepUp.isPending}>
+              {stepUp.isPending ? "Verifying…" : "Verify"}
+            </button>
+            <button className="btn btn--ghost" type="button" onClick={() => { setStepUpOpen(false); setStepCode(""); }}>
+              Cancel
+            </button>
+          </form>
+        </div>
+      )}
+
       {pending.length > 0 && (
         <div className="card" style={{ borderLeft: "3px solid #e0a800" }}>
           <h2 className="card__title">⏳ Awaiting approval ({pending.length})</h2>
@@ -88,12 +158,12 @@ export default function Users() {
                     <td>{u.display_name}</td>
                     <td className="muted">{u.external_id}</td>
                     <td style={{ textAlign: "right" }}>
-                      <button className="btn btn--sm" onClick={() => approve.mutate(u.id)}>
+                      <button className="btn btn--sm" onClick={() => doApprove(u.id)}>
                         Approve
                       </button>{" "}
                       <button
                         className="link-btn"
-                        onClick={() => patch.mutate({ id: u.id, patch: { status: "disabled" } })}
+                        onClick={() => doPatch(u.id, { status: "disabled" })}
                       >
                         deny
                       </button>
@@ -133,7 +203,7 @@ export default function Users() {
                         <select
                           value={u.role}
                           title={ROLE_HINT[u.role]}
-                          onChange={(e) => patch.mutate({ id: u.id, patch: { role: e.target.value } })}
+                          onChange={(e) => doPatch(u.id, { role: e.target.value })}
                         >
                           {ROLES.map((r) => (
                             <option key={r} value={r}>{r}</option>
@@ -143,7 +213,7 @@ export default function Users() {
                       <td>
                         <select
                           value={u.status}
-                          onChange={(e) => patch.mutate({ id: u.id, patch: { status: e.target.value } })}
+                          onChange={(e) => doPatch(u.id, { status: e.target.value })}
                         >
                           {STATUSES.map((s) => (
                             <option key={s} value={s}>{s}</option>
@@ -156,7 +226,7 @@ export default function Users() {
                           className="link-btn"
                           onClick={() => {
                             if (window.confirm(`Remove "${u.display_name}"? They lose all access.`))
-                              remove.mutate(u.id);
+                              doRemove(u.id);
                           }}
                         >
                           remove

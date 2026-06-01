@@ -11,12 +11,17 @@ import {
   getAiStatus,
   getHealth,
   listAiRequests,
+  getMe,
   getMqttStatus,
   getSecurityStatus,
   getSettings,
   importConfig,
   listFxRates,
   loadDemoData,
+  mfaDisable,
+  mfaEnable,
+  mfaSetup,
+  mfaVerify,
   PRIVACY_MODES,
   publishMqtt,
   restoreDatabase,
@@ -92,6 +97,8 @@ export default function Settings() {
       <MqttCard onMessage={ok} onError={fail} />
 
       <AiCard onMessage={ok} onError={fail} />
+
+      <MfaCard onMessage={ok} onError={fail} />
 
       <SecurityCard onMessage={ok} onError={fail} />
 
@@ -493,6 +500,121 @@ function AiCard({
                 ))}
               </tbody>
             </table>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function MfaCard({
+  onMessage,
+  onError,
+}: {
+  onMessage: (m: string) => void;
+  onError: (e: unknown) => void;
+}) {
+  const qc = useQueryClient();
+  const me = useQuery({ queryKey: ["me"], queryFn: getMe });
+  const [setup, setSetup] = useState<{ secret: string; otpauth_uri: string } | null>(null);
+  const [code, setCode] = useState("");
+
+  const begin = useMutation({
+    mutationFn: mfaSetup,
+    onSuccess: (s) => setSetup(s),
+    onError,
+  });
+  const enable = useMutation({
+    mutationFn: async () => {
+      await mfaEnable(code);
+      // Same code is still valid this period — mint a session so the user isn't
+      // immediately bounced to the entry gate.
+      try {
+        await mfaVerify(code);
+      } catch {
+        /* period rolled over — the entry gate will simply prompt once */
+      }
+    },
+    onSuccess: () => {
+      setSetup(null);
+      setCode("");
+      onMessage("Two-factor authentication enabled.");
+      qc.invalidateQueries();
+    },
+    onError,
+  });
+  const disable = useMutation({
+    mutationFn: () => mfaDisable(code),
+    onSuccess: () => {
+      setCode("");
+      onMessage("Two-factor authentication disabled.");
+      qc.invalidateQueries();
+    },
+    onError,
+  });
+
+  const enabled = me.data?.mfa_enabled ?? false;
+
+  return (
+    <div className="card">
+      <h2 className="card__title">Two-factor authentication (MFA)</h2>
+      <p className="muted">
+        Optional second factor for <strong>your</strong> account, on top of Home Assistant login.
+        When on, you enter a 6-digit code from an authenticator app (Google Authenticator, Aegis,
+        1Password…) each time you open this app, and again to confirm admin actions. Codes are
+        time-based (TOTP) and never leave your device.
+      </p>
+
+      {!enabled && !setup && (
+        <button className="btn" disabled={begin.isPending} onClick={() => begin.mutate()}>
+          {begin.isPending ? "Preparing…" : "Set up two-factor"}
+        </button>
+      )}
+
+      {!enabled && setup && (
+        <>
+          <p className="muted">
+            Add this to your authenticator app — scan the URI as a QR code, or enter the secret by
+            hand — then type the current 6-digit code to confirm.
+          </p>
+          <ul className="kv">
+            <li><span>Secret</span><span style={{ fontFamily: "monospace" }}>{setup.secret}</span></li>
+            <li><span>otpauth URI</span><span style={{ fontFamily: "monospace", wordBreak: "break-all" }}>{setup.otpauth_uri}</span></li>
+          </ul>
+          <div className="form-row">
+            <input
+              inputMode="numeric"
+              placeholder="123456"
+              maxLength={8}
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/[^0-9]/g, ""))}
+              style={{ width: 120 }}
+            />
+            <button className="btn" disabled={!code || enable.isPending} onClick={() => enable.mutate()}>
+              {enable.isPending ? "Confirming…" : "Confirm & enable"}
+            </button>
+            <button className="btn btn--ghost" onClick={() => { setSetup(null); setCode(""); }}>
+              Cancel
+            </button>
+          </div>
+        </>
+      )}
+
+      {enabled && (
+        <>
+          <p className="status status--ok">🔐 Two-factor is enabled for your account.</p>
+          <div className="form-row">
+            <input
+              inputMode="numeric"
+              placeholder="Code to disable"
+              maxLength={8}
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/[^0-9]/g, ""))}
+              style={{ width: 150 }}
+            />
+            <button className="btn btn--ghost" disabled={!code || disable.isPending} onClick={() => disable.mutate()}>
+              {disable.isPending ? "Disabling…" : "Disable two-factor"}
+            </button>
           </div>
         </>
       )}

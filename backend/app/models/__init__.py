@@ -22,6 +22,7 @@ from app.models.subscription import Subscription
 from app.models.tag import Tag, transaction_tags
 from app.models.transaction import Transaction, TransactionSplit
 from app.models.user import User
+from app.models.user_session import UserSession
 from app.models.vendor import Vendor, VendorAlias
 
 __all__ = [
@@ -47,6 +48,7 @@ __all__ = [
     "Transaction",
     "TransactionSplit",
     "User",
+    "UserSession",
     "Vendor",
     "VendorAlias",
 ]

@@ -72,9 +72,10 @@ learning, split transactions, projects & tags, budgets + MQTT sensors,
 recurring/subscriptions, review queue, receipts + OCR, local AI, cloud AI
 approval, PDF statement import), plus a data-safety pass (redaction,
 backup/restore, demo data, add-on isolation) and multi-currency. That's the full
-spec §29 roadmap. **Stage 12 polish** is now underway — first sub-stage done:
-multi-user identity + RBAC + new-user approval (see "Multi-user & access control"
-below). Full detail in spec §0 and git history.
+spec §29 roadmap. **Stage 12 polish** is now underway — security/multi-user
+cluster: **S1** (multi-user identity + RBAC + new-user approval) and **S2**
+(optional TOTP MFA + admin step-up) done; see "Multi-user & access control" below.
+Full detail in spec §0 and git history.
 
 > Stage-numbering note: the spec §29 order is Stage 7 = review queue, Stage 8 =
 > receipts. We built recurring/subscriptions (§20, not a numbered §29 stage)
@@ -297,9 +298,39 @@ duplicated.
   pending/disabled user sees an `AccountGate` instead of the app; the Users nav
   item is owner-only. Migration `d1e2f3a4b5c6` adds `users.external_id`/`status`/
   `last_seen_at`.
-- **Still to come in this cluster:** MFA/TOTP gate + admin step-up (S2 / #124),
-  security-health panel + failed-unlock alerts (S3 / #128/#130), hardening pass
-  (S4 / #74).
+### MFA / TOTP (Stage 12-S2 — #124)
+
+Optional per-user second factor on top of HA auth. TOTP is implemented in-house
+(`services/totp.py`, RFC 6238, stdlib only — no dependency) so it works on every
+platform and matches Google Authenticator / Aegis / 1Password defaults (SHA-1, 6
+digits, 30s).
+
+- **Enrol:** `POST /auth/mfa/setup` stores a base32 secret (`users.mfa_secret`)
+  and returns the otpauth URI; `mfa_enabled` flips true only after `enable`
+  confirms a code. `disable` (code required) clears the secret + all sessions.
+- **Entry gate:** a user with MFA on must `POST /auth/mfa/verify` a code, which
+  mints a per-device session — a random token whose **SHA-256 hash** is stored in
+  `user_sessions` (raw token lives in the browser, sent as `X-HAFI-Session`).
+  The `_auth_guard` middleware blocks data APIs with 403 `{mfa_required:true}`
+  until a valid, unexpired session is presented. `/auth/mfa/*` is exempt (so the
+  user can verify) but still approval-gated. `/users/me` reports `mfa_required`
+  so the SPA shows the gate.
+- **Admin step-up (#124 "re-enter for admin stuff"):** owner mutations use the
+  `require_owner_step_up` dependency — if the owner has MFA on and their session's
+  `last_step_up_at` is older than `STEP_UP_TTL` (10 min), it returns 403
+  `step_up_required`; `POST /auth/mfa/step-up` refreshes it. The Users page
+  catches that error, prompts for a code, and replays the action.
+- **TTLs:** session `SESSION_TTL` 12h; step-up 10 min. Sessions are per-device,
+  cleared on disable, and (being in the DB) protected by at-rest encryption.
+- **UI:** an MFA entry gate (App), a Settings "Two-factor" card (setup shows
+  secret + otpauth URI; enable/disable), and step-up handling on the Users page.
+  Migration `e2f3a4b5c6d7` adds `users.mfa_secret`/`mfa_enabled` + `user_sessions`.
+- **Note:** the secret sits in the DB (standard for TOTP); at-rest encryption is
+  the protection for a stolen disk. No QR image yet — the otpauth URI/secret are
+  shown for manual entry.
+
+- **Still to come in this cluster:** security-health panel + failed-unlock alerts
+  (S3 / #128/#130), hardening pass (S4 / #74).
 
 ## Open questions / to scope
 

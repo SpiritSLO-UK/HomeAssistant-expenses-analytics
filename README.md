@@ -68,6 +68,9 @@ Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md
   (read/write), and *viewer*/*child* (read-only). Read-only roles can't change
   anything, and the last owner can't be removed. (Standalone, with no HA in front,
   it runs single-user exactly as before.)
+- **Two-factor (optional)** — each user can turn on TOTP MFA (Google
+  Authenticator, Aegis, 1Password…): a 6-digit code to open the app, and a fresh
+  code to confirm admin actions. Time-based, on-device, off by default.
 - **Home Assistant sensors** — optional MQTT discovery publishes spend/income/net,
   review count, per-budget progress, per-project totals and monthly subscriptions.
 - **Privacy & safety** — strict local by default, redaction, backup/restore,

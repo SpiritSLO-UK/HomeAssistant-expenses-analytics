@@ -46,3 +46,7 @@ class User(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="approved")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Optional app-level MFA (TOTP, backlog #124). ``mfa_secret`` is the base32
+    # seed; ``mfa_enabled`` flips true only after the user confirms a code.
+    mfa_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    mfa_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
