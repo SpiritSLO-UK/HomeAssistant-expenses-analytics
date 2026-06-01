@@ -462,8 +462,16 @@ account private — all existing accounts are unowned = shared).
 - **MQTT** stays full-household (owner controls the broker) — calls pass no scope.
 - Proven by `tests/test_account_visibility.py` (member can't see another's private
   account anywhere; owner sees all; legacy unowned visible to all; empty set ⇒
-  nothing; Mine/Shared/All narrows). **B2 (next):** Accounts management UI + the
-  frontend view toggle.
+  nothing; Mine/Shared/All narrows).
+- **B2 (done):** `routes_accounts` (`GET /api/accounts` = visible set with owner
+  name + `is_private`; `PATCH` name/type/`is_shared`/`owner_user_id`). Authz:
+  changing `owner_user_id` is owner/admin-only; a member may toggle `is_shared`
+  only on an account they own; a non-visible account → 404. Frontend `pages/Accounts.tsx`
+  (🏦 nav) lists accounts with a visibility badge + an owner select (admin) and a
+  "Shared with household" toggle; a **Mine/Shared/All** segmented control on the
+  Dashboard (stored in `prefs`, sent as `?view=`, shown only once an account has an
+  owner) maps to `auth_service.scoped_account_ids`. `tests/test_accounts.py`.
+  **Multi-user UI depth (#66/#82) is complete.**
 
 ## Trends & outliers (Stage 12 — spec §24.12, §37; #146, #150)
 

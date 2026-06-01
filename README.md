@@ -76,6 +76,11 @@ Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md
   (read/write), *viewer* (read-only), and *child* (allowance-only). Read-only
   roles can't change anything, and the last owner can't be removed. (Standalone,
   with no HA in front, it runs single-user exactly as before.)
+- **Shared vs private accounts** — on the **Accounts** page, mark an account
+  *private* and it (and its transactions) drop off everyone else's dashboards,
+  budgets, exports and lists — only you and the household owner see it. Accounts
+  stay *shared* by default. A **Mine / Shared / All** toggle on the dashboard lets
+  you switch between your own, the household's shared, and everything you can see.
 - **Kids' allowance** — the *child* role is a friendly pocket-money view: a child
   sees only **their** budgets (candy, toys…), **their** savings, and an itemized
   list of purchases attributed to them. Parents attribute spend from the

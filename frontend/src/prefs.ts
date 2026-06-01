@@ -38,6 +38,18 @@ export function setHiddenDashboardCards(hidden: Set<string>): void {
   writeString(HIDDEN_CARDS_KEY, JSON.stringify([...hidden]));
 }
 
+// --- Dashboard Mine/Shared/All view toggle (backlog #66/#82) ---
+
+const DASH_VIEW_KEY = "hafi_dashboard_view";
+
+export function getDashboardView(): string {
+  return readString(DASH_VIEW_KEY) || "all";
+}
+
+export function setDashboardView(view: string): void {
+  writeString(DASH_VIEW_KEY, view);
+}
+
 // --- One-time cloud-AI disclaimer (backlog #42) ---
 
 const CLOUD_AI_ACK_KEY = "hafi_cloud_ai_ack";
