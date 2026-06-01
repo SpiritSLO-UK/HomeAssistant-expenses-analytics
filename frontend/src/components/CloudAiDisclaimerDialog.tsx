@@ -12,9 +12,6 @@ export default function CloudAiDisclaimerDialog({
 }) {
   return (
     <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Before you enable cloud AI"
       style={{
         position: "fixed",
         inset: 0,
@@ -25,9 +22,8 @@ export default function CloudAiDisclaimerDialog({
         padding: 16,
         zIndex: 1000,
       }}
-      onClick={onCancel}
     >
-      <div className="card" style={{ maxWidth: 560, margin: 0 }} onClick={(e) => e.stopPropagation()}>
+      <div className="card" role="dialog" aria-modal="true" aria-label="Before you enable cloud AI" style={{ maxWidth: 560, margin: 0 }}>
         <h2 className="card__title">☁️ Before you enable cloud AI</h2>
         <p className="muted" style={{ marginTop: 0 }}>
           You're about to allow this app to send data to a cloud AI provider. Please read this once:
