@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.models import Account, Category, Project, Tag, Transaction, Vendor
 from app.services import dashboard_service, settings_service
 from app.services.analytics_service import monthly_series
-from app.services.scope import account_scope_condition
+from app.services.scope import account_scope_condition, archived_condition
 
 # Personal-finance histories are small, but cap the row count so a pathological
 # export can't exhaust memory.
@@ -62,15 +62,17 @@ def build_transaction_filters(
     amount_max: Decimal | None = None,
     search: str | None = None,
     account_ids: set[int] | None = None,
+    include_archived: bool = False,
 ) -> list:
     """Build the SQLAlchemy filter list shared by the transactions list endpoint
     and the CSV export, so "export" always matches "what you see".
 
     ``account_ids`` is the visibility scope (None = unrestricted); it is applied
-    in addition to the explicit ``account_id`` UI filter."""
+    in addition to the explicit ``account_id`` UI filter. Archived (aged-out)
+    transactions are excluded unless ``include_archived`` (backlog #78)."""
     from sqlalchemy import or_
 
-    conditions: list = list(account_scope_condition(account_ids))
+    conditions: list = [*account_scope_condition(account_ids), *archived_condition(include_archived)]
     if date_from is not None:
         conditions.append(Transaction.transaction_date >= date_from)
     if date_to is not None:

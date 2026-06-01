@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session
 from app.models import Budget, Transaction
 from app.services import settings_service, split_service
 from app.services.dashboard_service import month_bounds
-from app.services.scope import account_scope_condition
+from app.services.scope import account_scope_condition, archived_condition
 
 PERIODS = {"weekly", "monthly", "quarterly", "yearly", "custom"}
 
@@ -70,6 +70,7 @@ def _spent(
             Transaction.base_amount.is_not(None),
             Transaction.base_amount < 0,  # money out
             *account_scope_condition(account_ids),
+            *archived_condition(),
         )
     ).all()
 

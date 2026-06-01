@@ -12,6 +12,7 @@ import {
   listTransactions,
   recategorise,
   setTransactionTags,
+  unarchiveTransaction,
   updateTransaction,
   type Transaction,
   type TransactionFilters,
@@ -29,6 +30,7 @@ export default function Transactions() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [needsReview, setNeedsReview] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
   const [page, setPage] = useState(0);
   const [splitId, setSplitId] = useState<number | null>(null);
   const [showAiBatch, setShowAiBatch] = useState(false);
@@ -39,6 +41,7 @@ export default function Transactions() {
     date_from: dateFrom || undefined,
     date_to: dateTo || undefined,
     needs_review: needsReview || undefined,
+    include_archived: showArchived || undefined,
     limit: PAGE_SIZE,
     offset: page * PAGE_SIZE,
   };
@@ -74,6 +77,11 @@ export default function Transactions() {
   const recat = useMutation({
     mutationFn: () => recategorise(true),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["transactions"] }),
+  });
+
+  const unarchive = useMutation({
+    mutationFn: (id: number) => unarchiveTransaction(id),
+    onSuccess: () => qc.invalidateQueries(),
   });
 
   // Export the *filtered* set (the client drops limit/offset so it's not just
@@ -186,6 +194,10 @@ export default function Transactions() {
             <input type="checkbox" checked={needsReview} onChange={(e) => { setNeedsReview(e.target.checked); setPage(0); }} />
             Needs review
           </label>
+          <label className="checkbox">
+            <input type="checkbox" checked={showArchived} onChange={(e) => { setShowArchived(e.target.checked); setPage(0); }} />
+            Show archived
+          </label>
         </div>
       </div>
 
@@ -214,7 +226,7 @@ export default function Transactions() {
                 <tbody>
                   {data.items.map((t) => (
                     <Fragment key={t.id}>
-                    <tr>
+                    <tr style={t.archived_at ? { opacity: 0.6 } : undefined}>
                       <td>{t.transaction_date}</td>
                       <td>
                         {t.description_raw}
@@ -301,6 +313,21 @@ export default function Transactions() {
                         {t.is_transfer && <span className="tag">transfer</span>}
                         {t.is_income && <span className="tag">income</span>}
                         {t.needs_review && <span className="tag tag--dup">review</span>}
+                        {t.archived_at && (
+                          <>
+                            <span className="tag tag--dup" title="Aged out by data retention — hidden from totals">
+                              archived
+                            </span>
+                            <button
+                              className="link-btn"
+                              style={{ marginLeft: 6 }}
+                              disabled={unarchive.isPending}
+                              onClick={() => unarchive.mutate(t.id)}
+                            >
+                              unarchive
+                            </button>
+                          </>
+                        )}
                         {(t.tags ?? []).map((tag) => (
                           <span
                             key={tag.id}

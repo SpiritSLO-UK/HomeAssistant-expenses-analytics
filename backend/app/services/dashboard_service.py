@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Category, Transaction, Vendor
 from app.services import settings_service, split_service
-from app.services.scope import account_scope_condition
+from app.services.scope import account_scope_condition, archived_condition
 
 
 def month_bounds(ref: date) -> tuple[date, date]:
@@ -45,12 +45,13 @@ def _spendable_conditions():
 
 def summary(db: Session, ref: date, *, account_ids: set[int] | None = None) -> dict:
     start, end = month_bounds(ref)
-    scope = account_scope_condition(account_ids)
+    # Visible accounts + archived-exclusion apply to every figure and count here.
+    base = [*account_scope_condition(account_ids), *archived_condition()]
     window = [
         Transaction.transaction_date >= start,
         Transaction.transaction_date < end,
         *_spendable_conditions(),
-        *scope,
+        *base,
     ]
 
     spend = db.scalar(
@@ -65,15 +66,15 @@ def summary(db: Session, ref: date, *, account_ids: set[int] | None = None) -> d
     ) or Decimal("0")
 
     # Counts are scoped too, so a member can't infer the volume of private activity.
-    total_txns = db.scalar(select(func.count()).select_from(Transaction).where(*scope)) or 0
+    total_txns = db.scalar(select(func.count()).select_from(Transaction).where(*base)) or 0
     uncategorised = db.scalar(
-        select(func.count()).select_from(Transaction).where(Transaction.category_id.is_(None), *scope)
+        select(func.count()).select_from(Transaction).where(Transaction.category_id.is_(None), *base)
     ) or 0
     review_count = db.scalar(
-        select(func.count()).select_from(Transaction).where(Transaction.needs_review.is_(True), *scope)
+        select(func.count()).select_from(Transaction).where(Transaction.needs_review.is_(True), *base)
     ) or 0
     needs_rate = db.scalar(
-        select(func.count()).select_from(Transaction).where(Transaction.needs_rate.is_(True), *scope)
+        select(func.count()).select_from(Transaction).where(Transaction.needs_rate.is_(True), *base)
     ) or 0
 
     return {
@@ -105,6 +106,7 @@ def category_breakdown(db: Session, ref: date, *, account_ids: set[int] | None =
             Transaction.base_amount < 0,  # spend only (money out)
             *_spendable_conditions(),
             *account_scope_condition(account_ids),
+            *archived_condition(),
         )
     ).all()
 
@@ -155,6 +157,7 @@ def vendor_breakdown(db: Session, ref: date, limit: int = 10, *, account_ids: se
             Transaction.merchant_id.is_not(None),
             *_spendable_conditions(),
             *account_scope_condition(account_ids),
+            *archived_condition(),
         )
         .group_by(Transaction.merchant_id, Vendor.canonical_name)
         .order_by(func.sum(-Transaction.base_amount).desc())

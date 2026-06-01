@@ -25,7 +25,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from app.logging import get_logger
-from app.models import AIRequest, AuditLog, Receipt
+from app.models import AIRequest, AuditLog, Receipt, Transaction
 from app.services import (
     audit_service,
     backup_service,
@@ -38,8 +38,8 @@ logger = get_logger(__name__)
 
 # Order matters only for display. ``failed_unlock`` is purge-only (a flat JSON file,
 # nothing to "archive"); the rest support both stages.
-DATA_TYPES = ("ai_requests", "audit_logs", "receipts", "failed_unlock")
-ARCHIVABLE = ("ai_requests", "audit_logs", "receipts")
+DATA_TYPES = ("transactions", "ai_requests", "audit_logs", "receipts", "failed_unlock")
+ARCHIVABLE = ("transactions", "ai_requests", "audit_logs", "receipts")
 
 
 def _now() -> datetime:
@@ -130,6 +130,9 @@ def _receipt_age(r: Receipt) -> datetime:
 
 def _archive_due(db: Session, dtype: str, days: int) -> int:
     cutoff = _cutoff(days)
+    if dtype == "transactions":
+        return _count(db, Transaction, Transaction.transaction_date < cutoff.date(),
+                      Transaction.archived_at.is_(None))
     if dtype == "ai_requests":
         return _count(db, AIRequest, AIRequest.created_at < cutoff, AIRequest.archived_at.is_(None))
     if dtype == "audit_logs":
@@ -142,6 +145,8 @@ def _archive_due(db: Session, dtype: str, days: int) -> int:
 
 def _purge_due(db: Session, dtype: str, days: int) -> int:
     cutoff = _cutoff(days)
+    if dtype == "transactions":
+        return _count(db, Transaction, Transaction.transaction_date < cutoff.date())
     if dtype == "ai_requests":
         return _count(db, AIRequest, AIRequest.created_at < cutoff)
     if dtype == "audit_logs":
@@ -185,6 +190,14 @@ def preview(db: Session) -> dict:
 
 def _archive(db: Session, dtype: str, days: int) -> int:
     cutoff = _cutoff(days)
+    if dtype == "transactions":
+        res = db.execute(
+            update(Transaction)
+            .where(Transaction.transaction_date < cutoff.date(), Transaction.archived_at.is_(None))
+            .values(archived_at=_now())
+        )
+        db.commit()
+        return res.rowcount or 0
     if dtype == "ai_requests":
         res = db.execute(
             update(AIRequest)
@@ -214,6 +227,12 @@ def _archive(db: Session, dtype: str, days: int) -> int:
 
 def _purge(db: Session, dtype: str, days: int) -> int:
     cutoff = _cutoff(days)
+    if dtype == "transactions":
+        # FK cascades (PRAGMA foreign_keys=ON) drop splits + receipt matches and
+        # null child_allocations / ai_requests references.
+        res = db.execute(delete(Transaction).where(Transaction.transaction_date < cutoff.date()))
+        db.commit()
+        return res.rowcount or 0
     if dtype == "ai_requests":
         res = db.execute(delete(AIRequest).where(AIRequest.created_at < cutoff))
         db.commit()

@@ -97,9 +97,10 @@ Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md
   load, user role/approval changes, MFA enable/disable — filterable by action)
   plus the AI-call log. Low-level runtime/debug logs stream to the Home Assistant
   add-on **Log** panel at your chosen `log_level`.
-- **Data retention** — owner-only, off by default. For each kind of data (AI
-  request logs, activity/audit logs, receipt files, failed-unlock records) you can
-  **archive after N days** (reversible — hidden, kept) and/or **purge after N days**
+- **Data retention** — owner-only, off by default. For each kind of data
+  (transactions, AI request logs, activity/audit logs, receipt files,
+  failed-unlock records) you can **archive after N days** (reversible — hidden
+  from lists *and* every total, kept) and/or **purge after N days**
   (permanent). A dry-run **removal plan** shows exactly what would go; purging is
   confirm-only (with a fresh MFA code if you use MFA) unless you opt a type into
   **auto-purge**, and a **timestamped safety backup** is taken before any purge

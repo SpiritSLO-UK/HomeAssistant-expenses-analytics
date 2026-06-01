@@ -23,3 +23,11 @@ def account_scope_condition(account_ids: set[int] | None) -> list:
     if account_ids is None:
         return []
     return [or_(Transaction.account_id.in_(account_ids), Transaction.account_id.is_(None))]
+
+
+def archived_condition(include_archived: bool = False) -> list:
+    """Return ``[condition]`` excluding archived transactions, or ``[]`` to include
+    them. Archived rows (aged out by retention, backlog #78) are hidden from every
+    aggregate and from the default transactions list; only the list/CSV expose an
+    opt-in toggle so a user can find and restore them."""
+    return [] if include_archived else [Transaction.archived_at.is_(None)]

@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Category, Project, Transaction, TransactionSplit, Vendor
 from app.services import settings_service, split_service
-from app.services.scope import account_scope_condition
+from app.services.scope import account_scope_condition, archived_condition
 
 
 def _project_transactions(
@@ -41,7 +41,9 @@ def _project_transactions(
     return list(
         db.scalars(
             select(Transaction).where(
-                Transaction.id.in_(ids), *account_scope_condition(account_ids)
+                Transaction.id.in_(ids),
+                *account_scope_condition(account_ids),
+                *archived_condition(),
             )
         ).all()
     )
