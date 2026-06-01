@@ -3,6 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import {
   getCategoryBreakdown,
+  getMe,
+  getSecurityHealth,
   getSummary,
   getVendorBreakdown,
 } from "../api/client";
@@ -38,6 +40,8 @@ export default function Dashboard() {
         <h1 className="page__title">Dashboard</h1>
         <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
       </div>
+
+      <SecurityBanner />
 
       <div className="stat-grid">
         <StatCard label="Spend" value={summary.data ? gbp(summary.data.spend_this_month) : "—"} tone="neg" />
@@ -104,6 +108,29 @@ export default function Dashboard() {
           </p>
         </div>
       )}
+    </div>
+  );
+}
+
+function SecurityBanner() {
+  // Owner-only, non-nagging: a single line linking to Settings, shown only when
+  // there are active (non-dismissed) security recommendations (#128).
+  const me = useQuery({ queryKey: ["me"], queryFn: getMe });
+  const isAdmin = me.data?.is_admin === true;
+  const health = useQuery({
+    queryKey: ["security-health"],
+    queryFn: getSecurityHealth,
+    enabled: isAdmin,
+  });
+  const active = health.data?.active_count ?? 0;
+  if (!isAdmin || active === 0) return null;
+
+  return (
+    <div className="card" style={{ borderLeft: "3px solid #e0a800" }}>
+      <p className="status status--warn" style={{ margin: 0 }}>
+        ⚠️ {active} security recommendation{active > 1 ? "s" : ""}.{" "}
+        <Link to="/settings">Review in Settings →</Link>
+      </p>
     </div>
   );
 }

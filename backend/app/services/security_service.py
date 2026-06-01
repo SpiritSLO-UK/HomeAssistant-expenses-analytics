@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from app.config import settings
@@ -185,4 +186,73 @@ def status() -> dict:
         "encryption_enabled": bool(marker and marker.get("enabled")),
         "unlock_mode": marker.get("unlock_mode") if marker else None,
         "locked": dbsession.is_locked(),
+        "failed_unlocks": failed_unlock_summary(),
+    }
+
+
+# --- Failed-unlock tracking (backlog #130) ----------------------------------
+#
+# Unlock attempts happen while the database is locked (encrypted, not yet
+# opened), so the app DB is unavailable — we log them to a small JSON file next
+# to the database instead.
+
+_MAX_STORED_UNLOCK_EVENTS = 50
+
+
+def _events_path() -> Path:
+    return settings.database_file.parent / "security_events.json"
+
+
+def _read_events() -> dict:
+    path = _events_path()
+    if not path.is_file():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:  # pragma: no cover - corrupt file
+        return {}
+
+
+def _write_events(data: dict) -> None:
+    _events_path().write_text(json.dumps(data), encoding="utf-8")
+
+
+def _now() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
+def record_failed_unlock() -> int:
+    """Record a failed unlock; returns the number of failures in the recent window."""
+    events = _read_events()
+    attempts = events.get("failed_unlocks", [])
+    attempts.append(_now().isoformat())
+    events["failed_unlocks"] = attempts[-_MAX_STORED_UNLOCK_EVENTS:]
+    _write_events(events)
+    recent = failed_unlock_summary()["recent"]
+    logger.warning("Failed database unlock attempt (%d recent).", recent)
+    return recent
+
+
+def record_successful_unlock() -> None:
+    """Clear the failed-attempt streak and note the successful unlock time."""
+    events = _read_events()
+    events["failed_unlocks"] = []
+    events["last_unlock_at"] = _now().isoformat()
+    _write_events(events)
+
+
+def failed_unlock_summary(window_minutes: int = 60) -> dict:
+    events = _read_events()
+    cutoff = _now() - timedelta(minutes=window_minutes)
+    parsed: list[datetime] = []
+    for value in events.get("failed_unlocks", []):
+        try:
+            parsed.append(datetime.fromisoformat(value))
+        except (ValueError, TypeError):  # pragma: no cover - bad row
+            continue
+    recent = [t for t in parsed if t >= cutoff]
+    return {
+        "recent": len(recent),
+        "total_stored": len(parsed),
+        "last_attempt_at": max(parsed).isoformat() if parsed else None,
     }

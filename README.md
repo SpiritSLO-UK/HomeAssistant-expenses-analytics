@@ -71,6 +71,9 @@ Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md
 - **Two-factor (optional)** — each user can turn on TOTP MFA (Google
   Authenticator, Aegis, 1Password…): a 6-digit code to open the app, and a fresh
   code to confirm admin actions. Time-based, on-device, off by default.
+- **Security health** — an owner-only panel flags protections that are off
+  (no at-rest encryption, no MFA, repeated failed unlock attempts, …) with a
+  one-line fix for each. It never nags: dismiss or snooze any item.
 - **Home Assistant sensors** — optional MQTT discovery publishes spend/income/net,
   review count, per-budget progress, per-project totals and monthly subscriptions.
 - **Privacy & safety** — strict local by default, redaction, backup/restore,

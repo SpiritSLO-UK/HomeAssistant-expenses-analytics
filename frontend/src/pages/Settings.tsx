@@ -4,6 +4,7 @@ import {
   addFxRate,
   backfillFx,
   disableEncryption,
+  dismissSecurityCheck,
   downloadDatabaseBackup,
   downloadEncryptedBackup,
   enableEncryption,
@@ -13,6 +14,7 @@ import {
   listAiRequests,
   getMe,
   getMqttStatus,
+  getSecurityHealth,
   getSecurityStatus,
   getSettings,
   importConfig,
@@ -99,6 +101,8 @@ export default function Settings() {
       <AiCard onMessage={ok} onError={fail} />
 
       <MfaCard onMessage={ok} onError={fail} />
+
+      <SecurityHealthCard onError={fail} />
 
       <SecurityCard onMessage={ok} onError={fail} />
 
@@ -617,6 +621,86 @@ function MfaCard({
             </button>
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+function SecurityHealthCard({ onError }: { onError: (e: unknown) => void }) {
+  const qc = useQueryClient();
+  const me = useQuery({ queryKey: ["me"], queryFn: getMe });
+  const isAdmin = me.data?.is_admin === true;
+  const health = useQuery({
+    queryKey: ["security-health"],
+    queryFn: getSecurityHealth,
+    enabled: isAdmin,
+  });
+  const dismiss = useMutation({
+    mutationFn: (v: { id: string; snooze_days?: number; clear?: boolean }) =>
+      dismissSecurityCheck(v.id, { snooze_days: v.snooze_days, clear: v.clear }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["security-health"] }),
+    onError,
+  });
+
+  if (me.data && !isAdmin) return null; // owner-only panel
+
+  const checks = health.data?.checks ?? [];
+  const icon = (s: string) => (s === "warn" ? "⚠️" : s === "info" ? "ℹ️" : "✅");
+  const colour = (s: string) => (s === "warn" ? "#e05555" : s === "info" ? "#e0a800" : "#3aa55a");
+
+  return (
+    <div className="card">
+      <h2 className="card__title">Security health</h2>
+      <p className="muted">
+        Which protections are on, and what you could improve. These are recommendations only —
+        dismiss or snooze anything you don't want to be reminded about.
+      </p>
+      {health.isLoading && <p className="muted">Loading…</p>}
+      {health.data && health.data.active_count === 0 && (
+        <p className="status status--ok">✅ No outstanding security recommendations.</p>
+      )}
+      {checks.length > 0 && (
+        <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 10 }}>
+          {checks.map((c) => (
+            <li
+              key={c.id}
+              style={{
+                borderLeft: `3px solid ${colour(c.severity)}`,
+                paddingLeft: 10,
+                opacity: c.dismissed ? 0.55 : 1,
+              }}
+            >
+              <div>
+                <strong>{icon(c.severity)} {c.title}</strong>
+                {c.dismissed && (
+                  <span className="muted">
+                    {" "}· {c.snoozed_until ? `snoozed until ${c.snoozed_until.slice(0, 10)}` : "dismissed"}
+                  </span>
+                )}
+              </div>
+              <div className="muted" style={{ fontSize: "0.85rem" }}>{c.recommendation}</div>
+              {c.severity !== "ok" && (
+                <div style={{ marginTop: 4, fontSize: "0.85rem" }}>
+                  {c.dismissed ? (
+                    <button className="link-btn" onClick={() => dismiss.mutate({ id: c.id, clear: true })}>
+                      restore
+                    </button>
+                  ) : (
+                    <>
+                      <button className="link-btn" onClick={() => dismiss.mutate({ id: c.id, snooze_days: 7 })}>
+                        remind me in 7 days
+                      </button>
+                      {" · "}
+                      <button className="link-btn" onClick={() => dismiss.mutate({ id: c.id })}>
+                        dismiss
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

@@ -73,9 +73,10 @@ recurring/subscriptions, review queue, receipts + OCR, local AI, cloud AI
 approval, PDF statement import), plus a data-safety pass (redaction,
 backup/restore, demo data, add-on isolation) and multi-currency. That's the full
 spec §29 roadmap. **Stage 12 polish** is now underway — security/multi-user
-cluster: **S1** (multi-user identity + RBAC + new-user approval) and **S2**
-(optional TOTP MFA + admin step-up) done; see "Multi-user & access control" below.
-Full detail in spec §0 and git history.
+cluster: **S1** (multi-user identity + RBAC + new-user approval), **S2** (optional
+TOTP MFA + admin step-up), and **S3** (security-health panel + failed-unlock
+alerts) done; see "Multi-user & access control" below. Full detail in spec §0 and
+git history.
 
 > Stage-numbering note: the spec §29 order is Stage 7 = review queue, Stage 8 =
 > receipts. We built recurring/subscriptions (§20, not a numbered §29 stage)
@@ -329,8 +330,30 @@ digits, 30s).
   the protection for a stolen disk. No QR image yet — the otpauth URI/secret are
   shown for manual entry.
 
-- **Still to come in this cluster:** security-health panel + failed-unlock alerts
-  (S3 / #128/#130), hardening pass (S4 / #74).
+### Security health + failed-unlock alerts (Stage 12-S3 — #128/#130)
+
+- **Failed-unlock tracking:** unlock attempts happen while the DB is *locked*
+  (encrypted, not yet opened), so the app DB is unavailable — failures are logged
+  to a small JSON file next to the DB (`security_events.json`, last 50) via
+  `security_service.record_failed_unlock()`. `record_successful_unlock()` clears
+  the streak. `failed_unlock_summary()` (rolling 60-min window) is included in
+  `/security/status`, so the unlock screen shows "N failed attempts in the last
+  hour" and the structured log warns on each failure.
+- **Security-health panel** (`security_health_service.evaluate`): owner-only
+  checks — at-rest encryption (off → warn / unavailable → info / stored-key →
+  info), MFA on the owner's account, ≥3 recent failed unlocks, users awaiting
+  approval, and `cloud_auto` AI. Each is `{severity, recommendation, actionable,
+  active}`. **Non-nagging:** every warning can be dismissed (forever) or snoozed
+  N days; dismissals live in a `security_dismissals` settings row (an expired
+  snooze reappears). `GET /security/health` + `POST /security/health/dismiss`
+  (both `require_owner`).
+- **UI:** a "Security health" card in Settings (recommendations + dismiss/snooze/
+  restore), a one-line owner-only banner on the Dashboard when `active_count > 0`
+  linking to Settings, and the failed-attempt note on the unlock gate. No
+  migration (uses the settings table + the JSON file).
+
+- **Still to come in this cluster:** hardening pass (S4 / #74) —
+  privilege-escalation tests, never-trust-client-role review, doc/spec pass.
 
 ## Open questions / to scope
 

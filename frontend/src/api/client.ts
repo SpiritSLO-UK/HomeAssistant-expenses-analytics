@@ -1041,15 +1041,55 @@ export function testRule(condition_type: string, condition_value: string): Promi
 
 // --- Security / at-rest encryption (backlog #15b) ---
 
+export interface FailedUnlockSummary {
+  recent: number;
+  total_stored: number;
+  last_attempt_at: string | null;
+}
+
 export interface SecurityStatus {
   encryption_available: boolean;
   encryption_enabled: boolean;
   unlock_mode: string | null;
   locked: boolean;
+  failed_unlocks?: FailedUnlockSummary;
 }
 
 export function getSecurityStatus(): Promise<SecurityStatus> {
   return fetchJson<SecurityStatus>("api/security/status");
+}
+
+// --- Security health panel (backlog #128/#130) ---
+
+export interface SecurityCheck {
+  id: string;
+  title: string;
+  severity: "ok" | "info" | "warn";
+  recommendation: string;
+  actionable: boolean;
+  dismissed: boolean;
+  snoozed_until: string | null;
+  active: boolean;
+}
+
+export interface SecurityHealth {
+  checks: SecurityCheck[];
+  active_count: number;
+  failed_unlocks: FailedUnlockSummary;
+}
+
+export function getSecurityHealth(): Promise<SecurityHealth> {
+  return fetchJson<SecurityHealth>("api/security/health");
+}
+
+export function dismissSecurityCheck(
+  check_id: string,
+  opts: { snooze_days?: number; clear?: boolean } = {},
+): Promise<{ check_id: string; dismissed: boolean; snoozed_until: string | null }> {
+  return fetchJson("api/security/health/dismiss", {
+    method: "POST",
+    body: JSON.stringify({ check_id, ...opts }),
+  });
 }
 
 export function unlockDatabase(passphrase: string): Promise<{ status: string }> {

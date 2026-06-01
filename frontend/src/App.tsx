@@ -25,7 +25,7 @@ export default function App() {
   const me = useQuery({ queryKey: ["me"], queryFn: getMe, enabled: !status.data?.locked });
 
   if (status.data?.locked) {
-    return <UnlockGate />;
+    return <UnlockGate failedRecent={status.data.failed_unlocks?.recent ?? 0} />;
   }
 
   if (me.data && me.data.status !== "approved") {
@@ -122,7 +122,7 @@ function AccountGate({ status, name }: { status: string; name: string }) {
   );
 }
 
-function UnlockGate() {
+function UnlockGate({ failedRecent = 0 }: { failedRecent?: number }) {
   const qc = useQueryClient();
   const [passphrase, setPassphrase] = useState("");
   const unlock = useMutation({
@@ -140,6 +140,11 @@ function UnlockGate() {
         <p className="muted">
           This database is encrypted. Enter your passphrase to unlock it for this session.
         </p>
+        {failedRecent > 0 && (
+          <p className="status status--warn">
+            ⚠️ {failedRecent} failed unlock attempt{failedRecent > 1 ? "s" : ""} in the last hour.
+          </p>
+        )}
         <form
           onSubmit={(e) => {
             e.preventDefault();
