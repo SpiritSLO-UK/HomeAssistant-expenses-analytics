@@ -4,9 +4,13 @@ import { Link } from "react-router-dom";
 import {
   getCategoryBreakdown,
   getMe,
+  getMonthlySeries,
+  getOutliers,
   getSecurityHealth,
   getSummary,
   getVendorBreakdown,
+  type MonthlyPoint,
+  type TrendMetric,
 } from "../api/client";
 
 function thisMonth(): string {
@@ -49,6 +53,9 @@ export default function Dashboard() {
         <StatCard label="Net" value={summary.data ? gbp(summary.data.net_this_month) : "—"} />
         <StatCard label="Transactions" value={summary.data ? String(summary.data.total_transactions) : "—"} />
       </div>
+
+      <HeadsUpCard monthDate={monthDate} />
+      <TrendsCard monthDate={monthDate} />
 
       {summary.data && summary.data.total_transactions === 0 && (
         <div className="card">
@@ -108,6 +115,111 @@ export default function Dashboard() {
           </p>
         </div>
       )}
+    </div>
+  );
+}
+
+function Sparkline({ values, color = "#6aa9ff" }: { values: number[]; color?: string }) {
+  const w = 132, h = 34, pad = 3;
+  if (values.length < 2) return <svg width={w} height={h} aria-hidden />;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const span = max - min || 1;
+  const xy = (v: number, i: number): [number, number] => [
+    pad + (i / (values.length - 1)) * (w - 2 * pad),
+    h - pad - ((v - min) / span) * (h - 2 * pad),
+  ];
+  const pts = values.map((v, i) => xy(v, i).map((n) => n.toFixed(1)).join(",")).join(" ");
+  const [lx, ly] = xy(values[values.length - 1], values.length - 1);
+  return (
+    <svg width={w} height={h} aria-hidden style={{ display: "block" }}>
+      <polyline points={pts} fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round" />
+      <circle cx={lx} cy={ly} r={2.5} fill={color} />
+    </svg>
+  );
+}
+
+const ARROW: Record<string, string> = { up: "▲", down: "▼", flat: "→" };
+
+function TrendMini({ label, values, metric, currency, key_ }: {
+  label: string;
+  values: number[];
+  metric: TrendMetric | undefined;
+  currency: string;
+  key_: "spend" | "income" | "net";
+}) {
+  const current = values.length ? values[values.length - 1] : 0;
+  // For spend, going down is good; for income/net, going up is good.
+  const dir = metric?.direction ?? "flat";
+  const good = dir === "flat" ? null : key_ === "spend" ? dir === "down" : dir === "up";
+  const arrowColour = good == null ? "var(--muted, #888)" : good ? "#3aa55a" : "#e05555";
+  return (
+    <div>
+      <div className="stat__label">{label}</div>
+      <div style={{ fontSize: "1.1rem", fontWeight: 600 }}>
+        {current.toLocaleString(undefined, { style: "currency", currency })}
+      </div>
+      <Sparkline values={values} />
+      {metric && (
+        <div style={{ fontSize: "0.8rem", color: arrowColour }}>
+          {ARROW[dir]} {metric.pct == null ? "—" : `${Math.abs(metric.pct)}%`}{" "}
+          <span className="muted">vs last month</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TrendsCard({ monthDate }: { monthDate: string }) {
+  const q = useQuery({
+    queryKey: ["dash-monthly", monthDate],
+    queryFn: () => getMonthlySeries(6, monthDate),
+  });
+  const data = q.data;
+  if (!data || data.months.length < 2) return null;
+  const num = (m: MonthlyPoint, k: "spend" | "income" | "net") => Number(m[k]);
+  const keys: Array<"spend" | "income" | "net"> = ["spend", "income", "net"];
+  const labels = { spend: "Spend", income: "Income", net: "Net" };
+  return (
+    <div className="card">
+      <h2 className="card__title">Trends · last {data.months.length} months</h2>
+      <div className="stat-grid">
+        {keys.map((k) => (
+          <TrendMini
+            key={k}
+            key_={k}
+            label={labels[k]}
+            values={data.months.map((m) => num(m, k))}
+            metric={data.trend[k]}
+            currency={data.currency}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function HeadsUpCard({ monthDate }: { monthDate: string }) {
+  const q = useQuery({
+    queryKey: ["dash-outliers", monthDate],
+    queryFn: () => getOutliers(monthDate),
+  });
+  const items = q.data?.items ?? [];
+  if (items.length === 0) return null; // nothing to flag → no card (non-nagging)
+  return (
+    <div className="card" style={{ borderLeft: "3px solid #e0a800" }}>
+      <h2 className="card__title">Heads-up</h2>
+      <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+        {items.map((it, i) => (
+          <li
+            key={i}
+            style={{ borderLeft: `3px solid ${it.severity === "warn" ? "#e05555" : "#e0a800"}`, paddingLeft: 10 }}
+          >
+            <div><strong>{it.severity === "warn" ? "⚠️" : "💡"} {it.title}</strong></div>
+            <div className="muted" style={{ fontSize: "0.85rem" }}>{it.detail}</div>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

@@ -74,6 +74,11 @@ Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md
 - **Security health** — an owner-only panel flags protections that are off
   (no at-rest encryption, no MFA, repeated failed unlock attempts, …) with a
   one-line fix for each. It never nags: dismiss or snooze any item.
+- **Trends & heads-up** — the dashboard shows month-over-month spend/income/net
+  sparklines with up/down arrows, and a non-nagging "heads-up" card that flags
+  unusually large charges, categories spending well above their recent average,
+  brand-new merchants, and budgets near or over. Heuristics are conservative and
+  only kick in once there's enough history.
 - **Home Assistant sensors** — optional MQTT discovery publishes spend/income/net,
   review count, per-budget progress, per-project totals and monthly subscriptions.
 - **Privacy & safety** — strict local by default, redaction, backup/restore,

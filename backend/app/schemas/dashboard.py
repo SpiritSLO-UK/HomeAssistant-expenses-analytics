@@ -30,3 +30,44 @@ class VendorBreakdownItem(BaseModel):
     name: str
     total: str
     count: int
+
+
+# --- Trends & outliers (backlog #146, #150) ---
+
+
+class MonthlyPoint(BaseModel):
+    month: str  # YYYY-MM
+    spend: str
+    income: str
+    net: str
+
+
+class TrendMetric(BaseModel):
+    current: str
+    previous: str
+    delta: str
+    pct: float | None  # vs previous month; None when previous was zero
+    direction: str  # up | down | flat
+
+
+class MonthlySeries(BaseModel):
+    currency: str
+    months: list[MonthlyPoint]  # oldest → newest
+    trend: dict[str, TrendMetric]  # keys: spend, income, net (empty if <2 months)
+
+
+class OutlierItem(BaseModel):
+    type: str  # large_charge | category_spike | new_merchant | budget
+    severity: str  # warn | info
+    title: str
+    detail: str
+    amount: str | None = None
+    transaction_id: int | None = None
+    category_id: int | None = None
+    budget_id: int | None = None
+
+
+class OutliersResponse(BaseModel):
+    month: str
+    currency: str
+    items: list[OutlierItem]
