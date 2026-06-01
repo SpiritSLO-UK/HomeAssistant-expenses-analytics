@@ -63,13 +63,12 @@ HA integration holds no business logic (spec §9.4).
 
 ## Build status (summary)
 
-Stages 0–9 done (skeleton, CSV import, categories/vendors + dashboard, rules &
+Stages 0–10 done (skeleton, CSV import, categories/vendors + dashboard, rules &
 learning, split transactions, projects & tags, budgets + MQTT sensors,
-recurring/subscriptions, review queue, receipts + OCR, local AI), plus a
-data-safety pass (redaction, backup/restore, demo data, add-on isolation) and
-multi-currency. Stage 10 (cloud AI approval) is partly wired in the gateway.
-Remaining: finish cloud-AI approval UI, PDF import, polish. Full detail in spec
-§0 and git history.
+recurring/subscriptions, review queue, receipts + OCR, local AI, cloud AI
+approval), plus a data-safety pass (redaction, backup/restore, demo data, add-on
+isolation) and multi-currency. Remaining: PDF import (11), polish (12). Full
+detail in spec §0 and git history.
 
 > Stage-numbering note: the spec §29 order is Stage 7 = review queue, Stage 8 =
 > receipts. We built recurring/subscriptions (§20, not a numbered §29 stage)
@@ -163,10 +162,15 @@ silently — the UI (`AiBatchPanel`) pre-ticks high-confidence rows by a thresho
 but the user clicks Apply. API: `POST /api/ai/classify-batch?limit=`,
 `POST /api/ai/apply`.
 
-**Stage 10 (cloud approval) status:** redaction, audit and the manual-approval
-return (`approval_required` + a `cloud_ai_approval_required` review item) are
-wired in the gateway; the dedicated cloud-approval UI and sensitive-category
-blocking are still to finish. Only `classify_transaction` is implemented;
+**Cloud AI approval (Stage 10 / §22.5, §28):** in `cloud_manual` mode
+`classify_transaction` always returns `approval_required` with the exact redacted
+payload + a pending `AIRequest` (now carrying `transaction_id`) + a
+`cloud_ai_approval_required` review item — nothing is sent. The user previews and
+calls `POST /api/ai/requests/{id}/approve` (`run_request` sends it, stores the
+response, resolves the review item) or `/reject` (`reject_request`, nothing
+sent). **Sensitive-category blocking:** cloud classification refuses a
+transaction whose category is `never_cloud` (§28). The AI audit log is visible in
+the Settings AI card. Only `classify_transaction` is implemented;
 enrich_vendor/parse_receipt/match_receipt are deferred.
 
 ## Receipts + OCR & review queue (Stage 8 / §21, §23)

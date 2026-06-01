@@ -1,6 +1,7 @@
 import { Fragment, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  approveAiRequest,
   categoriseTransaction,
   classifyWithAi,
   getAiStatus,
@@ -108,7 +109,7 @@ export default function Transactions() {
       if (res.status === "approval_required") {
         const preview = JSON.stringify(res.payload ?? {}, null, 2);
         if (!window.confirm(`Cloud AI needs approval. Only this redacted payload is sent:\n\n${preview}\n\nApprove?`)) return;
-        res = await classifyWithAi(t.id, true);
+        res = await approveAiRequest(res.ai_request_id);
       }
       if (res.status === "ok" && res.category_id) {
         const pct = res.confidence != null ? ` (${Math.round(res.confidence * 100)}%)` : "";

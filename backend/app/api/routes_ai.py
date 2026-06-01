@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.models import Transaction
+from app.models import AIRequest, Transaction
 from app.schemas.ai import (
     AIRequestOut,
     AIStatus,
@@ -34,21 +34,44 @@ def ai_requests(db: Session = Depends(get_db)):
 
 
 @router.post("/classify/{transaction_id}", response_model=ClassifyResult)
-def classify(
-    transaction_id: int,
-    approve: bool = Query(default=False),
-    db: Session = Depends(get_db),
-) -> dict:
-    """Ask AI to suggest a category (suggestion only — never applied here)."""
+def classify(transaction_id: int, db: Session = Depends(get_db)) -> dict:
+    """Ask AI to suggest a category (suggestion only — never applied here).
+    In cloud_manual mode this returns ``approval_required``; approve it via
+    ``/api/ai/requests/{id}/approve``."""
     txn = db.get(Transaction, transaction_id)
     if txn is None:
         raise HTTPException(status_code=404, detail="Transaction not found")
     try:
-        return ai_service.classify_transaction(db, txn, approved=approve)
+        return ai_service.classify_transaction(db, txn)
     except AIDisabled as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except AIError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+def _get_request(db: Session, request_id: int) -> AIRequest:
+    req = db.get(AIRequest, request_id)
+    if req is None:
+        raise HTTPException(status_code=404, detail="AI request not found")
+    return req
+
+
+@router.post("/requests/{request_id}/approve", response_model=ClassifyResult)
+def approve_request(request_id: int, db: Session = Depends(get_db)) -> dict:
+    """Approve a pending cloud request and send it (spec §22.5)."""
+    req = _get_request(db, request_id)
+    try:
+        return ai_service.run_request(db, req)
+    except AIDisabled as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except AIError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.post("/requests/{request_id}/reject", response_model=AIRequestOut)
+def reject_request(request_id: int, db: Session = Depends(get_db)) -> AIRequest:
+    """Reject a pending cloud request — nothing is sent (spec §22.5)."""
+    return ai_service.reject_request(db, _get_request(db, request_id))
 
 
 @router.post("/classify-batch", response_model=BatchResult)

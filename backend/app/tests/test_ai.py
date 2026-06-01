@@ -7,9 +7,13 @@ any network call.
 
 from __future__ import annotations
 
+import pytest
+from sqlalchemy import select
+
 from app.db.session import SessionLocal
-from app.models import Transaction
+from app.models import AIRequest, Category, Transaction
 from app.services import ai_service
+from app.services.ai_service import AIDisabled
 
 
 class FakeProvider:
@@ -104,26 +108,59 @@ def test_cloud_payload_is_redacted(client):
     txn_id = _import_txn(client, desc="CARD 4111 1111 1111 1111 PAYMENT")
     _set_mode(client, "cloud_auto")
     fake = FakeProvider()
-    _classify(txn_id, approved=True, provider=fake)
+    _classify(txn_id, provider=fake)  # cloud_auto runs directly
     sent = fake.calls[0]["description"]
     assert "[card]" in sent          # redacted before leaving the device
     assert "4111 1111 1111" not in sent
 
 
-def test_cloud_manual_requires_approval(client):
+def test_cloud_manual_approval_workflow(client):
     txn_id = _import_txn(client)
     _set_mode(client, "cloud_manual")
     fake = FakeProvider()
 
-    first = _classify(txn_id, approved=False, provider=fake)
+    first = _classify(txn_id, provider=fake)
     assert first["status"] == "approval_required"
+    assert first["payload"] is not None  # user can preview before sending
     assert fake.calls == []  # nothing sent yet
-    reasons = {i["reason"] for i in client.get("/api/review?status=open").json()}
-    assert "cloud_ai_approval_required" in reasons
+    assert "cloud_ai_approval_required" in {i["reason"] for i in client.get("/api/review?status=open").json()}
 
-    approved = _classify(txn_id, approved=True, provider=fake)
+    # Approve the SAME pending request -> it sends, stores, resolves the review item.
+    rid = first["ai_request_id"]
+    with SessionLocal() as db:
+        req = db.get(AIRequest, rid)
+        approved = ai_service.run_request(db, req, provider=fake)
     assert approved["status"] == "ok"
+    assert approved["transaction_id"] == txn_id
     assert len(fake.calls) == 1
+    assert "cloud_ai_approval_required" not in {i["reason"] for i in client.get("/api/review?status=open").json()}
+
+
+def test_never_cloud_category_blocks_cloud(client):
+    txn_id = _import_txn(client)
+    _set_mode(client, "cloud_auto")
+    with SessionLocal() as db:
+        txn = db.get(Transaction, txn_id)
+        cat = db.scalars(select(Category)).first()
+        cat.privacy_sensitivity = "never_cloud"
+        txn.category_id = cat.id
+        db.commit()
+        with pytest.raises(AIDisabled):
+            ai_service.classify_transaction(db, db.get(Transaction, txn_id), provider=FakeProvider())
+
+
+def test_reject_pending_request(client):
+    txn_id = _import_txn(client)
+    _set_mode(client, "cloud_manual")
+    rid = _classify(txn_id, provider=FakeProvider())["ai_request_id"]
+    r = client.post(f"/api/ai/requests/{rid}/reject")
+    assert r.status_code == 200
+    assert r.json()["status"] == "rejected"
+    assert "cloud_ai_approval_required" not in {i["reason"] for i in client.get("/api/review?status=open").json()}
+
+
+def test_approve_unknown_request_404(client):
+    assert client.post("/api/ai/requests/9999/approve").status_code == 404
 
 
 def test_invalid_privacy_mode_rejected(client):

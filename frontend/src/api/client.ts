@@ -611,13 +611,45 @@ export function getAiStatus(): Promise<AIStatus> {
   return fetchJson<AIStatus>("api/ai/status");
 }
 
-export async function classifyWithAi(transactionId: number, approve = false): Promise<ClassifyResult> {
-  const res = await fetch(apiUrl(`api/ai/classify/${transactionId}?approve=${approve}`), { method: "POST" });
+export interface AIRequestRow {
+  id: number;
+  provider: string;
+  model: string | null;
+  task_type: string;
+  privacy_mode: string;
+  approval_status: string;
+  status: string;
+  confidence_score: number | null;
+  error_message: string | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+async function aiPost(path: string): Promise<ClassifyResult> {
+  const res = await fetch(apiUrl(path), { method: "POST" });
   if (!res.ok) {
     const detail = await res.json().catch(() => ({}));
     throw new Error(detail.detail || `AI request failed: ${res.status}`);
   }
   return res.json();
+}
+
+export function classifyWithAi(transactionId: number): Promise<ClassifyResult> {
+  return aiPost(`api/ai/classify/${transactionId}`);
+}
+
+// Approve a pending cloud request (cloud_manual): sends it and returns the suggestion.
+export function approveAiRequest(requestId: number): Promise<ClassifyResult> {
+  return aiPost(`api/ai/requests/${requestId}/approve`);
+}
+
+export async function rejectAiRequest(requestId: number): Promise<void> {
+  const res = await fetch(apiUrl(`api/ai/requests/${requestId}/reject`), { method: "POST" });
+  if (!res.ok) throw new Error(`Reject failed: ${res.status}`);
+}
+
+export function listAiRequests(): Promise<AIRequestRow[]> {
+  return fetchJson<AIRequestRow[]>("api/ai/requests");
 }
 
 export interface BatchSuggestion {

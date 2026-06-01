@@ -17,6 +17,11 @@ class AIRequest(Base):
     household_id: Mapped[int | None] = mapped_column(
         ForeignKey("households.id", ondelete="CASCADE"), nullable=True
     )
+    # The transaction this call is about (so a pending cloud-approval request is
+    # actionable and the audit log has context). Added Stage 10.
+    transaction_id: Mapped[int | None] = mapped_column(
+        ForeignKey("transactions.id", ondelete="SET NULL"), nullable=True
+    )
     provider: Mapped[str] = mapped_column(String(64), nullable=False)
     model: Mapped[str | None] = mapped_column(String(128), nullable=True)
     # classify_transaction | enrich_vendor | parse_receipt | match_receipt |

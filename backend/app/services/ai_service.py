@@ -67,10 +67,11 @@ def status(db: Session) -> dict:
 
 def _audit(
     db: Session, provider: AIProvider, mode: str, *,
-    approval_status: str, payload: dict, status: str,
+    approval_status: str, payload: dict, status: str, transaction_id: int | None,
 ) -> AIRequest:
     req = AIRequest(
         household_id=get_or_create_default_household(db).id,
+        transaction_id=transaction_id,
         provider=provider.name,
         model=getattr(provider, "model", None),
         task_type="classify_transaction",
@@ -84,11 +85,54 @@ def _audit(
     return req
 
 
-def classify_transaction(db: Session, txn: Transaction, *, approved: bool = False, provider=None) -> dict:
+def _candidate_categories(db: Session) -> list[Category]:
+    return list(db.scalars(select(Category).where(Category.is_active.is_(True))).all())
+
+
+def _suggest(req: AIRequest, result: dict, cats: list[Category]) -> dict:
+    name = result.get("category")
+    match = None
+    if name:
+        match = next((c for c in cats if c.name.strip().lower() == str(name).strip().lower()), None)
+    return {
+        "status": "ok",
+        "ai_request_id": req.id,
+        "transaction_id": req.transaction_id,
+        "category_id": match.id if match else None,
+        "category_name": match.name if match else None,
+        "confidence": result.get("confidence"),
+        "rationale": result.get("rationale"),
+    }
+
+
+def _run(db: Session, req: AIRequest, provider: AIProvider, payload: dict, cats: list[Category]) -> dict:
+    """Call the provider and record the outcome on ``req`` (no commit). On a
+    provider error, marks the request failed and re-raises."""
+    try:
+        result = provider.classify_transaction(
+            description=payload.get("description", ""),
+            amount=str(payload.get("amount", "")),
+            currency=payload.get("currency", ""),
+            candidate_categories=payload.get("candidate_categories", []),
+        )
+    except AIError as exc:
+        req.status = "failed"
+        req.error_message = str(exc)
+        req.completed_at = datetime.now(timezone.utc)
+        raise
+    req.status = "completed"
+    req.response_payload = json.dumps(result)
+    req.confidence_score = result.get("confidence")
+    req.completed_at = datetime.now(timezone.utc)
+    return _suggest(req, result, cats)
+
+
+def classify_transaction(db: Session, txn: Transaction, *, provider=None) -> dict:
     """Ask AI to suggest a category. Returns a suggestion (never applies it).
 
-    For ``cloud_manual`` and ``approved=False``, returns ``status="approval_required"``
-    with the exact redacted payload and a review item (spec §22.5)."""
+    ``cloud_manual`` always returns ``status="approval_required"`` with the exact
+    redacted payload + a review item (spec §22.5) — call :func:`run_request` to
+    actually send it once the user approves."""
     mode = settings_service.get_privacy_mode(db)
     if mode in OFF_MODES:
         raise AIDisabled(f"AI is disabled (privacy mode: {mode})")
@@ -97,7 +141,14 @@ def classify_transaction(db: Session, txn: Transaction, *, approved: bool = Fals
         raise AIDisabled("No AI provider configured")
 
     is_cloud = mode in CLOUD_MODES
-    cats = list(db.scalars(select(Category).where(Category.is_active.is_(True))).all())
+    # Sensitive-category blocking (spec §28): never send a never-cloud category
+    # to a cloud provider.
+    if is_cloud and txn.category_id is not None:
+        cat = db.get(Category, txn.category_id)
+        if cat is not None and cat.privacy_sensitivity == "never_cloud":
+            raise AIDisabled("This transaction's category is marked never-cloud; cloud AI is blocked for it.")
+
+    cats = _candidate_categories(db)
     payload = {
         "description": txn.description_raw,
         "amount": str(txn.amount),
@@ -107,57 +158,60 @@ def classify_transaction(db: Session, txn: Transaction, *, approved: bool = Fals
     # The bytes that actually leave: redacted + minimal for cloud (spec §22.4).
     to_send = redaction.redact_for_cloud(payload) if is_cloud else payload
 
-    if mode == "cloud_manual" and not approved:
-        req = _audit(db, provider, mode, approval_status="pending", payload=to_send, status="pending")
+    if mode == "cloud_manual":
+        req = _audit(db, provider, mode, approval_status="pending", payload=to_send,
+                     status="pending", transaction_id=txn.id)
         review_service.add(
             db, item_type="ai_request", item_id=req.id,
             reason="cloud_ai_approval_required", severity="warning",
             suggested_action="Approve sending this redacted payload to cloud AI.",
         )
         db.commit()
-        return {"status": "approval_required", "ai_request_id": req.id, "payload": to_send}
+        return {"status": "approval_required", "ai_request_id": req.id,
+                "transaction_id": txn.id, "payload": to_send}
 
-    req = _audit(
-        db, provider, mode,
-        approval_status="not_required" if not is_cloud else "approved",
-        payload=to_send, status="pending",
-    )
-    db.commit()
-
+    req = _audit(db, provider, mode,
+                 approval_status="not_required" if not is_cloud else "approved",
+                 payload=to_send, status="pending", transaction_id=txn.id)
     try:
-        result = provider.classify_transaction(
-            description=to_send.get("description", ""),
-            amount=str(to_send.get("amount", "")),
-            currency=to_send.get("currency", ""),
-            candidate_categories=to_send.get("candidate_categories", []),
-        )
-    except AIError as exc:
-        req.status = "failed"
-        req.error_message = str(exc)
-        req.completed_at = datetime.now(timezone.utc)
+        result = _run(db, req, provider, to_send, cats)
+    except AIError:
         db.commit()
         raise
-
-    name = result.get("category")
-    match = None
-    if name:
-        match = next((c for c in cats if c.name.strip().lower() == str(name).strip().lower()), None)
-
-    req.status = "completed"
-    req.response_payload = json.dumps(result)
-    req.confidence_score = result.get("confidence")
-    req.completed_at = datetime.now(timezone.utc)
     db.commit()
+    return result
 
-    # Suggestion only — the user accepts it via the normal categorise endpoint.
-    return {
-        "status": "ok",
-        "ai_request_id": req.id,
-        "category_id": match.id if match else None,
-        "category_name": match.name if match else None,
-        "confidence": result.get("confidence"),
-        "rationale": result.get("rationale"),
-    }
+
+def run_request(db: Session, ai_request: AIRequest, *, provider=None) -> dict:
+    """Approve and send a pending request (spec §22.5). Stores the response,
+    resolves its review item, and returns the suggestion."""
+    if ai_request.status != "pending":
+        raise AIDisabled("This AI request is not awaiting approval.")
+    provider = provider or get_provider(db)
+    if not provider.available():
+        raise AIDisabled("No AI provider configured")
+    ai_request.approval_status = "approved"
+    payload = json.loads(ai_request.redacted_payload or "{}")
+    try:
+        result = _run(db, ai_request, provider, payload, _candidate_categories(db))
+    except AIError:
+        db.commit()
+        raise
+    review_service.resolve_for(db, item_type="ai_request", item_id=ai_request.id,
+                               reason="cloud_ai_approval_required")
+    db.commit()
+    return result
+
+
+def reject_request(db: Session, ai_request: AIRequest) -> AIRequest:
+    """Reject a pending cloud request — nothing is sent (spec §22.5)."""
+    ai_request.status = "rejected"
+    ai_request.approval_status = "rejected"
+    ai_request.completed_at = datetime.now(timezone.utc)
+    review_service.resolve_for(db, item_type="ai_request", item_id=ai_request.id,
+                               reason="cloud_ai_approval_required")
+    db.commit()
+    return ai_request
 
 
 def classify_batch(db: Session, *, limit: int = 25, provider=None) -> dict:

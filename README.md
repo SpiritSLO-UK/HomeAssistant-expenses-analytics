@@ -27,7 +27,7 @@ Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md
 | — | Recurring payments & subscriptions (auto-detected) | ✅ |
 | — | Data-safety: redaction, backup/restore, demo data, security hardening | ✅ |
 | — | Multi-currency + FX; encrypted backups + optional at-rest encryption | ✅ |
-| 10 | Cloud AI approval (redaction/audit/approval wired; approval UI to finish) | 🟡 |
+| 10 | Cloud AI approval: preview + approve/reject each request, never-cloud category blocking, audit log | ✅ |
 | 11–12 | PDF import, polish | planned ([spec §29](ha_finance_intelligence_spec.md)) |
 
 ## What it does today
@@ -53,7 +53,9 @@ Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md
   for a transaction via any OpenAI-compatible LLM (local Ollama/LM Studio or
   cloud). It only *suggests* — you confirm. With a local LLM you can also
   **batch-categorise** uncategorised transactions and bulk-approve the
-  suggestions. Cloud payloads are minimised and redacted, and every call is audited.
+  suggestions. Cloud payloads are minimised and redacted; in cloud-manual mode
+  you preview and approve (or reject) each request; categories you mark
+  *never-cloud* are never sent; and every call is audited.
 - **Multi-currency** — original amount kept and converted to your base currency;
   manual rates by default, opt-in online ECB rates (Frankfurter).
 - **Home Assistant sensors** — optional MQTT discovery publishes spend/income/net,

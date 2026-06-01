@@ -10,6 +10,7 @@ import {
   exportConfig,
   getAiStatus,
   getHealth,
+  listAiRequests,
   getMqttStatus,
   getSecurityStatus,
   getSettings,
@@ -397,6 +398,7 @@ function AiCard({
   const qc = useQueryClient();
   const status = useQuery({ queryKey: ["ai-status"], queryFn: getAiStatus });
   const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
+  const requests = useQuery({ queryKey: ["ai-requests"], queryFn: listAiRequests });
   const [draft, setDraft] = useState<Record<string, string>>({});
 
   const s = settings.data;
@@ -467,6 +469,32 @@ function AiCard({
           Cloud mode: set the API key as the add-on’s <code>HAFI_AI_API_KEY</code> option (never stored in the
           database). <code>cloud_manual</code> asks you to approve each request; <code>cloud_auto</code> sends automatically.
         </p>
+      )}
+
+      {requests.data && requests.data.length > 0 && (
+        <>
+          <h3 style={{ margin: "14px 0 6px", fontSize: "0.95rem" }}>Audit log</h3>
+          <p className="muted" style={{ fontSize: "0.78rem", marginTop: 0 }}>Every AI call is logged (spec §22.6).</p>
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr><th>When</th><th>Task</th><th>Provider</th><th>Mode</th><th>Approval</th><th>Status</th></tr>
+              </thead>
+              <tbody>
+                {requests.data.slice(0, 8).map((r) => (
+                  <tr key={r.id}>
+                    <td>{r.created_at.replace("T", " ").slice(0, 16)}</td>
+                    <td>{r.task_type}</td>
+                    <td>{r.provider}</td>
+                    <td>{r.privacy_mode}</td>
+                    <td>{r.approval_status}</td>
+                    <td>{r.status}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );

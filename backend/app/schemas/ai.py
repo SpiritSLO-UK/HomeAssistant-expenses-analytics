@@ -21,6 +21,7 @@ class AIStatus(BaseModel):
 class ClassifyResult(BaseModel):
     status: str  # ok | approval_required
     ai_request_id: int
+    transaction_id: int | None = None
     category_id: int | None = None
     category_name: str | None = None
     confidence: float | None = None
@@ -61,6 +62,7 @@ class AIRequestOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    transaction_id: int | None
     provider: str
     model: str | None
     task_type: str
