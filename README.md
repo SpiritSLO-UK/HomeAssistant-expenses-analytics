@@ -239,10 +239,11 @@ paths are exercised for real.
 ## Importing your own statements
 
 Use **Import**, pick your bank (or auto-detect), preview, then confirm. Built-in
-parsers: Curve, Barclays, Lloyds, Monzo, a generic CSV mapper, and a generic
-**PDF** reader. CSV is most reliable; PDF statements are read best-effort and
-each extracted row is flagged for review so you can verify it. Duplicate rows
-(and re-uploaded files) are detected and skipped
+parsers: Curve, Barclays, Lloyds, Monzo, a generic CSV mapper, a generic
+**PDF** reader, and an **image/scan** reader. CSV is most reliable; PDF, **photos
+or scans (JPG/PNG), and scanned PDFs** are read best-effort with OCR (Tesseract;
+scanned PDFs are rasterised first) and each extracted row is flagged for review so
+you can verify it. Duplicate rows (and re-uploaded files) are detected and skipped
 ([spec §14](ha_finance_intelligence_spec.md)). Sample fake CSVs live in
 [`examples/sample-csv/`](examples/sample-csv/).
 

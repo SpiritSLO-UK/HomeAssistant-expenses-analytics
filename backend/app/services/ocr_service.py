@@ -53,6 +53,18 @@ def _pypdf_ok() -> bool:
         return False
 
 
+@lru_cache(maxsize=1)
+def _pdfium_ok() -> bool:
+    """Whether the PDF rasteriser (pypdfium2) is importable — needed to OCR a
+    scanned / image-only PDF (alongside the tesseract binary)."""
+    try:
+        import pypdfium2  # noqa: F401
+
+        return True
+    except Exception:
+        return False
+
+
 def available() -> bool:
     return _tesseract_ok() or _pypdf_ok()
 
@@ -62,6 +74,7 @@ def status() -> dict:
         "available": available(),
         "image_ocr": _tesseract_ok(),  # Tesseract
         "pdf_text": _pypdf_ok(),       # pypdf
+        "pdf_ocr": _tesseract_ok() and _pdfium_ok(),  # scanned-PDF OCR
         "image_formats": sorted(s.lstrip(".") for s in IMAGE_SUFFIXES),
     }
 
@@ -90,14 +103,45 @@ def _ocr_image(path: Path) -> tuple[str, float | None]:
     return text, confidence
 
 
+def ocr_pdf_pages(path: Path, *, scale: float = 2.0, max_pages: int = 20) -> str:
+    """Rasterise a scanned / image-only PDF and OCR each page with Tesseract.
+
+    Returns ``""`` when the rasteriser (pypdfium2) or Tesseract isn't available,
+    or on any render/OCR error — callers treat that as "no text extracted"."""
+    if not (_pdfium_ok() and _tesseract_ok()):
+        return ""
+    try:
+        import pypdfium2 as pdfium
+        import pytesseract
+    except Exception:  # pragma: no cover - guarded by the *_ok() checks
+        return ""
+    parts: list[str] = []
+    try:
+        pdf = pdfium.PdfDocument(str(path))
+        try:
+            for i in range(min(len(pdf), max_pages)):
+                bitmap = pdf[i].render(scale=scale)
+                parts.append(pytesseract.image_to_string(bitmap.to_pil()))
+        finally:
+            pdf.close()
+    except Exception:  # pragma: no cover - engine/format errors
+        logger.warning("PDF OCR fallback failed for %s", path.name, exc_info=True)
+        return ""
+    return "\n".join(parts).strip()
+
+
 def _pdf_text(path: Path) -> tuple[str, float | None]:
     import pypdf
 
     reader = pypdf.PdfReader(str(path))
     text = "\n".join((page.extract_text() or "") for page in reader.pages).strip()
-    # Embedded text is exact; scanned PDFs return ~nothing -> low confidence.
-    confidence = 0.95 if len(text) > 20 else 0.0
-    return text, confidence
+    if len(text) > 20:
+        return text, 0.95  # embedded (digital) text is exact
+    # Scanned / image-only PDF returns ~nothing → fall back to rasterise + OCR.
+    ocr_text = ocr_pdf_pages(path)
+    if ocr_text:
+        return ocr_text, 0.5  # OCR'd — unverified, flagged for review downstream
+    return text, 0.0
 
 
 def extract_text(path: Path) -> tuple[str, float | None]:

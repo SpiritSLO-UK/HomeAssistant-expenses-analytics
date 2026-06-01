@@ -50,16 +50,17 @@ export default function Import() {
       <h1 className="page__title">Import</h1>
 
       <div className="card">
-        <h2 className="card__title">Upload a bank statement (CSV or PDF)</h2>
+        <h2 className="card__title">Upload a bank statement (CSV, PDF, or a photo/scan)</h2>
         <p className="muted">
-          CSV is most reliable. PDF statements are read best-effort — extracted rows are
+          CSV is most reliable. PDF, and now <strong>photos or scans</strong> (JPG/PNG, or a
+          scanned PDF), are read best-effort with OCR — extracted rows are
           <strong> flagged for review</strong> so you can verify them on the Transactions page.
         </p>
         <div className="form-row">
           <input
             ref={fileInput}
             type="file"
-            accept=".csv,text/csv,.pdf,application/pdf"
+            accept=".csv,text/csv,.pdf,application/pdf,image/*"
             onChange={(e) => {
               setFile(e.target.files?.[0] ?? null);
               setPreview(null);
