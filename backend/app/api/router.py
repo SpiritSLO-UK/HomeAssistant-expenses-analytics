@@ -30,6 +30,7 @@ from app.api import (
     routes_subscriptions,
     routes_tags,
     routes_transactions,
+    routes_travel,
     routes_users,
     routes_vendors,
 )
@@ -62,3 +63,4 @@ api_router.include_router(routes_logs.router)
 api_router.include_router(routes_export.router)
 api_router.include_router(routes_allowance.router)
 api_router.include_router(routes_accounts.router)
+api_router.include_router(routes_travel.router)

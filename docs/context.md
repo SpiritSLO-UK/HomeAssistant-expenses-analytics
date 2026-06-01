@@ -622,6 +622,19 @@ policy lives in one JSON setting (`retention_policy`); per type it carries
   a bulk `delete(Transaction)` — FK cascade (`PRAGMA foreign_keys=ON`) drops splits +
   receipt matches and nulls child_allocations / ai_requests. Age basis = `transaction_date`.
 
+## Travel / spend-abroad (backlog: holidays by country/currency)
+
+`services/travel_service.py` (read-only, no migration): currency is the proxy for
+"abroad" — any spend in a currency ≠ base. `by_currency` groups foreign spend
+(money-out, account-scoped + archived-excluded) by currency with a friendly
+`place_for()` label + original and base totals. `detect_trips(gap_days=14)` clusters
+foreign spend into trips by date gap (newest first). `create_project_from_trip`
+makes a Project (dated from the trip, optional budget) and assigns its visible
+transactions. API `api/routes_travel.py` (`/api/travel/{by-currency,trips,trips/project}`;
+the POST is write-gated by the middleware). Frontend `pages/Travel.tsx` (✈️ nav)
++ client helpers. True geolocation (vendor-location enrichment) remains the separate
+geo-map item. `tests/test_travel.py`.
+
 ## Open questions / to scope
 
 - **#29 FX coverage** — Frankfurter is ECB (~30 currencies); add a wider source

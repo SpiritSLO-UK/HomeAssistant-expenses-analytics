@@ -1,0 +1,59 @@
+"""Travel / spend-abroad API (backlog: holidays by country/currency).
+
+Read-only foreign-spend analytics (account-scoped, archived-excluded) plus a
+write-gated action to turn a detected trip into a Project.
+"""
+
+from __future__ import annotations
+
+from decimal import Decimal
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+from app.db.session import get_db
+from app.services import auth_service, travel_service
+
+router = APIRouter(prefix="/travel", tags=["travel"])
+
+
+def _scope(request: Request, db: Session) -> set[int] | None:
+    return auth_service.visible_account_scope(request, db)
+
+
+@router.get("/by-currency")
+def by_currency(request: Request, db: Session = Depends(get_db)) -> dict:
+    return travel_service.by_currency(db, account_ids=_scope(request, db))
+
+
+@router.get("/trips")
+def trips(
+    request: Request,
+    gap_days: int = Query(travel_service.DEFAULT_TRIP_GAP_DAYS, ge=1, le=120),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    return travel_service.detect_trips(db, account_ids=_scope(request, db), gap_days=gap_days)
+
+
+class TripProjectRequest(BaseModel):
+    name: str
+    transaction_ids: list[int]
+    budget_amount: Decimal | None = None
+
+
+@router.post("/trips/project", status_code=201)
+def trip_to_project(payload: TripProjectRequest, request: Request, db: Session = Depends(get_db)) -> dict:
+    """Turn a detected trip into a Project (write-gated by the auth middleware)."""
+    if not payload.name.strip():
+        raise HTTPException(status_code=400, detail="A project name is required.")
+    if not payload.transaction_ids:
+        raise HTTPException(status_code=400, detail="No transactions to add.")
+    project = travel_service.create_project_from_trip(
+        db,
+        name=payload.name,
+        transaction_ids=payload.transaction_ids,
+        budget_amount=payload.budget_amount,
+        account_ids=_scope(request, db),
+    )
+    return {"project_id": project.id, "name": project.name}

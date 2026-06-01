@@ -121,6 +121,9 @@ Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md
   unusually large charges, categories spending well above their recent average,
   brand-new merchants, and budgets near or over. Heuristics are conservative and
   only kick in once there's enough history.
+- **Travel / spend-abroad** — a **Travel** page groups foreign-currency spend by
+  currency (with a friendly country label) and **auto-detects trips** from clusters
+  of foreign spend; turn any trip into a project (with a budget) in one click.
 - **Home Assistant sensors** — optional MQTT discovery publishes spend/income/net,
   review count, per-budget progress, per-project totals and monthly subscriptions.
 - **Privacy & safety** — strict local by default, redaction, backup/restore,
