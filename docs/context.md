@@ -635,6 +635,18 @@ the POST is write-gated by the middleware). Frontend `pages/Travel.tsx` (✈️ 
 + client helpers. True geolocation (vendor-location enrichment) remains the separate
 geo-map item. `tests/test_travel.py`.
 
+## Scanned / photo statement import (backlog: import a photo/scan)
+
+`parsers/image_statement.py` (`ImageStatementParser`, `format="image"`): a photo/scan
+(JPG/PNG/…) is written to a temp file, OCR'd via `ocr_service.extract_text` (Tesseract),
+then the existing pure `parse_statement_text` (from `generic_pdf`) turns the text into
+review-heavy rows (every row `needs_review=True`). `GenericPdfParser._extract_text` now
+falls back to `ocr_service.ocr_pdf_pages` (rasterise via **pypdfium2** + Tesseract, added to
+the `ocr` extra) when a PDF has no embedded text (scanned/image-only). `detect_parser` routes
+image suffixes/magic-bytes to `image_statement`; the Import UI accepts `image/*`. All degrade
+clearly when the OCR engine/binary is absent. The text→rows step stays engine-free + unit-tested;
+tests mock the OCR hop (`tests/test_scanned_statement.py`). No migration.
+
 ## Open questions / to scope
 
 - **#29 FX coverage** — Frankfurter is ECB (~30 currencies); add a wider source

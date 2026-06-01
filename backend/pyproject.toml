@@ -41,6 +41,10 @@ ocr = [
     "pytesseract>=0.3.10",
     "Pillow>=10.0.0",
     "pypdf>=4.0",
+    # Rasterise scanned/image-only PDF pages so Tesseract can OCR them. Self-
+    # contained wheel (bundles PDFium, no system poppler needed); image OCR still
+    # needs the tesseract binary. Falls back gracefully if absent.
+    "pypdfium2>=4.0",
 ]
 # At-rest DB encryption (backlog #15b). Kept optional: sqlcipher3-binary has no
 # Windows wheel, so it must not be a core dependency. Installed in the add-on

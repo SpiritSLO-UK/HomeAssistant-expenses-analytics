@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import io
 import re
+import tempfile
+from pathlib import Path
 
 from app.parsers.base import (
     BaseStatementParser,
@@ -103,7 +105,7 @@ class GenericPdfParser(BaseStatementParser):
         if not rows:
             raise ParseError(
                 "No transactions recognised in the PDF. Try the CSV export, or check "
-                "it's a text statement (scanned PDFs aren't supported yet)."
+                "it's a clear statement (a blurry scan may not OCR well)."
             )
         return rows
 
@@ -120,6 +122,26 @@ class GenericPdfParser(BaseStatementParser):
             text = "\n".join((page.extract_text() or "") for page in reader.pages)
         except Exception as exc:
             raise ParseError(f"Could not read the PDF: {exc}") from exc
-        if not text.strip():
-            raise ParseError("No selectable text in this PDF (a scanned image? not supported yet).")
-        return text
+        if text.strip():
+            return text
+        # No embedded text → a scanned / image-only PDF. Rasterise + OCR it.
+        ocr_text = GenericPdfParser._ocr_scanned(content)
+        if ocr_text.strip():
+            return ocr_text
+        raise ParseError(
+            "No selectable text in this PDF — it looks scanned. OCR needs the 'ocr' "
+            "extra + the tesseract binary (installed in the Home Assistant add-on)."
+        )
+
+    @staticmethod
+    def _ocr_scanned(content: bytes) -> str:
+        """Rasterise a scanned PDF and OCR it (best-effort; '' if unavailable)."""
+        from app.services import ocr_service
+
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+            tmp.write(content)
+            tmp_path = Path(tmp.name)
+        try:
+            return ocr_service.ocr_pdf_pages(tmp_path)
+        finally:
+            tmp_path.unlink(missing_ok=True)

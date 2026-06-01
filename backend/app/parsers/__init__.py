@@ -11,6 +11,7 @@ from app.parsers.base import BaseStatementParser, StandardTransaction
 from app.parsers.curve_csv import CurveCsvParser
 from app.parsers.generic_csv import GenericCsvParser
 from app.parsers.generic_pdf import GenericPdfParser
+from app.parsers.image_statement import ImageStatementParser
 from app.parsers.lloyds_csv import LloydsCsvParser
 from app.parsers.monzo_csv import MonzoCsvParser
 
@@ -25,6 +26,7 @@ _BANK_PARSERS: list[BaseStatementParser] = [
 PARSERS_BY_ID: dict[str, BaseStatementParser] = {p.parser_id: p for p in _BANK_PARSERS}
 PARSERS_BY_ID[GenericCsvParser.parser_id] = GenericCsvParser()
 PARSERS_BY_ID[GenericPdfParser.parser_id] = GenericPdfParser()
+PARSERS_BY_ID[ImageStatementParser.parser_id] = ImageStatementParser()
 
 
 def available_parsers() -> list[dict[str, str]]:
@@ -32,6 +34,7 @@ def available_parsers() -> list[dict[str, str]]:
     items = [{"parser_id": p.parser_id, "institution": p.institution} for p in _BANK_PARSERS]
     items.append({"parser_id": "generic_csv", "institution": "Generic (CSV)"})
     items.append({"parser_id": "generic_pdf", "institution": "Generic (PDF)"})
+    items.append({"parser_id": "image_statement", "institution": "Generic (image / scan)"})
     return items
 
 
@@ -49,6 +52,8 @@ def detect_parser(filename: str, content: bytes) -> BaseStatementParser:
             continue
     if _looks_like_pdf(filename, content):
         return PARSERS_BY_ID["generic_pdf"]
+    if PARSERS_BY_ID["image_statement"].can_parse(filename, content):
+        return PARSERS_BY_ID["image_statement"]
     return PARSERS_BY_ID["generic_csv"]
 
 
@@ -65,6 +70,7 @@ __all__ = [
     "MonzoCsvParser",
     "GenericCsvParser",
     "GenericPdfParser",
+    "ImageStatementParser",
     "PARSERS_BY_ID",
     "available_parsers",
     "detect_parser",
