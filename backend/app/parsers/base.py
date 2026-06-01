@@ -44,6 +44,9 @@ class StandardTransaction:
     account_hint: str | None = None
     category_hint: str | None = None
     card_hint: str | None = None
+    # Set by low-confidence parsers (e.g. PDF) so the import flags the row for
+    # the user to verify (spec §11 review-heavy import).
+    needs_review: bool = False
 
     @property
     def direction(self) -> str:

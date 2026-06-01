@@ -29,7 +29,8 @@ _Living section — updated as the project is built (see git history / README)._
 | — | Recurring payments & subscriptions (§20): detection, CRUD/detect API, dashboard total, Subscriptions UI, subscriptions_total MQTT sensor | ✅ Done |
 | 9 | Local AI (§22): provider abstraction (NoAI + OpenAI-compatible), classify-transaction task, privacy gating, audit log, AI settings + "suggest" UI; off by default, suggestion-only | ✅ Done |
 | 10 | Cloud AI approval (§22.5): per-call approve/reject of a pending request with payload preview, never-cloud category blocking (§28), full audit log + UI | ✅ Done |
-| 11–12 | PDF import, polish | 📋 Planned |
+| 11 | PDF statement import (§11): generic PDF parser (pypdf text → heuristic rows), review-heavy (rows flagged needs-review), Import UI accepts PDF | ✅ Done |
+| 12 | Polish (CI, dashboard trends/outliers, savings, logs viewer, security/multi-user, …) | 📋 Planned |
 
 Notable deviation from the original spec: the database default path moved from `/config/finance/finance.db` (§26.4) to the add-on's **private** `/data/finance/finance.db` for isolation — see `docs/security.md`.
 

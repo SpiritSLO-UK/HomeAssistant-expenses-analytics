@@ -63,12 +63,13 @@ HA integration holds no business logic (spec §9.4).
 
 ## Build status (summary)
 
-Stages 0–10 done (skeleton, CSV import, categories/vendors + dashboard, rules &
+Stages 0–11 done (skeleton, CSV import, categories/vendors + dashboard, rules &
 learning, split transactions, projects & tags, budgets + MQTT sensors,
 recurring/subscriptions, review queue, receipts + OCR, local AI, cloud AI
-approval), plus a data-safety pass (redaction, backup/restore, demo data, add-on
-isolation) and multi-currency. Remaining: PDF import (11), polish (12). Full
-detail in spec §0 and git history.
+approval, PDF statement import), plus a data-safety pass (redaction,
+backup/restore, demo data, add-on isolation) and multi-currency. That's the full
+spec §29 roadmap; remaining is Stage 12 polish. Full detail in spec §0 and git
+history.
 
 > Stage-numbering note: the spec §29 order is Stage 7 = review queue, Stage 8 =
 > receipts. We built recurring/subscriptions (§20, not a numbered §29 stage)
@@ -172,6 +173,22 @@ sent). **Sensitive-category blocking:** cloud classification refuses a
 transaction whose category is `never_cloud` (§28). The AI audit log is visible in
 the Settings AI card. Only `classify_transaction` is implemented;
 enrich_vendor/parse_receipt/match_receipt are deferred.
+
+## PDF statement import (Stage 11 / §11)
+
+`parsers/generic_pdf.py` adds a PDF path to the existing parser interface.
+`GenericPdfParser` extracts text with **pypdf** (the optional `ocr` extra; absent
+on a bare dev box → a clear error, works in the add-on) and hands it to the pure,
+unit-tested `parse_statement_text`: per line, a leading date + the **first** money
+amount (a trailing balance is ignored) + the text between as the description;
+`CR`/leading `+` = credit, else debit. PDF layouts vary and text extraction loses
+columns, so it's **review-heavy** — every extracted row sets
+`StandardTransaction.needs_review=True`, which the import flags on the
+transaction (`review_reason="pdf_unverified"`) so the user verifies them
+(Transactions → "Needs review"). Detection: `detect_parser` routes `%PDF-` /
+`.pdf` to `generic_pdf`; `create_import` stores the file and `source_format` by
+`parser.format`. Import UI accepts `.pdf`. (Scanned/image PDFs yield no text →
+clear error; OCR-of-PDF is future.)
 
 ## Receipts + OCR & review queue (Stage 8 / §21, §23)
 

@@ -159,7 +159,7 @@ def create_import(
     statement = Statement(
         account_id=account.id,
         source_type="manual_upload",
-        source_format="csv",
+        source_format=parser.format,
         source_filename=filename,
         source_hash=fhash,
         status="pending",
@@ -169,7 +169,7 @@ def create_import(
     db.add(statement)
     db.flush()
 
-    stored_path = _uploads_dir() / f"{statement.id}.csv"
+    stored_path = _uploads_dir() / f"{statement.id}.{parser.format}"
     stored_path.write_bytes(content)
     statement.notes = json.dumps(
         {
@@ -318,6 +318,8 @@ def _to_transaction(
         currency=txn.currency,
         direction=txn.direction,
         source_hash=h,
+        needs_review=txn.needs_review,
+        review_reason="pdf_unverified" if txn.needs_review else None,
     )
 
 

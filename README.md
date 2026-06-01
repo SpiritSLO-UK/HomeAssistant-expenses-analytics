@@ -28,12 +28,14 @@ Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md
 | — | Data-safety: redaction, backup/restore, demo data, security hardening | ✅ |
 | — | Multi-currency + FX; encrypted backups + optional at-rest encryption | ✅ |
 | 10 | Cloud AI approval: preview + approve/reject each request, never-cloud category blocking, audit log | ✅ |
-| 11–12 | PDF import, polish | planned ([spec §29](ha_finance_intelligence_spec.md)) |
+| 11 | PDF statement import: best-effort, rows flagged for review | ✅ |
+| 12 | Polish (CI, dashboard trends/outliers, savings, logs, security/multi-user, …) | planned ([spec §29](ha_finance_intelligence_spec.md)) |
 
 ## What it does today
 
 - **Import** bank statements (Curve, Barclays, Lloyds, Monzo, or a generic CSV
-  mapper) with duplicate detection on re-upload.
+  mapper) with duplicate detection on re-upload. PDF statements import
+  best-effort, with each extracted row flagged for review.
 - **Categorise** automatically (priority order: manual > rule > vendor default >
   keyword); correct one transaction and optionally turn it into a **rule**.
 - **Split** a transaction across several categories/projects; the dashboard uses
@@ -87,7 +89,7 @@ Home Assistant add-on (single container)
   ├── FastAPI backend (Python 3.12)        — API under /api
   ├── React + TypeScript frontend (Vite)    — served at /
   ├── SQLite database (SQLAlchemy + Alembic)
-  ├── CSV import + parser engine
+  ├── CSV + PDF import + parser engine
   ├── category / vendor / rule engine
   ├── splits · projects/tags · budgets · subscription detection
   ├── multi-currency (FX) · optional at-rest encryption (SQLCipher)
@@ -168,8 +170,10 @@ a real one** — they can never read or modify your finance data
 ## Importing your own statements
 
 Use **Import**, pick your bank (or auto-detect), preview, then confirm. Built-in
-parsers: Curve, Barclays, Lloyds, Monzo, plus a generic mapper for anything
-else. Duplicate rows (and re-uploaded files) are detected and skipped
+parsers: Curve, Barclays, Lloyds, Monzo, a generic CSV mapper, and a generic
+**PDF** reader. CSV is most reliable; PDF statements are read best-effort and
+each extracted row is flagged for review so you can verify it. Duplicate rows
+(and re-uploaded files) are detected and skipped
 ([spec §14](ha_finance_intelligence_spec.md)). Sample fake CSVs live in
 [`examples/sample-csv/`](examples/sample-csv/).
 
