@@ -7,10 +7,10 @@ category/project (spec §37).
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, Float, ForeignKey, Numeric, String, Text
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin
@@ -73,6 +73,11 @@ class Transaction(Base, TimestampMixin):
     fx_rate: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
     fx_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
     needs_rate: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # Set by the retention engine (backlog #78): archived transactions are hidden
+    # from every aggregate and the default list (kept until a later purge). NULL =
+    # active. Excluded via services/scope.archived_condition.
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     splits: Mapped[list[TransactionSplit]] = relationship(
         back_populates="transaction", cascade="all, delete-orphan"

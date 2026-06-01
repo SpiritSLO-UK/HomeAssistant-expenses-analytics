@@ -47,6 +47,7 @@ def export_transactions(
     amount_min: Decimal | None = None,
     amount_max: Decimal | None = None,
     search: str | None = None,
+    include_archived: bool = Query(False, description="Include archived (aged-out) transactions"),
 ) -> Response:
     """Export transactions as CSV, honouring the same filters as the list view."""
     scope = auth_service.visible_account_scope(request, db)
@@ -63,6 +64,7 @@ def export_transactions(
         amount_max=amount_max,
         search=search,
         account_ids=scope,
+        include_archived=include_archived,
     )
     return _csv_response(export_service.transactions_csv(db, conditions), "transactions")
 

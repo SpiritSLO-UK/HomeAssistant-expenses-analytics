@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from app.models import Category, Subscription, Transaction
 from app.services import settings_service
 from app.services.household_service import get_or_create_default_household
-from app.services.scope import account_scope_condition
+from app.services.scope import account_scope_condition, archived_condition
 
 FREQUENCY_INTERVALS = {"weekly": 7, "monthly": 30, "quarterly": 91, "yearly": 365}
 # (low, high, frequency) bands for the median gap between occurrences, in days.
@@ -188,6 +188,7 @@ def visible_subscription_ids(db: Session, account_ids: set[int] | None) -> set[i
             Transaction.is_transfer.is_(False),
             Transaction.is_duplicate.is_(False),
             *account_scope_condition(account_ids),
+            *archived_condition(),
         )
     ).all()
     vendor_ids: set[int] = set()

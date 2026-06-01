@@ -255,7 +255,7 @@ def classify_batch(db: Session, *, limit: int = 25, provider=None, account_ids: 
 def _uncategorised_for_batch(
     db: Session, limit: int, *, account_ids: set[int] | None = None
 ) -> list[Transaction]:
-    from app.services.scope import account_scope_condition
+    from app.services.scope import account_scope_condition, archived_condition
 
     return list(
         db.scalars(
@@ -266,6 +266,7 @@ def _uncategorised_for_batch(
                 Transaction.is_duplicate.is_(False),
                 Transaction.is_split.is_(False),
                 *account_scope_condition(account_ids),
+                *archived_condition(),
             )
             .order_by(Transaction.transaction_date.desc())
             .limit(limit)

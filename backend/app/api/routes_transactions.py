@@ -78,6 +78,7 @@ def list_transactions(
     amount_min: Decimal | None = None,
     amount_max: Decimal | None = None,
     search: str | None = None,
+    include_archived: bool = Query(False, description="Include archived (aged-out) transactions"),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
 ) -> dict:
@@ -94,6 +95,7 @@ def list_transactions(
         amount_max=amount_max,
         search=search,
         account_ids=visible_account_scope(request, db),
+        include_archived=include_archived,
     )
 
     base = select(Transaction)
@@ -153,6 +155,19 @@ def update_transaction(
         raise HTTPException(status_code=400, detail="Unknown project")
     for field, value in data.items():
         setattr(txn, field, value)
+    db.commit()
+    db.refresh(txn)
+    return txn
+
+
+@router.post("/{transaction_id}/unarchive", response_model=TransactionOut)
+def unarchive_transaction(
+    transaction_id: int, request: Request, db: Session = Depends(get_db)
+) -> Transaction:
+    """Restore an archived transaction so it reappears in lists and aggregates
+    (retention, backlog #78). Write-gated by the auth middleware."""
+    txn = _get_visible_txn(request, db, transaction_id)
+    txn.archived_at = None
     db.commit()
     db.refresh(txn)
     return txn

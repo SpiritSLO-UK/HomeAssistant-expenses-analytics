@@ -49,6 +49,7 @@ class TransactionOut(BaseModel):
     needs_review: bool
     review_reason: str | None
     confidence_score: float | None
+    archived_at: datetime | None
     created_at: datetime
     tags: list[TagOut] = []
 

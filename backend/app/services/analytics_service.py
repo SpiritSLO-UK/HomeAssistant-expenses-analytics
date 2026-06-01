@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Transaction
 from app.services import budget_service, dashboard_service, settings_service, subscription_service
-from app.services.scope import account_scope_condition
+from app.services.scope import account_scope_condition, archived_condition
 
 # Outlier thresholds (base-currency units / multipliers).
 LARGE_CHARGE_FLOOR = Decimal("50")       # ignore anything below this, however rare
@@ -63,6 +63,7 @@ def _spendable(
         Transaction.is_duplicate.is_(False),
         Transaction.base_amount.is_not(None),
         *account_scope_condition(account_ids),
+        *archived_condition(),
     ]
     if debits_only:
         conditions.append(Transaction.base_amount < 0)

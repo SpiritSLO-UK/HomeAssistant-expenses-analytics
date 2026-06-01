@@ -613,8 +613,14 @@ policy lives in one JSON setting (`retention_policy`); per type it carries
   confirm-required purge (the sweep only archived those).
 - **#147 receipt drop-after-processing:** `receipt_delete_after_processing` setting
   (default **on**) — `confirm_match` / auto-confirm call `drop_original`, keeping the
-  extracted fields. **Transactions** archive/purge (excluding archived txns from the
-  aggregates, via the existing `account_ids` threading) is the follow-up PR (#12).
+  extracted fields.
+- **Transactions (PR #12):** `transactions.archived_at` + a `transactions` retention
+  type. Archived txns are excluded from **every** aggregate and the default list via
+  `scope.archived_condition()` splatted alongside `account_scope_condition` in
+  dashboard/analytics/budget/project/subscription/ai/export; the list + CSV expose an
+  `include_archived` toggle and a `POST /transactions/{id}/unarchive` restore. Purge is
+  a bulk `delete(Transaction)` — FK cascade (`PRAGMA foreign_keys=ON`) drops splits +
+  receipt matches and nulls child_allocations / ai_requests. Age basis = `transaction_date`.
 
 ## Open questions / to scope
 

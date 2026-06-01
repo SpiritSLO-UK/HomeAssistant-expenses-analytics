@@ -176,6 +176,7 @@ export interface Transaction {
   is_income: boolean;
   is_duplicate: boolean;
   needs_review: boolean;
+  archived_at?: string | null;
   tags?: Tag[];
 }
 
@@ -195,6 +196,7 @@ export interface TransactionFilters {
   project_id?: number;
   tag_id?: number;
   needs_review?: boolean;
+  include_archived?: boolean;
   limit?: number;
   offset?: number;
 }
@@ -243,6 +245,10 @@ export async function updateTransaction(id: number, patch: Record<string, unknow
     throw new Error(detail.detail || `Update failed: ${res.status}`);
   }
   return res.json();
+}
+
+export function unarchiveTransaction(id: number): Promise<Transaction> {
+  return fetchJson<Transaction>(`api/transactions/${id}/unarchive`, { method: "POST" });
 }
 
 export function setTransactionTags(id: number, tags: string[]): Promise<Transaction> {
