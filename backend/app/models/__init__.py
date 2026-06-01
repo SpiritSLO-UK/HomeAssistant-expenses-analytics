@@ -16,6 +16,7 @@ from app.models.project import Project
 from app.models.receipt import Receipt, ReceiptItem, TransactionReceiptMatch
 from app.models.review_item import ReviewItem
 from app.models.rule import Rule
+from app.models.savings import SavingsBalance, SavingsGoal
 from app.models.setting import Setting
 from app.models.statement import Statement
 from app.models.subscription import Subscription
@@ -40,6 +41,8 @@ __all__ = [
     "TransactionReceiptMatch",
     "ReviewItem",
     "Rule",
+    "SavingsBalance",
+    "SavingsGoal",
     "Setting",
     "Statement",
     "Subscription",

@@ -10,6 +10,7 @@ import Vendors from "./pages/Vendors";
 import Rules from "./pages/Rules";
 import Projects from "./pages/Projects";
 import Budgets from "./pages/Budgets";
+import Savings from "./pages/Savings";
 import Subscriptions from "./pages/Subscriptions";
 import Receipts from "./pages/Receipts";
 import ReviewQueue from "./pages/ReviewQueue";
@@ -49,6 +50,7 @@ export default function App() {
           <Route path="/rules" element={<Rules />} />
           <Route path="/projects" element={<Projects />} />
           <Route path="/budgets" element={<Budgets />} />
+          <Route path="/savings" element={<Savings />} />
           <Route path="/subscriptions" element={<Subscriptions />} />
           <Route path="/receipts" element={<Receipts />} />
           <Route path="/review" element={<ReviewQueue />} />

@@ -397,6 +397,29 @@ duplicates excluded, split-aware category figures):
   "Heads-up" card on the Dashboard that only renders when there's something to
   flag. No new tables/migration — pure analytics over existing data.
 
+## Savings (Stage 12 — spec §12.4; #96, #91)
+
+`savings_service` over two new tables (migration `f3a4b5c6d7e8`):
+
+- **Balance snapshots** (`SavingsBalance`) — manual "this account held £X on date
+  Y" entries against a savings `Account` (`account_type == "savings"`). A series
+  gives a balance history (charted as a sparkline). `latest_balance` is by date
+  (not insertion order); `total_savings` sums each savings account's latest
+  snapshot (single-currency assumption — mixed-currency FX is out of scope, noted).
+- **Goals** (`SavingsGoal`) — a `target_amount` (optionally by `target_date`),
+  either **linked** to a savings account (progress = its latest balance) or
+  **manual** (`current_amount`). `goal_to_dict` computes current/remaining/percent
+  and flips status to `achieved` at ≥100%.
+- API `/api/savings`: `/summary`, `/accounts` (GET/POST), `/accounts/{id}/balances`
+  (GET history / POST snapshot), `/goals` (GET/POST/PATCH/DELETE).
+- UI: a **Savings** page (nav 💰) — total saved, per-account cards (latest balance
+  + growth sparkline + record-balance form), and goals with progress bars (manual
+  goals get an inline "update amount"). The sparkline is now a shared
+  `components/Sparkline.tsx` (also used by the dashboard Trends card).
+- **Deferred:** auto-linking *transfer transactions* into a savings account (the
+  "point to the statement where savings goes" detection) — balances are manual
+  for now.
+
 ## Open questions / to scope
 
 - **#78 Data retention/expiry** — purge vs archive? which data (transactions,
