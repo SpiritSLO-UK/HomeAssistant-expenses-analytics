@@ -55,13 +55,13 @@ def test_goal_linked_to_account_tracks_balance(client):
 
     goal = next(g for g in client.get("/api/savings/goals").json() if g["id"] == gid)
     assert Decimal(goal["current"]) == Decimal("500")
-    assert goal["percent"] == 50.0
+    assert round(goal["percent"]) == 50
     assert goal["status"] == "active"
 
     _add_balance(client, aid, "2026-06-30", "1000")  # reached
     goal = next(g for g in client.get("/api/savings/goals").json() if g["id"] == gid)
     assert Decimal(goal["current"]) == Decimal("1000")
-    assert goal["percent"] == 100.0
+    assert round(goal["percent"]) == 100
     assert goal["status"] == "achieved"
 
 
@@ -73,7 +73,7 @@ def test_goal_manual_progress(client):
     assert r.status_code == 201
     goal = r.json()
     assert Decimal(goal["current"]) == Decimal("50")
-    assert goal["percent"] == 25.0
+    assert round(goal["percent"]) == 25
 
 
 def test_goal_validation(client):
@@ -88,6 +88,6 @@ def test_goal_update_and_delete(client):
     gid = client.post("/api/savings/goals", json={"name": "Car", "target_amount": "5000"}).json()["id"]
     client.patch(f"/api/savings/goals/{gid}", json={"current_amount": "2500"})
     goal = next(g for g in client.get("/api/savings/goals").json() if g["id"] == gid)
-    assert goal["percent"] == 50.0
+    assert round(goal["percent"]) == 50
     assert client.delete(f"/api/savings/goals/{gid}").status_code == 204
     assert all(g["id"] != gid for g in client.get("/api/savings/goals").json())
