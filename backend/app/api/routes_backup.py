@@ -10,7 +10,9 @@ from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 
 from app.db.session import get_db
-from app.services import backup_service, crypto_service, demo_service
+from app.models import User
+from app.services import audit_service, backup_service, crypto_service, demo_service
+from app.services.auth_service import get_current_user
 from app.services.backup_service import RestoreError
 from app.services.crypto_service import DecryptError
 
@@ -98,6 +100,12 @@ async def import_config(file: UploadFile = File(...), db: Session = Depends(get_
 
 
 @router.post("/demo")
-def load_demo(db: Session = Depends(get_db)) -> dict:
+def load_demo(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
     """Load fabricated demo data so the app is populated for a first look."""
-    return demo_service.load_demo(db)
+    result = demo_service.load_demo(db)
+    audit_service.record(db, actor=user.display_name, action="load_demo", details=result)
+    db.commit()
+    return result

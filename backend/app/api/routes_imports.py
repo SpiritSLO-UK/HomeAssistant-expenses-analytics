@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.models import Statement
+from app.models import Statement, User
 from app.parsers import available_parsers
 from app.schemas.imports import (
     ConfirmResponse,
@@ -17,7 +17,8 @@ from app.schemas.imports import (
     ParserInfo,
     UploadResponse,
 )
-from app.services import import_service
+from app.services import audit_service, import_service
+from app.services.auth_service import get_current_user
 from app.services.import_service import ImportFailed
 
 router = APIRouter(prefix="/imports", tags=["imports"])
@@ -72,16 +73,43 @@ def get_import(import_id: int, db: Session = Depends(get_db)) -> Statement:
 
 
 @router.post("/{import_id}/confirm", response_model=ConfirmResponse)
-def confirm(import_id: int, db: Session = Depends(get_db)) -> dict:
+def confirm(
+    import_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
     try:
-        return import_service.confirm_import(db, import_id)
+        result = import_service.confirm_import(db, import_id)
     except ImportFailed as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    report = result.get("report") or {}
+    audit_service.record(
+        db,
+        actor=user.display_name,
+        action="import_statement",
+        entity_type="statement",
+        entity_id=import_id,
+        details={"new": report.get("new"), "duplicates": report.get("duplicates")},
+    )
+    db.commit()
+    return result
 
 
 @router.delete("/{import_id}", status_code=204)
-def delete(import_id: int, db: Session = Depends(get_db)) -> None:
+def delete(
+    import_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> None:
     try:
         import_service.delete_import(db, import_id)
     except ImportFailed as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    audit_service.record(
+        db,
+        actor=user.display_name,
+        action="delete_import",
+        entity_type="statement",
+        entity_id=import_id,
+    )
+    db.commit()

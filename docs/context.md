@@ -420,6 +420,30 @@ duplicates excluded, split-aware category figures):
   "point to the statement where savings goes" detection) — balances are manual
   for now.
 
+## Logs / activity viewer (Stage 12 — spec §28.5, §38; #92)
+
+Surfaces the DB-backed logs to the owner; low-level runtime/debug logs still go
+to stdout (the HA add-on **Log** panel) at the configured `log_level` and are
+*not* stored in the DB, so they're not served here — the Logs page says so.
+
+- **Activity log** = the `audit_logs` table via `audit_service`. Newly wired
+  events (route layer, actor = `get_current_user().display_name`): `import_statement`,
+  `delete_import`, `delete_transaction`, `load_demo` — on top of the existing
+  `update_user` / `delete_user` / `mfa_enabled` / `mfa_disabled`. `record()` is
+  best-effort (never raises into the caller) and joins/commits with the action.
+  Restore and encryption enable/disable are deliberately **not** audited (restore
+  swaps the DB file out from under the session; both are already surfaced by
+  Security health).
+- **AI-call log** = the `ai_requests` table (already exposed by `/api/ai/requests`
+  and shown in Settings); the Logs page shows it too for one-stop viewing.
+- API (`routes_logs`, prefix `/api/logs`, **owner-gated** `require_owner`):
+  `GET /activity?limit=&action=<prefix>` → `AuditLogOut[]` (details JSON parsed),
+  `GET /actions` → distinct action names (filter dropdown).
+- UI: an owner-only **Logs** page (nav 📜) — Activity table (When/Who/Action/Item/
+  Details) with an action filter + row-count selector + refresh, plus the AI-requests
+  table. Non-owners who route directly to `/logs` get a friendly "owner only" note.
+- **Deferred:** retention/purge of audit + AI logs (ties into #78 data-expiry).
+
 ## Open questions / to scope
 
 - **#78 Data retention/expiry** — purge vs archive? which data (transactions,

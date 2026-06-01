@@ -11,7 +11,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.db.session import get_db
-from app.models import Project, Tag, Transaction
+from app.models import Project, Tag, Transaction, User
 from app.schemas.tags import SetTagsRequest
 from app.schemas.transactions import (
     SetSplitsRequest,
@@ -21,7 +21,15 @@ from app.schemas.transactions import (
     TransactionOut,
     TransactionUpdate,
 )
-from app.services import import_service, rule_service, split_service, tag_service, vendor_service
+from app.services import (
+    audit_service,
+    import_service,
+    rule_service,
+    split_service,
+    tag_service,
+    vendor_service,
+)
+from app.services.auth_service import get_current_user
 from app.services.split_service import SplitError, SplitInput
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
@@ -245,9 +253,21 @@ def set_tags(
 
 
 @router.delete("/{transaction_id}", status_code=204)
-def delete_transaction(transaction_id: int, db: Session = Depends(get_db)) -> None:
+def delete_transaction(
+    transaction_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> None:
     txn = db.get(Transaction, transaction_id)
     if txn is None:
         raise HTTPException(status_code=404, detail="Transaction not found")
+    audit_service.record(
+        db,
+        actor=user.display_name,
+        action="delete_transaction",
+        entity_type="transaction",
+        entity_id=transaction_id,
+        details={"description": txn.description_raw, "amount": str(txn.amount)},
+    )
     db.delete(txn)
     db.commit()

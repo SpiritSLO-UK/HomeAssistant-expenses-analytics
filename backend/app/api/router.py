@@ -14,6 +14,7 @@ from app.api import (
     routes_fx,
     routes_health,
     routes_imports,
+    routes_logs,
     routes_mqtt,
     routes_projects,
     routes_receipts,
@@ -52,3 +53,4 @@ api_router.include_router(routes_savings.router)
 api_router.include_router(routes_security.router)
 api_router.include_router(routes_users.router)
 api_router.include_router(routes_auth.router)
+api_router.include_router(routes_logs.router)
