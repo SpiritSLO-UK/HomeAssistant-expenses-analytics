@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Transaction
 from app.services import budget_service, dashboard_service, settings_service, subscription_service
+from app.services.scope import account_scope_condition
 
 # Outlier thresholds (base-currency units / multipliers).
 LARGE_CHARGE_FLOOR = Decimal("50")       # ignore anything below this, however rare
@@ -51,23 +52,29 @@ def _month_windows(ref: date, n: int) -> list[tuple[date, date]]:
     return list(reversed(windows))
 
 
-def _spendable(db: Session, start: date, end: date, *, debits_only: bool = False) -> list[Transaction]:
+def _spendable(
+    db: Session, start: date, end: date, *, debits_only: bool = False,
+    account_ids: set[int] | None = None,
+) -> list[Transaction]:
     conditions = [
         Transaction.transaction_date >= start,
         Transaction.transaction_date < end,
         Transaction.is_transfer.is_(False),
         Transaction.is_duplicate.is_(False),
         Transaction.base_amount.is_not(None),
+        *account_scope_condition(account_ids),
     ]
     if debits_only:
         conditions.append(Transaction.base_amount < 0)
     return list(db.scalars(select(Transaction).where(*conditions)).all())
 
 
-def _month_totals(db: Session, start: date, end: date) -> tuple[Decimal, Decimal]:
+def _month_totals(
+    db: Session, start: date, end: date, *, account_ids: set[int] | None = None
+) -> tuple[Decimal, Decimal]:
     spend = Decimal("0.00")
     income = Decimal("0.00")
-    for txn in _spendable(db, start, end):
+    for txn in _spendable(db, start, end, account_ids=account_ids):
         if txn.base_amount < 0:
             spend += -txn.base_amount
         else:
@@ -78,10 +85,10 @@ def _month_totals(db: Session, start: date, end: date) -> tuple[Decimal, Decimal
 # --- Trends -----------------------------------------------------------------
 
 
-def monthly_series(db: Session, ref: date, months: int = 6) -> dict:
+def monthly_series(db: Session, ref: date, months: int = 6, *, account_ids: set[int] | None = None) -> dict:
     series = []
     for start, end in _month_windows(ref, months):
-        spend, income = _month_totals(db, start, end)
+        spend, income = _month_totals(db, start, end, account_ids=account_ids)
         series.append(
             {
                 "month": start.isoformat()[:7],
@@ -132,9 +139,12 @@ def _merchant_key(txn: Transaction) -> str | None:
     return None
 
 
-def _large_charges(db: Session, cur_start: date, cur_end: date, ref: date, lookback: int) -> list[dict]:
+def _large_charges(
+    db: Session, cur_start: date, cur_end: date, ref: date, lookback: int,
+    *, account_ids: set[int] | None = None,
+) -> list[dict]:
     lb_start = _month_windows(ref, lookback)[0][0]
-    debits = _spendable(db, lb_start, cur_end, debits_only=True)
+    debits = _spendable(db, lb_start, cur_end, debits_only=True, account_ids=account_ids)
     if len(debits) < MIN_DEBITS_FOR_BASELINE:
         return []
     med = median(float(-t.base_amount) for t in debits)
@@ -164,15 +174,17 @@ def _large_charges(db: Session, cur_start: date, cur_end: date, ref: date, lookb
     return items
 
 
-def _category_spikes(db: Session, ref: date, history_months: int) -> list[dict]:
+def _category_spikes(
+    db: Session, ref: date, history_months: int, *, account_ids: set[int] | None = None
+) -> list[dict]:
     current = {
         r["category_id"]: (r["name"], Decimal(r["total"]))
-        for r in dashboard_service.category_breakdown(db, ref)
+        for r in dashboard_service.category_breakdown(db, ref, account_ids=account_ids)
     }
     prior_totals: dict[int | None, list[Decimal]] = defaultdict(list)
     months_with_data = 0
     for start, _end in _month_windows(ref, history_months + 1)[:-1]:  # exclude current
-        rows = dashboard_service.category_breakdown(db, start)
+        rows = dashboard_service.category_breakdown(db, start, account_ids=account_ids)
         if rows:
             months_with_data += 1
         for r in rows:
@@ -205,15 +217,18 @@ def _category_spikes(db: Session, ref: date, history_months: int) -> list[dict]:
     return items[:MAX_PER_DETECTOR]
 
 
-def _new_merchants(db: Session, cur_start: date, cur_end: date, ref: date, history_months: int) -> list[dict]:
+def _new_merchants(
+    db: Session, cur_start: date, cur_end: date, ref: date, history_months: int,
+    *, account_ids: set[int] | None = None,
+) -> list[dict]:
     prior_start = _month_windows(ref, history_months + 1)[0][0]
-    prior = _spendable(db, prior_start, cur_start, debits_only=True)
+    prior = _spendable(db, prior_start, cur_start, debits_only=True, account_ids=account_ids)
     if not prior:  # no history → everything would look "new"
         return []
     prior_keys = {_merchant_key(t) for t in prior}
 
     spend: dict[str, list] = defaultdict(lambda: [Decimal("0.00"), None])
-    for txn in _spendable(db, cur_start, cur_end, debits_only=True):
+    for txn in _spendable(db, cur_start, cur_end, debits_only=True, account_ids=account_ids):
         key = _merchant_key(txn)
         if key is None:
             continue
@@ -238,9 +253,9 @@ def _new_merchants(db: Session, cur_start: date, cur_end: date, ref: date, histo
     return items[:MAX_PER_DETECTOR]
 
 
-def _budget_alerts(db: Session, ref: date) -> list[dict]:
+def _budget_alerts(db: Session, ref: date, *, account_ids: set[int] | None = None) -> list[dict]:
     items = []
-    for b in budget_service.summary(db, ref):
+    for b in budget_service.summary(db, ref, account_ids=account_ids):
         if b["status"] == "over":
             items.append(
                 {
@@ -266,11 +281,11 @@ def _budget_alerts(db: Session, ref: date) -> list[dict]:
     return items
 
 
-def _subscription_alerts(db: Session) -> list[dict]:
+def _subscription_alerts(db: Session, *, account_ids: set[int] | None = None) -> list[dict]:
     """Surface upcoming-renewal / missed-payment subscription alerts (spec §20.3)
     in the heads-up card. Always relative to *today* (a "now" concern), regardless
     of the month being viewed."""
-    data = subscription_service.alerts(db)
+    data = subscription_service.alerts(db, account_ids=account_ids)
     items = []
     for sub in data["overdue"]:
         items.append(
@@ -299,14 +314,17 @@ def _subscription_alerts(db: Session) -> list[dict]:
     return items
 
 
-def outliers(db: Session, ref: date, *, history_months: int = 3, lookback: int = 6) -> dict:
+def outliers(
+    db: Session, ref: date, *, history_months: int = 3, lookback: int = 6,
+    account_ids: set[int] | None = None,
+) -> dict:
     cur_start, cur_end = dashboard_service.month_bounds(ref)
     items: list[dict] = []
-    items += _large_charges(db, cur_start, cur_end, ref, lookback)
-    items += _category_spikes(db, ref, history_months)
-    items += _new_merchants(db, cur_start, cur_end, ref, history_months)
-    items += _budget_alerts(db, ref)
-    items += _subscription_alerts(db)
+    items += _large_charges(db, cur_start, cur_end, ref, lookback, account_ids=account_ids)
+    items += _category_spikes(db, ref, history_months, account_ids=account_ids)
+    items += _new_merchants(db, cur_start, cur_end, ref, history_months, account_ids=account_ids)
+    items += _budget_alerts(db, ref, account_ids=account_ids)
+    items += _subscription_alerts(db, account_ids=account_ids)
 
     severity_rank = {"warn": 0, "info": 1}
     items.sort(key=lambda i: (severity_rank.get(i["severity"], 2), -float(i.get("amount") or 0)))

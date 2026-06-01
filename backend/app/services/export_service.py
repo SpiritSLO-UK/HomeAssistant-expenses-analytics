@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.models import Account, Category, Project, Tag, Transaction, Vendor
 from app.services import dashboard_service, settings_service
 from app.services.analytics_service import monthly_series
+from app.services.scope import account_scope_condition
 
 # Personal-finance histories are small, but cap the row count so a pathological
 # export can't exhaust memory.
@@ -60,12 +61,16 @@ def build_transaction_filters(
     amount_min: Decimal | None = None,
     amount_max: Decimal | None = None,
     search: str | None = None,
+    account_ids: set[int] | None = None,
 ) -> list:
     """Build the SQLAlchemy filter list shared by the transactions list endpoint
-    and the CSV export, so "export" always matches "what you see"."""
+    and the CSV export, so "export" always matches "what you see".
+
+    ``account_ids`` is the visibility scope (None = unrestricted); it is applied
+    in addition to the explicit ``account_id`` UI filter."""
     from sqlalchemy import or_
 
-    conditions: list = []
+    conditions: list = list(account_scope_condition(account_ids))
     if date_from is not None:
         conditions.append(Transaction.transaction_date >= date_from)
     if date_to is not None:
@@ -147,9 +152,9 @@ def transactions_csv(db: Session, conditions: list) -> str:
     return buf.getvalue()
 
 
-def category_breakdown_csv(db: Session, month: date) -> str:
+def category_breakdown_csv(db: Session, month: date, *, account_ids: set[int] | None = None) -> str:
     """The data behind the dashboard "Spending by category" chart for a month."""
-    rows = dashboard_service.category_breakdown(db, month)
+    rows = dashboard_service.category_breakdown(db, month, account_ids=account_ids)
     base_currency = settings_service.get_base_currency(db)
     buf = io.StringIO()
     writer = csv.writer(buf)
@@ -159,9 +164,9 @@ def category_breakdown_csv(db: Session, month: date) -> str:
     return buf.getvalue()
 
 
-def monthly_series_csv(db: Session, month: date, months: int) -> str:
+def monthly_series_csv(db: Session, month: date, months: int, *, account_ids: set[int] | None = None) -> str:
     """The data behind the dashboard "Trends" sparklines (spend/income/net)."""
-    series = monthly_series(db, month, months=months)
+    series = monthly_series(db, month, months=months, account_ids=account_ids)
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow(["month", "spend", "income", "net", "currency"])

@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models import Budget, Category, Project, User
 from app.schemas.budgets import BudgetIn, BudgetOut, BudgetSummaryItem, BudgetUpdate
-from app.services import budget_service, mqtt_service, settings_service
+from app.services import auth_service, budget_service, mqtt_service, settings_service
 from app.services.budget_service import PERIODS
 from app.services.household_service import get_or_create_default_household
 
@@ -43,10 +43,11 @@ def list_budgets(db: Session = Depends(get_db)) -> list[Budget]:
 
 @router.get("/summary", response_model=list[BudgetSummaryItem])
 def budgets_summary(
-    db: Session = Depends(get_db), month: date | None = Query(default=None)
+    request: Request, db: Session = Depends(get_db), month: date | None = Query(default=None)
 ) -> list[dict]:
     """Spend/remaining/percent/status for every budget (spec §19.2)."""
-    return budget_service.summary(db, month or date.today())
+    scope = auth_service.visible_account_scope(request, db)
+    return budget_service.summary(db, month or date.today(), account_ids=scope)
 
 
 @router.post("", response_model=BudgetOut, status_code=201)

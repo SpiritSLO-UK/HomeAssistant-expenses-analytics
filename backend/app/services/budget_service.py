@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 from app.models import Budget, Transaction
 from app.services import settings_service, split_service
 from app.services.dashboard_service import month_bounds
+from app.services.scope import account_scope_condition
 
 PERIODS = {"weekly", "monthly", "quarterly", "yearly", "custom"}
 
@@ -56,7 +57,9 @@ def period_bounds(budget: Budget, ref: date) -> tuple[date, date]:
     return start, end
 
 
-def _spent(db: Session, start: date, end: date, budget: Budget) -> Decimal:
+def _spent(
+    db: Session, start: date, end: date, budget: Budget, *, account_ids: set[int] | None = None
+) -> Decimal:
     """Spend (positive number) against this budget over [start, end)."""
     txns = db.scalars(
         select(Transaction).where(
@@ -66,6 +69,7 @@ def _spent(db: Session, start: date, end: date, budget: Budget) -> Decimal:
             Transaction.is_duplicate.is_(False),
             Transaction.base_amount.is_not(None),
             Transaction.base_amount < 0,  # money out
+            *account_scope_condition(account_ids),
         )
     ).all()
 
@@ -112,10 +116,10 @@ def _status(spent: Decimal, amount: Decimal, threshold: int | None) -> str:
     return "ok"
 
 
-def status_for(db: Session, budget: Budget, ref: date) -> dict:
+def status_for(db: Session, budget: Budget, ref: date, *, account_ids: set[int] | None = None) -> dict:
     """Compute one budget's spend/remaining/percent/status for ``ref``'s period."""
     start, end = period_bounds(budget, ref)
-    spent = _spent(db, start, end, budget)
+    spent = _spent(db, start, end, budget, account_ids=account_ids)
     amount = Decimal(budget.amount)
     remaining = amount - spent
     percent = float((spent / amount) * 100) if amount > 0 else 0.0
@@ -137,7 +141,7 @@ def status_for(db: Session, budget: Budget, ref: date) -> dict:
     }
 
 
-def summary(db: Session, ref: date) -> list[dict]:
+def summary(db: Session, ref: date, *, account_ids: set[int] | None = None) -> list[dict]:
     """Status for every *household* budget (spec §24.9 GET /api/budgets/summary).
 
     Child-owned budgets (``owner_user_id`` set) are a kid's-allowance concern and
@@ -146,4 +150,4 @@ def summary(db: Session, ref: date) -> list[dict]:
     budgets = db.scalars(
         select(Budget).where(Budget.owner_user_id.is_(None)).order_by(Budget.name)
     ).all()
-    return [status_for(db, b, ref) for b in budgets]
+    return [status_for(db, b, ref, account_ids=account_ids) for b in budgets]

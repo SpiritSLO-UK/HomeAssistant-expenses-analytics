@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
@@ -30,10 +30,20 @@ from app.services import (
     tag_service,
     vendor_service,
 )
-from app.services.auth_service import get_current_user
+from app.services.auth_service import get_current_user, visible_account_scope
 from app.services.split_service import SplitError, SplitInput
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
+
+
+def _get_visible_txn(request: Request, db: Session, transaction_id: int) -> Transaction:
+    """Fetch a transaction the caller may see, or 404. Uses 404 (not 403) for a
+    private transaction owned by someone else so existence isn't leaked (#66/#82)."""
+    txn = db.get(Transaction, transaction_id)
+    scope = visible_account_scope(request, db)
+    if txn is None or (scope is not None and txn.account_id is not None and txn.account_id not in scope):
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return txn
 
 
 class CategoriseRequest(BaseModel):
@@ -55,6 +65,7 @@ class RecategoriseRequest(BaseModel):
 
 @router.get("", response_model=TransactionListResponse)
 def list_transactions(
+    request: Request,
     db: Session = Depends(get_db),
     date_from: date | None = None,
     date_to: date | None = None,
@@ -82,6 +93,7 @@ def list_transactions(
         amount_min=amount_min,
         amount_max=amount_max,
         search=search,
+        account_ids=visible_account_scope(request, db),
     )
 
     base = select(Transaction)
@@ -112,33 +124,30 @@ def recategorise(payload: RecategoriseRequest, db: Session = Depends(get_db)) ->
 
 
 @router.post("/categorise-batch")
-def categorise_batch(payload: BatchCategoriseRequest, db: Session = Depends(get_db)) -> dict:
+def categorise_batch(payload: BatchCategoriseRequest, request: Request, db: Session = Depends(get_db)) -> dict:
     """Bulk-assign a category to many transactions (spec §25.3)."""
+    scope = visible_account_scope(request, db)
     rows = db.scalars(
         select(Transaction).where(Transaction.id.in_(payload.transaction_ids))
     ).all()
-    for txn in rows:
+    visible = [t for t in rows if scope is None or t.account_id is None or t.account_id in scope]
+    for txn in visible:
         txn.category_id = payload.category_id
         txn.confidence_score = 1.0  # manual assignment (spec §15.2)
     db.commit()
-    return {"updated": len(rows)}
+    return {"updated": len(visible)}
 
 
 @router.get("/{transaction_id}", response_model=TransactionDetailOut)
-def get_transaction(transaction_id: int, db: Session = Depends(get_db)) -> Transaction:
-    txn = db.get(Transaction, transaction_id)
-    if txn is None:
-        raise HTTPException(status_code=404, detail="Transaction not found")
-    return txn
+def get_transaction(transaction_id: int, request: Request, db: Session = Depends(get_db)) -> Transaction:
+    return _get_visible_txn(request, db, transaction_id)
 
 
 @router.patch("/{transaction_id}", response_model=TransactionOut)
 def update_transaction(
-    transaction_id: int, payload: TransactionUpdate, db: Session = Depends(get_db)
+    transaction_id: int, payload: TransactionUpdate, request: Request, db: Session = Depends(get_db)
 ) -> Transaction:
-    txn = db.get(Transaction, transaction_id)
-    if txn is None:
-        raise HTTPException(status_code=404, detail="Transaction not found")
+    txn = _get_visible_txn(request, db, transaction_id)
     data = payload.model_dump(exclude_unset=True)
     if data.get("project_id") is not None and db.get(Project, data["project_id"]) is None:
         raise HTTPException(status_code=400, detail="Unknown project")
@@ -151,11 +160,9 @@ def update_transaction(
 
 @router.post("/{transaction_id}/categorise", response_model=TransactionOut)
 def categorise(
-    transaction_id: int, payload: CategoriseRequest, db: Session = Depends(get_db)
+    transaction_id: int, payload: CategoriseRequest, request: Request, db: Session = Depends(get_db)
 ) -> Transaction:
-    txn = db.get(Transaction, transaction_id)
-    if txn is None:
-        raise HTTPException(status_code=404, detail="Transaction not found")
+    txn = _get_visible_txn(request, db, transaction_id)
     txn.category_id = payload.category_id
     txn.confidence_score = 1.0  # manual assignment (spec §15.2)
     if payload.category_id is not None:
@@ -183,21 +190,16 @@ def _splits_response(txn: Transaction) -> dict:
 
 
 @router.get("/{transaction_id}/splits", response_model=SplitsResponse)
-def get_splits(transaction_id: int, db: Session = Depends(get_db)) -> dict:
-    txn = db.get(Transaction, transaction_id)
-    if txn is None:
-        raise HTTPException(status_code=404, detail="Transaction not found")
-    return _splits_response(txn)
+def get_splits(transaction_id: int, request: Request, db: Session = Depends(get_db)) -> dict:
+    return _splits_response(_get_visible_txn(request, db, transaction_id))
 
 
 @router.post("/{transaction_id}/split", response_model=SplitsResponse)
 def set_splits(
-    transaction_id: int, payload: SetSplitsRequest, db: Session = Depends(get_db)
+    transaction_id: int, payload: SetSplitsRequest, request: Request, db: Session = Depends(get_db)
 ) -> dict:
     """Split a transaction across categories/projects (spec §17.2 validation)."""
-    txn = db.get(Transaction, transaction_id)
-    if txn is None:
-        raise HTTPException(status_code=404, detail="Transaction not found")
+    txn = _get_visible_txn(request, db, transaction_id)
     parts = [
         SplitInput(
             amount=s.amount,
@@ -216,23 +218,19 @@ def set_splits(
 
 
 @router.delete("/{transaction_id}/split", response_model=SplitsResponse)
-def clear_splits(transaction_id: int, db: Session = Depends(get_db)) -> dict:
+def clear_splits(transaction_id: int, request: Request, db: Session = Depends(get_db)) -> dict:
     """Remove a transaction's splits (spec §17.3); its own category applies again."""
-    txn = db.get(Transaction, transaction_id)
-    if txn is None:
-        raise HTTPException(status_code=404, detail="Transaction not found")
+    txn = _get_visible_txn(request, db, transaction_id)
     split_service.clear_splits(db, txn)
     return _splits_response(txn)
 
 
 @router.post("/{transaction_id}/tags", response_model=TransactionDetailOut)
 def set_tags(
-    transaction_id: int, payload: SetTagsRequest, db: Session = Depends(get_db)
+    transaction_id: int, payload: SetTagsRequest, request: Request, db: Session = Depends(get_db)
 ) -> Transaction:
     """Replace a transaction's tags (spec §18.3); unknown names are created."""
-    txn = db.get(Transaction, transaction_id)
-    if txn is None:
-        raise HTTPException(status_code=404, detail="Transaction not found")
+    txn = _get_visible_txn(request, db, transaction_id)
     tag_service.set_transaction_tags(db, txn, payload.tags)
     return txn
 
@@ -240,12 +238,11 @@ def set_tags(
 @router.delete("/{transaction_id}", status_code=204)
 def delete_transaction(
     transaction_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> None:
-    txn = db.get(Transaction, transaction_id)
-    if txn is None:
-        raise HTTPException(status_code=404, detail="Transaction not found")
+    txn = _get_visible_txn(request, db, transaction_id)
     audit_service.record(
         db,
         actor=user.display_name,

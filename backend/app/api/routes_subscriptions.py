@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -16,21 +16,30 @@ from app.schemas.subscriptions import (
     SubscriptionOut,
     SubscriptionUpdate,
 )
-from app.services import mqtt_service, subscription_service
+from app.services import auth_service, mqtt_service, subscription_service
 
 router = APIRouter(prefix="/subscriptions", tags=["subscriptions"])
 
 
 @router.get("", response_model=list[SubscriptionOut])
-def list_subscriptions(db: Session = Depends(get_db)) -> list[dict]:
+def list_subscriptions(request: Request, db: Session = Depends(get_db)) -> list[dict]:
+    # Show only subscriptions backed by a transaction the caller can see (#66/#82).
+    visible = subscription_service.visible_subscription_ids(
+        db, auth_service.visible_account_scope(request, db)
+    )
     subs = db.scalars(select(Subscription).order_by(Subscription.name)).all()
-    return [subscription_service.to_dict(s) for s in subs]
+    return [
+        subscription_service.to_dict(s)
+        for s in subs
+        if visible is None or s.id in visible
+    ]
 
 
 @router.get("/alerts", response_model=SubscriptionAlerts)
-def subscription_alerts(within_days: int = 7, db: Session = Depends(get_db)) -> dict:
+def subscription_alerts(request: Request, within_days: int = 7, db: Session = Depends(get_db)) -> dict:
     """Upcoming renewals + missed payments for active subscriptions (spec §20.3)."""
-    return subscription_service.alerts(db, within_days=max(1, min(within_days, 60)))
+    scope = auth_service.visible_account_scope(request, db)
+    return subscription_service.alerts(db, within_days=max(1, min(within_days, 60)), account_ids=scope)
 
 
 @router.post("/detect", response_model=DetectResult)

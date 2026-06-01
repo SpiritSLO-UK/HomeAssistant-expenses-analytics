@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -15,7 +15,7 @@ from app.schemas.projects import (
     ProjectSummary,
     ProjectUpdate,
 )
-from app.services import project_service
+from app.services import auth_service, project_service
 from app.services.household_service import get_or_create_default_household
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -51,11 +51,12 @@ def create_project(payload: ProjectIn, db: Session = Depends(get_db)) -> Project
 
 
 @router.get("/{project_id}/summary", response_model=ProjectSummary)
-def project_summary(project_id: int, db: Session = Depends(get_db)) -> dict:
+def project_summary(project_id: int, request: Request, db: Session = Depends(get_db)) -> dict:
     project = db.get(Project, project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
-    return project_service.summary(db, project)
+    scope = auth_service.visible_account_scope(request, db)
+    return project_service.summary(db, project, account_ids=scope)
 
 
 @router.patch("/{project_id}", response_model=ProjectOut)

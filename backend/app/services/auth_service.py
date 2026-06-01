@@ -20,11 +20,11 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from fastapi import Depends, HTTPException, Request, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.models import User
+from app.models import Account, User
 from app.models.user import ADMIN_ROLES, ROLES, STATUSES, WRITE_ROLES
 from app.services import audit_service
 from app.services.household_service import get_or_create_default_household
@@ -106,6 +106,67 @@ def can_write(role: str) -> bool:
 
 def is_admin(role: str) -> bool:
     return role in ADMIN_ROLES
+
+
+# --- Account visibility (shared vs private; backlog #66/#82) ---------------
+#
+# An account is PRIVATE iff it has an owner AND isn't shared
+# (``owner_user_id IS NOT NULL AND is_shared == False``). Accounts with no owner
+# (the default for every existing / auto-created account) are household-shared,
+# so legacy data stays visible to everyone with no backfill.
+
+
+def _shared_or_own(user_id: int):
+    """SQL predicate for accounts a non-admin may see: shared (or unowned) plus
+    their own private accounts."""
+    return or_(
+        Account.owner_user_id.is_(None),
+        Account.is_shared.is_(True),
+        Account.owner_user_id == user_id,
+    )
+
+
+def visible_account_ids(db: Session, user: User) -> set[int] | None:
+    """Account ids this user may see, or ``None`` meaning **unrestricted**.
+
+    The owner/admin sees everything (``None`` — a genuine no-filter fast path).
+    Everyone else sees shared/unowned accounts plus their own private ones.
+    Returning ``None`` (not the full set) for owners keeps every aggregate on a
+    real fast path with no ``account_id IN (...)`` clause.
+    """
+    if is_admin(user.role):
+        return None
+    return set(db.scalars(select(Account.id).where(_shared_or_own(user.id))).all())
+
+
+def visible_account_scope(request: Request, db: Session) -> set[int] | None:
+    """Resolve the request's user and return their visible account-id set
+    (``None`` = unrestricted). Convenience for read routes."""
+    return visible_account_ids(db, get_current_user(request, db))
+
+
+def scoped_account_ids(db: Session, user: User, scope: str) -> set[int] | None:
+    """Apply a Mine/Shared/All view toggle on top of the base visibility set.
+
+    ``all`` → the base visible set (``None`` for the owner). ``mine`` → accounts
+    the user owns; ``shared`` → shared/unowned accounts. ``mine``/``shared`` are
+    intersected with the base set so the toggle can only ever *narrow*, never
+    widen, what a user may see.
+    """
+    base = visible_account_ids(db, user)
+    if scope == "all":
+        return base
+    if scope == "mine":
+        chosen = set(db.scalars(select(Account.id).where(Account.owner_user_id == user.id)).all())
+    else:  # shared
+        chosen = set(
+            db.scalars(
+                select(Account.id).where(
+                    or_(Account.owner_user_id.is_(None), Account.is_shared.is_(True))
+                )
+            ).all()
+        )
+    return chosen if base is None else (chosen & base)
 
 
 # --- FastAPI dependencies ---

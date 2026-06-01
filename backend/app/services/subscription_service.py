@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from app.models import Category, Subscription, Transaction
 from app.services import settings_service
 from app.services.household_service import get_or_create_default_household
+from app.services.scope import account_scope_condition
 
 FREQUENCY_INTERVALS = {"weekly": 7, "monthly": 30, "quarterly": 91, "yearly": 365}
 # (low, high, frequency) bands for the median gap between occurrences, in days.
@@ -174,6 +175,46 @@ def detect(db: Session, min_occurrences: int = 3) -> dict:
     return {"created": created, "updated": updated, "total": int(total)}
 
 
+def visible_subscription_ids(db: Session, account_ids: set[int] | None) -> set[int] | None:
+    """Subscription ids supported by at least one transaction in a visible account
+    (shared vs private; #66/#82). ``None`` = unrestricted (owner/admin). Detection
+    runs over all data, but a subscription is only *shown* to a non-admin if it has
+    a backing transaction they can see — so a sub seen only on someone else's
+    private account stays hidden."""
+    if account_ids is None:
+        return None
+    txns = db.scalars(
+        select(Transaction).where(
+            Transaction.is_transfer.is_(False),
+            Transaction.is_duplicate.is_(False),
+            *account_scope_condition(account_ids),
+        )
+    ).all()
+    vendor_ids: set[int] = set()
+    name_keys: set[str] = set()
+    for t in txns:
+        kind, value = _group_key(t)
+        (vendor_ids if kind == "v" else name_keys).add(value)
+    out: set[int] = set()
+    for sub in db.scalars(select(Subscription)).all():
+        if sub.vendor_id is not None:
+            if sub.vendor_id in vendor_ids:
+                out.add(sub.id)
+        elif (sub.name or "").strip().lower() in name_keys:
+            out.add(sub.id)
+    return out
+
+
+def _active_visible(db: Session, account_ids: set[int] | None) -> list[Subscription]:
+    visible = visible_subscription_ids(db, account_ids)
+    subs = db.scalars(
+        select(Subscription).where(Subscription.status == "active").order_by(Subscription.name)
+    ).all()
+    if visible is None:
+        return list(subs)
+    return [s for s in subs if s.id in visible]
+
+
 def monthly_equivalent(amount: Decimal, frequency: str) -> Decimal:
     return (Decimal(amount) * _PER_MONTH.get(frequency, Decimal("1"))).quantize(TWO_DP)
 
@@ -197,22 +238,19 @@ def to_dict(sub: Subscription) -> dict:
     }
 
 
-def monthly_total(db: Session) -> Decimal:
+def monthly_total(db: Session, *, account_ids: set[int] | None = None) -> Decimal:
     """Monthly-equivalent cost of all **active** subscriptions (base currency)."""
     total = Decimal("0.00")
-    for sub in db.scalars(select(Subscription).where(Subscription.status == "active")).all():
+    for sub in _active_visible(db, account_ids):
         total += monthly_equivalent(sub.amount, sub.frequency)
     return total
 
 
-def dashboard_summary(db: Session) -> dict:
-    subs = db.scalars(
-        select(Subscription).where(Subscription.status == "active").order_by(Subscription.name)
-    ).all()
-    items = [to_dict(s) for s in subs]
+def dashboard_summary(db: Session, *, account_ids: set[int] | None = None) -> dict:
+    items = [to_dict(s) for s in _active_visible(db, account_ids)]
     return {
         "currency": settings_service.get_base_currency(db),
-        "monthly_total": str(monthly_total(db)),
+        "monthly_total": str(monthly_total(db, account_ids=account_ids)),
         "count": len(items),
         "subscriptions": items,
     }
@@ -224,6 +262,7 @@ def alerts(
     *,
     within_days: int = 7,
     overdue_grace: int = 3,
+    account_ids: set[int] | None = None,
 ) -> dict:
     """Renewal reminders + missed-payment warnings for **active** subscriptions
     (spec §20.3). ``upcoming`` = next charge due within ``within_days`` (or just
@@ -233,7 +272,7 @@ def alerts(
     ref = ref or date.today()
     upcoming: list[dict] = []
     overdue: list[dict] = []
-    for sub in db.scalars(select(Subscription).where(Subscription.status == "active")).all():
+    for sub in _active_visible(db, account_ids):
         if sub.next_expected_date is None:
             continue
         days = (sub.next_expected_date - ref).days

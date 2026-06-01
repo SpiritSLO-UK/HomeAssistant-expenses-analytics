@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Category, Transaction, Vendor
 from app.services import settings_service, split_service
+from app.services.scope import account_scope_condition
 
 
 def month_bounds(ref: date) -> tuple[date, date]:
@@ -42,12 +43,14 @@ def _spendable_conditions():
     ]
 
 
-def summary(db: Session, ref: date) -> dict:
+def summary(db: Session, ref: date, *, account_ids: set[int] | None = None) -> dict:
     start, end = month_bounds(ref)
+    scope = account_scope_condition(account_ids)
     window = [
         Transaction.transaction_date >= start,
         Transaction.transaction_date < end,
         *_spendable_conditions(),
+        *scope,
     ]
 
     spend = db.scalar(
@@ -61,15 +64,16 @@ def summary(db: Session, ref: date) -> dict:
         )
     ) or Decimal("0")
 
-    total_txns = db.scalar(select(func.count()).select_from(Transaction)) or 0
+    # Counts are scoped too, so a member can't infer the volume of private activity.
+    total_txns = db.scalar(select(func.count()).select_from(Transaction).where(*scope)) or 0
     uncategorised = db.scalar(
-        select(func.count()).select_from(Transaction).where(Transaction.category_id.is_(None))
+        select(func.count()).select_from(Transaction).where(Transaction.category_id.is_(None), *scope)
     ) or 0
     review_count = db.scalar(
-        select(func.count()).select_from(Transaction).where(Transaction.needs_review.is_(True))
+        select(func.count()).select_from(Transaction).where(Transaction.needs_review.is_(True), *scope)
     ) or 0
     needs_rate = db.scalar(
-        select(func.count()).select_from(Transaction).where(Transaction.needs_rate.is_(True))
+        select(func.count()).select_from(Transaction).where(Transaction.needs_rate.is_(True), *scope)
     ) or 0
 
     return {
@@ -85,7 +89,7 @@ def summary(db: Session, ref: date) -> dict:
     }
 
 
-def category_breakdown(db: Session, ref: date) -> list[dict]:
+def category_breakdown(db: Session, ref: date, *, account_ids: set[int] | None = None) -> list[dict]:
     """Spend per category for the month, in base currency (positive = money out).
 
     Split-aware (spec §37.4): a split transaction contributes each of its parts
@@ -100,6 +104,7 @@ def category_breakdown(db: Session, ref: date) -> list[dict]:
             Transaction.transaction_date < end,
             Transaction.base_amount < 0,  # spend only (money out)
             *_spendable_conditions(),
+            *account_scope_condition(account_ids),
         )
     ).all()
 
@@ -132,7 +137,7 @@ def category_breakdown(db: Session, ref: date) -> list[dict]:
     return rows
 
 
-def vendor_breakdown(db: Session, ref: date, limit: int = 10) -> list[dict]:
+def vendor_breakdown(db: Session, ref: date, limit: int = 10, *, account_ids: set[int] | None = None) -> list[dict]:
     """Top vendors by spend for the month, in base currency."""
     start, end = month_bounds(ref)
     rows = db.execute(
@@ -149,6 +154,7 @@ def vendor_breakdown(db: Session, ref: date, limit: int = 10) -> list[dict]:
             Transaction.base_amount < 0,
             Transaction.merchant_id.is_not(None),
             *_spendable_conditions(),
+            *account_scope_condition(account_ids),
         )
         .group_by(Transaction.merchant_id, Vendor.canonical_name)
         .order_by(func.sum(-Transaction.base_amount).desc())

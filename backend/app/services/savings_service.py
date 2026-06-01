@@ -25,12 +25,16 @@ TWO_DP = Decimal("0.01")
 # --- Accounts ----------------------------------------------------------------
 
 
-def list_accounts(db: Session, *, owner_user_id: int | None = None) -> list[Account]:
+def list_accounts(
+    db: Session, *, owner_user_id: int | None = None, account_ids: set[int] | None = None
+) -> list[Account]:
     stmt = select(Account).where(
         Account.account_type == SAVINGS_TYPE, Account.is_active.is_(True)
     )
     if owner_user_id is not None:
         stmt = stmt.where(Account.owner_user_id == owner_user_id)
+    if account_ids is not None:  # visibility scope (shared vs private; #66/#82)
+        stmt = stmt.where(Account.id.in_(account_ids))
     return list(db.scalars(stmt.order_by(Account.name)).all())
 
 
@@ -96,10 +100,12 @@ def latest_balance(db: Session, account_id: int) -> Decimal | None:
     return Decimal(row.balance) if row else None
 
 
-def total_savings(db: Session, *, owner_user_id: int | None = None) -> Decimal:
+def total_savings(
+    db: Session, *, owner_user_id: int | None = None, account_ids: set[int] | None = None
+) -> Decimal:
     """Sum of the latest snapshot of every savings account (base currency assumed)."""
     total = Decimal("0.00")
-    for account in list_accounts(db, owner_user_id=owner_user_id):
+    for account in list_accounts(db, owner_user_id=owner_user_id, account_ids=account_ids):
         bal = latest_balance(db, account.id)
         if bal is not None:
             total += bal
@@ -193,12 +199,19 @@ def list_goals(db: Session) -> list[SavingsGoal]:
     return list(db.scalars(select(SavingsGoal).order_by(SavingsGoal.name)).all())
 
 
-def summary(db: Session) -> dict:
-    accounts = [account_to_dict(db, a) for a in list_accounts(db)]
-    goals = [goal_to_dict(db, g) for g in list_goals(db)]
+def summary(db: Session, *, account_ids: set[int] | None = None) -> dict:
+    accounts = [account_to_dict(db, a) for a in list_accounts(db, account_ids=account_ids)]
+    visible_ids = {a["id"] for a in accounts}
+    # Drop goals linked to a now-hidden private account (its balance would leak via
+    # goal_current); manual/unlinked goals stay visible to everyone.
+    goals = [
+        goal_to_dict(db, g)
+        for g in list_goals(db)
+        if g.account_id is None or g.account_id in visible_ids
+    ]
     return {
         "currency": settings_service.get_base_currency(db),
-        "total_savings": str(total_savings(db)),
+        "total_savings": str(total_savings(db, account_ids=account_ids)),
         "accounts": accounts,
         "goals": goals,
     }

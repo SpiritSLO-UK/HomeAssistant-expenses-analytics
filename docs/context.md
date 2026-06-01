@@ -427,6 +427,44 @@ expense, show on kid").
   ("→ child", whole or partial). `prefs`/queries keyed `["allowance", id]`.
 - **Stage B (designed, not built):** shared vs private accounts + per-user views.
 
+## Shared vs private accounts — enforcement (Stage 12-B1 — spec §6, §28; #66/#82)
+
+Accounts already had `owner_user_id` + `is_shared`; B1 makes them *mean* something
+without any UI yet (so it's behaviourally inert until B2 lets a user mark an
+account private — all existing accounts are unowned = shared).
+
+- **One choke point:** `auth_service.visible_account_ids(db, user) -> set[int] | None`.
+  Owner/admin → `None` (unrestricted, fast path). Else the set of accounts that are
+  shared/unowned plus the user's own private ones. An account is **private iff
+  `owner_user_id IS NOT NULL AND is_shared == False`**. `visible_account_scope(request, db)`
+  is the route helper; `scoped_account_ids(db, user, scope)` applies the
+  Mine/Shared/All toggle by *intersecting* with the base set (can only narrow).
+- **One filter helper:** `services/scope.py: account_scope_condition(account_ids)` →
+  `[]` when `None`, else `[or_(Transaction.account_id.in_(ids), account_id IS NULL)]`.
+  **The guard is `is not None`** — an empty set means *nothing* (only orphans), never
+  "all". Orphan transactions (deleted account) stay visible.
+- **Threaded through every aggregate** via an `account_ids=None` kwarg:
+  `export_service.build_transaction_filters` (covers the transactions list + CSV),
+  `dashboard_service.{summary (incl. the 4 counts), category_breakdown, vendor_breakdown}`,
+  `analytics_service._spendable` (+ category-spike/budget/subscription/outliers fan-out),
+  `budget_service._spent/status_for/summary`, `savings_service.list_accounts/total_savings/summary`
+  (account-id scoped; goals on hidden accounts dropped), `project_service._project_transactions`
+  (scopes the final fetch, so split-funded private spend is excluded by its parent),
+  `ai_service._uncategorised_for_batch`.
+- **Routes** resolve the scope and pass it: dashboard (all, + `view` toggle param),
+  budgets/summary, savings, projects, export (all 3), ai batch. Single-record
+  transaction endpoints (get/update/categorise/splits/tags/delete) + the AI
+  single-classify + savings per-account use a **404 (not 403)** guard so a private
+  row's existence isn't leaked; `categorise_batch` silently drops non-visible ids.
+- **Subscriptions** have no account link: `detect` runs unscoped (maintenance), but
+  reads (`list`, `dashboard_summary`, `alerts`, `monthly_total`) filter via
+  `subscription_service.visible_subscription_ids` = subs backed by ≥1 visible txn.
+- **MQTT** stays full-household (owner controls the broker) — calls pass no scope.
+- Proven by `tests/test_account_visibility.py` (member can't see another's private
+  account anywhere; owner sees all; legacy unowned visible to all; empty set ⇒
+  nothing; Mine/Shared/All narrows). **B2 (next):** Accounts management UI + the
+  frontend view toggle.
+
 ## Trends & outliers (Stage 12 — spec §24.12, §37; #146, #150)
 
 `analytics_service` (read-only, base-currency, dashboard-consistent — transfers/

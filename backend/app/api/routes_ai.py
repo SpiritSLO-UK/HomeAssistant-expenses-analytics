@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -18,11 +18,15 @@ from app.schemas.ai import (
     CloudBatchSendRequest,
     CloudBatchSendResult,
 )
-from app.services import ai_service
+from app.services import ai_service, auth_service
 from app.services.ai_provider import AIError
 from app.services.ai_service import AIDisabled
 
 router = APIRouter(prefix="/ai", tags=["ai"])
+
+
+def _scope(request: Request, db: Session) -> set[int] | None:
+    return auth_service.visible_account_scope(request, db)
 
 
 @router.get("/status", response_model=AIStatus)
@@ -37,12 +41,13 @@ def ai_requests(db: Session = Depends(get_db)):
 
 
 @router.post("/classify/{transaction_id}", response_model=ClassifyResult)
-def classify(transaction_id: int, db: Session = Depends(get_db)) -> dict:
+def classify(transaction_id: int, request: Request, db: Session = Depends(get_db)) -> dict:
     """Ask AI to suggest a category (suggestion only — never applied here).
     In cloud_manual mode this returns ``approval_required``; approve it via
     ``/api/ai/requests/{id}/approve``."""
     txn = db.get(Transaction, transaction_id)
-    if txn is None:
+    scope = _scope(request, db)
+    if txn is None or (scope is not None and txn.account_id is not None and txn.account_id not in scope):
         raise HTTPException(status_code=404, detail="Transaction not found")
     try:
         return ai_service.classify_transaction(db, txn)
@@ -78,11 +83,13 @@ def reject_request(request_id: int, db: Session = Depends(get_db)) -> AIRequest:
 
 
 @router.post("/classify-batch", response_model=BatchResult)
-def classify_batch(limit: int = Query(default=25, ge=1, le=100), db: Session = Depends(get_db)) -> dict:
+def classify_batch(
+    request: Request, limit: int = Query(default=25, ge=1, le=100), db: Session = Depends(get_db)
+) -> dict:
     """Suggest categories for uncategorised transactions (local_llm only).
     Suggestions only — apply with /api/ai/apply after the user approves."""
     try:
-        return ai_service.classify_batch(db, limit=limit)
+        return ai_service.classify_batch(db, limit=limit, account_ids=_scope(request, db))
     except AIDisabled as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except AIError as exc:
@@ -97,11 +104,13 @@ def apply(payload: ApplyRequest, db: Session = Depends(get_db)) -> dict:
 
 
 @router.post("/cloud-batch/prepare", response_model=CloudBatchPreview)
-def cloud_batch_prepare(limit: int = Query(default=25, ge=1, le=100), db: Session = Depends(get_db)) -> dict:
+def cloud_batch_prepare(
+    request: Request, limit: int = Query(default=25, ge=1, le=100), db: Session = Depends(get_db)
+) -> dict:
     """Stage 1 of a cloud batch (spec §22.3, §22.5): preview the redacted payloads
     that *would* be sent for uncategorised transactions. Nothing is sent yet."""
     try:
-        return ai_service.cloud_batch_prepare(db, limit=limit)
+        return ai_service.cloud_batch_prepare(db, limit=limit, account_ids=_scope(request, db))
     except AIDisabled as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except AIError as exc:
