@@ -30,6 +30,8 @@ import {
   restoreEncryptedDatabase,
   updateSettings,
 } from "../api/client";
+import { isCloudAiAcknowledged, setCloudAiAcknowledged } from "../prefs";
+import CloudAiDisclaimerDialog from "../components/CloudAiDisclaimerDialog";
 
 export default function Settings() {
   const qc = useQueryClient();
@@ -411,6 +413,7 @@ function AiCard({
   const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
   const requests = useQuery({ queryKey: ["ai-requests"], queryFn: listAiRequests });
   const [draft, setDraft] = useState<Record<string, string>>({});
+  const [showDisclaimer, setShowDisclaimer] = useState(false);
 
   const s = settings.data;
   const value = (key: string) => draft[key] ?? (s?.[key] ?? "");
@@ -425,6 +428,16 @@ function AiCard({
     },
     onError,
   });
+
+  // Gate the first switch to a cloud mode behind a one-time disclaimer (#42).
+  const handleSave = () => {
+    const enablingCloud = (value("privacy_mode") || "").startsWith("cloud");
+    if (enablingCloud && !isCloudAiAcknowledged()) {
+      setShowDisclaimer(true);
+      return;
+    }
+    save.mutate();
+  };
 
   const st = status.data;
   const isCloud = (value("privacy_mode") || "").startsWith("cloud");
@@ -464,10 +477,21 @@ function AiCard({
           style={{ width: 140 }}
           onChange={(e) => setDraft((d) => ({ ...d, ai_model: e.target.value }))}
         />
-        <button className="btn" disabled={Object.keys(draft).length === 0 || save.isPending} onClick={() => save.mutate()}>
+        <button className="btn" disabled={Object.keys(draft).length === 0 || save.isPending} onClick={handleSave}>
           {save.isPending ? "Saving…" : "Save AI settings"}
         </button>
       </div>
+
+      {showDisclaimer && (
+        <CloudAiDisclaimerDialog
+          onConfirm={() => {
+            setCloudAiAcknowledged();
+            setShowDisclaimer(false);
+            save.mutate();
+          }}
+          onCancel={() => setShowDisclaimer(false)}
+        />
+      )}
       {st && (
         <ul className="kv" style={{ marginTop: 8 }}>
           <li><span>Status</span><span>{st.enabled ? "enabled" : "disabled"}</span></li>

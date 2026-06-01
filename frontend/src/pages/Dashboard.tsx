@@ -15,6 +15,14 @@ import {
   type MonthlyPoint,
   type TrendMetric,
 } from "../api/client";
+import { getHiddenDashboardCards, setHiddenDashboardCards } from "../prefs";
+
+const OPTIONAL_CARDS: { key: string; label: string }[] = [
+  { key: "headsup", label: "Heads-up" },
+  { key: "trends", label: "Trends" },
+  { key: "categories", label: "Spending by category" },
+  { key: "vendors", label: "Top vendors" },
+];
 
 function downloadOrAlert(p: Promise<void>): void {
   p.catch((e) => window.alert(String(e instanceof Error ? e.message : e)));
@@ -33,6 +41,19 @@ export default function Dashboard() {
   const [month, setMonth] = useState(thisMonth());
   const monthDate = `${month}-01`;
 
+  // Per-device card show/hide (#86).
+  const [hidden, setHidden] = useState<Set<string>>(() => getHiddenDashboardCards());
+  const [customise, setCustomise] = useState(false);
+  const show = (key: string) => !hidden.has(key);
+  const toggleCard = (key: string) =>
+    setHidden((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      setHiddenDashboardCards(next);
+      return next;
+    });
+
   const summary = useQuery({ queryKey: ["summary", monthDate], queryFn: () => getSummary(monthDate) });
   const categories = useQuery({
     queryKey: ["dash-categories", monthDate],
@@ -49,8 +70,29 @@ export default function Dashboard() {
     <div className="page">
       <div className="page__head">
         <h1 className="page__title">Dashboard</h1>
-        <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
+          <button className="btn btn--ghost" onClick={() => setCustomise((v) => !v)}>
+            {customise ? "Done" : "⚙ Customise"}
+          </button>
+        </div>
       </div>
+
+      {customise && (
+        <div className="card">
+          <h2 className="card__title">Customise dashboard</h2>
+          <p className="muted" style={{ marginTop: 0, fontSize: "0.85rem" }}>
+            Choose which cards to show. Saved on this device.
+          </p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 14 }}>
+            {OPTIONAL_CARDS.map((c) => (
+              <label key={c.key} className="checkbox">
+                <input type="checkbox" checked={show(c.key)} onChange={() => toggleCard(c.key)} /> {c.label}
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
 
       <SecurityBanner />
 
@@ -61,8 +103,8 @@ export default function Dashboard() {
         <StatCard label="Transactions" value={summary.data ? String(summary.data.total_transactions) : "—"} />
       </div>
 
-      <HeadsUpCard monthDate={monthDate} />
-      <TrendsCard monthDate={monthDate} />
+      {show("headsup") && <HeadsUpCard monthDate={monthDate} />}
+      {show("trends") && <TrendsCard monthDate={monthDate} />}
 
       {summary.data && summary.data.total_transactions === 0 && (
         <div className="card">
@@ -72,54 +114,60 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="cols">
-        <div className="card">
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-            <h2 className="card__title" style={{ margin: 0 }}>Spending by category</h2>
-            {categories.data && categories.data.length > 0 && (
-              <button className="link-btn" onClick={() => downloadOrAlert(exportCategoriesCsv(monthDate))}>
-                ⬇ CSV
-              </button>
-            )}
-          </div>
-          {categories.isLoading && <p className="muted">Loading…</p>}
-          {categories.data && categories.data.length === 0 && <p className="muted">No spending this month.</p>}
-          <ul className="bars">
-            {categories.data?.map((c) => (
-              <li key={c.category_id ?? "none"}>
-                <div className="bars__row">
-                  <span className="bars__dot" style={{ background: c.colour ?? "#bbb" }} />
-                  <span className="bars__label">{c.name}</span>
-                  <span className="bars__value">{gbp(c.total)}</span>
-                </div>
-                <div className="bars__track">
-                  <div
-                    className="bars__fill"
-                    style={{ width: `${(Number(c.total) / maxCat) * 100}%`, background: c.colour ?? "#bbb" }}
-                  />
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <div className="card">
-          <h2 className="card__title">Top vendors</h2>
-          {vendors.data && vendors.data.length === 0 && (
-            <p className="muted">
-              No vendors yet — set up vendor aliases on the <Link to="/vendors">Vendors</Link> page.
-            </p>
+      {(show("categories") || show("vendors")) && (
+        <div className="cols">
+          {show("categories") && (
+            <div className="card">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                <h2 className="card__title" style={{ margin: 0 }}>Spending by category</h2>
+                {categories.data && categories.data.length > 0 && (
+                  <button className="link-btn" onClick={() => downloadOrAlert(exportCategoriesCsv(monthDate))}>
+                    ⬇ CSV
+                  </button>
+                )}
+              </div>
+              {categories.isLoading && <p className="muted">Loading…</p>}
+              {categories.data && categories.data.length === 0 && <p className="muted">No spending this month.</p>}
+              <ul className="bars">
+                {categories.data?.map((c) => (
+                  <li key={c.category_id ?? "none"}>
+                    <div className="bars__row">
+                      <span className="bars__dot" style={{ background: c.colour ?? "#bbb" }} />
+                      <span className="bars__label">{c.name}</span>
+                      <span className="bars__value">{gbp(c.total)}</span>
+                    </div>
+                    <div className="bars__track">
+                      <div
+                        className="bars__fill"
+                        style={{ width: `${(Number(c.total) / maxCat) * 100}%`, background: c.colour ?? "#bbb" }}
+                      />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
-          <ul className="kv">
-            {vendors.data?.map((v) => (
-              <li key={v.vendor_id}>
-                <span>{v.name}</span>
-                <span>{gbp(v.total)} <span className="muted">· {v.count}</span></span>
-              </li>
-            ))}
-          </ul>
+
+          {show("vendors") && (
+            <div className="card">
+              <h2 className="card__title">Top vendors</h2>
+              {vendors.data && vendors.data.length === 0 && (
+                <p className="muted">
+                  No vendors yet — set up vendor aliases on the <Link to="/vendors">Vendors</Link> page.
+                </p>
+              )}
+              <ul className="kv">
+                {vendors.data?.map((v) => (
+                  <li key={v.vendor_id}>
+                    <span>{v.name}</span>
+                    <span>{gbp(v.total)} <span className="muted">· {v.count}</span></span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
-      </div>
+      )}
 
       {summary.data && summary.data.uncategorised_transactions > 0 && (
         <div className="card">

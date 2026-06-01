@@ -65,7 +65,9 @@ Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md
   would be sent → approve the whole list at once → review the returned
   suggestions → apply). Cloud payloads are minimised and redacted; in
   cloud-manual mode you preview and approve (or reject) each request; categories
-  you mark *never-cloud* are never sent; and every call is audited.
+  you mark *never-cloud* are never sent; and every call is audited. The first
+  time you enable a cloud mode, a one-time disclaimer spells out exactly what
+  this means.
 - **Multi-currency** — original amount kept and converted to your base currency;
   manual rates by default, opt-in online ECB rates (Frankfurter).
 - **Multi-user & roles** — identity comes from Home Assistant (the first person
@@ -90,6 +92,9 @@ Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md
   set), plus the data behind the dashboard charts (spending-by-category and the
   monthly spend/income/net trend) from small "⬇ CSV" links. Files carry a UTF-8
   BOM so they open cleanly in Excel.
+- **Customisable dashboard** — a **⚙ Customise** toggle lets you show/hide the
+  optional cards (Heads-up, Trends, Spending by category, Top vendors); the choice
+  is remembered on your device.
 - **Trends & heads-up** — the dashboard shows month-over-month spend/income/net
   sparklines with up/down arrows, and a non-nagging "heads-up" card that flags
   unusually large charges, categories spending well above their recent average,
