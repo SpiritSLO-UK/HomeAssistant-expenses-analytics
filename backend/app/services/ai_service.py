@@ -396,7 +396,8 @@ def apply_suggestions(db: Session, items: list[dict]) -> int:
     return applied
 
 
-def list_requests(db: Session, limit: int = 50) -> list[AIRequest]:
-    return list(
-        db.scalars(select(AIRequest).order_by(AIRequest.created_at.desc()).limit(limit)).all()
-    )
+def list_requests(db: Session, limit: int = 50, *, include_archived: bool = False) -> list[AIRequest]:
+    stmt = select(AIRequest).order_by(AIRequest.created_at.desc())
+    if not include_archived:
+        stmt = stmt.where(AIRequest.archived_at.is_(None))
+    return list(db.scalars(stmt.limit(limit)).all())

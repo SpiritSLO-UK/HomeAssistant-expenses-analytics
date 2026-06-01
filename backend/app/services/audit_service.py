@@ -46,11 +46,22 @@ def record(
         logger.exception("Failed to write audit log for action=%s", action)
 
 
-def recent(db: Session, *, limit: int = 100, action_prefix: str | None = None) -> list[AuditLog]:
-    """Most-recent audit entries, newest first. Optional action-prefix filter."""
+def recent(
+    db: Session,
+    *,
+    limit: int = 100,
+    action_prefix: str | None = None,
+    include_archived: bool = False,
+) -> list[AuditLog]:
+    """Most-recent audit entries, newest first. Optional action-prefix filter.
+
+    Archived entries (aged out by the retention engine, backlog #78) are hidden
+    unless ``include_archived`` is set."""
     stmt = select(AuditLog).order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
     if action_prefix:
         stmt = stmt.where(AuditLog.action.like(f"{action_prefix}%"))
+    if not include_archived:
+        stmt = stmt.where(AuditLog.archived_at.is_(None))
     return list(db.scalars(stmt.limit(limit)).all())
 
 

@@ -97,6 +97,16 @@ Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md
   load, user role/approval changes, MFA enable/disable — filterable by action)
   plus the AI-call log. Low-level runtime/debug logs stream to the Home Assistant
   add-on **Log** panel at your chosen `log_level`.
+- **Data retention** — owner-only, off by default. For each kind of data (AI
+  request logs, activity/audit logs, receipt files, failed-unlock records) you can
+  **archive after N days** (reversible — hidden, kept) and/or **purge after N days**
+  (permanent). A dry-run **removal plan** shows exactly what would go; purging is
+  confirm-only (with a fresh MFA code if you use MFA) unless you opt a type into
+  **auto-purge**, and a **timestamped safety backup** is taken before any purge
+  (the backup history is trimmed by age/size). Receipts also have a default-on
+  "delete the original file once it's processed & matched" toggle that keeps the
+  extracted fields but drops the image. Changing the policy or running a purge is
+  owner + MFA-gated.
 - **CSV export** — download your transactions (the "Export CSV" button on the
   Transactions page honours the active filters and exports the whole filtered
   set), plus the data behind the dashboard charts (spending-by-category and the
@@ -245,6 +255,10 @@ each extracted row is flagged for review so you can verify it. Duplicate rows
   (passphrase, AES-256-GCM), and optional **at-rest database encryption**
   (SQLCipher; Linux / the add-on). Cloud backup *destinations* (G-Drive/S3/
   Backblaze) are still on the roadmap (backlog #15).
+- **Data retention:** Settings → Data retention (owner-only, off by default) —
+  archive-then-purge windows per data type, an opt-in auto-purge, a dry-run
+  removal plan, a safety backup before every purge (trimmed by age/size), and a
+  default-on "delete a receipt's original once processed" toggle.
 
 ## Home Assistant add-on
 

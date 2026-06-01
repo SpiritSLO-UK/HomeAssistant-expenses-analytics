@@ -35,9 +35,12 @@ def ai_status(db: Session = Depends(get_db)) -> dict:
 
 
 @router.get("/requests", response_model=list[AIRequestOut])
-def ai_requests(db: Session = Depends(get_db)):
+def ai_requests(
+    include_archived: bool = Query(default=False, description="Include archived (aged-out) entries"),
+    db: Session = Depends(get_db),
+):
     """The AI audit log (spec §22.6)."""
-    return ai_service.list_requests(db)
+    return ai_service.list_requests(db, include_archived=include_archived)
 
 
 @router.post("/classify/{transaction_id}", response_model=ClassifyResult)

@@ -22,6 +22,7 @@ function describe(row: AuditLogRow): string {
 
 export default function Logs() {
   const me = useQuery({ queryKey: ["me"], queryFn: getMe });
+  const [includeArchived, setIncludeArchived] = useState(false);
 
   if (me.data && !me.data.is_admin) {
     return (
@@ -40,26 +41,35 @@ export default function Logs() {
     <div className="page">
       <div className="page__head">
         <h1 className="page__title">Logs</h1>
+        <label className="muted" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.85rem" }}>
+          <input
+            type="checkbox"
+            checked={includeArchived}
+            onChange={(e) => setIncludeArchived(e.target.checked)}
+          />
+          Include archived
+        </label>
       </div>
       <p className="muted">
         A record of important actions taken in the app. Low-level runtime and debug logs are written
         to the Home Assistant add-on <strong>Log</strong> panel (set the level with the <code>log_level</code>{" "}
-        option), not stored here.
+        option), not stored here. Entries aged out by data retention are hidden unless you tick{" "}
+        <strong>Include archived</strong>.
       </p>
 
-      <ActivityCard />
-      <AiRequestsCard />
+      <ActivityCard includeArchived={includeArchived} />
+      <AiRequestsCard includeArchived={includeArchived} />
     </div>
   );
 }
 
-function ActivityCard() {
+function ActivityCard({ includeArchived }: { includeArchived: boolean }) {
   const [action, setAction] = useState("");
   const [limit, setLimit] = useState(100);
   const actions = useQuery({ queryKey: ["audit-actions"], queryFn: listAuditActions });
   const log = useQuery({
-    queryKey: ["activity-log", action, limit],
-    queryFn: () => listActivityLog({ action: action || undefined, limit }),
+    queryKey: ["activity-log", action, limit, includeArchived],
+    queryFn: () => listActivityLog({ action: action || undefined, limit, includeArchived }),
   });
 
   return (
@@ -114,8 +124,11 @@ function ActivityCard() {
   );
 }
 
-function AiRequestsCard() {
-  const requests = useQuery({ queryKey: ["ai-requests"], queryFn: listAiRequests });
+function AiRequestsCard({ includeArchived }: { includeArchived: boolean }) {
+  const requests = useQuery({
+    queryKey: ["ai-requests", includeArchived],
+    queryFn: () => listAiRequests({ includeArchived }),
+  });
   if (!requests.data || requests.data.length === 0) return null;
 
   return (

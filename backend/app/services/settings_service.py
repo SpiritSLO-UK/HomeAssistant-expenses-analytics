@@ -22,11 +22,24 @@ PRIVACY_MODE = "privacy_mode"  # strict_local | local_llm | cloud_manual | cloud
 AI_PROVIDER = "ai_provider"  # none | openai_compatible
 AI_BASE_URL = "ai_base_url"  # e.g. http://localhost:11434/v1 (Ollama) or a cloud endpoint
 AI_MODEL = "ai_model"
+# Data retention (spec §28; backlog #78, #147). The policy is a JSON blob owned by
+# retention_service; here we only hold the key + the related boolean/int knobs.
+RETENTION_POLICY = "retention_policy"
+RECEIPT_DELETE_AFTER_PROCESSING = "receipt_delete_after_processing"  # default true
+# Backup-trim policy (bound disk growth — backlog #78): how long / how large the
+# safety-backup history may grow before old snapshots are pruned.
+BACKUP_MAX_AGE_DAYS = "backup_max_age_days"
+BACKUP_MAX_TOTAL_MB = "backup_max_total_mb"
+BACKUP_MIN_KEEP = "backup_min_keep"
 
 FX_MODES = {"manual", "frankfurter"}
 RECEIPT_MATCH_MODES = {"suggest", "auto"}
 PRIVACY_MODES = {"strict_local", "local_llm", "cloud_manual", "cloud_auto", "no_ai"}
 AI_PROVIDERS = {"none", "openai_compatible"}
+
+# Backup-trim defaults: keep at most 90 days / 500 MB of safety backups, but never
+# fewer than the most recent 3 regardless of age or size.
+_BACKUP_TRIM_DEFAULTS = {"max_age_days": 90, "max_total_mb": 500, "min_keep": 3}
 
 
 def _defaults() -> dict[str, str]:
@@ -77,3 +90,28 @@ def get_base_currency(db: Session) -> str:
 def get_fx_mode(db: Session) -> str:
     mode = get(db, FX_MODE) or "manual"
     return mode if mode in FX_MODES else "manual"
+
+
+def get_receipt_delete_after_processing(db: Session) -> bool:
+    """Whether a receipt's original file is dropped once it's processed & matched
+    (backlog #147). On by default — only an explicit ``"false"`` turns it off."""
+    return get(db, RECEIPT_DELETE_AFTER_PROCESSING) != "false"
+
+
+def _int_setting(db: Session, key: str, default: int) -> int:
+    raw = get(db, key)
+    if raw is None:
+        return default
+    try:
+        return max(0, int(raw))
+    except (ValueError, TypeError):
+        return default
+
+
+def get_backup_trim_policy(db: Session) -> dict:
+    """Resolved backup-trim limits (backlog #78), falling back to the defaults."""
+    return {
+        "max_age_days": _int_setting(db, BACKUP_MAX_AGE_DAYS, _BACKUP_TRIM_DEFAULTS["max_age_days"]),
+        "max_total_mb": _int_setting(db, BACKUP_MAX_TOTAL_MB, _BACKUP_TRIM_DEFAULTS["max_total_mb"]),
+        "min_keep": _int_setting(db, BACKUP_MIN_KEEP, _BACKUP_TRIM_DEFAULTS["min_keep"]),
+    }

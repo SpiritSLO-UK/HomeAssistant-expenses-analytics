@@ -50,11 +50,14 @@ async def lifespan(_app: FastAPI):
         # is an idempotent safety net so a fresh add-on starts.
         Base.metadata.create_all(bind=dbsession.get_engine())
         # Seed the default category library on first run (spec §15.4, §33).
-        from app.services import mqtt_service
+        from app.services import mqtt_service, retention_service
         from app.services.category_service import ensure_default_categories
 
         with dbsession.SessionLocal() as db:
             ensure_default_categories(db)
+            # Apply the data-retention policy (backlog #78): archive everything due,
+            # purge only auto_purge types. No-op unless a policy is set.
+            retention_service.run_safe(db)
             # Publish MQTT sensors on startup (spec §27.1). No-op unless enabled.
             mqtt_service.publish_safe(db)
     yield

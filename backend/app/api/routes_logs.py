@@ -28,10 +28,13 @@ router = APIRouter(prefix="/logs", tags=["logs"])
 def activity(
     limit: int = Query(default=100, ge=1, le=500),
     action: str | None = Query(default=None, description="Filter by action-name prefix"),
+    include_archived: bool = Query(default=False, description="Include archived (aged-out) entries"),
     db: Session = Depends(get_db),
     _owner: User = Depends(require_owner),
 ) -> list[dict]:
-    entries = audit_service.recent(db, limit=limit, action_prefix=action)
+    entries = audit_service.recent(
+        db, limit=limit, action_prefix=action, include_archived=include_archived
+    )
     return [audit_service.to_dict(e) for e in entries]
 
 

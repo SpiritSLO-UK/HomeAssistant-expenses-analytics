@@ -41,3 +41,6 @@ class AIRequest(Base):
         DateTime, server_default=func.now(), nullable=False
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Set by the retention engine (backlog #78): archived rows are hidden from the
+    # AI-call log viewer but kept until a later purge. NULL = active.
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
