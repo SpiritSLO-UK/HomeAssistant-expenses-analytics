@@ -214,7 +214,7 @@ def reject_request(db: Session, ai_request: AIRequest) -> AIRequest:
     return ai_request
 
 
-def classify_batch(db: Session, *, limit: int = 25, provider=None) -> dict:
+def classify_batch(db: Session, *, limit: int = 25, provider=None, account_ids: set[int] | None = None) -> dict:
     """Suggest categories for many uncategorised transactions at once.
 
     **local_llm only** — keeps everything on-device. Auto-batching to a cloud
@@ -229,7 +229,7 @@ def classify_batch(db: Session, *, limit: int = 25, provider=None) -> dict:
     if not provider.available():
         raise AIDisabled("No AI provider configured")
 
-    txns = _uncategorised_for_batch(db, limit)
+    txns = _uncategorised_for_batch(db, limit, account_ids=account_ids)
 
     suggestions = []
     for txn in txns:
@@ -252,7 +252,11 @@ def classify_batch(db: Session, *, limit: int = 25, provider=None) -> dict:
     return {"considered": len(txns), "count": len(suggestions), "suggestions": suggestions}
 
 
-def _uncategorised_for_batch(db: Session, limit: int) -> list[Transaction]:
+def _uncategorised_for_batch(
+    db: Session, limit: int, *, account_ids: set[int] | None = None
+) -> list[Transaction]:
+    from app.services.scope import account_scope_condition
+
     return list(
         db.scalars(
             select(Transaction)
@@ -261,6 +265,7 @@ def _uncategorised_for_batch(db: Session, limit: int) -> list[Transaction]:
                 Transaction.is_transfer.is_(False),
                 Transaction.is_duplicate.is_(False),
                 Transaction.is_split.is_(False),
+                *account_scope_condition(account_ids),
             )
             .order_by(Transaction.transaction_date.desc())
             .limit(limit)
@@ -268,7 +273,7 @@ def _uncategorised_for_batch(db: Session, limit: int) -> list[Transaction]:
     )
 
 
-def cloud_batch_prepare(db: Session, *, limit: int = 25, provider=None) -> dict:
+def cloud_batch_prepare(db: Session, *, limit: int = 25, provider=None, account_ids: set[int] | None = None) -> dict:
     """Stage 1 of a cloud batch (spec §22.3, §22.5; backlog #154).
 
     Builds the **redacted** payload that *would* be sent for each uncategorised
@@ -286,7 +291,7 @@ def cloud_batch_prepare(db: Session, *, limit: int = 25, provider=None) -> dict:
         raise AIDisabled("No AI provider configured")
 
     cat_names = [c.name for c in _candidate_categories(db)]
-    txns = _uncategorised_for_batch(db, limit)
+    txns = _uncategorised_for_batch(db, limit, account_ids=account_ids)
     items = []
     for txn in txns:
         payload = {

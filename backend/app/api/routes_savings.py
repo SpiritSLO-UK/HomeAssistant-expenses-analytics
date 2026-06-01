@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -17,22 +17,33 @@ from app.schemas.savings import (
     SavingsAccountOut,
     SavingsSummary,
 )
-from app.services import savings_service
+from app.services import auth_service, savings_service
 
 router = APIRouter(prefix="/savings", tags=["savings"])
 
 
+def _require_visible(request: Request, db: Session, account_id: int) -> None:
+    """404 if the caller may not see this account (avoids leaking existence)."""
+    scope = auth_service.visible_account_scope(request, db)
+    if scope is not None and account_id not in scope:
+        raise HTTPException(status_code=404, detail="Not a savings account")
+
+
 @router.get("/summary", response_model=SavingsSummary)
-def summary(db: Session = Depends(get_db)) -> dict:
-    return savings_service.summary(db)
+def summary(request: Request, db: Session = Depends(get_db)) -> dict:
+    return savings_service.summary(db, account_ids=auth_service.visible_account_scope(request, db))
 
 
 # --- Accounts ---
 
 
 @router.get("/accounts", response_model=list[SavingsAccountOut])
-def list_accounts(db: Session = Depends(get_db)) -> list[dict]:
-    return [savings_service.account_to_dict(db, a) for a in savings_service.list_accounts(db)]
+def list_accounts(request: Request, db: Session = Depends(get_db)) -> list[dict]:
+    scope = auth_service.visible_account_scope(request, db)
+    return [
+        savings_service.account_to_dict(db, a)
+        for a in savings_service.list_accounts(db, account_ids=scope)
+    ]
 
 
 @router.post("/accounts", response_model=SavingsAccountOut, status_code=201)
@@ -44,7 +55,8 @@ def create_account(payload: SavingsAccountCreate, db: Session = Depends(get_db))
 
 
 @router.get("/accounts/{account_id}/balances", response_model=list[BalanceOut])
-def balance_history(account_id: int, db: Session = Depends(get_db)):
+def balance_history(account_id: int, request: Request, db: Session = Depends(get_db)):
+    _require_visible(request, db, account_id)
     try:
         savings_service.get_savings_account(db, account_id)
     except ValueError as exc:
@@ -53,7 +65,8 @@ def balance_history(account_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/accounts/{account_id}/balances", response_model=BalanceOut, status_code=201)
-def record_balance(account_id: int, payload: BalanceCreate, db: Session = Depends(get_db)):
+def record_balance(account_id: int, payload: BalanceCreate, request: Request, db: Session = Depends(get_db)):
+    _require_visible(request, db, account_id)
     try:
         return savings_service.record_balance(
             db, account_id, as_of=payload.as_of_date, balance=payload.balance, note=payload.note

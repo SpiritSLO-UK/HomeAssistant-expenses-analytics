@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -19,6 +19,7 @@ from app.schemas.projects import ProjectTotal
 from app.schemas.subscriptions import DashboardSubscriptions
 from app.services import (
     analytics_service,
+    auth_service,
     dashboard_service,
     project_service,
     subscription_service,
@@ -31,45 +32,59 @@ def _ref(month: date | None) -> date:
     return month or date.today()
 
 
+def _scope(request: Request, db: Session, view: str = "all") -> set[int] | None:
+    """The caller's visible account-id set, narrowed by the Mine/Shared/All toggle."""
+    return auth_service.scoped_account_ids(db, auth_service.get_current_user(request, db), view)
+
+
 @router.get("/summary", response_model=DashboardSummary)
-def summary(month: date | None = None, db: Session = Depends(get_db)) -> dict:
-    return dashboard_service.summary(db, _ref(month))
+def summary(
+    request: Request, month: date | None = None, view: str = "all", db: Session = Depends(get_db)
+) -> dict:
+    return dashboard_service.summary(db, _ref(month), account_ids=_scope(request, db, view))
 
 
 @router.get("/categories", response_model=list[CategoryBreakdownItem])
-def categories(month: date | None = None, db: Session = Depends(get_db)) -> list[dict]:
-    return dashboard_service.category_breakdown(db, _ref(month))
+def categories(
+    request: Request, month: date | None = None, view: str = "all", db: Session = Depends(get_db)
+) -> list[dict]:
+    return dashboard_service.category_breakdown(db, _ref(month), account_ids=_scope(request, db, view))
 
 
 @router.get("/vendors", response_model=list[VendorBreakdownItem])
-def vendors(month: date | None = None, db: Session = Depends(get_db)) -> list[dict]:
-    return dashboard_service.vendor_breakdown(db, _ref(month))
+def vendors(
+    request: Request, month: date | None = None, view: str = "all", db: Session = Depends(get_db)
+) -> list[dict]:
+    return dashboard_service.vendor_breakdown(db, _ref(month), account_ids=_scope(request, db, view))
 
 
 @router.get("/projects", response_model=list[ProjectTotal])
-def projects(db: Session = Depends(get_db)) -> list[dict]:
+def projects(request: Request, db: Session = Depends(get_db)) -> list[dict]:
     """Per-project totals for the dashboard "Project totals" card (spec §25.1).
     Projects span time, so this is all-time spend, not a single month."""
-    return project_service.totals(db)
+    return project_service.totals(db, account_ids=_scope(request, db))
 
 
 @router.get("/subscriptions", response_model=DashboardSubscriptions)
-def subscriptions(db: Session = Depends(get_db)) -> dict:
+def subscriptions(request: Request, db: Session = Depends(get_db)) -> dict:
     """Active subscriptions + monthly-equivalent total (spec §25.1)."""
-    return subscription_service.dashboard_summary(db)
+    return subscription_service.dashboard_summary(db, account_ids=_scope(request, db))
 
 
 @router.get("/monthly", response_model=MonthlySeries)
 def monthly(
-    months: int = 6, month: date | None = None, db: Session = Depends(get_db)
+    request: Request, months: int = 6, month: date | None = None, view: str = "all",
+    db: Session = Depends(get_db),
 ) -> dict:
     """Spend/income/net time-series for the last N months + a trend summary
     (backlog #146). ``months`` is clamped to a sane 2–24."""
-    return analytics_service.monthly_series(db, _ref(month), months=max(2, min(months, 24)))
+    return analytics_service.monthly_series(
+        db, _ref(month), months=max(2, min(months, 24)), account_ids=_scope(request, db, view)
+    )
 
 
 @router.get("/outliers", response_model=OutliersResponse)
-def outliers(month: date | None = None, db: Session = Depends(get_db)) -> dict:
+def outliers(request: Request, month: date | None = None, db: Session = Depends(get_db)) -> dict:
     """Heads-up list: large charges, category spikes, new merchants, budget
     alerts (backlog #150). Conservative + gated on having enough history."""
-    return analytics_service.outliers(db, _ref(month))
+    return analytics_service.outliers(db, _ref(month), account_ids=_scope(request, db))

@@ -11,12 +11,12 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.services import export_service
+from app.services import auth_service, export_service
 
 router = APIRouter(prefix="/export", tags=["export"])
 
@@ -34,6 +34,7 @@ def _csv_response(text: str, stem: str) -> Response:
 
 @router.get("/transactions.csv")
 def export_transactions(
+    request: Request,
     db: Session = Depends(get_db),
     date_from: date | None = None,
     date_to: date | None = None,
@@ -48,6 +49,7 @@ def export_transactions(
     search: str | None = None,
 ) -> Response:
     """Export transactions as CSV, honouring the same filters as the list view."""
+    scope = auth_service.visible_account_scope(request, db)
     conditions = export_service.build_transaction_filters(
         date_from=date_from,
         date_to=date_to,
@@ -60,23 +62,29 @@ def export_transactions(
         amount_min=amount_min,
         amount_max=amount_max,
         search=search,
+        account_ids=scope,
     )
     return _csv_response(export_service.transactions_csv(db, conditions), "transactions")
 
 
 @router.get("/categories.csv")
-def export_categories(month: date | None = None, db: Session = Depends(get_db)) -> Response:
+def export_categories(request: Request, month: date | None = None, db: Session = Depends(get_db)) -> Response:
     """Spending-by-category totals for a month (the data behind the chart)."""
-    return _csv_response(export_service.category_breakdown_csv(db, month or date.today()), "categories")
+    scope = auth_service.visible_account_scope(request, db)
+    return _csv_response(
+        export_service.category_breakdown_csv(db, month or date.today(), account_ids=scope), "categories"
+    )
 
 
 @router.get("/monthly.csv")
 def export_monthly(
+    request: Request,
     months: int = Query(default=6, ge=2, le=24),
     month: date | None = None,
     db: Session = Depends(get_db),
 ) -> Response:
     """The spend/income/net monthly trend series (the data behind the sparklines)."""
+    scope = auth_service.visible_account_scope(request, db)
     return _csv_response(
-        export_service.monthly_series_csv(db, month or date.today(), months), "monthly"
+        export_service.monthly_series_csv(db, month or date.today(), months, account_ids=scope), "monthly"
     )

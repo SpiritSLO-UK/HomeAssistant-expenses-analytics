@@ -20,10 +20,15 @@ from sqlalchemy.orm import Session
 
 from app.models import Category, Project, Transaction, TransactionSplit, Vendor
 from app.services import settings_service, split_service
+from app.services.scope import account_scope_condition
 
 
-def _project_transactions(db: Session, project_id: int) -> list[Transaction]:
-    """Transactions touching the project (directly or via a split)."""
+def _project_transactions(
+    db: Session, project_id: int, *, account_ids: set[int] | None = None
+) -> list[Transaction]:
+    """Transactions touching the project (directly or via a split). The final
+    fetch is account-scoped, so a split funded by a hidden private account is
+    excluded by its parent transaction's account."""
     direct = db.scalars(
         select(Transaction.id).where(Transaction.project_id == project_id)
     ).all()
@@ -33,10 +38,16 @@ def _project_transactions(db: Session, project_id: int) -> list[Transaction]:
     ids = set(direct) | set(via_split)
     if not ids:
         return []
-    return list(db.scalars(select(Transaction).where(Transaction.id.in_(ids))).all())
+    return list(
+        db.scalars(
+            select(Transaction).where(
+                Transaction.id.in_(ids), *account_scope_condition(account_ids)
+            )
+        ).all()
+    )
 
 
-def _accumulate(db: Session, project_id: int):
+def _accumulate(db: Session, project_id: int, *, account_ids: set[int] | None = None):
     """Return (spent, by_category, by_vendor, count, first_date, last_date)."""
     by_cat: dict[int | None, Decimal] = defaultdict(lambda: Decimal("0.00"))
     by_vendor: dict[int | None, Decimal] = defaultdict(lambda: Decimal("0.00"))
@@ -44,7 +55,7 @@ def _accumulate(db: Session, project_id: int):
     count = 0
     dates: list = []
 
-    for txn in _project_transactions(db, project_id):
+    for txn in _project_transactions(db, project_id, account_ids=account_ids):
         contributed = False
         if txn.is_split and txn.splits:
             for split in txn.splits:
@@ -92,10 +103,10 @@ def _budget_fields(project: Project, spent: Decimal) -> dict:
     }
 
 
-def summary(db: Session, project: Project) -> dict:
+def summary(db: Session, project: Project, *, account_ids: set[int] | None = None) -> dict:
     """Full project report (spec §18.2): total, by-category, by-vendor, count,
     timeline, and budget progress when the project has a budget."""
-    spent, by_cat, by_vendor, count, first, last = _accumulate(db, project.id)
+    spent, by_cat, by_vendor, count, first, last = _accumulate(db, project.id, account_ids=account_ids)
 
     cats = {c.id: c.name for c in db.scalars(select(Category)).all()}
     vendors = {v.id: v.canonical_name for v in db.scalars(select(Vendor)).all()}
@@ -115,11 +126,11 @@ def summary(db: Session, project: Project) -> dict:
     }
 
 
-def totals(db: Session) -> list[dict]:
+def totals(db: Session, *, account_ids: set[int] | None = None) -> list[dict]:
     """One row per project for the dashboard "Project totals" card (spec §25.1)."""
     rows = []
     for project in db.scalars(select(Project).order_by(Project.name)).all():
-        spent, *_ = _accumulate(db, project.id)
+        spent, *_ = _accumulate(db, project.id, account_ids=account_ids)
         rows.append(
             {
                 "project_id": project.id,
