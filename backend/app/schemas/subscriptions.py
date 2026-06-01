@@ -48,3 +48,17 @@ class DashboardSubscriptions(BaseModel):
     monthly_total: Decimal
     count: int
     subscriptions: list[SubscriptionOut]
+
+
+class SubscriptionAlert(SubscriptionOut):
+    days_until: int | None = None      # upcoming: days to the next charge (can be slightly negative)
+    days_overdue: int | None = None    # overdue: days since it was expected
+    expected_date: date | None = None  # overdue: the date it was expected
+
+
+class SubscriptionAlerts(BaseModel):
+    currency: str
+    ref: date
+    within_days: int
+    upcoming: list[SubscriptionAlert]
+    overdue: list[SubscriptionAlert]
