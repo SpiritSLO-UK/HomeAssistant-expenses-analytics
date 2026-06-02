@@ -348,8 +348,30 @@ export function listBudgets(): Promise<Budget[]> {
   return fetchJson<Budget[]>("api/budgets");
 }
 
-export function getBudgetSummary(month?: string): Promise<BudgetSummaryItem[]> {
-  return fetchJson<BudgetSummaryItem[]>(`api/budgets/summary${month ? `?month=${month}` : ""}`);
+export function getBudgetSummary(month?: string, annual = false): Promise<BudgetSummaryItem[]> {
+  const params = new URLSearchParams();
+  if (month) params.set("month", month);
+  if (annual) params.set("annual", "true");
+  const qs = params.toString();
+  return fetchJson<BudgetSummaryItem[]>(`api/budgets/summary${qs ? `?${qs}` : ""}`);
+}
+
+export interface BudgetTxn {
+  id: number;
+  transaction_date: string;
+  description: string;
+  amount: string;
+}
+
+export function getBudgetTransactions(
+  budgetId: number,
+  opts: { month?: string; annual?: boolean } = {},
+): Promise<BudgetTxn[]> {
+  const params = new URLSearchParams();
+  if (opts.month) params.set("month", opts.month);
+  if (opts.annual) params.set("annual", "true");
+  const qs = params.toString();
+  return fetchJson<BudgetTxn[]>(`api/budgets/${budgetId}/transactions${qs ? `?${qs}` : ""}`);
 }
 
 export async function createBudget(data: Record<string, unknown>): Promise<Budget> {

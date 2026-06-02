@@ -5,6 +5,7 @@ import {
   createBudget,
   deleteBudget,
   getBudgetSummary,
+  getBudgetTransactions,
   getSettings,
   listCategories,
   type BudgetSummaryItem,
@@ -24,13 +25,14 @@ const STATUS_COLOUR: Record<string, string> = {
 export default function Budgets() {
   const qc = useQueryClient();
   const [month, setMonth] = useState(thisMonth());
+  const [annual, setAnnual] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const categories = useQuery({ queryKey: ["categories"], queryFn: listCategories });
   const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
   const summary = useQuery({
-    queryKey: ["budget-summary", month],
-    queryFn: () => getBudgetSummary(`${month}-01`),
+    queryKey: ["budget-summary", month, annual],
+    queryFn: () => getBudgetSummary(`${month}-01`, annual),
   });
   const base = settings.data?.base_currency ?? "GBP";
 
@@ -47,10 +49,16 @@ export default function Budgets() {
     <div className="page">
       <div className="page__head">
         <h1 className="page__title">Budgets</h1>
-        <label className="muted">
-          Month{" "}
-          <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
-        </label>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <div className="form-row" style={{ gap: 4 }} title="Evaluate the budget's own period, or the whole year vs an annualised cap">
+            <button className={"btn btn--sm" + (annual ? " btn--ghost" : "")} onClick={() => setAnnual(false)}>This period</button>
+            <button className={"btn btn--sm" + (annual ? "" : " btn--ghost")} onClick={() => setAnnual(true)}>This year</button>
+          </div>
+          <label className="muted">
+            {annual ? "Year of " : "Month "}
+            <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
+          </label>
+        </div>
       </div>
 
       {err && <p className="status status--error">{err}</p>}
@@ -74,6 +82,8 @@ export default function Budgets() {
               key={b.budget_id}
               b={b}
               base={base}
+              month={`${month}-01`}
+              annual={annual}
               categoryName={catName(b.category_id)}
               onDelete={() => {
                 if (confirm(`Delete budget "${b.name}"?`)) remove.mutate(b.budget_id);
@@ -89,25 +99,37 @@ export default function Budgets() {
 function BudgetRow({
   b,
   base,
+  month,
+  annual,
   categoryName,
   onDelete,
 }: {
   b: BudgetSummaryItem;
   base: string;
+  month: string;
+  annual: boolean;
   categoryName: string | null;
   onDelete: () => void;
 }) {
+  const [open, setOpen] = useState(false);
   const colour = STATUS_COLOUR[b.status] ?? "#3a9b5c";
   const scope =
     b.category_id != null ? (categoryName ?? "Category")
     : b.project_id != null ? "Project"
     : "All spending";
+  const txns = useQuery({
+    queryKey: ["budget-txns", b.budget_id, month, annual],
+    queryFn: () => getBudgetTransactions(b.budget_id, { month, annual }),
+    enabled: open,
+  });
   return (
     <div className="budget-row" style={{ padding: "10px 0", borderBottom: "1px solid var(--border, #2222)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
         <div>
-          <strong>{b.name}</strong>{" "}
-          <span className="muted">· {scope} · {b.period}</span>
+          <button className="link-btn" style={{ fontWeight: 700 }} onClick={() => setOpen((v) => !v)}>
+            {open ? "▾ " : "▸ "}{b.name}
+          </button>{" "}
+          <span className="muted">· {scope} · {annual ? "yearly" : b.period}</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span className="tag" style={{ background: colour, color: "#fff" }}>
@@ -127,7 +149,26 @@ function BudgetRow({
       </div>
       <div className="muted" style={{ marginTop: 4, fontSize: "0.85rem" }}>
         {b.spent} / {b.amount} {base} spent · {b.remaining} {base} {Number(b.remaining) < 0 ? "over" : "left"} · {b.percent}%
+        {annual && <span> · annual cap</span>}
       </div>
+      {open && (
+        <div style={{ marginTop: 8, paddingLeft: 12 }}>
+          {txns.isLoading || !txns.data ? (
+            <p className="muted" style={{ margin: 0 }}>Loading…</p>
+          ) : txns.data.length === 0 ? (
+            <p className="muted" style={{ margin: 0 }}>No transactions counted toward this budget {annual ? "this year" : "this period"}.</p>
+          ) : (
+            <ul className="kv" style={{ margin: 0, maxWidth: 560 }}>
+              {txns.data.map((t) => (
+                <li key={t.id}>
+                  <span><span className="muted">{t.transaction_date}</span> · {t.description}</span>
+                  <span style={{ whiteSpace: "nowrap" }}>{t.amount} {base}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </div>
   );
 }

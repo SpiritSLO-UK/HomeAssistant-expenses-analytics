@@ -123,6 +123,42 @@ def test_budget_uses_splits(client):
     assert summary[bb]["spent"] == "30.00"
 
 
+def test_budget_transactions_drill_down(client):
+    groceries = _cat(client, "Groceries")
+    _import(client, _curve([("2026-05-02", "TESCO STORES", "-120.00"),
+                            ("2026-05-10", "TESCO METRO", "-90.00")]))
+    bid = client.post(
+        "/api/budgets",
+        json={"name": "Groceries", "amount": "300.00", "category_id": groceries},
+    ).json()["id"]
+    txns = client.get(f"/api/budgets/{bid}/transactions?month=2026-05-01").json()
+    assert len(txns) == 2
+    assert {t["description"] for t in txns} == {"TESCO STORES", "TESCO METRO"}
+    assert all("amount" in t and "transaction_date" in t for t in txns)
+    assert client.get("/api/budgets/99999/transactions").status_code == 404
+
+
+def test_annual_view_scales_cap_and_window(client):
+    groceries = _cat(client, "Groceries")
+    # Spend in two different months of 2026.
+    _import(client, _curve([("2026-03-10", "TESCO STORES", "-100.00"),
+                            ("2026-08-10", "TESCO METRO", "-50.00")]))
+    bid = client.post(
+        "/api/budgets",
+        json={"name": "Groceries", "amount": "300.00", "period": "monthly", "category_id": groceries},
+    ).json()["id"]
+    annual = {
+        b["budget_id"]: b
+        for b in client.get("/api/budgets/summary?month=2026-05-01&annual=true").json()
+    }[bid]
+    assert annual["spent"] == "150.00"        # whole year counted
+    assert annual["amount"] == "3600.00"      # 300 × 12 monthly periods = annual cap
+    assert annual["period_start"] == "2026-01-01"
+    # The drill over the year returns both months' transactions.
+    ytxns = client.get(f"/api/budgets/{bid}/transactions?month=2026-05-01&annual=true").json()
+    assert len(ytxns) == 2
+
+
 def test_weekly_period_window(client):
     groceries = _cat(client, "Groceries")
     # 2026-05-13 is a Wednesday; the week is Mon 2026-05-11 .. Sun 2026-05-17.

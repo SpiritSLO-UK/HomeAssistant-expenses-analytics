@@ -28,6 +28,9 @@ from app.services.dashboard_service import month_bounds
 from app.services.scope import account_scope_condition, archived_condition
 
 PERIODS = {"weekly", "monthly", "quarterly", "yearly", "custom"}
+# How many of each budget period fit in a year — used to annualise the cap for
+# the Budgets "This year" view.
+_PERIODS_PER_YEAR = {"weekly": 52, "monthly": 12, "quarterly": 4, "yearly": 1, "custom": 1}
 
 
 def period_bounds(budget: Budget, ref: date) -> tuple[date, date]:
@@ -117,11 +120,24 @@ def _status(spent: Decimal, amount: Decimal, threshold: int | None) -> str:
     return "ok"
 
 
-def status_for(db: Session, budget: Budget, ref: date, *, account_ids: set[int] | None = None) -> dict:
-    """Compute one budget's spend/remaining/percent/status for ``ref``'s period."""
+def _eval_window(budget: Budget, ref: date, annual: bool) -> tuple[date, date, Decimal]:
+    """The [start, end) window and the cap to compare against. ``annual`` evaluates
+    the whole calendar year and annualises the cap (amount × periods-per-year)."""
+    if annual:
+        period = budget.period if budget.period in PERIODS else "monthly"
+        cap = Decimal(budget.amount) * _PERIODS_PER_YEAR.get(period, 12)
+        return date(ref.year, 1, 1), date(ref.year + 1, 1, 1), cap
     start, end = period_bounds(budget, ref)
+    return start, end, Decimal(budget.amount)
+
+
+def status_for(
+    db: Session, budget: Budget, ref: date, *, account_ids: set[int] | None = None, annual: bool = False
+) -> dict:
+    """Compute one budget's spend/remaining/percent/status for ``ref``'s period
+    (or the whole year when ``annual``, comparing against the annualised cap)."""
+    start, end, amount = _eval_window(budget, ref, annual)
     spent = _spent(db, start, end, budget, account_ids=account_ids)
-    amount = Decimal(budget.amount)
     remaining = amount - spent
     percent = float((spent / amount) * 100) if amount > 0 else 0.0
     return {
@@ -142,7 +158,9 @@ def status_for(db: Session, budget: Budget, ref: date, *, account_ids: set[int] 
     }
 
 
-def summary(db: Session, ref: date, *, account_ids: set[int] | None = None) -> list[dict]:
+def summary(
+    db: Session, ref: date, *, account_ids: set[int] | None = None, annual: bool = False
+) -> list[dict]:
     """Status for every *household* budget (spec §24.9 GET /api/budgets/summary).
 
     Child-owned budgets (``owner_user_id`` set) are a kid's-allowance concern and
@@ -151,4 +169,57 @@ def summary(db: Session, ref: date, *, account_ids: set[int] | None = None) -> l
     budgets = db.scalars(
         select(Budget).where(Budget.owner_user_id.is_(None)).order_by(Budget.name)
     ).all()
-    return [status_for(db, b, ref, account_ids=account_ids) for b in budgets]
+    return [status_for(db, b, ref, account_ids=account_ids, annual=annual) for b in budgets]
+
+
+def budget_transactions(
+    db: Session, budget: Budget, ref: date, *, account_ids: set[int] | None = None, annual: bool = False
+) -> list[dict]:
+    """The transactions counting toward this budget in the window (drill-down).
+
+    Mirrors :func:`_spent`'s matching (total/category/project, split-aware), and
+    reports each transaction's *contributing* base amount (positive)."""
+    start, end, _ = _eval_window(budget, ref, annual)
+    txns = db.scalars(
+        select(Transaction)
+        .where(
+            Transaction.transaction_date >= start,
+            Transaction.transaction_date < end,
+            Transaction.is_transfer.is_(False),
+            Transaction.is_duplicate.is_(False),
+            Transaction.base_amount.is_not(None),
+            Transaction.base_amount < 0,
+            *account_scope_condition(account_ids),
+            *archived_condition(),
+        )
+        .order_by(Transaction.transaction_date.desc(), Transaction.id.desc())
+    ).all()
+
+    out: list[dict] = []
+    for txn in txns:
+        contrib: Decimal | None = None
+        if budget.category_id is None and budget.project_id is None:
+            contrib = -txn.base_amount
+        elif txn.is_split and txn.splits:
+            part = Decimal("0.00")
+            matched = False
+            for split in txn.splits:
+                if _split_matches(split, budget):
+                    base = split_service.split_base_amount(txn, split)
+                    if base is not None:
+                        part += -base
+                        matched = True
+            if matched:
+                contrib = part
+        elif _txn_matches(txn, budget):
+            contrib = -txn.base_amount
+        if contrib is not None:
+            out.append(
+                {
+                    "id": txn.id,
+                    "transaction_date": txn.transaction_date.isoformat(),
+                    "description": txn.merchant_raw or txn.description_raw,
+                    "amount": str(contrib),
+                }
+            )
+    return out
