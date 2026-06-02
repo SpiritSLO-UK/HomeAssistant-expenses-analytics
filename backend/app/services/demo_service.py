@@ -103,8 +103,8 @@ _MONTHLY_INCOME: list[tuple[int, str, str]] = [
 # --- One-off business expenses (GBP) with VAT, by cycle ----------------------
 # (cycle, day, description, amount, vat)
 _BUSINESS: list[tuple[int, int, str, str, str]] = [
-    (0, 16, "TRAINLINE BUSINESS", "84.00", "14.00"),
-    (0, 20, "AMAZON BUSINESS", "54.00", "9.00"),
+    (0, 16, "TRAINLINE RAIL TICKET", "84.00", "14.00"),
+    (0, 20, "AMAZON OFFICE SUPPLIES", "54.00", "9.00"),
     (0, 24, "SCREWFIX DIRECT", "120.00", "20.00"),
     (1, 6, "PREMIER INN HOTEL", "96.00", "16.00"),
     (1, 22, "COSTA COFFEE CLIENT", "18.00", "3.00"),
