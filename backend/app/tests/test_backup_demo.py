@@ -80,6 +80,20 @@ def test_demo_seeds_vendor_library(client):
     assert linked["total"] >= 1
 
 
+def test_demo_project_filter_returns_assigned_transactions(client):
+    """The Projects drill-down + the Transactions project filter rely on
+    ?project_id= returning exactly that project's transactions."""
+    client.post("/api/backup/demo")
+    projects = client.get("/api/projects").json()
+    spain = next((p for p in projects if p["name"] == "Spain City Break"), None)
+    assert spain is not None
+    linked = client.get(
+        "/api/transactions", params={"project_id": spain["id"], "limit": 500}
+    ).json()
+    assert linked["total"] >= 1
+    assert all(t["project_id"] == spain["id"] for t in linked["items"])
+
+
 def test_demo_seeds_savings(client):
     """A savings account with balances + goals."""
     client.post("/api/backup/demo")

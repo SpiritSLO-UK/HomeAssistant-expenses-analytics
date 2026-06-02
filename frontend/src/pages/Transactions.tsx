@@ -33,6 +33,7 @@ export default function Transactions() {
   const [uncategorisedOnly, setUncategorisedOnly] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [businessOnly, setBusinessOnly] = useState(false);
+  const [projectFilter, setProjectFilter] = useState("");
   const [page, setPage] = useState(0);
   const [splitId, setSplitId] = useState<number | null>(null);
   const [showAiBatch, setShowAiBatch] = useState(false);
@@ -46,6 +47,7 @@ export default function Transactions() {
     needs_review: needsReview || undefined,
     uncategorised: uncategorisedOnly || undefined,
     is_business: businessOnly || undefined,
+    project_id: projectFilter ? Number(projectFilter) : undefined,
     include_archived: showArchived || undefined,
     limit: PAGE_SIZE,
     offset: page * PAGE_SIZE,
@@ -233,6 +235,12 @@ export default function Transactions() {
           />
           <label>From <input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(0); }} /></label>
           <label>To <input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(0); }} /></label>
+          <label>Project
+            <select value={projectFilter} onChange={(e) => { setProjectFilter(e.target.value); setPage(0); }}>
+              <option value="">All</option>
+              {projects.data?.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </label>
         </div>
         <div className="filter-toggles">
           <span className="filter-toggles__label">Show only</span>
