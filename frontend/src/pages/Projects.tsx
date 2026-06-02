@@ -7,7 +7,9 @@ import {
   getDashboardProjects,
   getProjectSummary,
   getSettings,
+  listTransactions,
   type ProjectTotal,
+  type TransactionListResponse,
 } from "../api/client";
 
 export default function Projects() {
@@ -106,6 +108,10 @@ function ProjectRow({
 
 function ProjectDetail({ id, base }: { id: number; base: string }) {
   const summary = useQuery({ queryKey: ["project-summary", id], queryFn: () => getProjectSummary(id) });
+  const txns = useQuery({
+    queryKey: ["project-txns", id],
+    queryFn: () => listTransactions({ project_id: id, limit: 200 }),
+  });
   const s = summary.data;
   if (summary.isLoading || !s) return <p className="muted" style={{ padding: "6px 0 12px 16px" }}>Loading…</p>;
   return (
@@ -119,6 +125,36 @@ function ProjectDetail({ id, base }: { id: number; base: string }) {
         <Breakdown title="By category" rows={s.by_category} base={base} />
         <Breakdown title="By vendor" rows={s.by_vendor} base={base} />
       </div>
+      <ProjectTxns data={txns.data} />
+    </div>
+  );
+}
+
+function ProjectTxns({ data }: { data?: TransactionListResponse }) {
+  if (!data) return <p className="muted" style={{ margin: "8px 0 0" }}>Loading transactions…</p>;
+  if (data.items.length === 0) {
+    return (
+      <p className="muted" style={{ margin: "8px 0 0" }}>
+        No transactions assigned yet — assign some on the Transactions page.
+      </p>
+    );
+  }
+  return (
+    <div style={{ marginTop: 10 }}>
+      <h4 style={{ margin: "6px 0", fontSize: "0.85rem" }}>Transactions</h4>
+      <ul className="kv" style={{ maxWidth: 520 }}>
+        {data.items.map((t) => (
+          <li key={t.id}>
+            <span><span className="muted">{t.transaction_date}</span> · {t.merchant_raw || t.description_raw}</span>
+            <span style={{ whiteSpace: "nowrap" }}>{t.amount} {t.currency}</span>
+          </li>
+        ))}
+      </ul>
+      {data.total > data.items.length && (
+        <p className="muted" style={{ fontSize: "0.8rem", margin: "4px 0 0" }}>
+          Showing {data.items.length} of {data.total}.
+        </p>
+      )}
     </div>
   );
 }

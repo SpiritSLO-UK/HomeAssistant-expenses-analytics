@@ -6,6 +6,7 @@ import {
   exportCategoriesCsv,
   exportMonthlyCsv,
   getCategoryBreakdown,
+  getDashboardProjects,
   getMe,
   getMonthlySeries,
   getOutliers,
@@ -34,6 +35,7 @@ const OPTIONAL_CARDS: { key: string; label: string }[] = [
   { key: "trends", label: "Trends" },
   { key: "categories", label: "Spending by category" },
   { key: "vendors", label: "Top vendors" },
+  { key: "projects", label: "By project" },
 ];
 
 function downloadOrAlert(p: Promise<void>): void {
@@ -204,6 +206,8 @@ export default function Dashboard() {
         </div>
       )}
 
+      {show("projects") && <ProjectsCard />}
+
       {summary.data && summary.data.uncategorised_transactions > 0 && (
         <div className="card">
           <p className="status status--warn">
@@ -212,6 +216,36 @@ export default function Dashboard() {
           </p>
         </div>
       )}
+    </div>
+  );
+}
+
+function ProjectsCard() {
+  const q = useQuery({ queryKey: ["dashboard-projects"], queryFn: getDashboardProjects });
+  const items = q.data ?? [];
+  if (items.length === 0) return null; // non-nagging: no card until there are projects
+  return (
+    <div className="card">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+        <h2 className="card__title" style={{ margin: 0 }}>By project</h2>
+        <Link className="link-btn" to="/projects">Manage →</Link>
+      </div>
+      <ul className="kv">
+        {items.map((p) => {
+          const pct = p.percent ?? null;
+          return (
+            <li key={p.project_id}>
+              <span>
+                <Link to="/projects">{p.name}</Link> <span className="tag">{p.status}</span>
+              </span>
+              <span>
+                {gbp(p.spent)}
+                {p.budget ? <span className="muted"> / {gbp(p.budget)}{pct != null ? ` · ${pct}%` : ""}</span> : ""}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
