@@ -102,3 +102,15 @@ def test_member_filter_export_matches_view(client):
     csv = client.get("/api/export/transactions.csv", params={"member_id": ids["bob"]}).content.decode("utf-8-sig")
     assert "BOB BUY" in csv
     assert "ALICE BUY" not in csv and "SHARED SHOP" not in csv
+
+
+def test_demo_attributes_spend_to_a_member(client):
+    """The demo gives the partner member their own account + spend, so the
+    per-member filter has data to show (not an empty view)."""
+    client.post("/api/backup/demo")
+    members = client.get("/api/users/members").json()
+    sam = next(m["id"] for m in members if m["display_name"].startswith("Sam"))
+    sam_total = client.get("/api/transactions", params={"member_id": sam, "limit": 500}).json()["total"]
+    all_total = client.get("/api/transactions", params={"limit": 500}).json()["total"]
+    assert sam_total > 0          # the partner has owned spend
+    assert all_total > sam_total  # ...but it's only a subset of the household's
