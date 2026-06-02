@@ -1440,6 +1440,15 @@ export interface TravelByCurrency {
   currencies: CurrencySpend[];
 }
 
+export interface TripTxn {
+  id: number;
+  transaction_date: string;
+  description: string;
+  amount: string;
+  currency: string;
+  base_amount: string;
+}
+
 export interface Trip {
   first: string;
   last: string;
@@ -1450,6 +1459,7 @@ export interface Trip {
   base_currency: string;
   transaction_count: number;
   transaction_ids: number[];
+  transactions: TripTxn[];
 }
 
 export function getTravelByCurrency(): Promise<TravelByCurrency> {
