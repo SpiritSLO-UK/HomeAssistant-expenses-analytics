@@ -291,6 +291,11 @@ body {
   margin-top: 8px;
 }
 
+/* Row deep-linked from the Review Queue ("Open transaction →"). */
+.table tr.tr--focus td {
+  background: color-mix(in srgb, var(--sidebar-active) 16%, transparent);
+}
+
 /* --- report chips --- */
 .report {
   display: flex;

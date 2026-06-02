@@ -122,6 +122,12 @@ def test_demo_seeds_review_queue(client):
     assert client.get("/api/transactions?needs_review=true").json()["total"] >= 1
 
 
+def test_demo_defaults_to_debug_log_level(client):
+    """Loading the demo flips logging to DEBUG so there's something to see."""
+    client.post("/api/backup/demo")
+    assert client.get("/api/settings").json()["log_level"] == "DEBUG"
+
+
 def test_demo_examples_are_idempotent(client):
     """Re-loading the demo doesn't duplicate the seeded examples."""
     client.post("/api/backup/demo")

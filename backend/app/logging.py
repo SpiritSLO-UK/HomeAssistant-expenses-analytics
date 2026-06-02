@@ -36,5 +36,11 @@ def configure_logging(level: str = "INFO") -> None:
     _CONFIGURED = True
 
 
+def set_level(level: str) -> None:
+    """Change the runtime log level (e.g. from the Settings UI). Affects the root
+    logger, so all of our loggers follow; takes effect immediately."""
+    logging.getLogger().setLevel(level.upper())
+
+
 def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(name)

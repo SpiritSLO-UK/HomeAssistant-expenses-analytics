@@ -31,11 +31,14 @@ RECEIPT_DELETE_AFTER_PROCESSING = "receipt_delete_after_processing"  # default t
 BACKUP_MAX_AGE_DAYS = "backup_max_age_days"
 BACKUP_MAX_TOTAL_MB = "backup_max_total_mb"
 BACKUP_MIN_KEEP = "backup_min_keep"
+# Runtime log level, editable from Settings (spec §38). Mirrors the env default.
+LOG_LEVEL = "log_level"
 
 FX_MODES = {"manual", "frankfurter"}
 RECEIPT_MATCH_MODES = {"suggest", "auto"}
 PRIVACY_MODES = {"strict_local", "local_llm", "cloud_manual", "cloud_auto", "no_ai"}
 AI_PROVIDERS = {"none", "openai_compatible"}
+LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR"}
 
 # Backup-trim defaults: keep at most 90 days / 500 MB of safety backups, but never
 # fewer than the most recent 3 regardless of age or size.
@@ -51,12 +54,18 @@ def _defaults() -> dict[str, str]:
         AI_PROVIDER: "none",
         AI_BASE_URL: "",
         AI_MODEL: "",
+        LOG_LEVEL: env_settings.log_level.upper(),
     }
 
 
 def get_privacy_mode(db: Session) -> str:
     mode = get(db, PRIVACY_MODE) or env_settings.privacy_mode.value
     return mode if mode in PRIVACY_MODES else "strict_local"
+
+
+def get_log_level(db: Session) -> str:
+    level = (get(db, LOG_LEVEL) or env_settings.log_level).upper()
+    return level if level in LOG_LEVELS else "INFO"
 
 
 def get_all(db: Session) -> dict[str, str]:

@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
+from app.logging import set_level as set_log_level
 from app.services import fx_service, settings_service
 
 router = APIRouter(prefix="/settings", tags=["settings"])
@@ -21,6 +22,7 @@ class SettingsUpdate(BaseModel):
     ai_provider: str | None = None  # none | openai_compatible
     ai_base_url: str | None = None
     ai_model: str | None = None
+    log_level: str | None = None  # DEBUG | INFO | WARNING | ERROR
 
 
 @router.get("")
@@ -62,6 +64,16 @@ def update_settings(payload: SettingsUpdate, db: Session = Depends(get_db)) -> d
 
     if payload.ai_model is not None:
         settings_service.set_value(db, settings_service.AI_MODEL, payload.ai_model.strip())
+
+    if payload.log_level is not None:
+        level = payload.log_level.strip().upper()
+        if level not in settings_service.LOG_LEVELS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"log_level must be one of {sorted(settings_service.LOG_LEVELS)}",
+            )
+        settings_service.set_value(db, settings_service.LOG_LEVEL, level)
+        set_log_level(level)  # take effect immediately
 
     if payload.base_currency is not None:
         new_base = payload.base_currency.strip().upper()
