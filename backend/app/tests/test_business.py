@@ -64,6 +64,24 @@ def test_summary_totals_and_vat(db):
     assert s["transaction_count"] == 2
 
 
+def test_summary_groups_by_period_with_bounds(db):
+    settings_service.set_value(db, settings_service.BASE_CURRENCY, "GBP")
+    _txn(db, business=True, amount="-100.00", vat="20.00")  # today
+    s = business_service.summary(db, period="month")
+    assert s["period"] == "month"
+    assert len(s["by_period"]) == 1
+    b = s["by_period"][0]
+    assert {"period", "label", "start", "end", "total", "vat", "count"} <= set(b)
+    assert b["total"] == "100.00"
+    assert b["vat"] == "20.00"
+    assert b["count"] == 1
+    # The bucket bounds bracket the transaction's date so the UI can drill into
+    # the transactions list by date range.
+    assert b["start"] <= date.today().isoformat() <= b["end"]
+    # An unknown period falls back to month (never errors).
+    assert business_service.summary(db, period="bogus")["period"] == "month"
+
+
 def test_excludes_personal_transfer_and_archived(db):
     _txn(db, business=True, amount="-100.00", vat="20.00")   # counted
     _txn(db, business=True, amount="-200.00", transfer=True)  # transfer → excluded
