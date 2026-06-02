@@ -31,7 +31,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Account, Budget, Category, Project, Rule, Transaction, User
+from app.models import Account, Budget, Category, Project, Rule, Transaction, User, Vendor, VendorAlias
 from app.services import (
     allowance_service,
     fx_service,
@@ -39,6 +39,7 @@ from app.services import (
     review_service,
     savings_service,
     settings_service,
+    vendor_service,
 )
 from app.services.household_service import get_or_create_default_household
 
@@ -245,6 +246,73 @@ def _cat_id(db: Session, name: str) -> int | None:
     return db.scalar(select(Category.id).where(Category.name == name))
 
 
+# A vendor library (canonical name, "contains" alias, default category) so the
+# Vendors page is populated and the demo transactions link to real vendor rows
+# (merchant_id) rather than only carrying raw merchant text.
+_DEMO_VENDORS: list[tuple[str, str, str]] = [
+    ("Tesco", "TESCO", "Groceries"),
+    ("Sainsbury's", "SAINSBURYS", "Groceries"),
+    ("Aldi", "ALDI", "Groceries"),
+    ("Lidl", "LIDL", "Groceries"),
+    ("Waitrose", "WAITROSE", "Groceries"),
+    ("Shell", "SHELL", "Car"),
+    ("BP", "BP CONNECT", "Car"),
+    ("Netflix", "NETFLIX", "Subscriptions"),
+    ("Spotify", "SPOTIFY", "Subscriptions"),
+    ("Disney+", "DISNEY PLUS", "Subscriptions"),
+    ("PureGym", "PURE GYM", "Subscriptions"),
+    ("Costa Coffee", "COSTA COFFEE", "Eating Out"),
+    ("Pret A Manger", "PRET A MANGER", "Eating Out"),
+    ("Deliveroo", "DELIVEROO", "Eating Out"),
+    ("Nando's", "NANDOS", "Eating Out"),
+    ("Transport for London", "TfL", "Transport"),
+    ("Trainline", "TRAINLINE", "Transport"),
+    ("Amazon", "AMAZON", "Shopping"),
+    ("Argos", "ARGOS", "Shopping"),
+    ("Boots", "BOOTS", "Health"),
+    ("Pets at Home", "PETS AT HOME", "Pets"),
+    ("Odeon", "ODEON", "Entertainment"),
+    ("British Gas", "BRITISH GAS", "Bills"),
+    ("Thames Water", "THAMES WATER", "Bills"),
+    ("BT", "BT BROADBAND", "Bills"),
+    ("Vodafone", "VODAFONE", "Bills"),
+    ("Admiral", "ADMIRAL", "Insurance"),
+    ("Nationwide", "NATIONWIDE MORTGAGE", "Housing"),
+    ("Screwfix", "SCREWFIX", "DIY"),
+]
+
+
+def _seed_vendors(db: Session, rows: list[Transaction]) -> None:
+    """Seed a vendor library + link the imported demo transactions to it.
+
+    Import-time auto-categorisation matched these merchants by keyword (no Vendor
+    rows existed yet), so the Vendors page was empty. Create the vendors now, then
+    re-run normalisation on the demo rows so each gets a ``merchant_id`` (vendor
+    stats, the dashboard's top-vendors and the vendor filter then all work)."""
+    household = get_or_create_default_household(db)
+    created_any = False
+    for canonical, alias, category in _DEMO_VENDORS:
+        if db.scalar(select(Vendor.id).where(Vendor.canonical_name == canonical)):
+            continue
+        vendor = Vendor(
+            household_id=household.id,
+            canonical_name=canonical,
+            display_name=canonical,
+            default_category_id=_cat_id(db, category),
+            created_by="import",
+        )
+        db.add(vendor)
+        db.flush()
+        db.add(VendorAlias(vendor_id=vendor.id, alias=alias, match_type="contains", source="import"))
+        created_any = True
+    if created_any:
+        db.flush()
+        # Link the just-imported transactions (won't overwrite an existing
+        # category — only fills merchant_id and any still-blank category).
+        for txn in rows:
+            vendor_service.normalise_transaction(db, txn)
+
+
 def _seed_rule(db: Session) -> None:
     """One categorisation rule so the Rules page isn't empty."""
     if db.scalar(select(Rule.id).where(Rule.name == _DEMO_RULE_NAME)):
@@ -399,6 +467,7 @@ def _seed_examples(db: Session, statement_id: int) -> None:
     rows = list(
         db.scalars(select(Transaction).where(Transaction.statement_id == statement_id)).all()
     )
+    _seed_vendors(db, rows)
     _seed_rule(db)
     _seed_projects(db, rows)
     _seed_budgets(db)
