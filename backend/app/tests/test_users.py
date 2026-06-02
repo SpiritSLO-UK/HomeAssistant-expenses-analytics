@@ -94,3 +94,23 @@ def test_second_owner_allows_demoting_the_first(client):
     client.patch(f"/api/users/{eve_id}", json={"role": "owner", "status": "approved"})
     # …now the original owner can be demoted.
     assert client.patch(f"/api/users/{me['id']}", json={"role": "member"}).status_code == 200
+
+
+def test_cannot_lock_yourself_out(client):
+    """Self-protection (#28): you can't disable or delete your OWN account, even
+    once another owner exists. Handing over ownership stays possible — you may
+    step *down* (demote your own role) after promoting someone else, and only an
+    owner can change roles, so nobody can seize ownership on their own."""
+    me = client.get("/api/users/me").json()
+    client.get("/api/users/me", headers=_hdr("ha-frank", "Frank"))
+    frank_id = next(u["id"] for u in client.get("/api/users").json() if u["external_id"] == "ha-frank")
+    # A second owner exists, so the last-owner guard is NOT what's blocking below.
+    client.patch(f"/api/users/{frank_id}", json={"role": "owner", "status": "approved"})
+
+    assert client.patch(f"/api/users/{me['id']}", json={"status": "disabled"}).status_code == 400
+    deleted = client.delete(f"/api/users/{me['id']}")
+    assert deleted.status_code == 400
+    assert "your own account" in deleted.json()["detail"].lower()
+
+    # …but stepping down (handing over, then demoting yourself) is still allowed.
+    assert client.patch(f"/api/users/{me['id']}", json={"role": "member"}).status_code == 200

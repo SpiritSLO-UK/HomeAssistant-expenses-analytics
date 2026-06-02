@@ -289,6 +289,13 @@ def update_user(
     if new_status is not None and new_status not in STATUSES:
         raise ValueError(f"status must be one of {list(STATUSES)}")
 
+    # Self-protection: you can't lock yourself out by disabling your own account
+    # (even when other owners exist). Stepping *down* (demoting your own role) is
+    # still allowed — you keep access as a member — and the last-owner guard below
+    # stops the household losing its final owner.
+    if actor.id == target.id and new_status == "disabled":
+        raise ValueError("You can't disable your own account.")
+
     effective_role = role if role is not None else target.role
     effective_status = new_status if new_status is not None else target.status
     remains_active_owner = effective_role == "owner" and effective_status == "approved"
@@ -323,6 +330,8 @@ def update_user(
 
 
 def delete_user(db: Session, *, actor: User, target: User) -> None:
+    if actor.id == target.id:
+        raise ValueError("You can't delete your own account.")
     if _is_last_owner(db, target):
         raise ValueError("Cannot delete the last active owner.")
     audit_service.record(
