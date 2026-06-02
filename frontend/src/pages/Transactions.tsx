@@ -36,6 +36,7 @@ export default function Transactions() {
   const [splitId, setSplitId] = useState<number | null>(null);
   const [showAiBatch, setShowAiBatch] = useState(false);
   const [showCloudBatch, setShowCloudBatch] = useState(false);
+  const [ruleMsg, setRuleMsg] = useState<string | null>(null);
 
   const filters: TransactionFilters = {
     search: search || undefined,
@@ -71,9 +72,11 @@ export default function Transactions() {
     mutationFn: (v: { id: number; categoryId: number }) =>
       categoriseTransaction(v.id, v.categoryId, { learnRule: true }),
     onSuccess: () => {
+      setRuleMsg("✓ Rule saved — similar transactions will auto-categorise from now on (see the Rules page).");
       qc.invalidateQueries({ queryKey: ["transactions"] });
       qc.invalidateQueries({ queryKey: ["rules"] });
     },
+    onError: (e) => setRuleMsg(`Couldn't save rule: ${e instanceof Error ? e.message : e}`),
   });
 
   const recat = useMutation({
@@ -214,6 +217,7 @@ export default function Transactions() {
       {recat.isSuccess && (
         <p className="muted">Re-categorised {recat.data.recategorised} transaction(s).</p>
       )}
+      {ruleMsg && <p className="status status--ok">{ruleMsg}</p>}
 
       {showAiBatch && <AiBatchPanel base={base} onClose={() => setShowAiBatch(false)} />}
       {showCloudBatch && <CloudAiBatchPanel base={base} onClose={() => setShowCloudBatch(false)} />}

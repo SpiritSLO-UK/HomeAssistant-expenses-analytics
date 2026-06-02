@@ -194,6 +194,20 @@ def create_rule_from_correction(
         value = value.split()[0] if value.split() else value
     category = db.get(Category, category_id)
     cat_name = category.name if category else category_id
+
+    # Idempotent: if an identical learned rule already exists, return it instead
+    # of piling up duplicates when the user clicks "+ rule" again (backlog bug).
+    existing = db.scalars(
+        select(Rule).where(
+            Rule.condition_type == "description_contains",
+            Rule.condition_value == value,
+            Rule.action_type == "set_category",
+            Rule.action_value == str(category_id),
+        )
+    ).first()
+    if existing is not None:
+        return existing
+
     return create_rule(
         db,
         {
