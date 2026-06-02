@@ -10,6 +10,7 @@ import Vendors from "./pages/Vendors";
 import Rules from "./pages/Rules";
 import Projects from "./pages/Projects";
 import Travel from "./pages/Travel";
+import Business from "./pages/Business";
 import Budgets from "./pages/Budgets";
 import Savings from "./pages/Savings";
 import Accounts from "./pages/Accounts";
@@ -69,6 +70,7 @@ export default function App() {
           <Route path="/rules" element={<Rules />} />
           <Route path="/projects" element={<Projects />} />
           <Route path="/travel" element={<Travel />} />
+          <Route path="/business" element={<Business />} />
           <Route path="/budgets" element={<Budgets />} />
           <Route path="/savings" element={<Savings />} />
           <Route path="/accounts" element={<Accounts />} />

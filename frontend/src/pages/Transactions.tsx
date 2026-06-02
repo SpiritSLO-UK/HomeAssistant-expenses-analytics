@@ -31,6 +31,7 @@ export default function Transactions() {
   const [dateTo, setDateTo] = useState("");
   const [needsReview, setNeedsReview] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
+  const [businessOnly, setBusinessOnly] = useState(false);
   const [page, setPage] = useState(0);
   const [splitId, setSplitId] = useState<number | null>(null);
   const [showAiBatch, setShowAiBatch] = useState(false);
@@ -41,6 +42,7 @@ export default function Transactions() {
     date_from: dateFrom || undefined,
     date_to: dateTo || undefined,
     needs_review: needsReview || undefined,
+    is_business: businessOnly || undefined,
     include_archived: showArchived || undefined,
     limit: PAGE_SIZE,
     offset: page * PAGE_SIZE,
@@ -83,6 +85,41 @@ export default function Transactions() {
     mutationFn: (id: number) => unarchiveTransaction(id),
     onSuccess: () => qc.invalidateQueries(),
   });
+
+  const setBusiness = useMutation({
+    mutationFn: (v: { id: number; value: boolean }) =>
+      updateTransaction(v.id, { is_business: v.value }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["transactions"] });
+      qc.invalidateQueries({ queryKey: ["business-summary"] });
+    },
+  });
+
+  const setVat = useMutation({
+    mutationFn: (v: { id: number; value: string | null }) =>
+      updateTransaction(v.id, { vat_amount: v.value }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["transactions"] });
+      qc.invalidateQueries({ queryKey: ["business-summary"] });
+    },
+  });
+
+  // Prompt for a VAT amount (blank clears it).
+  function editVat(t: Transaction) {
+    const current = t.vat_amount ?? "";
+    const input = window.prompt(`VAT amount for this transaction (in ${t.currency}, blank to clear):`, current);
+    if (input === null) return; // cancelled
+    const trimmed = input.trim();
+    if (trimmed === "") {
+      setVat.mutate({ id: t.id, value: null });
+      return;
+    }
+    if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) {
+      window.alert("Enter a number like 4.20 (or blank to clear).");
+      return;
+    }
+    setVat.mutate({ id: t.id, value: trimmed });
+  }
 
   // Export the *filtered* set (the client drops limit/offset so it's not just
   // the current page).
@@ -197,6 +234,10 @@ export default function Transactions() {
           <label className="checkbox">
             <input type="checkbox" checked={showArchived} onChange={(e) => { setShowArchived(e.target.checked); setPage(0); }} />
             Show archived
+          </label>
+          <label className="checkbox">
+            <input type="checkbox" checked={businessOnly} onChange={(e) => { setBusinessOnly(e.target.checked); setPage(0); }} />
+            Business only
           </label>
         </div>
       </div>
@@ -350,6 +391,20 @@ export default function Transactions() {
                           {t.is_split ? "edit split" : "split"}
                         </button>
                         <AssignToChildButton txn={t} base={base} />
+                        {t.is_business && <span className="tag" title="Flagged as a business expense">💼 business</span>}
+                        <button
+                          className="link-btn"
+                          style={{ marginLeft: 6 }}
+                          title={t.is_business ? "Unmark as business" : "Mark as a business expense"}
+                          onClick={() => setBusiness.mutate({ id: t.id, value: !t.is_business })}
+                        >
+                          {t.is_business ? "✓ business" : "mark business"}
+                        </button>
+                        {t.is_business && (
+                          <button className="link-btn" style={{ marginLeft: 6 }} onClick={() => editVat(t)}>
+                            {t.vat_amount ? `VAT ${t.vat_amount}` : "set VAT"}
+                          </button>
+                        )}
                       </td>
                     </tr>
                     {splitId === t.id && (

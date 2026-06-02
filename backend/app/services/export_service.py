@@ -43,6 +43,8 @@ TRANSACTION_HEADERS = [
     "is_split",
     "is_transfer",
     "is_income",
+    "is_business",
+    "vat_amount",
     "needs_review",
     "review_reason",
 ]
@@ -58,6 +60,7 @@ def build_transaction_filters(
     project_id: int | None = None,
     tag_id: int | None = None,
     needs_review: bool | None = None,
+    is_business: bool | None = None,
     amount_min: Decimal | None = None,
     amount_max: Decimal | None = None,
     search: str | None = None,
@@ -89,6 +92,8 @@ def build_transaction_filters(
         conditions.append(Transaction.tags.any(Tag.id == tag_id))
     if needs_review is not None:
         conditions.append(Transaction.needs_review.is_(needs_review))
+    if is_business is not None:
+        conditions.append(Transaction.is_business.is_(is_business))
     if amount_min is not None:
         conditions.append(Transaction.amount >= amount_min)
     if amount_max is not None:
@@ -147,6 +152,8 @@ def transactions_csv(db: Session, conditions: list) -> str:
                 t.is_split,
                 t.is_transfer,
                 t.is_income,
+                t.is_business,
+                t.vat_amount if t.vat_amount is not None else "",
                 t.needs_review,
                 t.review_reason or "",
             ]

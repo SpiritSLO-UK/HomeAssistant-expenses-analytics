@@ -176,6 +176,8 @@ export interface Transaction {
   is_income: boolean;
   is_duplicate: boolean;
   needs_review: boolean;
+  is_business: boolean;
+  vat_amount: string | null;
   archived_at?: string | null;
   tags?: Tag[];
 }
@@ -196,6 +198,7 @@ export interface TransactionFilters {
   project_id?: number;
   tag_id?: number;
   needs_review?: boolean;
+  is_business?: boolean;
   include_archived?: boolean;
   limit?: number;
   offset?: number;
@@ -1470,6 +1473,35 @@ export function createProjectFromTrip(
       budget_amount: budgetAmount || null,
     }),
   });
+}
+
+// --- Business / VAT expenses (backlog: corporate receipts) ---
+
+export interface BusinessCategoryRow {
+  category_id: number | null;
+  name: string;
+  total: string;
+  vat: string;
+}
+
+export interface BusinessMonthRow {
+  month: string;
+  total: string;
+}
+
+export interface BusinessSummary {
+  currency: string;
+  total: string;
+  vat: string;
+  transaction_count: number;
+  first: string | null;
+  last: string | null;
+  by_category: BusinessCategoryRow[];
+  by_month: BusinessMonthRow[];
+}
+
+export function getBusinessSummary(): Promise<BusinessSummary> {
+  return fetchJson<BusinessSummary>("api/business/summary");
 }
 
 // --- Data retention (spec §28; backlog #78, #147) ---
