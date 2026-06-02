@@ -16,6 +16,13 @@ function thisMonth(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+// Year choices for the annual ("This year") view: next year down to a few past
+// years. Computed once at module load.
+const YEARS = (() => {
+  const y = new Date().getFullYear();
+  return [y + 1, y, y - 1, y - 2, y - 3, y - 4];
+})();
+
 const STATUS_COLOUR: Record<string, string> = {
   ok: "#3a9b5c",
   warn: "#d8930a",
@@ -55,8 +62,14 @@ export default function Budgets() {
             <button className={"btn btn--sm" + (annual ? "" : " btn--ghost")} onClick={() => setAnnual(true)}>This year</button>
           </div>
           <label className="muted">
-            {annual ? "Year of " : "Month "}
-            <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
+            {annual ? "Year " : "Month "}
+            {annual ? (
+              <select value={month.slice(0, 4)} onChange={(e) => setMonth(`${e.target.value}-01`)}>
+                {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
+              </select>
+            ) : (
+              <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
+            )}
           </label>
         </div>
       </div>

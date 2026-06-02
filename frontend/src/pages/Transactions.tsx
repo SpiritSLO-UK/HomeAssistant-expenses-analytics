@@ -35,28 +35,35 @@ export default function Transactions() {
   const [showArchived, setShowArchived] = useState(false);
   const [businessOnly, setBusinessOnly] = useState(false);
   const [projectFilter, setProjectFilter] = useState("");
-  // Deep-link from the Review Queue ("Open transaction →") highlights + scrolls
-  // to a specific row.
-  const [searchParams] = useSearchParams();
+  // Deep-link (Review Queue "Open transaction →", trip drill-down): when a
+  // ?focus=<id> is present we narrow the list to *just that one transaction* so
+  // it's always surfaced — the previous highlight-only approach silently failed
+  // when the row fell on a different page of the paginated list.
+  const [searchParams, setSearchParams] = useSearchParams();
   const focusId = searchParams.get("focus");
+  const focusNum = focusId ? Number(focusId) : undefined;
   const [page, setPage] = useState(0);
   const [splitId, setSplitId] = useState<number | null>(null);
   const [showAiBatch, setShowAiBatch] = useState(false);
   const [showCloudBatch, setShowCloudBatch] = useState(false);
   const [ruleMsg, setRuleMsg] = useState<string | null>(null);
 
-  const filters: TransactionFilters = {
-    search: search || undefined,
-    date_from: dateFrom || undefined,
-    date_to: dateTo || undefined,
-    needs_review: needsReview || undefined,
-    uncategorised: uncategorisedOnly || undefined,
-    is_business: businessOnly || undefined,
-    project_id: projectFilter ? Number(projectFilter) : undefined,
-    include_archived: showArchived || undefined,
-    limit: PAGE_SIZE,
-    offset: page * PAGE_SIZE,
-  };
+  const filters: TransactionFilters = focusNum
+    ? // Focused: ignore the page filters and fetch only the deep-linked row
+      // (include archived so a focused aged-out transaction still shows).
+      { transaction_id: focusNum, include_archived: true, limit: 1, offset: 0 }
+    : {
+        search: search || undefined,
+        date_from: dateFrom || undefined,
+        date_to: dateTo || undefined,
+        needs_review: needsReview || undefined,
+        uncategorised: uncategorisedOnly || undefined,
+        is_business: businessOnly || undefined,
+        project_id: projectFilter ? Number(projectFilter) : undefined,
+        include_archived: showArchived || undefined,
+        limit: PAGE_SIZE,
+        offset: page * PAGE_SIZE,
+      };
 
   const categories = useQuery({ queryKey: ["categories"], queryFn: listCategories });
   const projects = useQuery({ queryKey: ["projects"], queryFn: listProjects });
@@ -237,6 +244,14 @@ export default function Transactions() {
       {showAiBatch && <AiBatchPanel base={base} onClose={() => setShowAiBatch(false)} />}
       {showCloudBatch && <CloudAiBatchPanel base={base} onClose={() => setShowCloudBatch(false)} />}
 
+      {focusId && (
+        <div className="card focus-banner">
+          <span>🔎 Showing one transaction (<strong>#{focusId}</strong>) — opened from a link elsewhere in the app.</span>
+          <button className="btn btn--ghost" onClick={() => setSearchParams({})}>← Show all transactions</button>
+        </div>
+      )}
+
+      {!focusId && (
       <div className="card">
         <div className="filters">
           <input
@@ -284,14 +299,22 @@ export default function Transactions() {
           </p>
         )}
       </div>
+      )}
 
       <div className="card">
         {isLoading && <p className="muted">Loading…</p>}
         {isError && <p className="status status--error">{String(error)}</p>}
         {data && data.items.length === 0 && (
-          <p className="muted">
-            No transactions. Import a CSV on the <strong>Import</strong> page to get started.
-          </p>
+          focusId ? (
+            <p className="muted">
+              Transaction #{focusId} wasn't found — it may have been deleted or isn't visible to you.{" "}
+              <button className="link-btn" onClick={() => setSearchParams({})}>Show all transactions</button>.
+            </p>
+          ) : (
+            <p className="muted">
+              No transactions. Import a CSV on the <strong>Import</strong> page to get started.
+            </p>
+          )
         )}
         {data && data.items.length > 0 && (
           <>
@@ -473,15 +496,17 @@ export default function Transactions() {
                 </tbody>
               </table>
             </div>
-            <div className="pager">
-              <button className="btn btn--ghost" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
-                ← Prev
-              </button>
-              <span className="muted">{total} total · page {page + 1} of {maxPage + 1}</span>
-              <button className="btn btn--ghost" disabled={page >= maxPage} onClick={() => setPage((p) => p + 1)}>
-                Next →
-              </button>
-            </div>
+            {!focusId && (
+              <div className="pager">
+                <button className="btn btn--ghost" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
+                  ← Prev
+                </button>
+                <span className="muted">{total} total · page {page + 1} of {maxPage + 1}</span>
+                <button className="btn btn--ghost" disabled={page >= maxPage} onClick={() => setPage((p) => p + 1)}>
+                  Next →
+                </button>
+              </div>
+            )}
           </>
         )}
       </div>

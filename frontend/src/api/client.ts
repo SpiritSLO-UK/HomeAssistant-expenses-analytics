@@ -190,6 +190,7 @@ export interface TransactionListResponse {
 }
 
 export interface TransactionFilters {
+  transaction_id?: number;
   search?: string;
   date_from?: string;
   date_to?: string;

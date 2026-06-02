@@ -52,6 +52,7 @@ TRANSACTION_HEADERS = [
 
 def build_transaction_filters(
     *,
+    transaction_id: int | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
     account_id: int | None = None,
@@ -77,6 +78,11 @@ def build_transaction_filters(
     from sqlalchemy import or_
 
     conditions: list = [*account_scope_condition(account_ids), *archived_condition(include_archived)]
+    if transaction_id is not None:
+        # The focus deep-link (Review-Queue "Open transaction →", trip drill-down)
+        # narrows the list to a single row so it's always surfaced regardless of
+        # which page it would otherwise fall on.
+        conditions.append(Transaction.id == transaction_id)
     if date_from is not None:
         conditions.append(Transaction.transaction_date >= date_from)
     if date_to is not None:

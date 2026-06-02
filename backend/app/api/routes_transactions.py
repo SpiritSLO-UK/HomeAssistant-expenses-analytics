@@ -67,6 +67,7 @@ class RecategoriseRequest(BaseModel):
 def list_transactions(
     request: Request,
     db: Session = Depends(get_db),
+    transaction_id: int | None = Query(None, description="Narrow to a single transaction (focus deep-link)"),
     date_from: date | None = None,
     date_to: date | None = None,
     account_id: int | None = None,
@@ -85,6 +86,7 @@ def list_transactions(
     offset: int = Query(0, ge=0),
 ) -> dict:
     conditions = export_service.build_transaction_filters(
+        transaction_id=transaction_id,
         date_from=date_from,
         date_to=date_to,
         account_id=account_id,
