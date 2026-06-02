@@ -222,7 +222,12 @@ In the UI go to **Settings → Load demo data**, or:
 curl -X POST http://localhost:8099/api/backup/demo
 ```
 
-Then open the **Dashboard** (pick month *2026-05*) and **Transactions**.
+The demo set is generated **relative to today** — it spans the current month plus
+the previous two, across many vendors and categories, and includes two
+foreign-currency **trips** (so the **Travel** page populates) and a few
+**business** transactions with **VAT** (so the **Business** page shows reclaimable
+VAT). Open the **Dashboard**, then explore **Transactions**, **Travel** and
+**Business**; the **Trends** card shows the month-on-month shape.
 
 ## Testing
 
