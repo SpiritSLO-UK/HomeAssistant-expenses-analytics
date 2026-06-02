@@ -42,6 +42,21 @@ def _two_dp(value: Decimal) -> Decimal:
     return value.quantize(Decimal("0.01"))
 
 
+# Symbols for the common world currencies, used to label money amounts in the
+# heads-up details (an unknown code falls back to a "12.34 CODE" form).
+_CURRENCY_SYMBOLS = {
+    "GBP": "£", "USD": "$", "EUR": "€", "JPY": "¥", "CNY": "¥",
+    "AUD": "A$", "CAD": "C$", "CHF": "CHF ", "HKD": "HK$", "SGD": "S$", "NZD": "NZ$",
+}
+
+
+def _money(value: Decimal | str | float, currency: str) -> str:
+    """Format a money amount with the base-currency symbol (or code) for display."""
+    amount = _two_dp(Decimal(str(value)))
+    symbol = _CURRENCY_SYMBOLS.get(currency.upper())
+    return f"{symbol}{amount}" if symbol else f"{amount} {currency.upper()}"
+
+
 def _month_windows(ref: date, n: int) -> list[tuple[date, date]]:
     """The [start, end) windows for the n months ending with ref's month, oldest first."""
     windows: list[tuple[date, date]] = []
@@ -160,6 +175,7 @@ def _large_charges(
     ]
     flagged.sort(key=lambda pair: pair[0], reverse=True)
 
+    currency = settings_service.get_base_currency(db)
     items = []
     for amount, txn in flagged[:MAX_PER_DETECTOR]:
         items.append(
@@ -167,7 +183,7 @@ def _large_charges(
                 "type": "large_charge",
                 "severity": "warn",
                 "title": f"Large charge: {_txn_label(txn)}",
-                "detail": f"{_two_dp(amount)} — about {float(amount) / med:.1f}× your typical charge",
+                "detail": f"{_money(amount, currency)} — about {float(amount) / med:.1f}× your typical charge",
                 "amount": str(_two_dp(amount)),
                 "transaction_id": txn.id,
             }
@@ -194,6 +210,7 @@ def _category_spikes(
     if months_with_data < 2:  # not enough history to call anything a spike
         return []
 
+    currency = settings_service.get_base_currency(db)
     items = []
     for cid, (name, cur_total) in current.items():
         prior = prior_totals.get(cid, [])
@@ -209,7 +226,10 @@ def _category_spikes(
                     "type": "category_spike",
                     "severity": "warn" if cur_total > avg * 2 else "info",
                     "title": f"{name} spending is up",
-                    "detail": f"{_two_dp(cur_total)} this month vs {_two_dp(avg)} average ({pct:.0f}% higher)",
+                    "detail": (
+                        f"{_money(cur_total, currency)} this month vs "
+                        f"{_money(avg, currency)} average ({pct:.0f}% higher)"
+                    ),
                     "amount": str(_two_dp(cur_total)),
                     "category_id": cid,
                 }
@@ -237,6 +257,7 @@ def _new_merchants(
         if spend[key][1] is None:
             spend[key][1] = _txn_label(txn)
 
+    currency = settings_service.get_base_currency(db)
     items = []
     for key, (total, label) in spend.items():
         if key in prior_keys or total < NEW_MERCHANT_FLOOR:
@@ -246,7 +267,7 @@ def _new_merchants(
                 "type": "new_merchant",
                 "severity": "info",
                 "title": f"New merchant: {label}",
-                "detail": f"{_two_dp(total)} this month, not seen in the prior {history_months} months",
+                "detail": f"{_money(total, currency)} this month, not seen in the prior {history_months} months",
                 "amount": str(_two_dp(total)),
             }
         )
@@ -255,6 +276,7 @@ def _new_merchants(
 
 
 def _budget_alerts(db: Session, ref: date, *, account_ids: set[int] | None = None) -> list[dict]:
+    currency = settings_service.get_base_currency(db)
     items = []
     for b in budget_service.summary(db, ref, account_ids=account_ids):
         if b["status"] == "over":
@@ -263,7 +285,7 @@ def _budget_alerts(db: Session, ref: date, *, account_ids: set[int] | None = Non
                     "type": "budget",
                     "severity": "warn",
                     "title": f"Budget over: {b['name']}",
-                    "detail": f"{b['spent']} of {b['amount']} ({b['percent']}%)",
+                    "detail": f"{_money(b['spent'], currency)} of {_money(b['amount'], currency)} ({b['percent']}%)",
                     "amount": b["spent"],
                     "budget_id": b["budget_id"],
                 }
@@ -274,7 +296,7 @@ def _budget_alerts(db: Session, ref: date, *, account_ids: set[int] | None = Non
                     "type": "budget",
                     "severity": "info",
                     "title": f"Budget near limit: {b['name']}",
-                    "detail": f"{b['spent']} of {b['amount']} ({b['percent']}%)",
+                    "detail": f"{_money(b['spent'], currency)} of {_money(b['amount'], currency)} ({b['percent']}%)",
                     "amount": b["spent"],
                     "budget_id": b["budget_id"],
                 }
@@ -287,6 +309,7 @@ def _subscription_alerts(db: Session, *, account_ids: set[int] | None = None) ->
     in the heads-up card. Always relative to *today* (a "now" concern), regardless
     of the month being viewed."""
     data = subscription_service.alerts(db, account_ids=account_ids)
+    currency = settings_service.get_base_currency(db)
     items = []
     for sub in data["overdue"]:
         items.append(
@@ -294,7 +317,7 @@ def _subscription_alerts(db: Session, *, account_ids: set[int] | None = None) ->
                 "type": "subscription",
                 "severity": "warn",
                 "title": f"Subscription not seen: {sub['name']}",
-                "detail": f"{sub['amount']} was expected {sub['expected_date']} "
+                "detail": f"{_money(sub['amount'], currency)} was expected {sub['expected_date']} "
                 f"({sub['days_overdue']} day(s) ago) — check it wasn't missed or cancelled",
                 "amount": sub["amount"],
                 "subscription_id": sub["id"],
@@ -307,7 +330,7 @@ def _subscription_alerts(db: Session, *, account_ids: set[int] | None = None) ->
                 "type": "subscription",
                 "severity": "info",
                 "title": f"Subscription {when}: {sub['name']}",
-                "detail": f"{sub['amount']} on {sub['next_expected_date']}",
+                "detail": f"{_money(sub['amount'], currency)} on {sub['next_expected_date']}",
                 "amount": sub["amount"],
                 "subscription_id": sub["id"],
             }
