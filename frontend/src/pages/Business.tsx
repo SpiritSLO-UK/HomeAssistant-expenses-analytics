@@ -1,8 +1,27 @@
+import { Fragment, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { exportTransactionsCsv, getBusinessSummary } from "../api/client";
+import {
+  exportTransactionsCsv,
+  getBusinessSummary,
+  listTransactions,
+  type BusinessPeriodRow,
+  type Transaction,
+} from "../api/client";
+
+const PERIODS: { key: string; label: string }[] = [
+  { key: "day", label: "Day" },
+  { key: "week", label: "Week" },
+  { key: "month", label: "Month" },
+  { key: "year", label: "Year" },
+];
 
 export default function Business() {
-  const summary = useQuery({ queryKey: ["business-summary"], queryFn: getBusinessSummary });
+  const [period, setPeriod] = useState("month");
+  const [openPeriod, setOpenPeriod] = useState<string | null>(null);
+  const summary = useQuery({
+    queryKey: ["business-summary", period],
+    queryFn: () => getBusinessSummary(period),
+  });
   const exportCsv = useMutation({
     mutationFn: () => exportTransactionsCsv({ is_business: true }),
     onError: (e) => window.alert(String(e instanceof Error ? e.message : e)),
@@ -84,25 +103,81 @@ export default function Business() {
             </div>
           </div>
 
-          {s.by_month.length > 0 && (
-            <div className="card">
-              <h2 className="card__title">By month</h2>
-              <div className="table-wrap">
-                <table className="table">
-                  <thead>
-                    <tr><th>Month</th><th className="num">Spend ({cur})</th></tr>
-                  </thead>
-                  <tbody>
-                    {s.by_month.map((m) => (
-                      <tr key={m.month}><td>{m.month}</td><td className="num">{m.total}</td></tr>
-                    ))}
-                  </tbody>
-                </table>
+          <div className="card">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              <h2 className="card__title" style={{ margin: 0 }}>By period</h2>
+              <div className="form-row" style={{ gap: 4 }} title="Group business spend by">
+                {PERIODS.map((p) => (
+                  <button
+                    key={p.key}
+                    className={"btn btn--sm" + (period === p.key ? "" : " btn--ghost")}
+                    onClick={() => { setPeriod(p.key); setOpenPeriod(null); }}
+                  >
+                    {p.label}
+                  </button>
+                ))}
               </div>
             </div>
-          )}
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr><th>Period</th><th className="num">Spend ({cur})</th><th className="num">VAT ({cur})</th><th className="num">Txns</th></tr>
+                </thead>
+                <tbody>
+                  {s.by_period.map((p) => {
+                    const open = openPeriod === p.period;
+                    return (
+                      <Fragment key={p.period}>
+                        <tr>
+                          <td>
+                            <button className="link-btn" style={{ fontWeight: 600 }} onClick={() => setOpenPeriod(open ? null : p.period)}>
+                              {open ? "▾ " : "▸ "}{p.label}
+                            </button>
+                          </td>
+                          <td className="num">{p.total}</td>
+                          <td className="num">{p.vat}</td>
+                          <td className="num">{p.count}</td>
+                        </tr>
+                        {open && (
+                          <tr>
+                            <td colSpan={4} style={{ background: "rgba(127,127,127,0.05)" }}>
+                              <PeriodTxns row={p} cur={cur} />
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </>
       )}
     </div>
+  );
+}
+
+function PeriodTxns({ row, cur }: { row: BusinessPeriodRow; cur: string }) {
+  const q = useQuery({
+    queryKey: ["business-period-txns", row.start, row.end],
+    queryFn: () =>
+      listTransactions({ is_business: true, date_from: row.start, date_to: row.end, limit: 200 }),
+  });
+  if (q.isLoading || !q.data) return <p className="muted" style={{ margin: "6px 0" }}>Loading…</p>;
+  const items: Transaction[] = q.data.items;
+  if (items.length === 0) return <p className="muted" style={{ margin: "6px 0" }}>No transactions.</p>;
+  return (
+    <ul className="kv" style={{ margin: "6px 0", maxWidth: 560 }}>
+      {items.map((t) => (
+        <li key={t.id}>
+          <span><span className="muted">{t.transaction_date}</span> · {t.merchant_raw || t.description_raw}</span>
+          <span style={{ whiteSpace: "nowrap" }}>
+            {t.base_amount ?? t.amount} {cur}
+            {t.vat_amount ? <span className="muted"> · VAT {t.vat_amount}</span> : null}
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }

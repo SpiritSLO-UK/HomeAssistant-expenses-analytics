@@ -1495,24 +1495,30 @@ export interface BusinessCategoryRow {
   vat: string;
 }
 
-export interface BusinessMonthRow {
-  month: string;
+export interface BusinessPeriodRow {
+  period: string;
+  label: string;
+  start: string;
+  end: string;
   total: string;
+  vat: string;
+  count: number;
 }
 
 export interface BusinessSummary {
   currency: string;
+  period: string;
   total: string;
   vat: string;
   transaction_count: number;
   first: string | null;
   last: string | null;
   by_category: BusinessCategoryRow[];
-  by_month: BusinessMonthRow[];
+  by_period: BusinessPeriodRow[];
 }
 
-export function getBusinessSummary(): Promise<BusinessSummary> {
-  return fetchJson<BusinessSummary>("api/business/summary");
+export function getBusinessSummary(period = "month"): Promise<BusinessSummary> {
+  return fetchJson<BusinessSummary>(`api/business/summary?period=${encodeURIComponent(period)}`);
 }
 
 // --- Data retention (spec §28; backlog #78, #147) ---
