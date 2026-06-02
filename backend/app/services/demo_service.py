@@ -31,8 +31,16 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Transaction
-from app.services import fx_service, import_service, settings_service
+from app.models import Account, Budget, Category, Project, Rule, Transaction, User
+from app.services import (
+    allowance_service,
+    fx_service,
+    import_service,
+    review_service,
+    savings_service,
+    settings_service,
+)
+from app.services.household_service import get_or_create_default_household
 
 # Representative GBP-per-1-unit rates for the demo's foreign spend. Manual rates
 # are seeded for each foreign row's date so the rows convert to base (otherwise a
@@ -224,9 +232,185 @@ def _enrich(db: Session, statement_id: int, specs: list[_Spec]) -> None:
     db.commit()
 
 
+# --- Example data so every page has something to show ------------------------
+# One example of each feature, seeded after the transactions land. Each piece is
+# guarded by a recognizable name/id so a re-run within the same day is a no-op.
+_DEMO_RULE_NAME = "Demo: Deliveroo → Eating Out"
+# (external_id, display_name, role)
+_DEMO_MEMBER = ("demo-member", "Sam (partner)", "member")
+_DEMO_CHILD = ("demo-child", "Alex (age 12)", "child")
+
+
+def _cat_id(db: Session, name: str) -> int | None:
+    return db.scalar(select(Category.id).where(Category.name == name))
+
+
+def _seed_rule(db: Session) -> None:
+    """One categorisation rule so the Rules page isn't empty."""
+    if db.scalar(select(Rule.id).where(Rule.name == _DEMO_RULE_NAME)):
+        return
+    eating = _cat_id(db, "Eating Out")
+    db.add(
+        Rule(
+            household_id=get_or_create_default_household(db).id,
+            name=_DEMO_RULE_NAME,
+            priority=200,
+            condition_type="description_contains",
+            condition_value="DELIVEROO",
+            action_type="set_category",
+            action_value=str(eating) if eating else None,
+            created_from="user",
+        )
+    )
+
+
+def _assign_project(db: Session, name: str, txns: list[Transaction], *, budget: Decimal) -> None:
+    if not txns or db.scalar(select(Project.id).where(Project.name == name)):
+        return
+    dates = [t.transaction_date for t in txns]
+    project = Project(
+        household_id=get_or_create_default_household(db).id,
+        name=name,
+        status="active",
+        budget_amount=budget,
+        start_date=min(dates),
+        end_date=max(dates),
+    )
+    db.add(project)
+    db.flush()
+    for t in txns:
+        t.project_id = project.id
+
+
+def _seed_projects(db: Session, rows: list[Transaction]) -> None:
+    """Two projects with transactions assigned (one drawn from the Spain trip)."""
+    eur = [t for t in rows if t.currency == "EUR"]
+    _assign_project(db, "Spain City Break", eur, budget=Decimal("1200.00"))
+    office_desc = {"AMAZON OFFICE SUPPLIES", "SCREWFIX DIRECT", "ARGOS RETAIL"}
+    office = [t for t in rows if t.description_raw in office_desc]
+    _assign_project(db, "Home Office Setup", office, budget=Decimal("500.00"))
+
+
+def _seed_budget(db: Session, name: str, *, amount: Decimal, category: str | None) -> None:
+    if db.scalar(select(Budget.id).where(Budget.name == name, Budget.owner_user_id.is_(None))):
+        return
+    db.add(
+        Budget(
+            household_id=get_or_create_default_household(db).id,
+            name=name,
+            category_id=_cat_id(db, category) if category else None,
+            period="monthly",
+            amount=amount,
+            alert_threshold_percent=80,
+        )
+    )
+
+
+def _seed_budgets(db: Session) -> None:
+    """A couple of category budgets + a total, so the Budgets page shows progress."""
+    _seed_budget(db, "Groceries", amount=Decimal("450.00"), category="Groceries")
+    _seed_budget(db, "Eating Out", amount=Decimal("150.00"), category="Eating Out")
+    _seed_budget(db, "Monthly spending", amount=Decimal("2000.00"), category=None)
+
+
+def _seed_savings(db: Session) -> None:
+    """A savings account with a growing balance history + two goals."""
+    if db.scalar(
+        select(Account.id).where(
+            Account.name == "Emergency Fund", Account.account_type == savings_service.SAVINGS_TYPE
+        )
+    ):
+        return
+    account = savings_service.create_account(db, name="Emergency Fund", institution="Demo Building Society")
+    today = date.today()
+    for days_ago, bal in ((90, "4000"), (60, "4600"), (30, "5300"), (0, "5900")):
+        savings_service.record_balance(
+            db, account.id, as_of=today - timedelta(days=days_ago), balance=Decimal(bal)
+        )
+    savings_service.create_goal(
+        db, name="6 months' expenses", target_amount=Decimal("10000.00"), account_id=account.id
+    )
+    savings_service.create_goal(
+        db, name="New car fund", target_amount=Decimal("8000.00"), current_amount=Decimal("3200.00")
+    )
+
+
+def _seed_household(db: Session, rows: list[Transaction]) -> None:
+    """A second member + a child with a pocket-money budget and a few allowance
+    allocations (a non-destructive overlay on the parent's own spend)."""
+    household = get_or_create_default_household(db)
+    for ext, name, role in (_DEMO_MEMBER, _DEMO_CHILD):
+        if db.scalar(select(User.id).where(User.external_id == ext)):
+            continue
+        db.add(
+            User(
+                household_id=household.id,
+                external_id=ext,
+                display_name=name,
+                role=role,
+                status="approved",
+                is_active=True,
+            )
+        )
+    db.flush()
+
+    child = db.scalar(select(User).where(User.external_id == _DEMO_CHILD[0]))
+    if child is None:
+        return
+    if not db.scalar(select(Budget.id).where(Budget.owner_user_id == child.id)):
+        db.add(
+            Budget(
+                household_id=household.id,
+                owner_user_id=child.id,
+                name="Pocket money",
+                period="monthly",
+                amount=Decimal("20.00"),
+                alert_threshold_percent=80,
+            )
+        )
+        db.flush()
+    if not allowance_service.list_allocations(db, child.id):
+        treats = {"COSTA COFFEE 482", "ODEON CINEMA", "NANDOS DARTFORD"}
+        for t in [r for r in rows if r.description_raw in treats][:4]:
+            allowance_service.create_allocation(db, child_id=child.id, transaction_id=t.id)
+
+
+def _seed_review_queue(db: Session, rows: list[Transaction]) -> None:
+    """Flag a few uncategorised foreign purchases for review so the Review Queue
+    (and the Needs-Review filter) aren't empty."""
+    uncategorised = [t for t in rows if t.category_id is None and not t.is_transfer][:4]
+    for t in uncategorised:
+        t.needs_review = True
+        t.review_reason = "unknown_category"
+        review_service.add(
+            db,
+            item_type="transaction",
+            item_id=t.id,
+            reason="unknown_category",
+            severity="warning",
+            suggested_action="Assign a category to this foreign purchase.",
+        )
+
+
+def _seed_examples(db: Session, statement_id: int) -> None:
+    """Seed one example of each feature so a fresh demo shows off every page.
+    Idempotent — each piece is guarded by a recognizable name/id, and a re-run
+    imports no new transactions so ``rows`` is empty."""
+    rows = list(
+        db.scalars(select(Transaction).where(Transaction.statement_id == statement_id)).all()
+    )
+    _seed_rule(db)
+    _seed_projects(db, rows)
+    _seed_budgets(db)
+    _seed_savings(db)
+    _seed_household(db, rows)
+    _seed_review_queue(db, rows)
+    db.commit()
+
+
 def load_demo(db: Session) -> dict:
-    """Import + enrich the demo dataset. Idempotent within a day (duplicates are
-    skipped); returns the import report."""
+    """Import + enrich the demo dataset, then seed an example of each feature.
+    Idempotent within a day (duplicates are skipped); returns the import report."""
     today = date.today()
     specs = _build_specs()
     csv_text = _build_csv(today, specs)
@@ -240,4 +424,5 @@ def load_demo(db: Session) -> dict:
     statement_id = result["import_id"]
     confirmed = import_service.confirm_import(db, statement_id)
     _enrich(db, statement_id, specs)
+    _seed_examples(db, statement_id)
     return confirmed["report"]
