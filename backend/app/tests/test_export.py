@@ -45,6 +45,19 @@ def test_transactions_csv_export_matches_list(client):
     assert len(rows) - 1 == total  # minus the header row
 
 
+def test_uncategorised_filter_partitions_and_exports(client):
+    """`uncategorised` filters on a missing category — distinct from the
+    needs_review flag — and the CSV export honours it (export == what you see)."""
+    client.post("/api/backup/demo")
+    all_total = client.get("/api/transactions", params={"limit": 500}).json()["total"]
+    unc = client.get("/api/transactions", params={"uncategorised": "true", "limit": 500}).json()["total"]
+    cat = client.get("/api/transactions", params={"uncategorised": "false", "limit": 500}).json()["total"]
+    assert unc > 0  # the demo seeds some uncategorised foreign purchases
+    assert unc + cat == all_total  # every row is either categorised or not
+    rows = _rows(client.get("/api/export/transactions.csv", params={"uncategorised": "true"}))
+    assert len(rows) - 1 == unc
+
+
 def test_transactions_csv_respects_filters(client):
     client.post("/api/backup/demo")
     full = _rows(client.get("/api/export/transactions.csv"))

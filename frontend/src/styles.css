@@ -231,6 +231,66 @@ body {
   cursor: pointer;
 }
 
+/* --- filter toggles (Transactions) --- */
+.filter-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.filter-toggles__label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+  margin-right: 2px;
+}
+
+.filter-toggles__sep {
+  width: 1px;
+  align-self: stretch;
+  min-height: 20px;
+  background: var(--border);
+  margin: 0 4px;
+}
+
+/* Each toggle is a self-contained pill so the box always hugs its label. */
+.chip-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.85rem;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+  background: var(--bg);
+}
+
+.chip-toggle:hover {
+  border-color: var(--sidebar-active);
+}
+
+.chip-toggle input {
+  margin: 0;
+  cursor: pointer;
+}
+
+/* Highlight an active toggle so the current filter is obvious. */
+.chip-toggle:has(input:checked) {
+  border-color: var(--sidebar-active);
+  background: color-mix(in srgb, var(--sidebar-active) 12%, transparent);
+  color: var(--sidebar-active);
+  font-weight: 600;
+}
+
+.filter-hint {
+  margin-top: 8px;
+}
+
 /* --- report chips --- */
 .report {
   display: flex;
