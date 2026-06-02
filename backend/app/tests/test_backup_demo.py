@@ -66,6 +66,20 @@ def test_demo_seeds_rule_projects_budgets(client):
     assert len(client.get("/api/budgets").json()) >= 1
 
 
+def test_demo_seeds_vendor_library(client):
+    """Real Vendor records are seeded and the demo transactions link to them."""
+    client.post("/api/backup/demo")
+    vendors = client.get("/api/vendors").json()
+    assert len(vendors) >= 10
+    by_name = {v["canonical_name"]: v["id"] for v in vendors}
+    assert "Tesco" in by_name
+    # Transactions are linked to the seeded vendor (merchant_id), not just text.
+    linked = client.get(
+        "/api/transactions", params={"vendor_id": by_name["Tesco"], "limit": 500}
+    ).json()
+    assert linked["total"] >= 1
+
+
 def test_demo_seeds_savings(client):
     """A savings account with balances + goals."""
     client.post("/api/backup/demo")
