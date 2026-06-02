@@ -241,6 +241,20 @@ _DEMO_RULE_NAME = "Demo: Deliveroo → Eating Out"
 _DEMO_MEMBER = ("demo-member", "Sam (partner)", "member")
 _DEMO_CHILD = ("demo-child", "Alex (age 12)", "child")
 
+# The partner member's OWN monthly statement, imported onto their own account —
+# the normal household flow (each member imports their own statement), and what
+# gives the per-member filter + Mine/Shared/All toggle real data. Distinct
+# merchants so it reads as Sam's own spend. (day, description, amount)
+_MEMBER_SPEND: list[tuple[int, str, str]] = [
+    (2, "EE MOBILE", "21.00"),
+    (6, "ANYTIME FITNESS", "32.99"),
+    (10, "SPOTIFY DUO", "16.99"),
+    (14, "UBER TRIP", "13.40"),
+    (18, "ASOS.COM", "44.50"),
+    (22, "GAIL'S BAKERY", "7.80"),
+    (27, "GREGGS DARTFORD", "6.40"),
+]
+
 
 def _cat_id(db: Session, name: str) -> int | None:
     return db.scalar(select(Category.id).where(Category.name == name))
@@ -443,6 +457,64 @@ def _seed_household(db: Session, rows: list[Transaction]) -> None:
             allowance_service.create_allocation(db, child_id=child.id, transaction_id=t.id)
 
 
+def _claim_main_account(db: Session, rows: list[Transaction]) -> None:
+    """Give the main imported account an owner (the household owner), so the
+    per-member filter + Mine/Shared/All toggle attribute its spend to that person.
+    Without an owner every account is household-shared and those views are empty.
+    Idempotent: a re-run imports no rows, so this is a no-op."""
+    if not rows:
+        return
+    owner = db.scalar(
+        select(User).where(User.role == "owner", User.status == "approved").order_by(User.id)
+    )
+    main = db.get(Account, rows[0].account_id)
+    if owner is not None and main is not None and main.owner_user_id is None:
+        main.owner_user_id = owner.id
+
+
+def _build_member_csv(today: date) -> str:
+    """The partner member's own statement (their monthly spend across the cycles)."""
+    specs = [
+        _Spec(cycle, day, desc, -Decimal(amt))
+        for cycle in range(_CYCLES)
+        for day, desc, amt in _MEMBER_SPEND
+    ]
+    return _build_csv(today, specs)
+
+
+def _import_member_statement(db: Session, today: date) -> dict | None:
+    """Import the partner member's OWN statement onto their own account — the
+    normal household flow (each member imports their own), and what gives the
+    per-member filter real data. Returns the import report (or None if the member
+    isn't present). Idempotent: a re-run dedups to zero new (scoped to the
+    member's account)."""
+    sam = db.scalar(select(User).where(User.external_id == _DEMO_MEMBER[0]))
+    if sam is None:
+        return None
+    account = db.scalar(select(Account).where(Account.owner_user_id == sam.id))
+    if account is None:
+        account = Account(
+            household_id=get_or_create_default_household(db).id,
+            name="Sam's Card",
+            institution="Monzo",
+            account_type="current_account",
+            currency=settings_service.get_base_currency(db),
+            owner_user_id=sam.id,
+            is_shared=False,
+        )
+        db.add(account)
+        db.flush()
+    result = import_service.create_import(
+        db,
+        filename="demo-sam.csv",
+        content=_build_member_csv(today).encode("utf-8"),
+        parser_id="curve_csv",
+        account_id=account.id,
+    )
+    confirmed = import_service.confirm_import(db, result["import_id"])
+    return confirmed["report"]
+
+
 def _seed_review_queue(db: Session, rows: list[Transaction]) -> None:
     """Flag a few uncategorised foreign purchases for review so the Review Queue
     (and the Needs-Review filter) aren't empty."""
@@ -473,6 +545,7 @@ def _seed_examples(db: Session, statement_id: int) -> None:
     _seed_budgets(db)
     _seed_savings(db)
     _seed_household(db, rows)
+    _claim_main_account(db, rows)
     _seed_review_queue(db, rows)
     db.commit()
 
@@ -495,10 +568,19 @@ def load_demo(db: Session) -> dict:
     _enrich(db, statement_id, specs)
     _seed_examples(db, statement_id)
 
+    # The partner member imports their own statement onto their own account (the
+    # normal household flow) so the per-member filter has data. Combine its counts
+    # into the report so "new == total transactions" stays true (idempotency).
+    report = dict(confirmed["report"])
+    member_report = _import_member_statement(db, today)
+    if member_report:
+        for key in ("rows_detected", "new", "duplicates", "errors"):
+            report[key] = report.get(key, 0) + member_report.get(key, 0)
+
     # Demo defaults to DEBUG logging so there's something to see in the Logs/
     # add-on panel while exploring (reversible from Settings → Logging).
     from app.logging import set_level
 
     settings_service.set_value(db, settings_service.LOG_LEVEL, "DEBUG")
     set_level("DEBUG")
-    return confirmed["report"]
+    return report
