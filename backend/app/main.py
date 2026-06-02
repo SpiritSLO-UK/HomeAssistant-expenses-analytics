@@ -187,6 +187,41 @@ async def _auth_guard(request: Request, call_next):
     return await call_next(request)
 
 
+# Mutating methods worth an audit-trail entry (reads are too noisy to log).
+_AUDIT_METHODS = ("POST", "PUT", "PATCH", "DELETE")
+
+
+@app.middleware("http")
+async def _audit_actions(request: Request, call_next):
+    """Record every mutating API call to the audit log (backlog: "track all user +
+    API actions"). Registered last so it's the OUTERMOST middleware: it runs after
+    the auth guard has resolved the actor and after the route has set the final
+    status. Best-effort — an audit write must never break the request, and no
+    request body is logged (privacy)."""
+    response = await call_next(request)
+    try:
+        path = request.url.path
+        if (
+            request.method in _AUDIT_METHODS
+            and path.startswith("/api/")
+            and not dbsession.is_locked()
+        ):
+            from app.services import audit_service
+
+            with dbsession.SessionLocal() as db:
+                audit_service.record_api_action(
+                    db,
+                    actor=getattr(request.state, "user_name", None),
+                    method=request.method,
+                    path=path,
+                    status=response.status_code,
+                )
+                db.commit()
+    except Exception:  # pragma: no cover - audit must never break the request
+        logger.warning("API-action audit failed", exc_info=True)
+    return response
+
+
 @app.exception_handler(dbsession.DatabaseLocked)
 async def _locked_handler(_request: Request, _exc: dbsession.DatabaseLocked):
     return JSONResponse(status_code=423, content={"detail": "Database is locked."})

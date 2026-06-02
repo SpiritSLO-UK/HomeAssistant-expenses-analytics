@@ -46,6 +46,23 @@ def record(
         logger.exception("Failed to write audit log for action=%s", action)
 
 
+def record_api_action(
+    db: Session, *, actor: str | None, method: str, path: str, status: int
+) -> None:
+    """Generic per-request audit entry for any mutating API call (backlog: "track
+    all user + API actions in logs"). Complements the richer, action-specific
+    records elsewhere; intentionally logs no request body (privacy). Action is the
+    fixed label ``api_call`` so the Logs action-filter stays small; method/path/
+    status live in the details."""
+    record(
+        db,
+        action="api_call",
+        actor=actor,
+        entity_type="api",
+        details={"method": method, "path": path, "status": status},
+    )
+
+
 def recent(
     db: Session,
     *,
