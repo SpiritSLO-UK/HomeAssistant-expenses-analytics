@@ -30,6 +30,7 @@ export default function Transactions() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [needsReview, setNeedsReview] = useState(false);
+  const [uncategorisedOnly, setUncategorisedOnly] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [businessOnly, setBusinessOnly] = useState(false);
   const [page, setPage] = useState(0);
@@ -43,6 +44,7 @@ export default function Transactions() {
     date_from: dateFrom || undefined,
     date_to: dateTo || undefined,
     needs_review: needsReview || undefined,
+    uncategorised: uncategorisedOnly || undefined,
     is_business: businessOnly || undefined,
     include_archived: showArchived || undefined,
     limit: PAGE_SIZE,
@@ -231,19 +233,37 @@ export default function Transactions() {
           />
           <label>From <input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(0); }} /></label>
           <label>To <input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(0); }} /></label>
-          <label className="checkbox">
+        </div>
+        <div className="filter-toggles">
+          <span className="filter-toggles__label">Show only</span>
+          <label className="chip-toggle" title="Transactions that have no category assigned yet">
+            <input type="checkbox" checked={uncategorisedOnly} onChange={(e) => { setUncategorisedOnly(e.target.checked); setPage(0); }} />
+            <span>Uncategorised</span>
+          </label>
+          <label className="chip-toggle" title="Transactions flagged for you to check (low-confidence or imported from a PDF/photo)">
             <input type="checkbox" checked={needsReview} onChange={(e) => { setNeedsReview(e.target.checked); setPage(0); }} />
-            Needs review
+            <span>Needs review</span>
           </label>
-          <label className="checkbox">
-            <input type="checkbox" checked={showArchived} onChange={(e) => { setShowArchived(e.target.checked); setPage(0); }} />
-            Show archived
-          </label>
-          <label className="checkbox">
+          <label className="chip-toggle" title="Transactions marked as a business expense">
             <input type="checkbox" checked={businessOnly} onChange={(e) => { setBusinessOnly(e.target.checked); setPage(0); }} />
-            Business only
+            <span>Business</span>
+          </label>
+          <span className="filter-toggles__sep" aria-hidden="true" />
+          <label className="chip-toggle" title="Also include archived (aged-out) transactions, which are hidden by default">
+            <input type="checkbox" checked={showArchived} onChange={(e) => { setShowArchived(e.target.checked); setPage(0); }} />
+            <span>Include archived</span>
           </label>
         </div>
+        {needsReview && !uncategorisedOnly && (data?.total ?? 0) === 0 && (
+          <p className="muted filter-hint">
+            Nothing is flagged for review. Looking for transactions without a category?
+            {" "}
+            <button className="link-btn" onClick={() => { setNeedsReview(false); setUncategorisedOnly(true); setPage(0); }}>
+              Show uncategorised
+            </button>
+            {" "}instead.
+          </p>
+        )}
       </div>
 
       <div className="card">

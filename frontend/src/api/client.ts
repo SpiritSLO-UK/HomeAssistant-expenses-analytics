@@ -198,6 +198,7 @@ export interface TransactionFilters {
   project_id?: number;
   tag_id?: number;
   needs_review?: boolean;
+  uncategorised?: boolean;
   is_business?: boolean;
   include_archived?: boolean;
   limit?: number;

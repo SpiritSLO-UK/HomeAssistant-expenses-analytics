@@ -60,6 +60,7 @@ def build_transaction_filters(
     project_id: int | None = None,
     tag_id: int | None = None,
     needs_review: bool | None = None,
+    uncategorised: bool | None = None,
     is_business: bool | None = None,
     amount_min: Decimal | None = None,
     amount_max: Decimal | None = None,
@@ -92,6 +93,14 @@ def build_transaction_filters(
         conditions.append(Transaction.tags.any(Tag.id == tag_id))
     if needs_review is not None:
         conditions.append(Transaction.needs_review.is_(needs_review))
+    if uncategorised is not None:
+        # "Uncategorised" = no category assigned. This is distinct from
+        # needs_review (a flag set on low-confidence/PDF imports): a transaction
+        # can be uncategorised without being flagged, and vice versa.
+        conditions.append(
+            Transaction.category_id.is_(None) if uncategorised
+            else Transaction.category_id.is_not(None)
+        )
     if is_business is not None:
         conditions.append(Transaction.is_business.is_(is_business))
     if amount_min is not None:
