@@ -56,6 +56,59 @@ def test_demo_populates_business(client):
     assert len(summary["by_category"]) >= 2
 
 
+def test_demo_seeds_rule_projects_budgets(client):
+    """One example rule, ≥2 projects (with a budget), and household budgets."""
+    client.post("/api/backup/demo")
+    assert len(client.get("/api/rules").json()) >= 1
+    projects = client.get("/api/projects").json()
+    assert len(projects) >= 2
+    assert any(p.get("budget_amount") for p in projects)
+    assert len(client.get("/api/budgets").json()) >= 1
+
+
+def test_demo_seeds_savings(client):
+    """A savings account with balances + goals."""
+    client.post("/api/backup/demo")
+    s = client.get("/api/savings/summary").json()
+    assert Decimal(s["total_savings"]) > 0
+    assert len(s["accounts"]) >= 1
+    assert len(s["goals"]) >= 1
+
+
+def test_demo_seeds_household_and_allowance(client):
+    """A second member + a child with allowance allocations and a pocket-money budget."""
+    client.get("/api/users/me")  # owner row
+    client.post("/api/backup/demo")
+    users = client.get("/api/users").json()
+    assert {"member", "child"} <= {u["role"] for u in users}
+    child = next(u for u in users if u["role"] == "child")
+    summary = client.get(f"/api/allowance/summary?user_id={child['id']}").json()
+    assert len(summary["items"]) >= 1  # allocations
+    assert len(summary["budgets"]) >= 1  # pocket-money budget
+
+
+def test_demo_seeds_review_queue(client):
+    """A few uncategorised purchases are flagged for review."""
+    client.post("/api/backup/demo")
+    assert len(client.get("/api/review").json()) >= 1
+    assert client.get("/api/transactions?needs_review=true").json()["total"] >= 1
+
+
+def test_demo_examples_are_idempotent(client):
+    """Re-loading the demo doesn't duplicate the seeded examples."""
+    client.post("/api/backup/demo")
+    rules = len(client.get("/api/rules").json())
+    projects = len(client.get("/api/projects").json())
+    users = len(client.get("/api/users").json())
+    accounts = len(client.get("/api/savings/summary").json()["accounts"])
+
+    client.post("/api/backup/demo")
+    assert len(client.get("/api/rules").json()) == rules
+    assert len(client.get("/api/projects").json()) == projects
+    assert len(client.get("/api/users").json()) == users
+    assert len(client.get("/api/savings/summary").json()["accounts"]) == accounts
+
+
 def test_database_backup_download(client):
     client.post("/api/backup/demo")
     res = client.get("/api/backup/database")
