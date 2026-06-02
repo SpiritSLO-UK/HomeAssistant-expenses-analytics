@@ -78,3 +78,22 @@ def test_actions_endpoint_lists_distinct_sorted(client):
     assert "update_user" in actions
     assert actions == sorted(actions)
     assert len(actions) == len(set(actions))
+
+
+def test_all_mutating_api_calls_are_audited(client):
+    """Every mutating (non-GET) /api request is logged as a generic `api_call`
+    entry with the actor + method + path + status (backlog: track all actions)."""
+    client.get("/api/users/me")  # owner (a GET — must NOT be logged)
+    client.post("/api/backup/demo")  # a mutating call → one api_call entry
+
+    log = client.get("/api/logs/activity", params={"action": "api_call"}).json()
+    assert log, "mutating calls should produce api_call audit entries"
+    top = log[0]  # newest first → the demo POST
+    assert top["actor"]  # actor resolved by the auth guard, not empty
+    assert top["details"]["method"] == "POST"
+    assert top["details"]["path"].startswith("/api/")
+    assert top["details"]["status"] == 200
+    # No GET was logged (reads are intentionally excluded as too noisy).
+    assert all(e["details"]["method"] != "GET" for e in log)
+    # The label shows up in the action-filter list.
+    assert "api_call" in client.get("/api/logs/actions").json()
