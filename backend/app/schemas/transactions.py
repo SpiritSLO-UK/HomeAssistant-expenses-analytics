@@ -46,6 +46,8 @@ class TransactionOut(BaseModel):
     is_transfer: bool
     is_income: bool
     is_duplicate: bool
+    is_business: bool
+    vat_amount: Decimal | None
     needs_review: bool
     review_reason: str | None
     confidence_score: float | None
@@ -76,6 +78,8 @@ class TransactionUpdate(BaseModel):
     merchant_id: int | None = None
     is_transfer: bool | None = None
     is_income: bool | None = None
+    is_business: bool | None = None
+    vat_amount: Decimal | None = None
     needs_review: bool | None = None
     review_reason: str | None = None
 

@@ -166,6 +166,13 @@ def set_fields(db: Session, receipt: Receipt, **fields) -> Receipt:
     return receipt
 
 
+def _propagate_vat(txn: Transaction, receipt: Receipt) -> None:
+    """Carry a receipt's VAT onto its matched transaction (business/VAT receipts),
+    without clobbering a VAT amount the user already set."""
+    if receipt.vat_amount is not None and txn.vat_amount is None:
+        txn.vat_amount = receipt.vat_amount
+
+
 def _flag(db: Session, receipt: Receipt, reason: str, action: str) -> None:
     review_service.add(
         db, item_type="receipt", item_id=receipt.id, reason=reason,
@@ -277,6 +284,7 @@ def match(db: Session, receipt: Receipt, mode: str | None = None) -> dict:
         if auto:
             receipt.needs_review = False
             review_service.resolve_for(db, item_type="receipt", item_id=receipt.id, reason="receipt_unmatched")
+            _propagate_vat(best_txn, receipt)
             # Processed & matched → optionally drop the original (backlog #147).
             if settings_service.get_receipt_delete_after_processing(db):
                 drop_original(db, receipt, commit=False)
@@ -314,6 +322,7 @@ def confirm_match(db: Session, receipt: Receipt, transaction_id: int) -> Transac
     receipt.needs_review = False
     review_service.resolve_for(db, item_type="receipt", item_id=receipt.id, reason="receipt_unmatched")
     review_service.resolve_for(db, item_type="receipt", item_id=receipt.id, reason="low_confidence")
+    _propagate_vat(txn, receipt)
     # Processed & matched → optionally drop the original (backlog #147).
     if settings_service.get_receipt_delete_after_processing(db):
         drop_original(db, receipt, commit=False)

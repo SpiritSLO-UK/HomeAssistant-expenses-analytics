@@ -57,6 +57,10 @@ class Transaction(Base, TimestampMixin):
     is_transfer: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_income: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_duplicate: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Business expense (vs personal) + the VAT portion in the txn's own currency
+    # (business/VAT receipts). Default off/NULL; no normal aggregate reads these.
+    is_business: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    vat_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
     needs_review: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     review_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
     confidence_score: Mapped[float | None] = mapped_column(Float, nullable=True)

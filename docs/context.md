@@ -647,6 +647,20 @@ image suffixes/magic-bytes to `image_statement`; the Import UI accepts `image/*`
 clearly when the OCR engine/binary is absent. The text→rows step stays engine-free + unit-tested;
 tests mock the OCR hop (`tests/test_scanned_statement.py`). No migration.
 
+## Business / VAT expenses (backlog: corporate receipts)
+
+`transactions.is_business` (bool) + `transactions.vat_amount` (Numeric, in the txn's
+own currency) — migration `d4e5f6a7b8c9`. No normal aggregate reads them, so they're
+inert until a txn is flagged. `business_service.summary` (read-only, account-scoped +
+archived-excluded) totals business money-out + reclaimable VAT (converted to base via
+each txn's `fx_rate`), by category and month. API `routes_business` `/api/business/summary`;
+the CSV reuses `/api/export/transactions.csv?is_business=true` (the transactions CSV now
+carries `is_business` + `vat_amount` columns; `build_transaction_filters` gained an
+`is_business` filter, threaded through the list + export routes). `receipt_service`
+propagates a matched receipt's `vat_amount` onto the txn (without clobbering a manual value).
+Frontend: `pages/Business.tsx` (💼) + a per-row business toggle, VAT prompt, and "Business
+only" filter on Transactions. `tests/test_business.py`.
+
 ## Open questions / to scope
 
 - **#29 FX coverage** — Frankfurter is ECB (~30 currencies); add a wider source

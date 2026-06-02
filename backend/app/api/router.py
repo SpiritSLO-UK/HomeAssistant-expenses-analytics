@@ -11,6 +11,7 @@ from app.api import (
     routes_auth,
     routes_backup,
     routes_budgets,
+    routes_business,
     routes_categories,
     routes_dashboard,
     routes_export,
@@ -64,3 +65,4 @@ api_router.include_router(routes_export.router)
 api_router.include_router(routes_allowance.router)
 api_router.include_router(routes_accounts.router)
 api_router.include_router(routes_travel.router)
+api_router.include_router(routes_business.router)

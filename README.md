@@ -124,6 +124,10 @@ Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md
 - **Travel / spend-abroad** — a **Travel** page groups foreign-currency spend by
   currency (with a friendly country label) and **auto-detects trips** from clusters
   of foreign spend; turn any trip into a project (with a budget) in one click.
+- **Business expenses / VAT** — flag a transaction as **business** (per-row toggle
+  + a "business only" filter), capture its **VAT** (by hand or auto-filled from a
+  matched receipt), and a **Business** page totals business spend + reclaimable VAT
+  by category & month with a CSV export for claiming.
 - **Home Assistant sensors** — optional MQTT discovery publishes spend/income/net,
   review count, per-budget progress, per-project totals and monthly subscriptions.
 - **Privacy & safety** — strict local by default, redaction, backup/restore,
