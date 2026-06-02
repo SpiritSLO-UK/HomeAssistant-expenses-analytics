@@ -222,15 +222,19 @@ export default function Users() {
                       </td>
                       <td className="muted">{u.last_seen_at ? u.last_seen_at.replace("T", " ").slice(0, 16) : "—"}</td>
                       <td>
-                        <button
-                          className="link-btn"
-                          onClick={() => {
-                            if (window.confirm(`Remove "${u.display_name}"? They lose all access.`))
-                              doRemove(u.id);
-                          }}
-                        >
-                          remove
-                        </button>
+                        {isMe ? (
+                          <span className="muted" title="You can't delete your own account">—</span>
+                        ) : (
+                          <button
+                            className="link-btn"
+                            onClick={() => {
+                              if (window.confirm(`Remove "${u.display_name}"? They lose all access.`))
+                                doRemove(u.id);
+                            }}
+                          >
+                            remove
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );
