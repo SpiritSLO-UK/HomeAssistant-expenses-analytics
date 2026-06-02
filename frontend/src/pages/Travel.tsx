@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createProjectFromTrip,
@@ -15,6 +15,7 @@ export default function Travel() {
   const qc = useQueryClient();
   const [gapDays, setGapDays] = useState(14);
   const [msg, setMsg] = useState<string | null>(null);
+  const [openTrip, setOpenTrip] = useState<string | null>(null);
 
   const byCurrency = useQuery({ queryKey: ["travel-by-currency"], queryFn: getTravelByCurrency });
   const trips = useQuery({ queryKey: ["travel-trips", gapDays], queryFn: () => getTravelTrips(gapDays) });
@@ -115,23 +116,54 @@ export default function Travel() {
                 </tr>
               </thead>
               <tbody>
-                {trips.data.map((trip) => (
-                  <tr key={`${trip.first}-${trip.last}-${trip.currencies.join(",")}`}>
-                    <td style={{ whiteSpace: "nowrap" }}>{fmtRange(trip.first, trip.last)}</td>
-                    <td>{trip.label} <span className="muted">({trip.currencies.join(", ")})</span></td>
-                    <td className="num">{trip.base_total} {trip.base_currency}</td>
-                    <td className="num">{trip.transaction_count}</td>
-                    <td>
-                      <button
-                        className="btn btn--sm"
-                        disabled={makeProject.isPending}
-                        onClick={() => createFor(trip)}
-                      >
-                        Create project
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {trips.data.map((trip) => {
+                  const key = `${trip.first}-${trip.last}-${trip.currencies.join(",")}`;
+                  const open = openTrip === key;
+                  return (
+                    <Fragment key={key}>
+                      <tr>
+                        <td style={{ whiteSpace: "nowrap" }}>
+                          <button className="link-btn" style={{ fontWeight: 600 }} onClick={() => setOpenTrip(open ? null : key)}>
+                            {open ? "▾ " : "▸ "}{fmtRange(trip.first, trip.last)}
+                          </button>
+                        </td>
+                        <td>{trip.label} <span className="muted">({trip.currencies.join(", ")})</span></td>
+                        <td className="num">{trip.base_total} {trip.base_currency}</td>
+                        <td className="num">{trip.transaction_count}</td>
+                        <td>
+                          <button
+                            className="btn btn--sm"
+                            disabled={makeProject.isPending}
+                            onClick={() => createFor(trip)}
+                          >
+                            Create project
+                          </button>
+                        </td>
+                      </tr>
+                      {open && (
+                        <tr>
+                          <td colSpan={5} style={{ background: "rgba(127,127,127,0.05)" }}>
+                            <ul className="kv" style={{ margin: "6px 0", maxWidth: 560 }}>
+                              {trip.transactions.map((t) => (
+                                <li key={t.id}>
+                                  <span><span className="muted">{t.transaction_date}</span> · {t.description}</span>
+                                  <span style={{ whiteSpace: "nowrap" }}>
+                                    {t.amount} {t.currency}
+                                    <span className="muted"> · ≈ {t.base_amount} {trip.base_currency}</span>
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                            <p className="muted" style={{ margin: "0 0 6px", fontSize: "0.8rem" }}>
+                              Tip: <strong>Create project</strong> groups these into a project — then add more
+                              spend from the Transactions page by setting a row's <strong>Project</strong>.
+                            </p>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>

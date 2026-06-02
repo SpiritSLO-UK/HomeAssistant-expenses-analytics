@@ -74,6 +74,10 @@ def test_detect_trips_clusters_by_gap(db):
     assert trips[0]["currencies"] == ["USD"]
     assert trips[1]["currencies"] == ["EUR"]
     assert trips[1]["transaction_count"] == 2
+    # Each trip carries its transactions for the drill-down (expand-in-place).
+    assert len(trips[1]["transactions"]) == 2
+    txn = trips[1]["transactions"][0]
+    assert {"id", "transaction_date", "description", "amount", "currency", "base_amount"} <= set(txn)
 
 
 def test_create_project_from_trip_assigns_txns(db):

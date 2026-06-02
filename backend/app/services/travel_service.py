@@ -93,11 +93,25 @@ def by_currency(db: Session, *, account_ids: set[int] | None = None) -> dict:
     return {"base_currency": base, "currencies": rows}
 
 
+def _trip_txn(t: Transaction) -> dict:
+    """Lightweight per-transaction view for the trip drill-down (spend shown
+    positive, in both the original currency and base)."""
+    return {
+        "id": t.id,
+        "transaction_date": t.transaction_date.isoformat(),
+        "description": t.merchant_raw or t.description_raw,
+        "amount": str(-t.amount),
+        "currency": t.currency,
+        "base_amount": str(-t.base_amount),
+    }
+
+
 def detect_trips(
     db: Session, *, account_ids: set[int] | None = None, gap_days: int = DEFAULT_TRIP_GAP_DAYS
 ) -> list[dict]:
     """Cluster foreign-currency spend into trips: a gap longer than ``gap_days``
-    between consecutive foreign transactions starts a new trip. Newest first."""
+    between consecutive foreign transactions starts a new trip. Newest first.
+    Each trip carries its ``transactions`` so the UI can expand it (drill-down)."""
     trips: list[dict] = []
     current: dict | None = None
     prev_date = None
@@ -105,6 +119,7 @@ def detect_trips(
         if current is None or (t.transaction_date - prev_date).days > gap_days:
             current = {
                 "transaction_ids": [],
+                "transactions": [],
                 "currencies": set(),
                 "base_total": Decimal("0.00"),
                 "first": t.transaction_date,
@@ -112,6 +127,7 @@ def detect_trips(
             }
             trips.append(current)
         current["transaction_ids"].append(t.id)
+        current["transactions"].append(_trip_txn(t))
         current["currencies"].add(t.currency)
         current["base_total"] += -t.base_amount
         current["last"] = t.transaction_date
@@ -132,6 +148,10 @@ def detect_trips(
                 "base_currency": settings_service.get_base_currency(db),
                 "transaction_count": len(tr["transaction_ids"]),
                 "transaction_ids": tr["transaction_ids"],
+                # Sorted newest-first within the trip, to match the list elsewhere.
+                "transactions": sorted(
+                    tr["transactions"], key=lambda x: x["transaction_date"], reverse=True
+                ),
             }
         )
     out.sort(key=lambda r: r["last"], reverse=True)
