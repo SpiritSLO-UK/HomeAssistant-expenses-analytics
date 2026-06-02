@@ -32,59 +32,71 @@ def _ref(month: date | None) -> date:
     return month or date.today()
 
 
-def _scope(request: Request, db: Session, view: str = "all") -> set[int] | None:
-    """The caller's visible account-id set, narrowed by the Mine/Shared/All toggle."""
-    return auth_service.scoped_account_ids(db, auth_service.get_current_user(request, db), view)
+def _scope(
+    request: Request, db: Session, view: str = "all", member_id: int | None = None
+) -> set[int] | None:
+    """The caller's visible account-id set, narrowed by the Mine/Shared/All toggle
+    or — when ``member_id`` is given — to that member's own accounts (#66/#82)."""
+    return auth_service.resolved_account_scope(
+        db, auth_service.get_current_user(request, db), view=view, member_id=member_id
+    )
 
 
 @router.get("/summary", response_model=DashboardSummary)
 def summary(
-    request: Request, month: date | None = None, view: str = "all", db: Session = Depends(get_db)
+    request: Request, month: date | None = None, view: str = "all",
+    member_id: int | None = None, db: Session = Depends(get_db),
 ) -> dict:
-    return dashboard_service.summary(db, _ref(month), account_ids=_scope(request, db, view))
+    return dashboard_service.summary(db, _ref(month), account_ids=_scope(request, db, view, member_id))
 
 
 @router.get("/categories", response_model=list[CategoryBreakdownItem])
 def categories(
-    request: Request, month: date | None = None, view: str = "all", db: Session = Depends(get_db)
+    request: Request, month: date | None = None, view: str = "all",
+    member_id: int | None = None, db: Session = Depends(get_db),
 ) -> list[dict]:
-    return dashboard_service.category_breakdown(db, _ref(month), account_ids=_scope(request, db, view))
+    return dashboard_service.category_breakdown(db, _ref(month), account_ids=_scope(request, db, view, member_id))
 
 
 @router.get("/vendors", response_model=list[VendorBreakdownItem])
 def vendors(
-    request: Request, month: date | None = None, view: str = "all", db: Session = Depends(get_db)
+    request: Request, month: date | None = None, view: str = "all",
+    member_id: int | None = None, db: Session = Depends(get_db),
 ) -> list[dict]:
-    return dashboard_service.vendor_breakdown(db, _ref(month), account_ids=_scope(request, db, view))
+    return dashboard_service.vendor_breakdown(db, _ref(month), account_ids=_scope(request, db, view, member_id))
 
 
 @router.get("/projects", response_model=list[ProjectTotal])
-def projects(request: Request, db: Session = Depends(get_db)) -> list[dict]:
+def projects(request: Request, member_id: int | None = None, db: Session = Depends(get_db)) -> list[dict]:
     """Per-project totals for the dashboard "Project totals" card (spec §25.1).
     Projects span time, so this is all-time spend, not a single month."""
-    return project_service.totals(db, account_ids=_scope(request, db))
+    return project_service.totals(db, account_ids=_scope(request, db, member_id=member_id))
 
 
 @router.get("/subscriptions", response_model=DashboardSubscriptions)
-def subscriptions(request: Request, db: Session = Depends(get_db)) -> dict:
+def subscriptions(request: Request, member_id: int | None = None, db: Session = Depends(get_db)) -> dict:
     """Active subscriptions + monthly-equivalent total (spec §25.1)."""
-    return subscription_service.dashboard_summary(db, account_ids=_scope(request, db))
+    return subscription_service.dashboard_summary(db, account_ids=_scope(request, db, member_id=member_id))
 
 
 @router.get("/monthly", response_model=MonthlySeries)
 def monthly(
     request: Request, months: int = 6, month: date | None = None, view: str = "all",
-    db: Session = Depends(get_db),
+    member_id: int | None = None, db: Session = Depends(get_db),
 ) -> dict:
     """Spend/income/net time-series for the last N months + a trend summary
     (backlog #146). ``months`` is clamped to a sane 2–24."""
     return analytics_service.monthly_series(
-        db, _ref(month), months=max(2, min(months, 24)), account_ids=_scope(request, db, view)
+        db, _ref(month), months=max(2, min(months, 24)),
+        account_ids=_scope(request, db, view, member_id),
     )
 
 
 @router.get("/outliers", response_model=OutliersResponse)
-def outliers(request: Request, month: date | None = None, db: Session = Depends(get_db)) -> dict:
+def outliers(
+    request: Request, month: date | None = None,
+    member_id: int | None = None, db: Session = Depends(get_db),
+) -> dict:
     """Heads-up list: large charges, category spikes, new merchants, budget
     alerts (backlog #150). Conservative + gated on having enough history."""
-    return analytics_service.outliers(db, _ref(month), account_ids=_scope(request, db))
+    return analytics_service.outliers(db, _ref(month), account_ids=_scope(request, db, member_id=member_id))

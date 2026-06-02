@@ -43,6 +43,7 @@ def export_transactions(
     vendor_id: int | None = None,
     project_id: int | None = None,
     tag_id: int | None = None,
+    member_id: int | None = None,
     needs_review: bool | None = None,
     uncategorised: bool | None = None,
     is_business: bool | None = None,
@@ -52,7 +53,9 @@ def export_transactions(
     include_archived: bool = Query(False, description="Include archived (aged-out) transactions"),
 ) -> Response:
     """Export transactions as CSV, honouring the same filters as the list view."""
-    scope = auth_service.visible_account_scope(request, db)
+    scope = auth_service.resolved_account_scope(
+        db, auth_service.get_current_user(request, db), member_id=member_id
+    )
     conditions = export_service.build_transaction_filters(
         date_from=date_from,
         date_to=date_to,

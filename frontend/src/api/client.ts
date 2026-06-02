@@ -191,6 +191,7 @@ export interface TransactionListResponse {
 
 export interface TransactionFilters {
   transaction_id?: number;
+  member_id?: number;
   search?: string;
   date_from?: string;
   date_to?: string;
@@ -491,8 +492,8 @@ export async function deleteProject(id: number): Promise<void> {
   if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
 }
 
-export function getDashboardProjects(): Promise<ProjectTotal[]> {
-  return fetchJson<ProjectTotal[]>("api/dashboard/projects");
+export function getDashboardProjects(memberId?: number): Promise<ProjectTotal[]> {
+  return fetchJson<ProjectTotal[]>(`api/dashboard/projects${memberId ? `?member_id=${memberId}` : ""}`);
 }
 
 // --- Tags (spec §18.3) ---
@@ -552,8 +553,8 @@ export async function deleteSubscription(id: number): Promise<void> {
   if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
 }
 
-export function getDashboardSubscriptions(): Promise<DashboardSubscriptions> {
-  return fetchJson<DashboardSubscriptions>("api/dashboard/subscriptions");
+export function getDashboardSubscriptions(memberId?: number): Promise<DashboardSubscriptions> {
+  return fetchJson<DashboardSubscriptions>(`api/dashboard/subscriptions${memberId ? `?member_id=${memberId}` : ""}`);
 }
 
 export interface SubscriptionAlert extends Subscription {
@@ -937,24 +938,25 @@ export interface VendorBreakdownItem {
   count: number;
 }
 
-function dashQuery(month?: string, view?: string): string {
+function dashQuery(month?: string, view?: string, memberId?: number): string {
   const q = new URLSearchParams();
   if (month) q.set("month", month);
   if (view && view !== "all") q.set("view", view);  // Mine/Shared/All toggle (#66)
+  if (memberId) q.set("member_id", String(memberId));  // per-member filter (#66/#82)
   const qs = q.toString();
   return qs ? `?${qs}` : "";
 }
 
-export function getSummary(month?: string, view?: string): Promise<DashboardSummary> {
-  return fetchJson<DashboardSummary>(`api/dashboard/summary${dashQuery(month, view)}`);
+export function getSummary(month?: string, view?: string, memberId?: number): Promise<DashboardSummary> {
+  return fetchJson<DashboardSummary>(`api/dashboard/summary${dashQuery(month, view, memberId)}`);
 }
 
-export function getCategoryBreakdown(month?: string, view?: string): Promise<CategoryBreakdownItem[]> {
-  return fetchJson<CategoryBreakdownItem[]>(`api/dashboard/categories${dashQuery(month, view)}`);
+export function getCategoryBreakdown(month?: string, view?: string, memberId?: number): Promise<CategoryBreakdownItem[]> {
+  return fetchJson<CategoryBreakdownItem[]>(`api/dashboard/categories${dashQuery(month, view, memberId)}`);
 }
 
-export function getVendorBreakdown(month?: string, view?: string): Promise<VendorBreakdownItem[]> {
-  return fetchJson<VendorBreakdownItem[]>(`api/dashboard/vendors${dashQuery(month, view)}`);
+export function getVendorBreakdown(month?: string, view?: string, memberId?: number): Promise<VendorBreakdownItem[]> {
+  return fetchJson<VendorBreakdownItem[]>(`api/dashboard/vendors${dashQuery(month, view, memberId)}`);
 }
 
 // --- Trends & outliers (backlog #146, #150) ---
@@ -997,15 +999,20 @@ export interface OutliersResponse {
   items: OutlierItem[];
 }
 
-export function getMonthlySeries(months = 6, month?: string, view?: string): Promise<MonthlySeries> {
+export function getMonthlySeries(months = 6, month?: string, view?: string, memberId?: number): Promise<MonthlySeries> {
   const q = new URLSearchParams({ months: String(months) });
   if (month) q.set("month", month);
   if (view && view !== "all") q.set("view", view);
+  if (memberId) q.set("member_id", String(memberId));
   return fetchJson<MonthlySeries>(`api/dashboard/monthly?${q.toString()}`);
 }
 
-export function getOutliers(month?: string): Promise<OutliersResponse> {
-  return fetchJson<OutliersResponse>(`api/dashboard/outliers${month ? `?month=${month}` : ""}`);
+export function getOutliers(month?: string, memberId?: number): Promise<OutliersResponse> {
+  const q = new URLSearchParams();
+  if (month) q.set("month", month);
+  if (memberId) q.set("member_id", String(memberId));
+  const qs = q.toString();
+  return fetchJson<OutliersResponse>(`api/dashboard/outliers${qs ? `?${qs}` : ""}`);
 }
 
 // --- Savings (spec §12.4; backlog #96, #91) ---
@@ -1364,12 +1371,23 @@ export interface User {
   created_at: string;
 }
 
+export interface Member {
+  id: number;
+  display_name: string;
+  role: string;
+}
+
 export function getMe(): Promise<Me> {
   return fetchJson<Me>("api/users/me");
 }
 
 export function listUsers(): Promise<User[]> {
   return fetchJson<User[]>("api/users");
+}
+
+// Approved household members for the per-member spend filter (any approved user).
+export function listMembers(): Promise<Member[]> {
+  return fetchJson<Member[]>("api/users/members");
 }
 
 export function updateUser(

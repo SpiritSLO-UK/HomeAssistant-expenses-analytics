@@ -14,6 +14,7 @@ import {
   getSummary,
   getVendorBreakdown,
   listAccounts,
+  listMembers,
   type MonthlyPoint,
   type TrendMetric,
 } from "../api/client";
@@ -78,14 +79,24 @@ export default function Dashboard() {
     setDashboardView(v);
   };
 
-  const summary = useQuery({ queryKey: ["summary", monthDate, view], queryFn: () => getSummary(monthDate, view) });
+  // Per-member filter (#66/#82): show one household member's spending. Picking a
+  // member overrides the Mine/Shared/All toggle, so that toggle is hidden then.
+  const members = useQuery({ queryKey: ["members"], queryFn: listMembers });
+  const [memberId, setMemberId] = useState<string>("");
+  const mid = memberId ? Number(memberId) : undefined;
+  const hasMembers = (members.data?.length ?? 0) > 1;
+
+  const summary = useQuery({
+    queryKey: ["summary", monthDate, view, memberId],
+    queryFn: () => getSummary(monthDate, view, mid),
+  });
   const categories = useQuery({
-    queryKey: ["dash-categories", monthDate, view],
-    queryFn: () => getCategoryBreakdown(monthDate, view),
+    queryKey: ["dash-categories", monthDate, view, memberId],
+    queryFn: () => getCategoryBreakdown(monthDate, view, mid),
   });
   const vendors = useQuery({
-    queryKey: ["dash-vendors", monthDate, view],
-    queryFn: () => getVendorBreakdown(monthDate, view),
+    queryKey: ["dash-vendors", monthDate, view, memberId],
+    queryFn: () => getVendorBreakdown(monthDate, view, mid),
   });
 
   const maxCat = Math.max(1, ...(categories.data ?? []).map((c) => Number(c.total)));
@@ -95,7 +106,18 @@ export default function Dashboard() {
       <div className="page__head">
         <h1 className="page__title">Dashboard</h1>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          {hasOwned && (
+          {hasMembers && (
+            <label className="muted" title="Show one household member's spending">
+              Member{" "}
+              <select value={memberId} onChange={(e) => setMemberId(e.target.value)}>
+                <option value="">All members</option>
+                {members.data?.map((m) => (
+                  <option key={m.id} value={m.id}>{m.display_name}</option>
+                ))}
+              </select>
+            </label>
+          )}
+          {hasOwned && !mid && (
             <div className="form-row" style={{ gap: 4 }} title="Whose accounts to include">
               {VIEWS.map((v) => (
                 <button
@@ -140,8 +162,8 @@ export default function Dashboard() {
         <StatCard label="Transactions" value={summary.data ? String(summary.data.total_transactions) : "—"} />
       </div>
 
-      {show("headsup") && <HeadsUpCard monthDate={monthDate} />}
-      {show("trends") && <TrendsCard monthDate={monthDate} view={view} />}
+      {show("headsup") && <HeadsUpCard monthDate={monthDate} memberId={mid} />}
+      {show("trends") && <TrendsCard monthDate={monthDate} view={view} memberId={mid} />}
 
       {summary.data && summary.data.total_transactions === 0 && (
         <div className="card">
@@ -206,7 +228,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {show("projects") && <ProjectsCard />}
+      {show("projects") && <ProjectsCard memberId={mid} />}
 
       {summary.data && summary.data.uncategorised_transactions > 0 && (
         <div className="card">
@@ -220,8 +242,8 @@ export default function Dashboard() {
   );
 }
 
-function ProjectsCard() {
-  const q = useQuery({ queryKey: ["dashboard-projects"], queryFn: getDashboardProjects });
+function ProjectsCard({ memberId }: { memberId?: number }) {
+  const q = useQuery({ queryKey: ["dashboard-projects", memberId], queryFn: () => getDashboardProjects(memberId) });
   const items = q.data ?? [];
   if (items.length === 0) return null; // non-nagging: no card until there are projects
   return (
@@ -281,10 +303,10 @@ function TrendMini({ label, values, metric, currency, key_ }: {
   );
 }
 
-function TrendsCard({ monthDate, view }: { monthDate: string; view: string }) {
+function TrendsCard({ monthDate, view, memberId }: { monthDate: string; view: string; memberId?: number }) {
   const q = useQuery({
-    queryKey: ["dash-monthly", monthDate, view],
-    queryFn: () => getMonthlySeries(6, monthDate, view),
+    queryKey: ["dash-monthly", monthDate, view, memberId],
+    queryFn: () => getMonthlySeries(6, monthDate, view, memberId),
   });
   const data = q.data;
   if (!data || data.months.length < 2) return null;
@@ -318,10 +340,10 @@ function TrendsCard({ monthDate, view }: { monthDate: string; view: string }) {
   );
 }
 
-function HeadsUpCard({ monthDate }: { monthDate: string }) {
+function HeadsUpCard({ monthDate, memberId }: { monthDate: string; memberId?: number }) {
   const q = useQuery({
-    queryKey: ["dash-outliers", monthDate],
-    queryFn: () => getOutliers(monthDate),
+    queryKey: ["dash-outliers", monthDate, memberId],
+    queryFn: () => getOutliers(monthDate, memberId),
   });
   const items = q.data?.items ?? [];
   if (items.length === 0) return null; // nothing to flag → no card (non-nagging)

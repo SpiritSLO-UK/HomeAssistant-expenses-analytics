@@ -24,7 +24,7 @@ export default function Subscriptions() {
   const [err, setErr] = useState<string | null>(null);
 
   const subs = useQuery({ queryKey: ["subscriptions"], queryFn: listSubscriptions });
-  const dash = useQuery({ queryKey: ["dashboard-subscriptions"], queryFn: getDashboardSubscriptions });
+  const dash = useQuery({ queryKey: ["dashboard-subscriptions"], queryFn: () => getDashboardSubscriptions() });
   const alerts = useQuery({ queryKey: ["subscription-alerts"], queryFn: () => getSubscriptionAlerts(7) });
   const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
   const base = settings.data?.base_currency ?? "GBP";
