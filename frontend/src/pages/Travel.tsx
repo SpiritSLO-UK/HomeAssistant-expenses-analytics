@@ -1,4 +1,5 @@
 import { Fragment, useState } from "react";
+import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createProjectFromTrip,
@@ -146,7 +147,12 @@ export default function Travel() {
                             <ul className="kv" style={{ margin: "6px 0", maxWidth: 560 }}>
                               {trip.transactions.map((t) => (
                                 <li key={t.id}>
-                                  <span><span className="muted">{t.transaction_date}</span> · {t.description}</span>
+                                  <span>
+                                    <span className="muted">{t.transaction_date}</span> ·{" "}
+                                    <Link to={`/transactions?focus=${t.id}`} title="Open this transaction">
+                                      {t.description}
+                                    </Link>
+                                  </span>
                                   <span style={{ whiteSpace: "nowrap" }}>
                                     {t.amount} {t.currency}
                                     <span className="muted"> · ≈ {t.base_amount} {trip.base_currency}</span>

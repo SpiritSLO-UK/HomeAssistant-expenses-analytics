@@ -296,6 +296,16 @@ body {
   background: color-mix(in srgb, var(--sidebar-active) 16%, transparent);
 }
 
+/* Banner shown when the list is narrowed to a single deep-linked transaction. */
+.focus-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  border-left: 3px solid var(--sidebar-active);
+}
+
 /* --- report chips --- */
 .report {
   display: flex;

@@ -58,6 +58,21 @@ def test_uncategorised_filter_partitions_and_exports(client):
     assert len(rows) - 1 == unc
 
 
+def test_transaction_id_filter_returns_one(client):
+    """The focus deep-link (Review-Queue "Open transaction →", trip drill-down)
+    narrows the list to a single transaction by id, so the linked row is always
+    surfaced regardless of which page it would otherwise fall on."""
+    client.post("/api/backup/demo")
+    target = client.get("/api/transactions", params={"limit": 1}).json()["items"][0]["id"]
+
+    resp = client.get("/api/transactions", params={"transaction_id": target}).json()
+    assert resp["total"] == 1
+    assert [t["id"] for t in resp["items"]] == [target]
+
+    # An unknown id is an empty result, not an error.
+    assert client.get("/api/transactions", params={"transaction_id": 999_999}).json()["total"] == 0
+
+
 def test_transactions_csv_respects_filters(client):
     client.post("/api/backup/demo")
     full = _rows(client.get("/api/export/transactions.csv"))
