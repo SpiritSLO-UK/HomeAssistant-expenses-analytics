@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from datetime import date
+from decimal import Decimal
 
 
 def test_demo_load_is_idempotent(client):
@@ -16,6 +18,42 @@ def test_demo_load_is_idempotent(client):
     assert second["new"] == 0
     assert second["duplicates"] == first["new"]
     assert client.get("/api/transactions").json()["total"] == total_after_first
+
+
+def test_demo_spans_multiple_months_including_current(client):
+    """The demo is generated relative to today, so it always covers the current
+    month plus prior months (Trends + the current-month dashboard look populated)."""
+    client.post("/api/backup/demo")
+    txns = client.get("/api/transactions?limit=500").json()["items"]
+    months = {t["transaction_date"][:7] for t in txns}
+    assert len(months) >= 3  # current + (at least) two previous months
+    assert date.today().isoformat()[:7] in months  # something in the current month
+
+
+def test_demo_populates_travel(client):
+    """Foreign-currency trips are seeded with FX rates so they convert + group."""
+    client.post("/api/backup/demo")
+
+    bc = client.get("/api/travel/by-currency").json()
+    codes = {r["currency"] for r in bc["currencies"]}
+    assert {"EUR", "USD"} <= codes
+    # FX seeded → every foreign group has a positive base-currency total.
+    for row in bc["currencies"]:
+        assert Decimal(row["base_total"]) > 0
+
+    trips = client.get("/api/travel/trips").json()
+    assert len(trips) >= 2  # a Eurozone trip + a US trip
+
+
+def test_demo_populates_business(client):
+    """Some transactions are flagged business with VAT for the Business page."""
+    client.post("/api/backup/demo")
+    summary = client.get("/api/business/summary").json()
+    assert Decimal(summary["total"]) > 0
+    assert Decimal(summary["vat"]) > 0
+    assert summary["transaction_count"] >= 5
+    # Reclaimable VAT spread across more than one category.
+    assert len(summary["by_category"]) >= 2
 
 
 def test_database_backup_download(client):
