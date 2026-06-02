@@ -17,7 +17,7 @@ export default function Projects() {
   const [err, setErr] = useState<string | null>(null);
   const [openId, setOpenId] = useState<number | null>(null);
 
-  const projects = useQuery({ queryKey: ["dashboard-projects"], queryFn: getDashboardProjects });
+  const projects = useQuery({ queryKey: ["dashboard-projects"], queryFn: () => getDashboardProjects() });
   const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
   const base = settings.data?.base_currency ?? "GBP";
 

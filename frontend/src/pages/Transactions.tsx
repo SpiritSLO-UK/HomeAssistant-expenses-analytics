@@ -9,6 +9,7 @@ import {
   getAiStatus,
   getSettings,
   listCategories,
+  listMembers,
   listProjects,
   listTransactions,
   recategorise,
@@ -35,6 +36,7 @@ export default function Transactions() {
   const [showArchived, setShowArchived] = useState(false);
   const [businessOnly, setBusinessOnly] = useState(false);
   const [projectFilter, setProjectFilter] = useState("");
+  const [memberFilter, setMemberFilter] = useState("");
   // Deep-link (Review Queue "Open transaction →", trip drill-down): when a
   // ?focus=<id> is present we narrow the list to *just that one transaction* so
   // it's always surfaced — the previous highlight-only approach silently failed
@@ -60,6 +62,7 @@ export default function Transactions() {
         uncategorised: uncategorisedOnly || undefined,
         is_business: businessOnly || undefined,
         project_id: projectFilter ? Number(projectFilter) : undefined,
+        member_id: memberFilter ? Number(memberFilter) : undefined,
         include_archived: showArchived || undefined,
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
@@ -67,6 +70,7 @@ export default function Transactions() {
 
   const categories = useQuery({ queryKey: ["categories"], queryFn: listCategories });
   const projects = useQuery({ queryKey: ["projects"], queryFn: listProjects });
+  const members = useQuery({ queryKey: ["members"], queryFn: listMembers });
   const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
   const aiStatus = useQuery({ queryKey: ["ai-status"], queryFn: getAiStatus });
   const base = settings.data?.base_currency ?? "GBP";
@@ -267,6 +271,14 @@ export default function Transactions() {
               {projects.data?.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </label>
+          {(members.data?.length ?? 0) > 1 && (
+            <label title="Show one household member's own-account transactions">Member
+              <select value={memberFilter} onChange={(e) => { setMemberFilter(e.target.value); setPage(0); }}>
+                <option value="">All members</option>
+                {members.data?.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}
+              </select>
+            </label>
+          )}
         </div>
         <div className="filter-toggles">
           <span className="filter-toggles__label">Show only</span>

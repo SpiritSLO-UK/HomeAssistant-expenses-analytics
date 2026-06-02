@@ -30,7 +30,7 @@ from app.services import (
     tag_service,
     vendor_service,
 )
-from app.services.auth_service import get_current_user, visible_account_scope
+from app.services.auth_service import get_current_user, resolved_account_scope, visible_account_scope
 from app.services.split_service import SplitError, SplitInput
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
@@ -68,6 +68,7 @@ def list_transactions(
     request: Request,
     db: Session = Depends(get_db),
     transaction_id: int | None = Query(None, description="Narrow to a single transaction (focus deep-link)"),
+    member_id: int | None = Query(None, description="Narrow to a household member's own accounts"),
     date_from: date | None = None,
     date_to: date | None = None,
     account_id: int | None = None,
@@ -100,7 +101,7 @@ def list_transactions(
         amount_min=amount_min,
         amount_max=amount_max,
         search=search,
-        account_ids=visible_account_scope(request, db),
+        account_ids=resolved_account_scope(db, get_current_user(request, db), member_id=member_id),
         include_archived=include_archived,
     )
 

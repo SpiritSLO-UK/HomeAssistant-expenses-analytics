@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models import User
-from app.schemas.users import MeOut, UserOut, UserUpdate
+from app.schemas.users import MemberOut, MeOut, UserOut, UserUpdate
 from app.services import auth_service, mfa_service
 from app.services.auth_service import get_current_user, require_owner, require_owner_step_up
 
@@ -38,6 +38,16 @@ def get_me(
         mfa_enabled=user.mfa_enabled,
         mfa_required=mfa_required,
     )
+
+
+@router.get("/members", response_model=list[MemberOut])
+def list_members(
+    db: Session = Depends(get_db), _user: User = Depends(get_current_user)
+) -> list[User]:
+    """Approved members for the per-member spend filter (Dashboard + Transactions).
+    Any approved user may read this — the spend it maps to is still scoped to the
+    caller's own visibility."""
+    return auth_service.list_members(db)
 
 
 @router.get("", response_model=list[UserOut])

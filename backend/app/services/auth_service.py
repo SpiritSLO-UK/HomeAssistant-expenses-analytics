@@ -169,6 +169,30 @@ def scoped_account_ids(db: Session, user: User, scope: str) -> set[int] | None:
     return chosen if base is None else (chosen & base)
 
 
+def member_account_scope(db: Session, user: User, member_id: int) -> set[int]:
+    """Account ids **owned by** ``member_id``, intersected with what ``user`` may
+    see — the per-member spend filter (backlog #66/#82).
+
+    The intersection is the security boundary: a member can only ever narrow
+    *within* their own visibility, never use the filter to peek at someone else's
+    private accounts. A member who owns no accounts yields the empty set (→ "show
+    nothing", never "everything")."""
+    owned = set(db.scalars(select(Account.id).where(Account.owner_user_id == member_id)).all())
+    base = visible_account_ids(db, user)
+    return owned if base is None else (owned & base)
+
+
+def resolved_account_scope(
+    db: Session, user: User, *, view: str = "all", member_id: int | None = None
+) -> set[int] | None:
+    """The read scope for a request: a specific member's owned accounts when
+    ``member_id`` is given, otherwise the Mine/Shared/All ``view`` toggle.
+    ``member_id`` takes precedence — picking a person makes the view toggle moot."""
+    if member_id is not None:
+        return member_account_scope(db, user, member_id)
+    return scoped_account_ids(db, user, view)
+
+
 # --- FastAPI dependencies ---
 
 
@@ -223,6 +247,15 @@ def require_owner_step_up(
 
 def list_users(db: Session) -> list[User]:
     return list(db.scalars(select(User).order_by(User.id)).all())
+
+
+def list_members(db: Session) -> list[User]:
+    """Approved household members for the per-member spend filter dropdown.
+    Excludes pending/disabled accounts. Readable by any approved user — the data
+    those members map to is still scoped per the caller's own visibility."""
+    return list(
+        db.scalars(select(User).where(User.status == "approved").order_by(User.id)).all()
+    )
 
 
 def approved_owner_count(db: Session) -> int:

@@ -38,6 +38,16 @@ class MeOut(BaseModel):
     mfa_required: bool
 
 
+class MemberOut(BaseModel):
+    """Minimal member identity for the per-member spend filter dropdown."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    display_name: str
+    role: str
+
+
 class UserUpdate(BaseModel):
     role: str | None = None
     status: str | None = None  # pending | approved | disabled
