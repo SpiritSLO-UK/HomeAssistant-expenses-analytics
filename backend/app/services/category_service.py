@@ -25,6 +25,11 @@ _LIBRARY_PATH = Path(__file__).resolve().parent.parent / "category_library" / "d
 # Keyword match confidence (spec §15.2).
 KEYWORD_CONFIDENCE = 0.70
 
+# Cloud-AI privacy levels (spec §22.4, §28): normal = send as-is (still redacted
+# globally); sensitive = extra-redact before any cloud send; never_cloud = never
+# sent to a cloud provider at all. User-selectable per category.
+PRIVACY_LEVELS = ("normal", "sensitive", "never_cloud")
+
 
 @lru_cache
 def load_library() -> dict:

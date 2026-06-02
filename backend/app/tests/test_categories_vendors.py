@@ -182,3 +182,28 @@ def test_dashboard_category_breakdown(client, samples_dir):
     assert totals["Uncategorised"] == "23.49"  # the Amazon row
     # Income (a credit) must not appear in the spend breakdown.
     assert "Income" not in totals
+
+
+def test_category_cloud_privacy_is_user_editable(client):
+    """A user can choose what each category sends to cloud AI (#28): a category's
+    privacy level is editable (e.g. lock 'Income' to never_cloud), and invalid
+    levels are rejected on both update and create."""
+    income_id = _category_id(client, "Income")
+
+    patched = client.patch(
+        f"/api/categories/{income_id}", json={"privacy_sensitivity": "never_cloud"}
+    )
+    assert patched.status_code == 200
+    assert patched.json()["privacy_sensitivity"] == "never_cloud"
+
+    # It persists on the list view (so the 🔒 shows in the UI).
+    income = next(c for c in client.get("/api/categories").json() if c["id"] == income_id)
+    assert income["privacy_sensitivity"] == "never_cloud"
+
+    # Invalid levels are rejected (defense-in-depth) on update and create.
+    assert client.patch(
+        f"/api/categories/{income_id}", json={"privacy_sensitivity": "public"}
+    ).status_code == 400
+    assert client.post(
+        "/api/categories", json={"name": "Bogus", "privacy_sensitivity": "weird"}
+    ).status_code == 400

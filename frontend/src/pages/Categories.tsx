@@ -4,8 +4,16 @@ import {
   createCategory,
   deleteCategory,
   listCategories,
+  updateCategory,
   type Category,
 } from "../api/client";
+
+// Cloud-AI privacy levels a category can be set to (spec §22.4, §28).
+const PRIVACY_OPTIONS: { value: string; label: string }[] = [
+  { value: "normal", label: "cloud OK" },
+  { value: "sensitive", label: "• sensitive" },
+  { value: "never_cloud", label: "🔒 never cloud" },
+];
 
 export default function Categories() {
   const qc = useQueryClient();
@@ -23,6 +31,13 @@ export default function Categories() {
 
   const remove = useMutation({
     mutationFn: (id: number) => deleteCategory(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["categories"] }),
+  });
+
+  // Let the user choose what each category may send to cloud AI (#28).
+  const setPrivacy = useMutation({
+    mutationFn: (v: { id: number; level: string }) =>
+      updateCategory(v.id, { privacy_sensitivity: v.level }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["categories"] }),
   });
 
@@ -49,11 +64,16 @@ export default function Categories() {
             <span key={c.id} className="chip">
               <span className="chip__dot" style={{ background: c.colour ?? "#bbb" }} />
               {c.name}
-              {c.privacy_sensitivity !== "normal" && (
-                <span className="chip__badge" title={c.privacy_sensitivity}>
-                  {c.privacy_sensitivity === "never_cloud" ? "🔒" : "•"}
-                </span>
-              )}
+              <select
+                className="chip__priv"
+                value={c.privacy_sensitivity}
+                title="What this category may send to cloud AI — pick 🔒 never cloud to keep it fully on-device"
+                onChange={(e) => setPrivacy.mutate({ id: c.id, level: e.target.value })}
+              >
+                {PRIVACY_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
               {!c.is_system && (
                 <button
                   className="chip__x"
@@ -67,7 +87,10 @@ export default function Categories() {
           ))}
         </div>
         <p className="muted" style={{ marginTop: 12 }}>
-          🔒 = never sent to cloud AI. System categories from the library can't be deleted here
+          <strong>Cloud-AI privacy</strong> (per category, your choice): <strong>cloud OK</strong> = may be
+          sent to cloud AI (always globally redacted first); <strong>• sensitive</strong> = extra-redacted
+          before any cloud send; <strong>🔒 never cloud</strong> = never sent to a cloud provider, kept
+          fully on-device. AI is off by default regardless. System categories can't be deleted here
           (merge/archive arrives in a later stage).
         </p>
       </div>
