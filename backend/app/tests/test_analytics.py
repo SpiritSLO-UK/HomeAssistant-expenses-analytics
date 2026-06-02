@@ -54,6 +54,8 @@ def test_large_charge_is_flagged(db):
     assert len(large) == 1
     assert Decimal(large[0]["amount"]) == Decimal("500")
     assert large[0]["severity"] == "warn"
+    # The detail labels the amount with the base-currency symbol (was bare before).
+    assert "£500.00" in large[0]["detail"]
 
 
 def test_category_spike_is_flagged(db):
