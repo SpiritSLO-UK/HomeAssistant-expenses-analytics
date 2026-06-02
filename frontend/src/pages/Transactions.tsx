@@ -1,4 +1,5 @@
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   approveAiRequest,
@@ -34,6 +35,10 @@ export default function Transactions() {
   const [showArchived, setShowArchived] = useState(false);
   const [businessOnly, setBusinessOnly] = useState(false);
   const [projectFilter, setProjectFilter] = useState("");
+  // Deep-link from the Review Queue ("Open transaction →") highlights + scrolls
+  // to a specific row.
+  const [searchParams] = useSearchParams();
+  const focusId = searchParams.get("focus");
   const [page, setPage] = useState(0);
   const [splitId, setSplitId] = useState<number | null>(null);
   const [showAiBatch, setShowAiBatch] = useState(false);
@@ -63,6 +68,12 @@ export default function Transactions() {
     queryFn: () => listTransactions(filters),
     placeholderData: keepPreviousData,
   });
+
+  // Scroll the deep-linked (focused) transaction into view once it's rendered.
+  useEffect(() => {
+    if (!focusId || !data) return;
+    document.getElementById(`txn-row-${focusId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [focusId, data]);
 
   const setCategory = useMutation({
     mutationFn: (v: { id: number; categoryId: number | null }) =>
@@ -299,7 +310,11 @@ export default function Transactions() {
                 <tbody>
                   {data.items.map((t) => (
                     <Fragment key={t.id}>
-                    <tr style={t.archived_at ? { opacity: 0.6 } : undefined}>
+                    <tr
+                      id={`txn-row-${t.id}`}
+                      className={String(t.id) === focusId ? "tr--focus" : undefined}
+                      style={t.archived_at ? { opacity: 0.6 } : undefined}
+                    >
                       <td>{t.transaction_date}</td>
                       <td>
                         {t.description_raw}

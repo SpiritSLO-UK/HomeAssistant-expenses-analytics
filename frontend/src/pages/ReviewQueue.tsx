@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { listReviewItems, setReviewStatus, type ReviewItem } from "../api/client";
 
@@ -61,12 +62,19 @@ export default function ReviewQueue() {
                 <span className="muted">{item.item_type}{item.item_id != null ? ` #${item.item_id}` : ""}</span>
                 {item.suggested_action && <div style={{ marginTop: 4 }}>{item.suggested_action}</div>}
               </div>
-              {!showResolved && (
-                <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                  <button className="btn btn--ghost" disabled={update.isPending} onClick={() => update.mutate({ id: item.id, status: "resolved" })}>Resolve</button>
-                  <button className="link-btn" disabled={update.isPending} onClick={() => update.mutate({ id: item.id, status: "ignored" })}>Ignore</button>
-                </div>
-              )}
+              <div style={{ display: "flex", gap: 6, flexShrink: 0, alignItems: "center" }}>
+                {item.item_type === "transaction" && item.item_id != null && (
+                  <Link className="btn btn--ghost" to={`/transactions?focus=${item.item_id}`}>
+                    Open transaction →
+                  </Link>
+                )}
+                {!showResolved && (
+                  <>
+                    <button className="btn btn--ghost" disabled={update.isPending} onClick={() => update.mutate({ id: item.id, status: "resolved" })}>Resolve</button>
+                    <button className="link-btn" disabled={update.isPending} onClick={() => update.mutate({ id: item.id, status: "ignored" })}>Ignore</button>
+                  </>
+                )}
+              </div>
             </div>
           ))}
         </div>

@@ -121,6 +121,8 @@ export default function Settings() {
 
       <RetentionCard onMessage={ok} onError={fail} />
 
+      <LoggingCard onMessage={ok} onError={fail} />
+
       <div className="card">
         <h2 className="card__title">Demo data</h2>
         <p className="muted">Load a small fabricated dataset to explore the app. Safe to re-run — duplicates are skipped.</p>
@@ -659,6 +661,49 @@ function MfaCard({
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+function LoggingCard({
+  onMessage,
+  onError,
+}: {
+  onMessage: (m: string) => void;
+  onError: (e: unknown) => void;
+}) {
+  const qc = useQueryClient();
+  const me = useQuery({ queryKey: ["me"], queryFn: getMe });
+  const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
+  const isAdmin = me.data?.is_admin === true;
+  const save = useMutation({
+    mutationFn: (level: string) => updateSettings({ log_level: level }),
+    onSuccess: () => {
+      onMessage("Log level updated.");
+      qc.invalidateQueries({ queryKey: ["settings"] });
+    },
+    onError,
+  });
+  if (me.data && !isAdmin) return null; // owner-only
+  const level = settings.data?.log_level ?? "INFO";
+  return (
+    <div className="card">
+      <h2 className="card__title">Logging</h2>
+      <div className="form-row">
+        <label>
+          Log level{" "}
+          <select value={level} disabled={save.isPending} onChange={(e) => save.mutate(e.target.value)}>
+            {["DEBUG", "INFO", "WARNING", "ERROR"].map((l) => (
+              <option key={l} value={l}>{l}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <p className="muted">
+        How much detail the app logs to stdout (the Home Assistant add-on Log panel). Takes effect
+        immediately. DEBUG is verbose for troubleshooting; INFO is the sensible default. (The demo
+        defaults to DEBUG.)
+      </p>
     </div>
   );
 }

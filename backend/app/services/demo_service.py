@@ -494,4 +494,11 @@ def load_demo(db: Session) -> dict:
     confirmed = import_service.confirm_import(db, statement_id)
     _enrich(db, statement_id, specs)
     _seed_examples(db, statement_id)
+
+    # Demo defaults to DEBUG logging so there's something to see in the Logs/
+    # add-on panel while exploring (reversible from Settings → Logging).
+    from app.logging import set_level
+
+    settings_service.set_value(db, settings_service.LOG_LEVEL, "DEBUG")
+    set_level("DEBUG")
     return confirmed["report"]
