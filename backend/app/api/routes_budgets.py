@@ -43,11 +43,32 @@ def list_budgets(db: Session = Depends(get_db)) -> list[Budget]:
 
 @router.get("/summary", response_model=list[BudgetSummaryItem])
 def budgets_summary(
-    request: Request, db: Session = Depends(get_db), month: date | None = Query(default=None)
+    request: Request,
+    db: Session = Depends(get_db),
+    month: date | None = Query(default=None),
+    annual: bool = Query(default=False, description="Evaluate the whole year vs an annualised cap"),
 ) -> list[dict]:
     """Spend/remaining/percent/status for every budget (spec §19.2)."""
     scope = auth_service.visible_account_scope(request, db)
-    return budget_service.summary(db, month or date.today(), account_ids=scope)
+    return budget_service.summary(db, month or date.today(), account_ids=scope, annual=annual)
+
+
+@router.get("/{budget_id}/transactions")
+def budget_transactions(
+    budget_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    month: date | None = Query(default=None),
+    annual: bool = Query(default=False),
+) -> list[dict]:
+    """The transactions counting toward a budget in its window (drill-down)."""
+    budget = db.get(Budget, budget_id)
+    if budget is None:
+        raise HTTPException(status_code=404, detail="Budget not found")
+    scope = auth_service.visible_account_scope(request, db)
+    return budget_service.budget_transactions(
+        db, budget, month or date.today(), account_ids=scope, annual=annual
+    )
 
 
 @router.post("", response_model=BudgetOut, status_code=201)
