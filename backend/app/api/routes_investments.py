@@ -18,6 +18,7 @@ from app.schemas.investments import (
     HoldingUpdate,
     InvestmentAccountCreate,
     InvestmentAccountOut,
+    InvestmentHistory,
     InvestmentSummary,
     ValueAdjust,
     ValueCreate,
@@ -48,6 +49,14 @@ def _holding_in_scope(request: Request, db: Session, holding_id: int) -> Holding
 def summary(request: Request, db: Session = Depends(get_db)) -> dict:
     return investment_service.summary(
         db, account_ids=auth_service.visible_account_scope(request, db)
+    )
+
+
+@router.get("/history", response_model=InvestmentHistory)
+def history(request: Request, days: int = 365, db: Session = Depends(get_db)) -> dict:
+    """Portfolio value over time + day/month/year change (for the charts)."""
+    return investment_service.history(
+        db, account_ids=auth_service.visible_account_scope(request, db), days=days
     )
 
 

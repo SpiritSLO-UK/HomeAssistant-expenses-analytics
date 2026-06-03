@@ -7,6 +7,7 @@ import {
   createInvestmentAccount,
   deleteHolding,
   getHoldings,
+  getInvestmentHistory,
   getInvestmentPriceStatus,
   getInvestmentSummary,
   getMe,
@@ -37,15 +38,32 @@ function Gain({ value, pct, currency }: { value: string | null; pct: number | nu
   );
 }
 
+// A labelled period-change figure (Day/Month/Year), green up / red down.
+function PeriodChip({ label, ch, currency }: { label: string; ch: { change: string; pct: number | null }; currency: string }) {
+  const n = Number(ch.change);
+  const cls = n > 0 ? "amt--pos" : n < 0 ? "amt--neg" : "muted";
+  return (
+    <div style={{ minWidth: 96 }}>
+      <div className="stat__label">{label}</div>
+      <div className={cls} style={{ fontWeight: 600 }}>
+        {n >= 0 ? "+" : ""}{ch.change} {currency}
+        {ch.pct != null && <span> ({n >= 0 ? "+" : ""}{ch.pct}%)</span>}
+      </div>
+    </div>
+  );
+}
+
 export default function Investments() {
   const qc = useQueryClient();
   const [err, setErr] = useState<string | null>(null);
   const summary = useQuery({ queryKey: ["investment-summary"], queryFn: getInvestmentSummary });
+  const history = useQuery({ queryKey: ["investment-history"], queryFn: () => getInvestmentHistory(365) });
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["investment-summary"] });
     qc.invalidateQueries({ queryKey: ["investment-holdings"] });
     qc.invalidateQueries({ queryKey: ["investment-values"] });
+    qc.invalidateQueries({ queryKey: ["investment-history"] });
   };
   const fail = (e: unknown) => setErr(String(e));
 
@@ -60,8 +78,8 @@ export default function Investments() {
       <p className="muted">
         Track investment platforms and pensions. Record a <strong>value</strong> from a statement
         (best for pensions), or add <strong>holdings</strong> — units of a ticker with a cost and a
-        last price — to see market value and gain. Prices are entered manually; an optional price
-        feed is coming.
+        last price — to see market value, gain, and value over time with day/month/year change.
+        Prices can be entered by hand or kept current with the optional price feed (below).
       </p>
       {err && <p className="status status--error">{err}</p>}
 
@@ -79,6 +97,18 @@ export default function Investments() {
               Unrealised{" "}
               <Gain value={summary.data.total_gain} pct={summary.data.total_gain_pct} currency={base} />
             </p>
+          )}
+          {history.data && history.data.points.length >= 2 && (
+            <div style={{ margin: "10px 0" }}>
+              <Sparkline values={history.data.points.map((p) => Number(p.value))} color="#6aa9ff" />
+            </div>
+          )}
+          {history.data && (
+            <div className="form-row" style={{ gap: 18, marginTop: 8, flexWrap: "wrap" }}>
+              <PeriodChip label="Day" ch={history.data.change_day} currency={base} />
+              <PeriodChip label="Month" ch={history.data.change_month} currency={base} />
+              <PeriodChip label="Year" ch={history.data.change_year} currency={base} />
+            </div>
           )}
           <ul className="kv" style={{ marginTop: 8, maxWidth: 360 }}>
             <li><span>Investments</span><span>{summary.data.by_type.investment} {base}</span></li>

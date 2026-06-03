@@ -14,7 +14,7 @@ from app.models.category import Category
 from app.models.child_allocation import ChildAllocation
 from app.models.fx_rate import FxRate
 from app.models.household import Household
-from app.models.investment import AccountValue, Holding
+from app.models.investment import AccountValue, Holding, HoldingPrice
 from app.models.project import Project
 from app.models.receipt import Receipt, ReceiptItem, TransactionReceiptMatch
 from app.models.review_item import ReviewItem
@@ -43,6 +43,7 @@ __all__ = [
     "Household",
     "AccountValue",
     "Holding",
+    "HoldingPrice",
     "Project",
     "Receipt",
     "ReceiptItem",

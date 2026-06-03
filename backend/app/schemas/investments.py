@@ -98,3 +98,22 @@ class InvestmentSummary(BaseModel):
     total_gain_pct: float | None
     by_type: dict[str, str]
     accounts: list[InvestmentAccountOut]
+
+
+class PeriodChange(BaseModel):
+    change: str
+    pct: float | None
+
+
+class HistoryPoint(BaseModel):
+    date: str
+    value: str
+
+
+class InvestmentHistory(BaseModel):
+    currency: str
+    total_value: str
+    points: list[HistoryPoint]
+    change_day: PeriodChange
+    change_month: PeriodChange
+    change_year: PeriodChange
