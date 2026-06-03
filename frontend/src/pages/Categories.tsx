@@ -4,6 +4,7 @@ import {
   createCategory,
   deleteCategory,
   getCategoryPrivacyDefault,
+  getMe,
   listCategories,
   mergeCategory,
   setAllCategoryPrivacy,
@@ -28,7 +29,20 @@ export default function Categories() {
   const [mergeTarget, setMergeTarget] = useState("");
   const [advanced, setAdvanced] = useState(false);
 
-  const privacyDefault = useQuery({ queryKey: ["category-privacy"], queryFn: getCategoryPrivacyDefault });
+  // Who's looking? Cloud-AI privacy is a settings concern (owner / settings-manager);
+  // merge + delete are structural (owner only). Hide those controls otherwise — the
+  // backend enforces the same, this just keeps them out of sight (backlog #28).
+  const me = useQuery({ queryKey: ["me"], queryFn: getMe });
+  const canManageSettings = me.data?.can_manage_settings === true;
+  const isAdmin = me.data?.is_admin === true;
+
+  // Only fetch the privacy default for users who can actually see the card — the
+  // endpoint is settings-manager-gated, so a non-manager would just get a 403.
+  const privacyDefault = useQuery({
+    queryKey: ["category-privacy"],
+    queryFn: getCategoryPrivacyDefault,
+    enabled: canManageSettings,
+  });
 
   // One cloud-AI privacy level applied to every category at once (#28); the
   // per-category fine-tuning lives behind the "Advanced" reveal below.
@@ -126,13 +140,15 @@ export default function Categories() {
                   ))}
                 </select>
               )}
-              <button
-                className="chip__x"
-                title={c.is_system ? "Delete (built-in)" : "Delete"}
-                onClick={() => confirmDelete(c)}
-              >
-                ×
-              </button>
+              {isAdmin && (
+                <button
+                  className="chip__x"
+                  title={c.is_system ? "Delete (built-in)" : "Delete"}
+                  onClick={() => confirmDelete(c)}
+                >
+                  ×
+                </button>
+              )}
             </span>
           ))}
         </div>
@@ -146,7 +162,9 @@ export default function Categories() {
         </p>
       </div>
 
-      {/* 2. Cloud-AI privacy — one level for all, advanced reveal for per-category. */}
+      {/* 2. Cloud-AI privacy — one level for all, advanced reveal for per-category.
+          Owner / settings-manager only (it governs what may leave the device). */}
+      {canManageSettings && (
       <div className="card">
         <h2 className="card__title">Cloud-AI privacy</h2>
         <p className="muted" style={{ marginTop: 0, fontSize: "0.85rem" }}>
@@ -180,8 +198,10 @@ export default function Categories() {
           Advanced — set the level per category
         </label>
       </div>
+      )}
 
-      {/* 3. Merge categories. */}
+      {/* 3. Merge categories — structural/destructive, so owner only. */}
+      {isAdmin && (
       <div className="card">
         <h2 className="card__title">Merge categories</h2>
         <p className="muted" style={{ marginTop: 0, fontSize: "0.85rem" }}>
@@ -211,6 +231,7 @@ export default function Categories() {
           </button>
         </div>
       </div>
+      )}
     </div>
   );
 }

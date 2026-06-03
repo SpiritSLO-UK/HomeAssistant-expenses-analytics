@@ -123,6 +123,31 @@ def test_global_privacy_applies_to_all_and_new(client):
     assert client.post("/api/categories/privacy", json={"level": "bogus"}).status_code == 400
 
 
+def test_admin_only_category_controls_reject_plain_members(client):
+    """Cloud-AI privacy (settings-manager) and merge/delete (owner) are gated; an
+    approved non-admin member without the settings grant gets 403 on all four,
+    while the owner still succeeds (backlog #28 defence-in-depth)."""
+    client.get("/api/users/me")  # owner bootstraps
+    hdr = {"X-Remote-User-Id": "ha-eve", "X-Remote-User-Display-Name": "Eve"}
+    client.get("/api/users/me", headers=hdr)  # Eve -> pending member
+    eve_id = next(u["id"] for u in client.get("/api/users").json() if u["external_id"] == "ha-eve")
+    client.patch(f"/api/users/{eve_id}", json={"role": "member", "status": "approved"})
+
+    cid = client.post("/api/categories", json={"name": "GateTest"}).json()["id"]
+    other = client.post("/api/categories", json={"name": "GateTarget"}).json()["id"]
+
+    # Member is blocked from the privacy + structural endpoints…
+    assert client.get("/api/categories/privacy", headers=hdr).status_code == 403
+    assert client.post("/api/categories/privacy", json={"level": "normal"}, headers=hdr).status_code == 403
+    assert client.post(f"/api/categories/{cid}/merge", json={"target_id": other}, headers=hdr).status_code == 403
+    assert client.delete(f"/api/categories/{cid}", headers=hdr).status_code == 403
+
+    # …but the owner can still do all of them.
+    assert client.get("/api/categories/privacy").status_code == 200
+    assert client.post(f"/api/categories/{cid}/merge", json={"target_id": other}).status_code == 200
+    assert client.delete(f"/api/categories/{other}").status_code == 204
+
+
 # --- keyword auto-categorisation on import ---
 
 def test_auto_categorisation_by_keyword(client, samples_dir):
