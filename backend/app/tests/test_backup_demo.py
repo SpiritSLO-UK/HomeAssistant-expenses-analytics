@@ -143,6 +143,68 @@ def test_demo_examples_are_idempotent(client):
     assert len(client.get("/api/savings/summary").json()["accounts"]) == accounts
 
 
+def test_demo_remove_returns_clean_db(client):
+    """Removing demo data deletes everything the load seeded, leaving a clean DB
+    (default category library + the owner survive)."""
+    client.post("/api/backup/demo")
+    assert client.get("/api/transactions").json()["total"] > 0
+    assert client.get("/api/backup/demo").json()["has_demo_data"] is True
+
+    body = client.delete("/api/backup/demo").json()
+    assert body["removed"] is True
+    assert body["counts"]["transactions"] > 0
+
+    assert client.get("/api/transactions").json()["total"] == 0
+    assert client.get("/api/rules").json() == []
+    assert client.get("/api/projects").json() == []
+    assert client.get("/api/budgets").json() == []
+    assert client.get("/api/savings/summary").json()["accounts"] == []
+    assert client.get("/api/vendors").json() == []
+    assert client.get("/api/review").json() == []
+    roles = {u["role"] for u in client.get("/api/users").json()}
+    assert "member" not in roles and "child" not in roles
+    # The default category library is not demo data — it stays.
+    assert len(client.get("/api/categories").json()) == 22
+    # Logging is reset from the demo's DEBUG default.
+    assert client.get("/api/settings").json()["log_level"] != "DEBUG"
+    # Nothing left to remove.
+    assert client.get("/api/backup/demo").json()["has_demo_data"] is False
+
+
+def test_demo_remove_is_idempotent(client):
+    """A second remove (or a remove before any load) is a harmless no-op."""
+    client.post("/api/backup/demo")
+    client.delete("/api/backup/demo")
+    second = client.delete("/api/backup/demo").json()
+    assert second["removed"] is False
+    assert second["counts"] == {}
+
+
+def test_demo_remove_preserves_user_data(db):
+    """Anything the user created — even sharing a demo name — survives removal: the
+    manifest only records the rows the load itself created (a before/after diff)."""
+    from sqlalchemy import select
+
+    from app.models import Budget
+    from app.services import demo_service
+    from app.services.household_service import get_or_create_default_household
+
+    household = get_or_create_default_household(db)
+    mine = Budget(household_id=household.id, name="Groceries", period="monthly", amount=Decimal("99.00"))
+    db.add(mine)
+    db.commit()
+    mine_id = mine.id
+
+    demo_service.load_demo(db)  # reuses the existing "Groceries" budget, doesn't re-create it
+    result = demo_service.remove_demo(db)
+    assert result["removed"] is True
+
+    surviving = db.get(Budget, mine_id)
+    assert surviving is not None and surviving.amount == Decimal("99.00")
+    # Only the user's own budget remains; the demo's budgets are gone.
+    assert len(db.scalars(select(Budget.id)).all()) == 1
+
+
 def test_database_backup_download(client):
     client.post("/api/backup/demo")
     res = client.get("/api/backup/database")

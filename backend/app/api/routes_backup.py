@@ -12,7 +12,7 @@ from starlette.background import BackgroundTask
 from app.db.session import get_db
 from app.models import User
 from app.services import audit_service, backup_service, crypto_service, demo_service
-from app.services.auth_service import get_current_user
+from app.services.auth_service import get_current_user, require_owner
 from app.services.backup_service import RestoreError
 from app.services.crypto_service import DecryptError
 
@@ -107,5 +107,25 @@ def load_demo(
     """Load fabricated demo data so the app is populated for a first look."""
     result = demo_service.load_demo(db)
     audit_service.record(db, actor=user.display_name, action="load_demo", details=result)
+    db.commit()
+    return result
+
+
+@router.get("/demo")
+def demo_status(db: Session = Depends(get_db)) -> dict:
+    """Whether removable demo data is present (from a previous load)."""
+    return {"has_demo_data": demo_service.has_demo_data(db)}
+
+
+@router.delete("/demo")
+def remove_demo(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_owner),
+) -> dict:
+    """Remove everything a previous demo load created, leaving a clean database.
+    Owner-only and destructive — only the demo's own rows are deleted (real
+    imports and anything the user added afterwards are left untouched)."""
+    result = demo_service.remove_demo(db)
+    audit_service.record(db, actor=user.display_name, action="remove_demo", details=result)
     db.commit()
     return result

@@ -1148,6 +1148,14 @@ export function loadDemoData(): Promise<{ rows_detected: number; new: number; du
   return fetchJson("api/backup/demo", { method: "POST" });
 }
 
+export function getDemoStatus(): Promise<{ has_demo_data: boolean }> {
+  return fetchJson("api/backup/demo");
+}
+
+export function removeDemoData(): Promise<{ removed: boolean; counts: Record<string, number> }> {
+  return fetchJson("api/backup/demo", { method: "DELETE" });
+}
+
 // Browser-side file download by clicking a temporary anchor.
 function triggerDownload(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);

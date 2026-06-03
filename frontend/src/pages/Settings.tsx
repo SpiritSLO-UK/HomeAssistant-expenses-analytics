@@ -13,6 +13,7 @@ import {
   getHealth,
   listAiRequests,
   getMe,
+  getDemoStatus,
   getMqttStatus,
   getSecurityHealth,
   getSecurityStatus,
@@ -21,6 +22,7 @@ import {
   importConfig,
   listFxRates,
   loadDemoData,
+  removeDemoData,
   mfaDisable,
   mfaEnable,
   mfaSetup,
@@ -65,9 +67,21 @@ export default function Settings() {
     setMsg(null);
   }
 
+  const me = useQuery({ queryKey: ["me"], queryFn: getMe });
+  const demoStatus = useQuery({ queryKey: ["demo-status"], queryFn: getDemoStatus });
+
   const demo = useMutation({
     mutationFn: loadDemoData,
     onSuccess: (r) => ok(`Loaded demo data: ${r.new} new, ${r.duplicates} duplicates skipped.`),
+    onError: fail,
+  });
+
+  const removeDemo = useMutation({
+    mutationFn: removeDemoData,
+    onSuccess: (r) => {
+      const n = Object.values(r.counts).reduce((a, b) => a + b, 0);
+      ok(r.removed ? `Removed demo data (${n} rows deleted).` : "No demo data to remove.");
+    },
     onError: fail,
   });
 
@@ -127,9 +141,30 @@ export default function Settings() {
       <div className="card">
         <h2 className="card__title">Demo data</h2>
         <p className="muted">Load a small fabricated dataset to explore the app. Safe to re-run — duplicates are skipped.</p>
-        <button className="btn" disabled={demo.isPending} onClick={() => demo.mutate()}>
-          {demo.isPending ? "Loading…" : "Load demo data"}
-        </button>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button className="btn" disabled={demo.isPending} onClick={() => demo.mutate()}>
+            {demo.isPending ? "Loading…" : "Load demo data"}
+          </button>
+          {me.data?.is_admin && demoStatus.data?.has_demo_data && (
+            <button
+              className="btn btn--danger"
+              disabled={removeDemo.isPending}
+              onClick={() => {
+                if (
+                  window.confirm(
+                    "Remove all demo data? This deletes only the demo's own rows (its " +
+                      "transactions, example projects/budgets/savings, demo members, vendors and " +
+                      "review items). Real imports and anything you added are kept.",
+                  )
+                ) {
+                  removeDemo.mutate();
+                }
+              }}
+            >
+              {removeDemo.isPending ? "Removing…" : "Remove demo data"}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="card">

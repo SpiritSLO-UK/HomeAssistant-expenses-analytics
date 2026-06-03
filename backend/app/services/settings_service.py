@@ -33,6 +33,9 @@ BACKUP_MAX_TOTAL_MB = "backup_max_total_mb"
 BACKUP_MIN_KEEP = "backup_min_keep"
 # Runtime log level, editable from Settings (spec §38). Mirrors the env default.
 LOG_LEVEL = "log_level"
+# Manifest of the row ids a ``load_demo`` created (JSON), so "Remove demo data"
+# can delete exactly the demo's own rows and nothing a real import/user added.
+DEMO_MANIFEST = "demo_manifest"
 
 FX_MODES = {"manual", "frankfurter"}
 RECEIPT_MATCH_MODES = {"suggest", "auto"}
