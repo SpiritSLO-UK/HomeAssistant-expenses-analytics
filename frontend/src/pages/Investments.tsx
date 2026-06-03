@@ -1,0 +1,417 @@
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import Sparkline from "../components/Sparkline";
+import {
+  adjustAccountValue,
+  createHolding,
+  createInvestmentAccount,
+  deleteHolding,
+  getHoldings,
+  getInvestmentSummary,
+  getValueHistory,
+  recordAccountValue,
+  updateHolding,
+  type Holding,
+  type InvestmentAccount,
+} from "../api/client";
+
+function today(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+// A signed-amount span: green when ≥ 0, red below. `pct` is optional.
+function Gain({ value, pct, currency }: { value: string | null; pct: number | null; currency: string }) {
+  if (value == null) return null;
+  const n = Number(value);
+  return (
+    <span className={n >= 0 ? "amt--pos" : "amt--neg"}>
+      {n >= 0 ? "+" : ""}
+      {value} {currency}
+      {pct != null && <span style={{ marginLeft: 4 }}>({n >= 0 ? "+" : ""}{pct}%)</span>}
+    </span>
+  );
+}
+
+export default function Investments() {
+  const qc = useQueryClient();
+  const [err, setErr] = useState<string | null>(null);
+  const summary = useQuery({ queryKey: ["investment-summary"], queryFn: getInvestmentSummary });
+
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["investment-summary"] });
+    qc.invalidateQueries({ queryKey: ["investment-holdings"] });
+    qc.invalidateQueries({ queryKey: ["investment-values"] });
+  };
+  const fail = (e: unknown) => setErr(String(e));
+
+  const base = summary.data?.currency ?? "GBP";
+  const [showNew, setShowNew] = useState(false);
+
+  return (
+    <div className="page">
+      <div className="page__head">
+        <h1 className="page__title">Investments &amp; pensions</h1>
+      </div>
+      <p className="muted">
+        Track investment platforms and pensions. Record a <strong>value</strong> from a statement
+        (best for pensions), or add <strong>holdings</strong> — units of a ticker with a cost and a
+        last price — to see market value and gain. Prices are entered manually; an optional price
+        feed is coming.
+      </p>
+      {err && <p className="status status--error">{err}</p>}
+
+      {summary.data && summary.data.accounts.length > 0 && (
+        <div className="card">
+          <h2 className="card__title">Portfolio</h2>
+          <p style={{ fontSize: "1.6rem", margin: 0 }}>
+            <strong>{summary.data.total_value} {base}</strong>{" "}
+            <span className="muted">across {summary.data.accounts.length} account(s)</span>
+          </p>
+          {summary.data.total_gain != null && (
+            <p style={{ margin: "4px 0 0" }}>
+              Unrealised{" "}
+              <Gain value={summary.data.total_gain} pct={summary.data.total_gain_pct} currency={base} />
+            </p>
+          )}
+          <ul className="kv" style={{ marginTop: 8, maxWidth: 360 }}>
+            <li><span>Investments</span><span>{summary.data.by_type.investment} {base}</span></li>
+            <li><span>Pensions</span><span>{summary.data.by_type.pension} {base}</span></li>
+          </ul>
+        </div>
+      )}
+
+      <div className="card">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+          <h2 className="card__title" style={{ margin: 0 }}>Accounts</h2>
+          <button className="btn btn--sm" onClick={() => setShowNew((v) => !v)}>
+            {showNew ? "Cancel" : "＋ New account"}
+          </button>
+        </div>
+        {showNew && (
+          <NewAccountForm onCreated={() => { invalidate(); setShowNew(false); }} onError={fail} />
+        )}
+        {summary.data && summary.data.accounts.length === 0 && !showNew && (
+          <p className="muted">No investment or pension accounts yet — add one with ＋ New account.</p>
+        )}
+        {summary.data?.accounts.map((a) => (
+          <AccountCard key={a.id} account={a} base={base} onChange={invalidate} onError={fail} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function NewAccountForm({ onCreated, onError }: { onCreated: () => void; onError: (e: unknown) => void }) {
+  const [name, setName] = useState("");
+  const [type, setType] = useState<"investment" | "pension">("investment");
+  const [institution, setInstitution] = useState("");
+  const create = useMutation({
+    mutationFn: () =>
+      createInvestmentAccount({ name, account_type: type, institution: institution || undefined }),
+    onSuccess: () => { setName(""); setInstitution(""); onCreated(); },
+    onError,
+  });
+  return (
+    <form
+      className="form-row"
+      style={{ marginTop: 12, flexWrap: "wrap" }}
+      onSubmit={(e) => { e.preventDefault(); if (name) create.mutate(); }}
+    >
+      <input placeholder="Account name (e.g. Trading 212, Aviva pension)" value={name} onChange={(e) => setName(e.target.value)} />
+      <select value={type} onChange={(e) => setType(e.target.value as "investment" | "pension")}>
+        <option value="investment">Investment</option>
+        <option value="pension">Pension</option>
+      </select>
+      <input placeholder="Provider (optional)" value={institution} onChange={(e) => setInstitution(e.target.value)} />
+      <button className="btn" type="submit" disabled={!name || create.isPending}>
+        {create.isPending ? "Adding…" : "Add account"}
+      </button>
+    </form>
+  );
+}
+
+function AccountCard({
+  account,
+  base,
+  onChange,
+  onError,
+}: {
+  account: InvestmentAccount;
+  base: string;
+  onChange: () => void;
+  onError: (e: unknown) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ borderTop: "1px solid #2a2a2a", padding: "12px 0" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+        <div>
+          <button className="link-btn" style={{ fontWeight: 700 }} onClick={() => setOpen((v) => !v)}>
+            {open ? "▾ " : "▸ "}{account.name}
+          </button>{" "}
+          <span className="tag">{account.account_type}</span>
+          {account.institution && <span className="muted"> · {account.institution}</span>}
+          <div style={{ fontSize: "1.2rem" }}>
+            {account.current_value != null
+              ? `${account.current_value} ${account.currency}`
+              : <span className="muted">no value yet</span>}
+            {account.gain != null && (
+              <span style={{ marginLeft: 8, fontSize: "0.9rem" }}>
+                <Gain value={account.gain} pct={account.gain_pct} currency={account.currency} />
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {open && (
+        <div style={{ marginTop: 8 }}>
+          <HoldingsSection account={account} onChange={onChange} onError={onError} />
+          <ValueSection account={account} base={base} onChange={onChange} onError={onError} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HoldingsSection({
+  account,
+  onChange,
+  onError,
+}: {
+  account: InvestmentAccount;
+  onChange: () => void;
+  onError: (e: unknown) => void;
+}) {
+  const holdings = useQuery({
+    queryKey: ["investment-holdings", account.id],
+    queryFn: () => getHoldings(account.id),
+  });
+  const refresh = () => { onChange(); holdings.refetch(); };
+
+  const [symbol, setSymbol] = useState("");
+  const [units, setUnits] = useState("");
+  const [avgCost, setAvgCost] = useState("");
+  const [lastPrice, setLastPrice] = useState("");
+
+  const add = useMutation({
+    mutationFn: () =>
+      createHolding(account.id, {
+        symbol,
+        units,
+        avg_cost: avgCost || undefined,
+        last_price: lastPrice || undefined,
+      }),
+    onSuccess: () => { setSymbol(""); setUnits(""); setAvgCost(""); setLastPrice(""); refresh(); },
+    onError,
+  });
+
+  const rows = holdings.data ?? [];
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div className="muted" style={{ fontSize: "0.72rem", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 4 }}>
+        Holdings
+      </div>
+      {rows.length === 0 ? (
+        <p className="muted" style={{ margin: "0 0 6px" }}>No holdings — add a ticker below, or just record a value.</p>
+      ) : (
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Ticker</th><th>Units</th><th>Avg cost</th><th>Last price</th><th>Value</th><th>Gain</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((h) => (
+                <HoldingRow key={h.id} holding={h} onChange={refresh} onError={onError} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <form
+        className="form-row"
+        style={{ marginTop: 6, flexWrap: "wrap", gap: 6 }}
+        onSubmit={(e) => { e.preventDefault(); if (symbol && units) add.mutate(); }}
+      >
+        <input placeholder="Ticker (AAPL)" value={symbol} style={{ width: 110 }} onChange={(e) => setSymbol(e.target.value)} />
+        <input placeholder="Units" value={units} style={{ width: 90 }} onChange={(e) => setUnits(e.target.value)} />
+        <input placeholder="Avg cost" value={avgCost} style={{ width: 90 }} onChange={(e) => setAvgCost(e.target.value)} />
+        <input placeholder="Last price" value={lastPrice} style={{ width: 90 }} onChange={(e) => setLastPrice(e.target.value)} />
+        <button className="btn btn--sm" type="submit" disabled={!symbol || !units || add.isPending}>
+          {add.isPending ? "Adding…" : "＋ Add holding"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function HoldingRow({
+  holding,
+  onChange,
+  onError,
+}: {
+  holding: Holding;
+  onChange: () => void;
+  onError: (e: unknown) => void;
+}) {
+  const [units, setUnits] = useState(holding.units);
+  const [avgCost, setAvgCost] = useState(holding.avg_cost ?? "");
+  const [lastPrice, setLastPrice] = useState(holding.last_price ?? "");
+
+  const save = useMutation({
+    mutationFn: () =>
+      updateHolding(holding.id, {
+        units,
+        avg_cost: avgCost.trim() === "" ? null : avgCost.trim(),
+        last_price: lastPrice.trim() === "" ? null : lastPrice.trim(),
+      }),
+    onSuccess: () => onChange(),
+    onError,
+  });
+  const remove = useMutation({
+    mutationFn: () => deleteHolding(holding.id),
+    onSuccess: () => onChange(),
+    onError,
+  });
+
+  const dirty =
+    units !== holding.units ||
+    avgCost !== (holding.avg_cost ?? "") ||
+    lastPrice !== (holding.last_price ?? "");
+
+  return (
+    <tr>
+      <td>
+        <strong>{holding.symbol}</strong>
+        {holding.name && <div className="muted" style={{ fontSize: "0.78rem" }}>{holding.name}</div>}
+      </td>
+      <td><input value={units} style={{ width: 70 }} onChange={(e) => setUnits(e.target.value)} /></td>
+      <td><input value={avgCost} placeholder="—" style={{ width: 70 }} onChange={(e) => setAvgCost(e.target.value)} /></td>
+      <td><input value={lastPrice} placeholder="—" style={{ width: 70 }} onChange={(e) => setLastPrice(e.target.value)} /></td>
+      <td style={{ whiteSpace: "nowrap" }}>{holding.market_value ?? "—"}</td>
+      <td style={{ whiteSpace: "nowrap" }}>
+        {holding.gain != null
+          ? <Gain value={holding.gain} pct={holding.gain_pct} currency={holding.currency} />
+          : "—"}
+      </td>
+      <td style={{ whiteSpace: "nowrap" }}>
+        <button className="btn btn--sm btn--ghost" disabled={!dirty || save.isPending} onClick={() => save.mutate()}>
+          Save
+        </button>{" "}
+        <button
+          className="link-btn"
+          onClick={() => { if (window.confirm(`Remove holding ${holding.symbol}?`)) remove.mutate(); }}
+        >
+          ✕
+        </button>
+      </td>
+    </tr>
+  );
+}
+
+function ValueSection({
+  account,
+  base,
+  onChange,
+  onError,
+}: {
+  account: InvestmentAccount;
+  base: string;
+  onChange: () => void;
+  onError: (e: unknown) => void;
+}) {
+  const history = useQuery({
+    queryKey: ["investment-values", account.id],
+    queryFn: () => getValueHistory(account.id),
+  });
+  const refresh = () => { onChange(); history.refetch(); };
+
+  const [date, setDate] = useState(today());
+  const [value, setValue] = useState("");
+  const [delta, setDelta] = useState("");
+
+  const setValueM = useMutation({
+    mutationFn: () => recordAccountValue(account.id, { as_of_date: date, value }),
+    onSuccess: () => { setValue(""); refresh(); },
+    onError,
+  });
+  const adjust = useMutation({
+    mutationFn: (direction: "contribution" | "withdrawal") =>
+      adjustAccountValue(account.id, { amount: delta, direction }),
+    onSuccess: () => { setDelta(""); refresh(); },
+    onError,
+  });
+
+  function doAdjust(direction: "contribution" | "withdrawal") {
+    const amt = Number(delta);
+    if (!amt) return;
+    adjust.mutate(direction);
+  }
+
+  const hist = history.data ?? [];
+  const points = hist.map((b) => Number(b.value));
+  const log = hist
+    .map((b, i) => ({ ...b, delta: i > 0 ? Number(b.value) - Number(hist[i - 1].value) : null }))
+    .reverse();
+
+  // Only meaningful when the account is tracked as a lump value (no holdings).
+  const note = account.has_holdings
+    ? "This account's value comes from its holdings above. Snapshots below are an optional manual record."
+    : "Record this account's total value from a statement, or log a contribution/withdrawal.";
+
+  return (
+    <div>
+      <div className="muted" style={{ fontSize: "0.72rem", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 4 }}>
+        Value snapshots
+      </div>
+      <p className="muted" style={{ margin: "0 0 6px", fontSize: "0.82rem" }}>{note}</p>
+
+      <div className="form-row" style={{ alignItems: "center", gap: 6 }}>
+        <input placeholder={`Amount (${base})`} value={delta} style={{ width: 120 }} onChange={(e) => setDelta(e.target.value)} />
+        <button className="btn btn--sm" disabled={!delta || adjust.isPending} onClick={() => doAdjust("contribution")}>
+          ＋ Contribution
+        </button>
+        <button className="btn btn--sm btn--ghost" disabled={!delta || adjust.isPending} onClick={() => doAdjust("withdrawal")}>
+          － Withdrawal
+        </button>
+      </div>
+
+      <form
+        className="form-row"
+        style={{ marginTop: 6 }}
+        onSubmit={(e) => { e.preventDefault(); if (value) setValueM.mutate(); }}
+      >
+        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+        <input placeholder={`Set value (${base})`} value={value} style={{ width: 150 }} onChange={(e) => setValue(e.target.value)} />
+        <button className="btn btn--sm btn--ghost" type="submit" disabled={!value || setValueM.isPending}>
+          {setValueM.isPending ? "Saving…" : "Set from statement"}
+        </button>
+      </form>
+
+      <div style={{ marginTop: 10 }}>
+        {points.length >= 2 && <Sparkline values={points} color="#6aa9ff" />}
+        {log.length === 0 ? (
+          <p className="muted" style={{ margin: 0 }}>No values recorded yet.</p>
+        ) : (
+          <ul className="kv" style={{ margin: 0, maxWidth: 460 }}>
+            {log.map((b) => (
+              <li key={b.id}>
+                <span className="muted">{b.as_of_date}{b.note ? ` · ${b.note}` : ""}</span>
+                <span style={{ whiteSpace: "nowrap" }}>
+                  {b.value} {account.currency}
+                  {b.delta != null && b.delta !== 0 && (
+                    <span className={b.delta > 0 ? "amt--pos" : "amt--neg"} style={{ marginLeft: 6, fontSize: "0.82rem" }}>
+                      {b.delta > 0 ? "+" : ""}{b.delta.toFixed(2)}
+                    </span>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}

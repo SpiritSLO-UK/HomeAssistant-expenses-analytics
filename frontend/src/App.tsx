@@ -14,6 +14,7 @@ import Travel from "./pages/Travel";
 import Business from "./pages/Business";
 import Budgets from "./pages/Budgets";
 import Savings from "./pages/Savings";
+import Investments from "./pages/Investments";
 import Accounts from "./pages/Accounts";
 import Allowance from "./pages/Allowance";
 import Subscriptions from "./pages/Subscriptions";
@@ -72,6 +73,7 @@ export default function App() {
           <Route path="/business" element={<Business />} />
           <Route path="/budgets" element={<Budgets />} />
           <Route path="/savings" element={<Savings />} />
+          <Route path="/investments" element={<Investments />} />
           <Route path="/accounts" element={<Accounts />} />
           <Route path="/allowance" element={<Allowance />} />
           <Route path="/subscriptions" element={<Subscriptions />} />

@@ -1219,6 +1219,128 @@ export function deleteSavingsGoal(id: number): Promise<void> {
   return fetchJson(`api/savings/goals/${id}`, { method: "DELETE" });
 }
 
+// --- Investments & pensions (spec §12.4, §27) ---
+
+export interface InvestmentAccount {
+  id: number;
+  name: string;
+  institution: string | null;
+  currency: string;
+  account_type: string; // investment | pension
+  current_value: string | null;
+  cost_basis: string | null;
+  gain: string | null;
+  gain_pct: number | null;
+  has_holdings: boolean;
+  holdings_count: number;
+  value_count: number;
+}
+
+export interface Holding {
+  id: number;
+  account_id: number;
+  symbol: string;
+  name: string | null;
+  units: string;
+  avg_cost: string | null;
+  last_price: string | null;
+  last_price_at: string | null;
+  currency: string;
+  market_value: string | null;
+  cost_basis: string | null;
+  gain: string | null;
+  gain_pct: number | null;
+}
+
+export interface AccountValue {
+  id: number;
+  account_id: number;
+  as_of_date: string;
+  value: string;
+  currency: string;
+  note: string | null;
+}
+
+export interface InvestmentSummary {
+  currency: string;
+  total_value: string;
+  total_cost: string | null;
+  total_gain: string | null;
+  total_gain_pct: number | null;
+  by_type: Record<string, string>;
+  accounts: InvestmentAccount[];
+}
+
+export function getInvestmentSummary(): Promise<InvestmentSummary> {
+  return fetchJson<InvestmentSummary>("api/investments/summary");
+}
+
+export function listInvestmentAccounts(): Promise<InvestmentAccount[]> {
+  return fetchJson<InvestmentAccount[]>("api/investments/accounts");
+}
+
+export function createInvestmentAccount(data: {
+  name: string;
+  account_type: "investment" | "pension";
+  institution?: string;
+  currency?: string;
+}): Promise<InvestmentAccount> {
+  return fetchJson("api/investments/accounts", { method: "POST", body: JSON.stringify(data) });
+}
+
+export function getValueHistory(accountId: number): Promise<AccountValue[]> {
+  return fetchJson<AccountValue[]>(`api/investments/accounts/${accountId}/values`);
+}
+
+export function recordAccountValue(
+  accountId: number,
+  data: { as_of_date: string; value: string; note?: string },
+): Promise<AccountValue> {
+  return fetchJson(`api/investments/accounts/${accountId}/values`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+// Contribution/withdrawal via the +/- control (snapshot at latest ± amount).
+export function adjustAccountValue(
+  accountId: number,
+  data: { amount: string; direction: "contribution" | "withdrawal"; note?: string },
+): Promise<AccountValue> {
+  return fetchJson(`api/investments/accounts/${accountId}/adjust`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function getHoldings(accountId: number): Promise<Holding[]> {
+  return fetchJson<Holding[]>(`api/investments/accounts/${accountId}/holdings`);
+}
+
+export function createHolding(
+  accountId: number,
+  data: { symbol: string; units: string; name?: string; avg_cost?: string; last_price?: string },
+): Promise<Holding> {
+  return fetchJson(`api/investments/accounts/${accountId}/holdings`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function updateHolding(
+  holdingId: number,
+  data: Record<string, unknown>,
+): Promise<Holding> {
+  return fetchJson(`api/investments/holdings/${holdingId}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export function deleteHolding(holdingId: number): Promise<void> {
+  return fetchJson(`api/investments/holdings/${holdingId}`, { method: "DELETE" });
+}
+
 // --- Backup / restore / demo (spec §26.5; backlog #9, #10, #16) ---
 
 export function loadDemoData(): Promise<{ rows_detected: number; new: number; duplicates: number }> {
