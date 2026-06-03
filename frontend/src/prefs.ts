@@ -38,6 +38,25 @@ export function setHiddenDashboardCards(hidden: Set<string>): void {
   writeString(HIDDEN_CARDS_KEY, JSON.stringify([...hidden]));
 }
 
+// --- Dashboard card order (backlog #84) ---
+
+const CARD_ORDER_KEY = "hafi_dashboard_order";
+
+export function getDashboardCardOrder(): string[] {
+  const raw = readString(CARD_ORDER_KEY);
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function setDashboardCardOrder(order: string[]): void {
+  writeString(CARD_ORDER_KEY, JSON.stringify(order));
+}
+
 // --- Sidebar nav show/hide (per device) ---
 
 const HIDDEN_NAV_KEY = "hafi_nav_hidden";
