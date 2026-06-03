@@ -22,6 +22,7 @@ import ReviewQueue from "./pages/ReviewQueue";
 import Settings from "./pages/Settings";
 import Users from "./pages/Users";
 import FamilySetup from "./pages/FamilySetup";
+import Setup from "./pages/Setup";
 import Logs from "./pages/Logs";
 import { getMe, getSecurityStatus, mfaVerify, unlockDatabase } from "./api/client";
 
@@ -77,6 +78,7 @@ export default function App() {
           <Route path="/receipts" element={<Receipts />} />
           <Route path="/review" element={<ReviewQueue />} />
           <Route path="/users" element={<Users />} />
+          <Route path="/setup" element={<Setup />} />
           <Route path="/family-setup" element={<FamilySetup />} />
           <Route path="/logs" element={<Logs />} />
           <Route path="/settings" element={<Settings />} />
