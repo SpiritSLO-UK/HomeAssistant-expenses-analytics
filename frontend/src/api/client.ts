@@ -884,6 +884,13 @@ export async function deleteCategory(id: number): Promise<void> {
   if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
 }
 
+export function mergeCategory(id: number, targetId: number): Promise<Category> {
+  return fetchJson<Category>(`api/categories/${id}/merge`, {
+    method: "POST",
+    body: JSON.stringify({ target_id: targetId }),
+  });
+}
+
 // --- Vendors (spec §24.6) ---
 
 export interface VendorAlias {

@@ -59,6 +59,52 @@ def test_category_crud(client):
     assert client.get(f"/api/categories/{cid}").status_code == 404
 
 
+def test_system_category_can_be_deleted(client):
+    """Built-in (system) categories are deletable too (backlog: full control)."""
+    income_id = _category_id(client, "Income")
+    assert client.delete(f"/api/categories/{income_id}").status_code == 204
+    assert client.get(f"/api/categories/{income_id}").status_code == 404
+
+
+def test_category_merge_reassigns_references(db):
+    """Merging re-points every reference (transactions, budgets, …) from the source
+    to the target, then deletes the source."""
+    from datetime import date
+    from decimal import Decimal
+
+    from app.models import Account, Budget, Transaction
+
+    coffee = category_service.create_category(db, {"name": "Coffee"})
+    eating = category_service.create_category(db, {"name": "Eating Out"})
+    acct = Account(name="A", account_type="current_account", currency="GBP")
+    db.add(acct)
+    db.flush()
+    txn = Transaction(
+        account_id=acct.id, transaction_date=date(2026, 5, 15), description_raw="LATTE",
+        amount=Decimal("-3.50"), currency="GBP", direction="debit",
+        base_amount=Decimal("-3.50"), fx_rate=Decimal("1"), category_id=coffee.id,
+    )
+    budget = Budget(name="Coffee budget", period="monthly", amount=Decimal("20"), category_id=coffee.id)
+    db.add_all([txn, budget])
+    db.commit()
+
+    target = category_service.merge_category(db, coffee.id, eating.id)
+    assert target.id == eating.id
+    assert category_service.get_category(db, coffee.id) is None  # source removed
+    db.refresh(txn)
+    db.refresh(budget)
+    assert txn.category_id == eating.id
+    assert budget.category_id == eating.id
+
+
+def test_category_merge_validation(client):
+    """Merging into itself is a 400; an unknown source or target is a 404."""
+    a = client.post("/api/categories", json={"name": "X"}).json()["id"]
+    assert client.post(f"/api/categories/{a}/merge", json={"target_id": a}).status_code == 400
+    assert client.post(f"/api/categories/{a}/merge", json={"target_id": 999999}).status_code == 404
+    assert client.post("/api/categories/999999/merge", json={"target_id": a}).status_code == 404
+
+
 # --- keyword auto-categorisation on import ---
 
 def test_auto_categorisation_by_keyword(client, samples_dir):
