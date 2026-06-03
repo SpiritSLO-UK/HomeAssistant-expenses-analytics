@@ -72,3 +72,23 @@ class OutliersResponse(BaseModel):
     month: str
     currency: str
     items: list[OutlierItem]
+
+
+# --- Processing stats (backlog: files uploaded/processed, AI vs local) ---
+
+
+class ProcessingStats(BaseModel):
+    statements_imported: int
+    transactions_imported: int
+    receipts_total: int
+    receipts_processed: int
+    receipts_failed: int
+    receipts_pending: int
+    ai_total: int
+    ai_completed: int
+    ai_failed: int
+    ai_pending: int
+    ai_cloud: int
+    ai_local: int
+    ai_avg_seconds: float | None = None
+    ai_by_task: dict[str, int] = {}

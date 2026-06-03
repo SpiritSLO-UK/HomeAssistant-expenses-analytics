@@ -1039,6 +1039,27 @@ export function getOutliers(month?: string, memberId?: number): Promise<Outliers
   return fetchJson<OutliersResponse>(`api/dashboard/outliers${qs ? `?${qs}` : ""}`);
 }
 
+export interface ProcessingStats {
+  statements_imported: number;
+  transactions_imported: number;
+  receipts_total: number;
+  receipts_processed: number;
+  receipts_failed: number;
+  receipts_pending: number;
+  ai_total: number;
+  ai_completed: number;
+  ai_failed: number;
+  ai_pending: number;
+  ai_cloud: number;
+  ai_local: number;
+  ai_avg_seconds: number | null;
+  ai_by_task: Record<string, number>;
+}
+
+export function getProcessingStats(): Promise<ProcessingStats> {
+  return fetchJson<ProcessingStats>("api/dashboard/processing");
+}
+
 // --- Savings (spec §12.4; backlog #96, #91) ---
 
 export interface SavingsAccount {

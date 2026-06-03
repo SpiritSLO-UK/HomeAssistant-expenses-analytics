@@ -114,8 +114,12 @@ Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md
   monthly spend/income/net trend) from small "⬇ CSV" links. Files carry a UTF-8
   BOM so they open cleanly in Excel.
 - **Customisable dashboard** — a **⚙ Customise** toggle lets you show/hide the
-  optional cards (Heads-up, Trends, Spending by category, Top vendors); the choice
-  is remembered on your device.
+  optional cards (Heads-up, Trends, Spending by category, Top vendors, By project,
+  Processing); the choice is remembered on your device.
+- **Processing card** — a pipeline-status snapshot: statements and transactions
+  imported, receipt OCR progress, and how many enrichment calls went through AI
+  (cloud vs local) with the average AI turnaround — so you can see at a glance how
+  much was handled locally vs sent to a cloud model (AI is off by default).
 - **Trends & heads-up** — the dashboard shows month-over-month spend/income/net
   sparklines with up/down arrows, and a non-nagging "heads-up" card that flags
   unusually large charges, categories spending well above their recent average,
