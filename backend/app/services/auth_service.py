@@ -235,6 +235,22 @@ def require_owner(user: User = Depends(get_current_user)) -> User:
     return user
 
 
+def can_manage_settings(user: User) -> bool:
+    """Whether the user may view/modify the general Settings + customise nav tabs
+    (backlog #28). Owners always can; a non-owner needs the owner-granted flag."""
+    return is_admin(user.role) or bool(getattr(user, "can_manage_settings", False))
+
+
+def require_settings_manager(user: User = Depends(get_current_user)) -> User:
+    """Gate settings-management endpoints to the owner or a granted member."""
+    if not can_manage_settings(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Managing settings requires the owner role or a 'manage settings' grant.",
+        )
+    return user
+
+
 def require_owner_step_up(
     request: Request,
     db: Session = Depends(get_db),
@@ -292,6 +308,7 @@ def update_user(
     new_status: str | None = None,
     display_name: str | None = None,
     email: str | None = None,
+    can_manage_settings: bool | None = None,
 ) -> User:
     """Apply an owner-initiated change to ``target``. Raises ``ValueError`` on a
     bad value or if the change would strip the household's last active owner."""
@@ -325,6 +342,9 @@ def update_user(
         target.display_name = display_name.strip()
     if email is not None:
         target.email = email.strip() or None
+    if can_manage_settings is not None and can_manage_settings != target.can_manage_settings:
+        changes["can_manage_settings"] = [target.can_manage_settings, can_manage_settings]
+        target.can_manage_settings = can_manage_settings
 
     audit_service.record(
         db,

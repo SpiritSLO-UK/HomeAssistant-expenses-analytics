@@ -122,11 +122,20 @@ export default function Settings() {
         </p>
       </div>
 
-      <CurrencyFx onMessage={ok} onError={fail} />
+      {me.data && !me.data.can_manage_settings && (
+        <div className="card">
+          <p className="muted">
+            General settings (currency, integrations, AI) are managed by the owner or someone
+            they've granted access. You can still manage your own two-factor security below.
+          </p>
+        </div>
+      )}
 
-      <MqttCard onMessage={ok} onError={fail} />
+      {me.data?.can_manage_settings && <CurrencyFx onMessage={ok} onError={fail} />}
 
-      <AiCard onMessage={ok} onError={fail} />
+      {me.data?.can_manage_settings && <MqttCard onMessage={ok} onError={fail} />}
+
+      {me.data?.can_manage_settings && <AiCard onMessage={ok} onError={fail} />}
 
       <MfaCard onMessage={ok} onError={fail} />
 

@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.logging import set_level as set_log_level
-from app.services import fx_service, settings_service
+from app.models import User
+from app.services import auth_service, fx_service, settings_service
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -37,7 +38,11 @@ def supported_currencies() -> list[dict]:
 
 
 @router.put("")
-def update_settings(payload: SettingsUpdate, db: Session = Depends(get_db)) -> dict:
+def update_settings(
+    payload: SettingsUpdate,
+    db: Session = Depends(get_db),
+    _user: User = Depends(auth_service.require_settings_manager),
+) -> dict:
     recompute = None
     if payload.fx_mode is not None:
         if payload.fx_mode not in settings_service.FX_MODES:

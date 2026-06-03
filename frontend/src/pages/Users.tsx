@@ -52,7 +52,7 @@ export default function Users() {
   };
 
   const patch = useMutation({
-    mutationFn: (v: { id: number; patch: { role?: string; status?: string } }) =>
+    mutationFn: (v: { id: number; patch: { role?: string; status?: string; can_manage_settings?: boolean } }) =>
       updateUser(v.id, v.patch),
     onSuccess: () => { setErr(null); invalidate(); },
     onError,
@@ -79,7 +79,7 @@ export default function Users() {
   });
 
   // Record then run an admin action so it can be replayed after a step-up.
-  const doPatch = (id: number, p: { role?: string; status?: string }) => {
+  const doPatch = (id: number, p: { role?: string; status?: string; can_manage_settings?: boolean }) => {
     lastAction.current = () => patch.mutate({ id, patch: p });
     patch.mutate({ id, patch: p });
   };
@@ -186,6 +186,7 @@ export default function Users() {
                   <th>Name</th>
                   <th>Role</th>
                   <th>Status</th>
+                  <th title="May view + change the general Settings and customise nav tabs">Manage settings</th>
                   <th>Last seen</th>
                   <th></th>
                 </tr>
@@ -219,6 +220,18 @@ export default function Users() {
                             <option key={s} value={s}>{s}</option>
                           ))}
                         </select>
+                      </td>
+                      <td style={{ textAlign: "center" }}>
+                        {u.role === "owner" ? (
+                          <span className="muted" title="Owners always manage settings">always</span>
+                        ) : (
+                          <input
+                            type="checkbox"
+                            checked={u.can_manage_settings}
+                            title="Allow this member to manage the general Settings + nav tabs"
+                            onChange={(e) => doPatch(u.id, { can_manage_settings: e.target.checked })}
+                          />
+                        )}
                       </td>
                       <td className="muted">{u.last_seen_at ? u.last_seen_at.replace("T", " ").slice(0, 16) : "—"}</td>
                       <td>

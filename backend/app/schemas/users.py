@@ -16,6 +16,7 @@ class UserOut(BaseModel):
     role: str
     status: str
     is_active: bool
+    can_manage_settings: bool
     external_id: str | None
     last_seen_at: datetime | None
     created_at: datetime
@@ -32,6 +33,7 @@ class MeOut(BaseModel):
     status: str
     is_admin: bool
     can_write: bool
+    can_manage_settings: bool
     mfa_enabled: bool
     # True when the user has MFA on but this request lacks a valid session — the
     # frontend then shows the MFA entry gate.
@@ -53,3 +55,4 @@ class UserUpdate(BaseModel):
     status: str | None = None  # pending | approved | disabled
     display_name: str | None = None
     email: str | None = None
+    can_manage_settings: bool | None = None

@@ -55,7 +55,7 @@ export default function App() {
   }
 
   return (
-    <AppShell role={me.data?.role ?? "owner"}>
+    <AppShell role={me.data?.role ?? "owner"} canManageTabs={me.data?.can_manage_settings ?? false}>
       <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/import" element={<Import />} />
@@ -82,11 +82,19 @@ export default function App() {
   );
 }
 
-function AppShell({ role, children }: { role: string; children: ReactNode }) {
+function AppShell({
+  role,
+  canManageTabs = false,
+  children,
+}: {
+  role: string;
+  canManageTabs?: boolean;
+  children: ReactNode;
+}) {
   const [navOpen, setNavOpen] = useState(false);
   return (
     <div className="layout">
-      <Sidebar role={role} open={navOpen} onNavigate={() => setNavOpen(false)} />
+      <Sidebar role={role} canManageTabs={canManageTabs} open={navOpen} onNavigate={() => setNavOpen(false)} />
       {navOpen && (
         <button className="nav-backdrop" aria-label="Close menu" onClick={() => setNavOpen(false)} />
       )}
