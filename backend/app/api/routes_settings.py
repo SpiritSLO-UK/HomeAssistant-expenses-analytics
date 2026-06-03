@@ -30,6 +30,12 @@ def get_settings(db: Session = Depends(get_db)) -> dict:
     return settings_service.get_all(db)
 
 
+@router.get("/currencies")
+def supported_currencies() -> list[dict]:
+    """The curated base-currency choices for the Settings dropdown (top-10)."""
+    return settings_service.SUPPORTED_CURRENCIES
+
+
 @router.put("")
 def update_settings(payload: SettingsUpdate, db: Session = Depends(get_db)) -> dict:
     recompute = None
@@ -77,9 +83,14 @@ def update_settings(payload: SettingsUpdate, db: Session = Depends(get_db)) -> d
 
     if payload.base_currency is not None:
         new_base = payload.base_currency.strip().upper()
-        if len(new_base) != 3:
-            raise HTTPException(status_code=400, detail="base_currency must be a 3-letter code")
         old_base = settings_service.get_base_currency(db)
+        # Must be one of the curated choices (the Settings dropdown). The current
+        # base is always allowed so an unusual legacy value can never lock you out.
+        if new_base not in settings_service.SUPPORTED_CURRENCY_CODES and new_base != old_base:
+            raise HTTPException(
+                status_code=400,
+                detail=f"base_currency must be one of {sorted(settings_service.SUPPORTED_CURRENCY_CODES)}",
+            )
         settings_service.set_value(db, settings_service.BASE_CURRENCY, new_base)
         if new_base != old_base:
             # Re-convert everything against the new base (backlog #29).
