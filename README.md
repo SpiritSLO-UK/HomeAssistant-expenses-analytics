@@ -95,7 +95,9 @@ Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md
   with no HA in front, it runs single-user exactly as before.) The **general
   Settings and nav-tab customisation are owner-only** by default; the owner can
   grant any member a **"manage settings"** permission from the Users page (each
-  user still manages their own two-factor security).
+  user still manages their own two-factor security). A **Family setup wizard**
+  (from the Users page) walks the owner through approving people + roles, sharing
+  or privatising accounts, and giving kids an allowance.
 - **Shared vs private accounts** — on the **Accounts** page, mark an account
   *private* and it (and its transactions) drop off everyone else's dashboards,
   budgets, exports and lists — only you and the household owner see it. Accounts
