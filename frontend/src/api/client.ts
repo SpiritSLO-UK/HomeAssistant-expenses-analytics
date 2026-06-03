@@ -1334,6 +1334,7 @@ export function updateSettings(patch: Partial<AppSettings>): Promise<AppSettings
 export interface ServiceState {
   enabled: boolean;
   mode?: string;
+  configured?: boolean;
   configurable: boolean;
   detail: string;
 }

@@ -317,19 +317,29 @@ function ServicesCard({
     <div className="card">
       <h2 className="card__title">Services</h2>
       <p className="muted" style={{ marginTop: 0, fontSize: "0.85rem" }}>
-        Turn each service on or off from one place. AI is off by default; turning it on here keeps it
-        strictly local (no external calls) — choose cloud/local-LLM modes in the AI card below.
+        See and switch services from one place. The AI assistant stays off until you choose a mode
+        and provider in the AI section below — but you can always turn it off here.
       </p>
       {!s && <p className="muted">Loading…</p>}
       {s && (
         <ul className="kv" style={{ display: "block" }}>
-          <Toggle
-            label="AI assistant"
-            detail={s.ai.detail}
-            on={s.ai.enabled}
-            busy={set.isPending}
-            onChange={(v) => set.mutate({ privacy_mode: v ? "strict_local" : "no_ai" })}
-          />
+          <li style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "6px 0" }}>
+            <span>
+              <strong>AI assistant</strong>
+              <br />
+              <span className="muted" style={{ fontSize: "0.82rem" }}>{s.ai.detail}</span>
+            </span>
+            <span style={{ whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 8 }}>
+              <span className={"tag" + (s.ai.enabled ? "" : " tag--dup")}>{s.ai.enabled ? "On" : "Off"}</span>
+              {s.ai.enabled ? (
+                <button className="btn btn--sm btn--ghost" disabled={set.isPending} onClick={() => set.mutate({ privacy_mode: "no_ai" })}>
+                  Turn off
+                </button>
+              ) : (
+                <span className="muted" style={{ fontSize: "0.8rem" }}>set up below ↓</span>
+              )}
+            </span>
+          </li>
           <Toggle
             label="Receipt OCR"
             detail={s.ocr.detail}
