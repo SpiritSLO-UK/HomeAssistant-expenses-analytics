@@ -163,6 +163,7 @@ export interface Transaction {
   posted_date: string | null;
   description_raw: string;
   merchant_raw: string | null;
+  merchant_id: number | null;
   amount: string;
   currency: string;
   direction: string;

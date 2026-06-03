@@ -207,3 +207,23 @@ def test_category_cloud_privacy_is_user_editable(client):
     assert client.post(
         "/api/categories", json={"name": "Bogus", "privacy_sensitivity": "weird"}
     ).status_code == 400
+
+
+def test_set_vendor_on_transaction(client):
+    """A user can manually assign (and clear) a vendor on a transaction row
+    (#15.3); a bogus vendor id is rejected."""
+    client.post("/api/backup/demo")
+    txn_id = client.get("/api/transactions", params={"limit": 1}).json()["items"][0]["id"]
+    vendor_id = client.get("/api/vendors").json()[0]["id"]
+
+    assigned = client.patch(f"/api/transactions/{txn_id}", json={"merchant_id": vendor_id})
+    assert assigned.status_code == 200
+    assert assigned.json()["merchant_id"] == vendor_id
+
+    # A non-existent vendor is rejected.
+    assert client.patch(f"/api/transactions/{txn_id}", json={"merchant_id": 999_999}).status_code == 400
+
+    # Clearing back to no vendor works.
+    cleared = client.patch(f"/api/transactions/{txn_id}", json={"merchant_id": None})
+    assert cleared.status_code == 200
+    assert cleared.json()["merchant_id"] is None
