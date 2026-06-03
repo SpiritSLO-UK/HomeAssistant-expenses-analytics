@@ -148,6 +148,10 @@ function AssetCard({ asset, onChange, onError }: { asset: Asset; onChange: () =>
           {detail.data?.kind === "car" && (
             <RefuelForm assetId={asset.id} unit={asset.distance_unit} onAdded={refresh} onError={onError} />
           )}
+          {detail.data?.kind === "home" && detail.data.home && <HomeStatsPanel home={detail.data.home} />}
+          {detail.data?.kind === "home" && (
+            <ReadingForm assetId={asset.id} onAdded={refresh} onError={onError} />
+          )}
           <EntryForm assetId={asset.id} onAdded={refresh} onError={onError} />
           {detail.data && <LogHistory asset={detail.data} logs={detail.data.logs ?? []} onChange={refresh} onError={onError} />}
         </div>
@@ -173,6 +177,76 @@ function Stat({ label, value }: { label: string; value: string }) {
       <div className="stat__label">{label}</div>
       <div className="stat__value" style={{ fontSize: "1.1rem" }}>{value}</div>
     </div>
+  );
+}
+
+function HomeStatsPanel({ home }: { home: NonNullable<Asset["home"]> }) {
+  if (home.meters.length === 0) {
+    return <p className="muted" style={{ marginTop: 0 }}>No meter readings yet — log one below to track usage.</p>;
+  }
+  return (
+    <div style={{ marginBottom: 12 }}>
+      {home.meters.map((m) => (
+        <div key={m.meter} style={{ marginBottom: 4 }}>
+          <strong style={{ textTransform: "capitalize" }}>{m.meter}</strong>
+          <span className="muted">
+            {" "}· latest {m.latest_reading}{m.unit ? ` ${m.unit}` : ""}
+            {" "}· used {m.total_usage}{m.unit ? ` ${m.unit}` : ""}
+            {" "}· {gbp(m.total_cost)}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const METER_UNITS: Record<string, string> = { electricity: "kWh", gas: "kWh", water: "m3", other: "" };
+
+function ReadingForm({ assetId, onAdded, onError }: { assetId: number; onAdded: () => void; onError: (e: unknown) => void }) {
+  const [date, setDate] = useState(today());
+  const [meter, setMeter] = useState("electricity");
+  const [reading, setReading] = useState("");
+  const [unit, setUnit] = useState("kWh");
+  const [cost, setCost] = useState("");
+
+  const add = useMutation({
+    mutationFn: () =>
+      addAssetLog(assetId, {
+        log_date: date,
+        kind: "reading",
+        meter,
+        reading,
+        unit: unit || undefined,
+        cost: cost || undefined,
+      }),
+    onSuccess: () => { setReading(""); setCost(""); onAdded(); },
+    onError,
+  });
+
+  return (
+    <form
+      className="form-row"
+      style={{ flexWrap: "wrap", gap: 6, marginBottom: 8 }}
+      onSubmit={(e) => { e.preventDefault(); if (reading) add.mutate(); }}
+    >
+      <strong style={{ alignSelf: "center", fontSize: "0.85rem" }}>📊 Reading:</strong>
+      <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+      <select
+        value={meter}
+        onChange={(e) => { const m = e.target.value; setMeter(m); setUnit(METER_UNITS[m] ?? unit); }}
+      >
+        <option value="electricity">Electricity</option>
+        <option value="gas">Gas</option>
+        <option value="water">Water</option>
+        <option value="other">Other</option>
+      </select>
+      <input placeholder="Reading" value={reading} style={{ width: 110 }} onChange={(e) => setReading(e.target.value)} />
+      <input placeholder="Unit" value={unit} style={{ width: 70 }} onChange={(e) => setUnit(e.target.value)} />
+      <input placeholder="Cost £" value={cost} style={{ width: 80 }} onChange={(e) => setCost(e.target.value)} />
+      <button className="btn btn--sm" type="submit" disabled={!reading || add.isPending}>
+        {add.isPending ? "…" : "Add"}
+      </button>
+    </form>
   );
 }
 
@@ -287,6 +361,11 @@ function LogHistory({ asset, logs, onChange, onError }: {
                       {lg.odometer} · {lg.litres} L
                       {lg.is_full_tank === false && <span className="muted"> · partial</span>}
                       {mpg != null && <span className="amt--pos"> · {mpg} MPG</span>}
+                    </>
+                  ) : lg.kind === "reading" ? (
+                    <>
+                      <span style={{ textTransform: "capitalize" }}>{lg.meter}</span>: {lg.reading}
+                      {lg.unit ? ` ${lg.unit}` : ""}
                     </>
                   ) : (
                     lg.note ?? <span className="muted">—</span>

@@ -90,6 +90,8 @@ warranty, not financial advice — keep your own backups._
   A car's **refuel** entries (odometer + litres + cost) yield **MPG** (imperial
   gallon) and **L/100km** between full fills, plus servicing/running costs and a
   per-fill economy history. Odometer is in your unit (miles by default, or km).
+  A **home** tracks **utility meter readings** (electricity/gas/water) → usage and
+  cost between readings, plus maintenance/running costs.
 - **Subscriptions** — recurring payments detected automatically, with a monthly
   cost total, plus **alerts** for renewals due soon and payments that look
   missed (also surfaced in the dashboard heads-up).
