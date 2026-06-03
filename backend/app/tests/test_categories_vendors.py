@@ -227,3 +227,46 @@ def test_set_vendor_on_transaction(client):
     cleared = client.patch(f"/api/transactions/{txn_id}", json={"merchant_id": None})
     assert cleared.status_code == 200
     assert cleared.json()["merchant_id"] is None
+
+
+def test_bulk_update_transactions(client):
+    """Multi-edit applies one change to many transactions at once: set category,
+    add a tag, archive, delete — scope-safe and validated."""
+    client.post("/api/backup/demo")
+    ids = [t["id"] for t in client.get("/api/transactions", params={"limit": 3}).json()["items"]]
+    cat = _category_id(client, "Groceries")
+
+    # Bulk set category.
+    r = client.post("/api/transactions/bulk", json={"transaction_ids": ids, "category_id": cat})
+    assert r.status_code == 200 and r.json()["updated"] == len(ids)
+    after = {t["id"]: t for t in client.get("/api/transactions", params={"limit": 500}).json()["items"]}
+    assert all(after[i]["category_id"] == cat for i in ids)
+
+    # Bulk add a tag (appends, doesn't replace).
+    client.post("/api/transactions/bulk", json={"transaction_ids": ids, "add_tag": "bulk-test"})
+    tagged = {t["id"]: t for t in client.get("/api/transactions", params={"limit": 500}).json()["items"]}
+    assert all(any(tg["name"] == "bulk-test" for tg in tagged[i]["tags"]) for i in ids)
+
+    # An unknown category id fails the whole call.
+    assert client.post(
+        "/api/transactions/bulk", json={"transaction_ids": ids, "category_id": 999_999}
+    ).status_code == 400
+
+    # Bulk archive → hidden from the default list, shown with include_archived.
+    client.post("/api/transactions/bulk", json={"transaction_ids": ids, "archive": True})
+    visible = {t["id"] for t in client.get("/api/transactions", params={"limit": 500}).json()["items"]}
+    assert not (set(ids) & visible)
+    incl = {
+        t["id"]
+        for t in client.get("/api/transactions", params={"limit": 500, "include_archived": "true"}).json()["items"]
+    }
+    assert set(ids) <= incl
+
+    # Bulk delete → gone entirely.
+    r = client.post("/api/transactions/bulk", json={"transaction_ids": ids, "delete": True})
+    assert r.json()["deleted"] == len(ids)
+    gone = {
+        t["id"]
+        for t in client.get("/api/transactions", params={"limit": 500, "include_archived": "true"}).json()["items"]
+    }
+    assert not (set(ids) & gone)

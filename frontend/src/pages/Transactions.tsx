@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   approveAiRequest,
+  bulkUpdateTransactions,
   categoriseTransaction,
   classifyWithAi,
   exportTransactionsCsv,
@@ -17,6 +18,7 @@ import {
   setTransactionTags,
   unarchiveTransaction,
   updateTransaction,
+  type BulkUpdate,
   type Transaction,
   type TransactionFilters,
 } from "../api/client";
@@ -50,6 +52,8 @@ export default function Transactions() {
   // Which row's detail panel is expanded (click a row to edit it). The focused
   // deep-link row opens automatically.
   const [openId, setOpenId] = useState<number | null>(null);
+  // Multi-edit: checkbox-selected transaction ids + a bulk-actions bar.
+  const [selected, setSelected] = useState<Set<number>>(new Set());
   const [showAiBatch, setShowAiBatch] = useState(false);
   const [showCloudBatch, setShowCloudBatch] = useState(false);
   const [ruleMsg, setRuleMsg] = useState<string | null>(null);
@@ -181,6 +185,31 @@ export default function Transactions() {
       qc.invalidateQueries({ queryKey: ["dash-vendors"] });
     },
   });
+
+  // Multi-edit: apply one change to every selected transaction at once.
+  const bulk = useMutation({
+    mutationFn: (patch: BulkUpdate) => bulkUpdateTransactions([...selected], patch),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["transactions"] });
+      qc.invalidateQueries({ queryKey: ["vendors"] });
+      qc.invalidateQueries({ queryKey: ["dash-vendors"] });
+      qc.invalidateQueries({ queryKey: ["dashboard-projects"] });
+      qc.invalidateQueries({ queryKey: ["tags"] });
+    },
+    onError: (e) => window.alert(String(e instanceof Error ? e.message : e)),
+  });
+
+  function applyBulk(patch: BulkUpdate, clearAfter = false) {
+    bulk.mutate(patch, { onSuccess: () => { if (clearAfter) setSelected(new Set()); } });
+  }
+
+  const toggleSelected = (id: number) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const setTags = useMutation({
     mutationFn: (v: { id: number; tags: string[] }) => setTransactionTags(v.id, v.tags),
@@ -346,10 +375,90 @@ export default function Transactions() {
         )}
         {data && data.items.length > 0 && (
           <>
+            {selected.size > 0 && !focusId && (
+              <div className="bulk-bar">
+                <strong>{selected.size} selected</strong>
+                <select
+                  value=""
+                  title="Set category for selected"
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v) applyBulk({ category_id: v === "__none" ? null : Number(v) });
+                  }}
+                >
+                  <option value="">Set category…</option>
+                  <option value="__none">— clear —</option>
+                  {categories.data?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                <select
+                  value=""
+                  title="Set project for selected"
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v) applyBulk({ project_id: v === "__none" ? null : Number(v) });
+                  }}
+                >
+                  <option value="">Set project…</option>
+                  <option value="__none">— clear —</option>
+                  {projects.data?.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+                <button
+                  className="btn btn--sm btn--ghost"
+                  onClick={() => {
+                    const t = window.prompt("Add a tag to the selected transactions:")?.trim();
+                    if (t) applyBulk({ add_tag: t });
+                  }}
+                >
+                  + tag
+                </button>
+                <button className="btn btn--sm btn--ghost" onClick={() => applyBulk({ is_business: true })}>
+                  Mark business
+                </button>
+                <button className="btn btn--sm btn--ghost" onClick={() => applyBulk({ is_business: false })}>
+                  Unmark
+                </button>
+                <button
+                  className="btn btn--sm btn--ghost"
+                  onClick={() => {
+                    if (window.confirm(`Archive ${selected.size} transaction(s)? They're hidden from totals (reversible).`))
+                      applyBulk({ archive: true }, true);
+                  }}
+                >
+                  Archive
+                </button>
+                <button
+                  className="btn btn--sm btn--ghost"
+                  onClick={() => {
+                    if (window.confirm(`Permanently delete ${selected.size} transaction(s)? This can't be undone.`))
+                      applyBulk({ delete: true }, true);
+                  }}
+                >
+                  Delete
+                </button>
+                <button className="link-btn" onClick={() => setSelected(new Set())}>Clear</button>
+              </div>
+            )}
             <div className="table-wrap">
               <table className="table">
                 <thead>
                   <tr>
+                    <th className="col-select">
+                      <input
+                        type="checkbox"
+                        title="Select all on this page"
+                        checked={data.items.every((t) => selected.has(t.id))}
+                        onChange={(e) =>
+                          setSelected((prev) => {
+                            const next = new Set(prev);
+                            for (const t of data.items) {
+                              if (e.target.checked) next.add(t.id);
+                              else next.delete(t.id);
+                            }
+                            return next;
+                          })
+                        }
+                      />
+                    </th>
                     <th>Date</th>
                     <th>Description</th>
                     <th className="num">Amount</th>
@@ -376,6 +485,13 @@ export default function Transactions() {
                       }
                       style={t.archived_at ? { opacity: 0.6 } : undefined}
                     >
+                      <td className="col-select">
+                        <input
+                          type="checkbox"
+                          checked={selected.has(t.id)}
+                          onChange={() => toggleSelected(t.id)}
+                        />
+                      </td>
                       <td>{t.transaction_date}</td>
                       <td>
                         <button
@@ -423,7 +539,7 @@ export default function Transactions() {
                     </tr>
                     {isOpen && (
                       <tr className="txn-detail">
-                        <td colSpan={6}>
+                        <td colSpan={7}>
                           <div className="txn-detail__grid">
                             <div className="txn-detail__field">
                               <span>Category</span>
