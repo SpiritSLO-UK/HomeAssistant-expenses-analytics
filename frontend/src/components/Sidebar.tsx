@@ -7,7 +7,15 @@ import { getHiddenNavKeys, setHiddenNavKeys } from "../prefs";
 // back to Settings (and Customise itself lives in the sidebar regardless).
 const ALWAYS_SHOWN = new Set(["/", "/settings"]);
 
-export default function Sidebar({ role = "owner" }: { role?: string }) {
+export default function Sidebar({
+  role = "owner",
+  open = false,
+  onNavigate,
+}: {
+  role?: string;
+  open?: boolean; // drawer open on narrow screens
+  onNavigate?: () => void; // close the drawer after picking a page (mobile)
+}) {
   const isAdmin = role === "owner";
   const isChild = role === "child";
   const [hidden, setHidden] = useState<Set<string>>(() => getHiddenNavKeys());
@@ -34,7 +42,7 @@ export default function Sidebar({ role = "owner" }: { role?: string }) {
     isChild || editing ? roleItems : roleItems.filter((i) => !hidden.has(i.path));
 
   return (
-    <aside className="sidebar">
+    <aside className={"sidebar" + (open ? " sidebar--open" : "")}>
       <div className="sidebar__brand">
         <span className="sidebar__brand-icon">💷</span>
         <span className="sidebar__brand-text">Finance</span>
@@ -54,6 +62,7 @@ export default function Sidebar({ role = "owner" }: { role?: string }) {
               key={item.path}
               to={item.path}
               end={item.path === "/"}
+              onClick={() => onNavigate?.()}
               className={({ isActive }) =>
                 "sidebar__link" + (isActive ? " sidebar__link--active" : "")
               }

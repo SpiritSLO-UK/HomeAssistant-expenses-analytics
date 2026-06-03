@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Route, Routes } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Sidebar from "./components/Sidebar";
@@ -45,23 +45,18 @@ export default function App() {
   // The child role is a narrow allowance view — only that route is mounted.
   if (me.data?.role === "child") {
     return (
-      <div className="layout">
-        <Sidebar role="child" />
-        <main className="content">
-          <Routes>
-            <Route path="/allowance" element={<Allowance />} />
-            <Route path="*" element={<Allowance />} />
-          </Routes>
-        </main>
-      </div>
+      <AppShell role="child">
+        <Routes>
+          <Route path="/allowance" element={<Allowance />} />
+          <Route path="*" element={<Allowance />} />
+        </Routes>
+      </AppShell>
     );
   }
 
   return (
-    <div className="layout">
-      <Sidebar role={me.data?.role ?? "owner"} />
-      <main className="content">
-        <Routes>
+    <AppShell role={me.data?.role ?? "owner"}>
+      <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/import" element={<Import />} />
           <Route path="/transactions" element={<Transactions />} />
@@ -82,8 +77,28 @@ export default function App() {
           <Route path="/logs" element={<Logs />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Dashboard />} />
-        </Routes>
-      </main>
+      </Routes>
+    </AppShell>
+  );
+}
+
+function AppShell({ role, children }: { role: string; children: ReactNode }) {
+  const [navOpen, setNavOpen] = useState(false);
+  return (
+    <div className="layout">
+      <Sidebar role={role} open={navOpen} onNavigate={() => setNavOpen(false)} />
+      {navOpen && (
+        <button className="nav-backdrop" aria-label="Close menu" onClick={() => setNavOpen(false)} />
+      )}
+      <div className="content-col">
+        <div className="mobile-topbar">
+          <button className="hamburger" aria-label="Open menu" onClick={() => setNavOpen(true)}>
+            ☰
+          </button>
+          <span className="mobile-topbar__brand">💷 Finance</span>
+        </div>
+        <main className="content">{children}</main>
+      </div>
     </div>
   );
 }
