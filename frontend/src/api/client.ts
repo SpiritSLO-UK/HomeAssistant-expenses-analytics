@@ -1396,6 +1396,10 @@ export function backfillFx(): Promise<{ checked: number; filled: number; still_m
   return fetchJson("api/fx/backfill", { method: "POST" });
 }
 
+export function getMissingFx(): Promise<{ needs_rate: number }> {
+  return fetchJson("api/fx/missing");
+}
+
 export function fxMissing(): Promise<{ needs_rate: number }> {
   return fetchJson("api/fx/missing");
 }

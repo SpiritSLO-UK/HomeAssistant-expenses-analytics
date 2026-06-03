@@ -14,6 +14,7 @@ import {
   listAiRequests,
   getMe,
   getDemoStatus,
+  getMissingFx,
   getMqttStatus,
   getSecurityHealth,
   getSecurityStatus,
@@ -428,6 +429,7 @@ function CurrencyFx({
   const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
   const currencies = useQuery({ queryKey: ["currencies"], queryFn: getSupportedCurrencies });
   const rates = useQuery({ queryKey: ["fx-rates"], queryFn: listFxRates });
+  const missing = useQuery({ queryKey: ["fx-missing"], queryFn: getMissingFx });
   const [rateDate, setRateDate] = useState("");
   const [quote, setQuote] = useState("");
   const [rate, setRate] = useState("");
@@ -435,6 +437,7 @@ function CurrencyFx({
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["settings"] });
     qc.invalidateQueries({ queryKey: ["fx-rates"] });
+    qc.invalidateQueries({ queryKey: ["fx-missing"] });
     qc.invalidateQueries({ queryKey: ["transactions"] });
     qc.invalidateQueries({ queryKey: ["summary"] });
   };
@@ -508,19 +511,39 @@ function CurrencyFx({
             ))}
           </select>
         </label>
-        <label>
-          FX rates{" "}
-          <select value={mode} onChange={(e) => save.mutate({ fx_mode: e.target.value })}>
-            <option value="manual">Manual (no internet)</option>
-            <option value="frankfurter">Frankfurter (online, ECB)</option>
-          </select>
-        </label>
       </div>
       <p className="muted">
-        Amounts are stored in their original currency and converted to your base currency.
-        Manual mode never makes network calls; Frankfurter fetches free ECB rates (opt-in) and
-        caches them. Existing conversions are never rewritten — only missing ones are backfilled.
+        Amounts are stored in their original currency and converted to your base currency. Existing
+        conversions are never rewritten — only missing ones are filled.
       </p>
+
+      {/* Online-rates status lives here; the on/off switch is in Settings → Services. */}
+      <div className="card" style={{ background: "var(--bg)", margin: "8px 0", padding: "10px 12px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <span>
+            <strong>Online rates:</strong>{" "}
+            {mode === "frankfurter" ? (
+              <span>On — Frankfurter (free ECB rates)</span>
+            ) : (
+              <span className="muted">Off — manual rates only (no network)</span>
+            )}
+            <br />
+            <span className="muted" style={{ fontSize: "0.8rem" }}>
+              {missing.data && missing.data.needs_rate > 0
+                ? `${missing.data.needs_rate} transaction(s) still need a rate.`
+                : "Every transaction has a rate."}{" "}
+              Switch online rates on/off in Settings → Services.
+            </span>
+          </span>
+          <button className="btn btn--sm" disabled={backfill.isPending} onClick={() => backfill.mutate()}>
+            {backfill.isPending
+              ? "Syncing…"
+              : mode === "frankfurter"
+                ? "Sync from Frankfurter"
+                : "Fill from manual rates"}
+          </button>
+        </div>
+      </div>
 
       <div className="form-row" style={{ marginTop: 8 }}>
         <input type="date" value={rateDate} onChange={(e) => setRateDate(e.target.value)} />
@@ -542,10 +565,7 @@ function CurrencyFx({
           disabled={!rateDate || !quote || !rate || addRate.isPending}
           onClick={() => addRate.mutate()}
         >
-          Add rate
-        </button>
-        <button className="btn btn--ghost" disabled={backfill.isPending} onClick={() => backfill.mutate()}>
-          {backfill.isPending ? "Backfilling…" : "Backfill missing"}
+          Add manual rate
         </button>
       </div>
 
