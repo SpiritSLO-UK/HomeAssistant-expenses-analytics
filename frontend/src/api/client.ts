@@ -1478,6 +1478,7 @@ export interface Me {
   status: string;
   is_admin: boolean;
   can_write: boolean;
+  can_manage_settings: boolean;
   mfa_enabled: boolean;
   mfa_required: boolean;
 }
@@ -1489,6 +1490,7 @@ export interface User {
   role: string;
   status: string;
   is_active: boolean;
+  can_manage_settings: boolean;
   external_id: string | null;
   last_seen_at: string | null;
   created_at: string;
@@ -1515,7 +1517,7 @@ export function listMembers(): Promise<Member[]> {
 
 export function updateUser(
   id: number,
-  patch: { role?: string; status?: string; display_name?: string; email?: string },
+  patch: { role?: string; status?: string; display_name?: string; email?: string; can_manage_settings?: boolean },
 ): Promise<User> {
   return fetchJson<User>(`api/users/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
 }

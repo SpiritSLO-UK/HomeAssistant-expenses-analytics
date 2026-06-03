@@ -9,10 +9,12 @@ const ALWAYS_SHOWN = new Set(["/", "/settings"]);
 
 export default function Sidebar({
   role = "owner",
+  canManageTabs = true,
   open = false,
   onNavigate,
 }: {
   role?: string;
+  canManageTabs?: boolean; // owner or a granted member may customise the nav tabs (#28 RBAC)
   open?: boolean; // drawer open on narrow screens
   onNavigate?: () => void; // close the drawer after picking a page (mobile)
 }) {
@@ -74,7 +76,7 @@ export default function Sidebar({
         )}
       </nav>
       <div className="sidebar__footer">
-        {!isChild && (
+        {!isChild && canManageTabs && (
           <button className="sidebar__customise" onClick={() => setEditing((v) => !v)}>
             {editing ? "✓ Done" : "✏️ Customise tabs"}
           </button>

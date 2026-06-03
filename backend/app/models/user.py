@@ -45,6 +45,10 @@ class User(Base, TimestampMixin):
     # pending | approved | disabled — the gate the API enforces.
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="approved")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Owner-granted permission to manage the general Settings + tab customisation
+    # (backlog #28 RBAC). Owners can always manage; this lets a non-owner member be
+    # given the same. Defaults off.
+    can_manage_settings: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # Optional app-level MFA (TOTP, backlog #124). ``mfa_secret`` is the base32
     # seed; ``mfa_enabled`` flips true only after the user confirms a code.
