@@ -605,6 +605,34 @@ code {
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
 }
 
+/* Resizable table columns (backlog). Fixed layout so the colgroup widths win;
+   each header has a drag handle on its right edge. */
+.table--resizable {
+  table-layout: fixed;
+  width: 100%;
+}
+.table--resizable th {
+  position: relative;
+}
+/* Long values wrap within their fixed width rather than forcing the table wider
+   (the detail row spans all columns, so it must NOT be overflow-clipped). */
+.table--resizable td {
+  overflow-wrap: anywhere;
+}
+.col-resize {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 7px;
+  height: 100%;
+  cursor: col-resize;
+  user-select: none;
+  touch-action: none;
+}
+.col-resize:hover {
+  background: var(--border);
+}
+
 /* Dashboard "Customise" reorder list (#84). */
 .card-customise {
   list-style: none;

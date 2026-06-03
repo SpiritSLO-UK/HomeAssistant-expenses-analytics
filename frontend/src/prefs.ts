@@ -57,6 +57,32 @@ export function setDashboardCardOrder(order: string[]): void {
   writeString(CARD_ORDER_KEY, JSON.stringify(order));
 }
 
+// --- Resizable table column widths, per table, per device (backlog) ---
+
+function columnWidthsKey(tableKey: string): string {
+  return `hafi_colwidths_${tableKey}`;
+}
+
+export function getColumnWidths(tableKey: string): Record<string, number> {
+  const raw = readString(columnWidthsKey(tableKey));
+  if (!raw) return {};
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return {};
+    const out: Record<string, number> = {};
+    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof v === "number" && v > 0) out[k] = v;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+export function setColumnWidths(tableKey: string, widths: Record<string, number>): void {
+  writeString(columnWidthsKey(tableKey), JSON.stringify(widths));
+}
+
 // --- Sidebar nav show/hide (per device) ---
 
 const HIDDEN_NAV_KEY = "hafi_nav_hidden";

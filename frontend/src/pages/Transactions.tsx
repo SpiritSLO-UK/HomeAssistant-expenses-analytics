@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -29,8 +29,21 @@ import SplitEditor from "../components/SplitEditor";
 import AiBatchPanel from "../components/AiBatchPanel";
 import CloudAiBatchPanel from "../components/CloudAiBatchPanel";
 import AssignToChildButton from "../components/AssignToChildButton";
+import { useResizableColumns, type ColumnDef } from "../useResizableColumns";
 
 const PAGE_SIZE = 50;
+
+// Transactions table columns, in render order (backlog: resizable columns). The
+// select checkbox is fixed-width; the rest can be dragged and persist per device.
+const COLUMNS: ColumnDef[] = [
+  { key: "select", width: 40, resizable: false },
+  { key: "date", width: 110 },
+  { key: "description", width: 320 },
+  { key: "amount", width: 140 },
+  { key: "category", width: 170 },
+  { key: "project", width: 130 },
+  { key: "flags", width: 170 },
+];
 
 // Quick date-range presets for the Transactions filter (local-time safe — avoids
 // the UTC shift of toISOString).
@@ -74,6 +87,8 @@ export default function Transactions() {
   const [openId, setOpenId] = useState<number | null>(null);
   // Multi-edit: checkbox-selected transaction ids + a bulk-actions bar.
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  // Per-device draggable column widths (backlog: resize table columns).
+  const cols = useResizableColumns("transactions", COLUMNS);
   const [showAiBatch, setShowAiBatch] = useState(false);
   const [showCloudBatch, setShowCloudBatch] = useState(false);
   const [ruleMsg, setRuleMsg] = useState<string | null>(null);
@@ -478,8 +493,18 @@ export default function Transactions() {
                 <button className="link-btn" onClick={() => setSelected(new Set())}>Clear</button>
               </div>
             )}
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 4 }}>
+              <button className="link-btn" onClick={cols.reset} title="Reset column widths to default">
+                ↔ Reset columns
+              </button>
+            </div>
             <div className="table-wrap">
-              <table className="table">
+              <table className="table table--resizable">
+                <colgroup>
+                  {COLUMNS.map((c) => (
+                    <col key={c.key} style={{ width: cols.widths[c.key] }} />
+                  ))}
+                </colgroup>
                 <thead>
                   <tr>
                     <th className="col-select">
@@ -499,12 +524,12 @@ export default function Transactions() {
                         }
                       />
                     </th>
-                    <th>Date</th>
-                    <th>Description</th>
-                    <th className="num">Amount</th>
-                    <th>Category</th>
-                    <th>Project</th>
-                    <th>Flags &amp; tags</th>
+                    <ResizableTh col="date" cols={cols}>Date</ResizableTh>
+                    <ResizableTh col="description" cols={cols}>Description</ResizableTh>
+                    <ResizableTh col="amount" cols={cols} className="num">Amount</ResizableTh>
+                    <ResizableTh col="category" cols={cols}>Category</ResizableTh>
+                    <ResizableTh col="project" cols={cols}>Project</ResizableTh>
+                    <ResizableTh col="flags" cols={cols}>Flags &amp; tags</ResizableTh>
                   </tr>
                 </thead>
                 <tbody>
@@ -756,6 +781,26 @@ export default function Transactions() {
         )}
       </div>
     </div>
+  );
+}
+
+// A header cell with a drag handle on its right edge for resizing (backlog).
+function ResizableTh({
+  col,
+  cols,
+  className,
+  children,
+}: {
+  col: string;
+  cols: ReturnType<typeof useResizableColumns>;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <th className={className}>
+      {children}
+      <span className="col-resize" title="Drag to resize" onMouseDown={(e) => cols.startResize(col, e)} />
+    </th>
   );
 }
 
