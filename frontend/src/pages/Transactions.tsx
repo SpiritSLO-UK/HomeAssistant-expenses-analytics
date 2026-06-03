@@ -29,6 +29,23 @@ import AssignToChildButton from "../components/AssignToChildButton";
 
 const PAGE_SIZE = 50;
 
+// Quick date-range presets for the Transactions filter (local-time safe — avoids
+// the UTC shift of toISOString).
+function isoDay(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function presetRange(key: string): [string, string] {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  if (key === "this-month") return [isoDay(new Date(y, m, 1)), isoDay(new Date(y, m + 1, 0))];
+  if (key === "last-month") return [isoDay(new Date(y, m - 1, 1)), isoDay(new Date(y, m, 0))];
+  if (key === "year") return [isoDay(new Date(y, 0, 1)), isoDay(new Date(y, 11, 31))];
+  const from = new Date(now); // last 90 days
+  from.setDate(from.getDate() - 90);
+  return [isoDay(from), isoDay(now)];
+}
+
 export default function Transactions() {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
@@ -310,6 +327,26 @@ export default function Transactions() {
           />
           <label>From <input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(0); }} /></label>
           <label>To <input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(0); }} /></label>
+          <span style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+            <span className="muted" style={{ fontSize: "0.8rem" }}>Quick:</span>
+            {[
+              ["this-month", "This month"],
+              ["last-month", "Last month"],
+              ["last-90", "Last 90 days"],
+              ["year", "This year"],
+            ].map(([key, label]) => (
+              <button
+                key={key}
+                className="link-btn"
+                onClick={() => { const [f, t] = presetRange(key); setDateFrom(f); setDateTo(t); setPage(0); }}
+              >
+                {label}
+              </button>
+            ))}
+            {(dateFrom || dateTo) && (
+              <button className="link-btn" onClick={() => { setDateFrom(""); setDateTo(""); setPage(0); }}>Clear</button>
+            )}
+          </span>
           <label>Project
             <select value={projectFilter} onChange={(e) => { setProjectFilter(e.target.value); setPage(0); }}>
               <option value="">All</option>
