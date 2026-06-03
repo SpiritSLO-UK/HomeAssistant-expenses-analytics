@@ -16,6 +16,7 @@ import Budgets from "./pages/Budgets";
 import Savings from "./pages/Savings";
 import Investments from "./pages/Investments";
 import Accounts from "./pages/Accounts";
+import Assets from "./pages/Assets";
 import Allowance from "./pages/Allowance";
 import Subscriptions from "./pages/Subscriptions";
 import Receipts from "./pages/Receipts";
@@ -75,6 +76,7 @@ export default function App() {
           <Route path="/savings" element={<Savings />} />
           <Route path="/investments" element={<Investments />} />
           <Route path="/accounts" element={<Accounts />} />
+          <Route path="/assets" element={<Assets />} />
           <Route path="/allowance" element={<Allowance />} />
           <Route path="/subscriptions" element={<Subscriptions />} />
           <Route path="/receipts" element={<Receipts />} />

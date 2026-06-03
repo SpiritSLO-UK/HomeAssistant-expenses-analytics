@@ -7,6 +7,7 @@ autogenerate and ``Base.metadata.create_all`` see the full schema.
 from app.db.base import Base
 from app.models.account import Account
 from app.models.ai_request import AIRequest
+from app.models.asset import Asset, AssetLog
 from app.models.audit_log import AuditLog
 from app.models.budget import Budget
 from app.models.category import Category
@@ -32,6 +33,8 @@ __all__ = [
     "Base",
     "Account",
     "AIRequest",
+    "Asset",
+    "AssetLog",
     "AuditLog",
     "Budget",
     "Category",
