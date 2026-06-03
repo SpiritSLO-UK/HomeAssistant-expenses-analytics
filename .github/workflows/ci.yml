@@ -9,8 +9,15 @@ jobs:
   backend:
     name: Backend (ruff + pytest)
     runs-on: ubuntu-latest
+    env:
+      # Hoisted to job level so the scan step's `if` can read it (a step can't
+      # see env defined in its own block). Empty on fork PRs → scan is skipped.
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # SonarCloud needs full history for accurate new-code / blame data.
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -30,9 +37,19 @@ jobs:
         working-directory: backend
         run: python -m ruff check .
 
-      - name: Tests (pytest)
+      - name: Tests (pytest + coverage)
         working-directory: backend
-        run: python -m pytest -q
+        run: python -m pytest -q --cov=app --cov-report=xml
+
+      # SonarCloud analysis (Python + TypeScript). Reads sonar-project.properties.
+      # Runs ONLY on pushes to main: the free SonarQube Cloud tier analyses the
+      # main branch only (no PR/branch analysis), so scanning feature branches/PRs
+      # would hit the plan limit. Also gated on the secret (absent on fork PRs).
+      - name: SonarCloud Scan
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && env.SONAR_TOKEN != '' }}
+        env:
+          SONAR_HOST_URL: https://sonarcloud.io
+        uses: SonarSource/sonarqube-scan-action@v6
 
   frontend:
     name: Frontend (type-check + build)
