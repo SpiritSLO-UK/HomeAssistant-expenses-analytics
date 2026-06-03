@@ -1476,6 +1476,42 @@ export function deleteAssetLog(logId: number): Promise<void> {
   return fetchJson(`api/assets/logs/${logId}`, { method: "DELETE" });
 }
 
+// --- Paperless-ngx import (spec §21) ---
+
+export interface PaperlessStatus {
+  configured: boolean;
+  url: string | null;
+  token_present: boolean;
+}
+
+export interface PaperlessDoc {
+  id: number;
+  title: string;
+  created: string | null;
+}
+
+export interface PaperlessImportResult {
+  receipt_id: number;
+  created: boolean;
+  source: string;
+  filename: string;
+}
+
+export function getPaperlessStatus(): Promise<PaperlessStatus> {
+  return fetchJson<PaperlessStatus>("api/paperless/status");
+}
+
+export function listPaperlessDocuments(query?: string, limit = 25): Promise<PaperlessDoc[]> {
+  const qs = new URLSearchParams();
+  if (query) qs.set("query", query);
+  qs.set("limit", String(limit));
+  return fetchJson<PaperlessDoc[]>(`api/paperless/documents?${qs.toString()}`);
+}
+
+export function importPaperlessDocument(id: number): Promise<PaperlessImportResult> {
+  return fetchJson<PaperlessImportResult>(`api/paperless/documents/${id}/import`, { method: "POST" });
+}
+
 // --- Backup / restore / demo (spec §26.5; backlog #9, #10, #16) ---
 
 export function loadDemoData(): Promise<{ rows_detected: number; new: number; duplicates: number }> {

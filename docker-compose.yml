@@ -24,6 +24,10 @@ services:
       HAFI_PRIVACY_MODE: strict_local   # AI is off by default — no external calls
       HAFI_MQTT_ENABLED: "false"        # MQTT/HA sensors are a later release
       HAFI_LOG_LEVEL: INFO
+      # Optional: pull documents from your own Paperless-ngx instance into receipts
+      # (one-directional — we only request from Paperless, never expose your data).
+      # HAFI_PAPERLESS_URL: http://paperless:8000
+      # HAFI_PAPERLESS_TOKEN: your-paperless-api-token
     volumes:
       - finance_data:/data
     ports:

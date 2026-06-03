@@ -101,6 +101,12 @@ warranty, not financial advice — keep your own backups._
   You can also **attach a receipt directly to a transaction** from its drill-down
   detail and **view the image/PDF** there — attached receipts keep their original
   (so they stay viewable) regardless of the delete-after-processing setting.
+- **Paperless import** — pull documents from your own
+  [Paperless-ngx](https://github.com/paperless-ngx/paperless-ngx) instance into
+  receipts, straight from the Receipts page. **One-directional**: we only ever
+  *request* documents from Paperless — it never gets access to your finance data.
+  Off until you set `HAFI_PAPERLESS_URL` + `HAFI_PAPERLESS_TOKEN`. Imports are
+  de-duplicated by content, so re-importing the same document is safe.
 - **Review queue** — a safety net listing anything uncertain (unmatched receipt,
   low-confidence read, …) to resolve or ignore.
 - **AI assistant (opt-in)** — off by default; when enabled, suggests a category

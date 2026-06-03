@@ -91,6 +91,14 @@ class Settings(BaseSettings):
     # never balances or holdings sizes — so a price fetch is privacy-safe.
     investment_api_key: str | None = None
 
+    # --- Paperless-ngx document import (spec §21; backlog: one-directional pull) ---
+    # We only ever *request* documents FROM Paperless; it never gets access to our
+    # finance data. The URL + token are our outbound credentials for the user's own
+    # Paperless instance (token is a secret → env, like the AI key). Off unless both
+    # are set.
+    paperless_url: str | None = None
+    paperless_token: str | None = None
+
     # --- At-rest DB encryption (backlog #15b) ---
     # Optional. When the DB is encrypted in "stored" unlock mode, the passphrase
     # is supplied here (env HAFI_DB_KEY) so the add-on can start unattended. In
