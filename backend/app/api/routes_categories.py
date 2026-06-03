@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -20,9 +22,7 @@ router = APIRouter(prefix="/categories", tags=["categories"])
 
 
 @router.get("", response_model=list[CategoryOut])
-def list_categories(
-    include_inactive: bool = False, db: Session = Depends(get_db)
-) -> list[Category]:
+def list_categories(db: Annotated[Session, Depends(get_db)], include_inactive: bool = False) -> list[Category]:
     return category_service.list_categories(db, include_inactive=include_inactive)
 
 
@@ -35,21 +35,20 @@ def _check_privacy(value: str | None) -> None:
 
 
 @router.post("", response_model=CategoryOut, status_code=201)
-def create_category(payload: CategoryCreate, db: Session = Depends(get_db)) -> Category:
+def create_category(payload: CategoryCreate, db: Annotated[Session, Depends(get_db)]) -> Category:
     _check_privacy(payload.privacy_sensitivity)
     return category_service.create_category(db, payload.model_dump(exclude_unset=True))
 
 
 @router.post("/import-library", response_model=dict)
-def import_library(db: Session = Depends(get_db)) -> dict:
+def import_library(db: Annotated[Session, Depends(get_db)]) -> dict:
     created = category_service.import_library(db)
     return {"created": created}
 
 
 @router.get("/privacy", response_model=dict)
 def get_privacy_default(
-    db: Session = Depends(get_db),
-    _user: User = Depends(auth_service.require_settings_manager),
+    db: Annotated[Session, Depends(get_db)], _user: Annotated[User, Depends(auth_service.require_settings_manager)]
 ) -> dict:
     """The household default cloud-AI privacy level (backlog #28). A
     privacy/settings concern, so it's owner / settings-manager only."""
@@ -59,8 +58,8 @@ def get_privacy_default(
 @router.post("/privacy", response_model=dict)
 def set_all_privacy(
     payload: CategoryPrivacyLevel,
-    db: Session = Depends(get_db),
-    _user: User = Depends(auth_service.require_settings_manager),
+    db: Annotated[Session, Depends(get_db)],
+    _user: Annotated[User, Depends(auth_service.require_settings_manager)],
 ) -> dict:
     """Apply one cloud-AI privacy level to every category at once + make it the
     default new categories inherit. Owner / settings-manager only."""
@@ -72,7 +71,7 @@ def set_all_privacy(
 
 
 @router.get("/{category_id}", response_model=CategoryOut)
-def get_category(category_id: int, db: Session = Depends(get_db)) -> Category:
+def get_category(category_id: int, db: Annotated[Session, Depends(get_db)]) -> Category:
     category = category_service.get_category(db, category_id)
     if category is None:
         raise HTTPException(status_code=404, detail="Category not found")
@@ -80,13 +79,9 @@ def get_category(category_id: int, db: Session = Depends(get_db)) -> Category:
 
 
 @router.patch("/{category_id}", response_model=CategoryOut)
-def update_category(
-    category_id: int, payload: CategoryUpdate, db: Session = Depends(get_db)
-) -> Category:
+def update_category(category_id: int, payload: CategoryUpdate, db: Annotated[Session, Depends(get_db)]) -> Category:
     _check_privacy(payload.privacy_sensitivity)
-    category = category_service.update_category(
-        db, category_id, payload.model_dump(exclude_unset=True)
-    )
+    category = category_service.update_category(db, category_id, payload.model_dump(exclude_unset=True))
     if category is None:
         raise HTTPException(status_code=404, detail="Category not found")
     return category
@@ -95,8 +90,8 @@ def update_category(
 @router.delete("/{category_id}", status_code=204)
 def delete_category(
     category_id: int,
-    db: Session = Depends(get_db),
-    _user: User = Depends(auth_service.require_owner),
+    db: Annotated[Session, Depends(get_db)],
+    _user: Annotated[User, Depends(auth_service.require_owner)],
 ) -> None:
     """Deleting a category (built-ins included) is structural — owner only."""
     if not category_service.delete_category(db, category_id):
@@ -107,8 +102,8 @@ def delete_category(
 def merge_category(
     category_id: int,
     payload: CategoryMerge,
-    db: Session = Depends(get_db),
-    _user: User = Depends(auth_service.require_owner),
+    db: Annotated[Session, Depends(get_db)],
+    _user: Annotated[User, Depends(auth_service.require_owner)],
 ) -> Category:
     """Merging folds one category's references into another then deletes it —
     structural/destructive, so owner only."""

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -29,7 +31,7 @@ class SettingsUpdate(BaseModel):
 
 
 @router.get("")
-def get_settings(db: Session = Depends(get_db)) -> dict:
+def get_settings(db: Annotated[Session, Depends(get_db)]) -> dict:
     return settings_service.get_all(db)
 
 
@@ -40,7 +42,7 @@ def supported_currencies() -> list[dict]:
 
 
 @router.get("/services")
-def services_status(db: Session = Depends(get_db)) -> dict:
+def services_status(db: Annotated[Session, Depends(get_db)]) -> dict:
     """Unified on/off + status for every service, for the Settings → Services panel
     (backlog §38). AI / OCR / online FX are runtime-toggleable; MQTT is configured
     in the add-on options, so it's shown read-only."""
@@ -97,8 +99,8 @@ def services_status(db: Session = Depends(get_db)) -> dict:
 @router.put("")
 def update_settings(
     payload: SettingsUpdate,
-    db: Session = Depends(get_db),
-    _user: User = Depends(auth_service.require_settings_manager),
+    db: Annotated[Session, Depends(get_db)],
+    _user: Annotated[User, Depends(auth_service.require_settings_manager)],
 ) -> dict:
     recompute = None
     if payload.fx_mode is not None:
@@ -142,9 +144,7 @@ def update_settings(
                 status_code=400,
                 detail=f"investment_price_source must be one of {sorted(settings_service.INVESTMENT_PRICE_SOURCES)}",
             )
-        settings_service.set_value(
-            db, settings_service.INVESTMENT_PRICE_SOURCE, payload.investment_price_source
-        )
+        settings_service.set_value(db, settings_service.INVESTMENT_PRICE_SOURCE, payload.investment_price_source)
 
     if payload.log_level is not None:
         level = payload.log_level.strip().upper()

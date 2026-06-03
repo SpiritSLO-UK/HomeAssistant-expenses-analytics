@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import select
@@ -31,11 +32,11 @@ def list_parsers() -> list[dict]:
 
 @router.post("/upload", response_model=UploadResponse)
 async def upload(
-    file: UploadFile = File(...),
-    parser_id: str | None = Form(None),
-    account_id: int | None = Form(None),
-    mapping: str | None = Form(None),
-    db: Session = Depends(get_db),
+    file: Annotated[UploadFile, File()],
+    db: Annotated[Session, Depends(get_db)],
+    parser_id: Annotated[str | None, Form()] = None,
+    account_id: Annotated[int | None, Form()] = None,
+    mapping: Annotated[str | None, Form()] = None,
 ) -> dict:
     content = await file.read()
     if not content:
@@ -60,12 +61,12 @@ async def upload(
 
 
 @router.get("", response_model=list[ImportListItem])
-def list_imports(db: Session = Depends(get_db)) -> list[Statement]:
+def list_imports(db: Annotated[Session, Depends(get_db)]) -> list[Statement]:
     return list(db.scalars(select(Statement).order_by(Statement.id.desc())).all())
 
 
 @router.get("/{import_id}", response_model=ImportListItem)
-def get_import(import_id: int, db: Session = Depends(get_db)) -> Statement:
+def get_import(import_id: int, db: Annotated[Session, Depends(get_db)]) -> Statement:
     statement = db.get(Statement, import_id)
     if statement is None:
         raise HTTPException(status_code=404, detail="Import not found")
@@ -74,9 +75,7 @@ def get_import(import_id: int, db: Session = Depends(get_db)) -> Statement:
 
 @router.post("/{import_id}/confirm", response_model=ConfirmResponse)
 def confirm(
-    import_id: int,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    import_id: int, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(get_current_user)]
 ) -> dict:
     try:
         result = import_service.confirm_import(db, import_id)
@@ -97,9 +96,7 @@ def confirm(
 
 @router.delete("/{import_id}", status_code=204)
 def delete(
-    import_id: int,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    import_id: int, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(get_current_user)]
 ) -> None:
     try:
         import_service.delete_import(db, import_id)

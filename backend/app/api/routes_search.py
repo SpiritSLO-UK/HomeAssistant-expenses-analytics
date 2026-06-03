@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
@@ -12,7 +14,7 @@ router = APIRouter(prefix="/search", tags=["search"])
 
 
 @router.get("")
-def search(request: Request, q: str = "", limit: int = 8, db: Session = Depends(get_db)) -> dict:
+def search(request: Request, db: Annotated[Session, Depends(get_db)], q: str = "", limit: int = 8) -> dict:
     """Search transactions (scoped to the caller's visible accounts), vendors,
     categories and projects. Returns grouped results."""
     scope = auth_service.visible_account_scope(request, db)

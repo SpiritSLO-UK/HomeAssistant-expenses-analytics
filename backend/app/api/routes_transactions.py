@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel
@@ -84,9 +85,9 @@ class RecategoriseRequest(BaseModel):
 @router.get("", response_model=TransactionListResponse)
 def list_transactions(
     request: Request,
-    db: Session = Depends(get_db),
-    transaction_id: int | None = Query(None, description="Narrow to a single transaction (focus deep-link)"),
-    member_id: int | None = Query(None, description="Narrow to a household member's own accounts"),
+    db: Annotated[Session, Depends(get_db)],
+    transaction_id: Annotated[int | None, Query(description="Narrow to a single transaction (focus deep-link)")] = None,
+    member_id: Annotated[int | None, Query(description="Narrow to a household member's own accounts")] = None,
     date_from: date | None = None,
     date_to: date | None = None,
     account_id: int | None = None,
@@ -94,16 +95,18 @@ def list_transactions(
     vendor_id: int | None = None,
     project_id: int | None = None,
     tag_id: int | None = None,
-    country: str | None = Query(None, description="ISO alpha-2 country (spend-by-location drill-down)"),
+    country: Annotated[str | None, Query(description="ISO alpha-2 country (spend-by-location drill-down)")] = None,
     needs_review: bool | None = None,
-    uncategorised: bool | None = Query(None, description="True = only rows with no category; False = only categorised"),
+    uncategorised: Annotated[
+        bool | None, Query(description="True = only rows with no category; False = only categorised")
+    ] = None,
     is_business: bool | None = None,
     amount_min: Decimal | None = None,
     amount_max: Decimal | None = None,
     search: str | None = None,
-    include_archived: bool = Query(False, description="Include archived (aged-out) transactions"),
-    limit: int = Query(100, ge=1, le=500),
-    offset: int = Query(0, ge=0),
+    include_archived: Annotated[bool, Query(description="Include archived (aged-out) transactions")] = False,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ) -> dict:
     conditions = export_service.build_transaction_filters(
         transaction_id=transaction_id,
@@ -146,19 +149,19 @@ def list_transactions(
 
 
 @router.post("/recategorise")
-def recategorise(payload: RecategoriseRequest, db: Session = Depends(get_db)) -> dict:
+def recategorise(payload: RecategoriseRequest, db: Annotated[Session, Depends(get_db)]) -> dict:
     """Re-run vendor + keyword categorisation (spec §15, §3.3 re-run rules)."""
     count = import_service.recategorise(db, only_uncategorised=payload.only_uncategorised)
     return {"recategorised": count}
 
 
 @router.post("/categorise-batch")
-def categorise_batch(payload: BatchCategoriseRequest, request: Request, db: Session = Depends(get_db)) -> dict:
+def categorise_batch(
+    payload: BatchCategoriseRequest, request: Request, db: Annotated[Session, Depends(get_db)]
+) -> dict:
     """Bulk-assign a category to many transactions (spec §25.3)."""
     scope = visible_account_scope(request, db)
-    rows = db.scalars(
-        select(Transaction).where(Transaction.id.in_(payload.transaction_ids))
-    ).all()
+    rows = db.scalars(select(Transaction).where(Transaction.id.in_(payload.transaction_ids))).all()
     visible = [t for t in rows if scope is None or t.account_id is None or t.account_id in scope]
     for txn in visible:
         txn.category_id = payload.category_id
@@ -171,17 +174,15 @@ def categorise_batch(payload: BatchCategoriseRequest, request: Request, db: Sess
 def bulk_update(
     payload: BulkUpdateRequest,
     request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
 ) -> dict:
     """Apply one or more edits to many transactions at once (multi-edit, §25.3):
     set category/project/vendor, mark business, add a tag, archive/unarchive, or
     delete. Only transactions the caller can see are touched."""
     scope = visible_account_scope(request, db)
     rows = db.scalars(
-        select(Transaction)
-        .where(Transaction.id.in_(payload.transaction_ids))
-        .options(selectinload(Transaction.tags))
+        select(Transaction).where(Transaction.id.in_(payload.transaction_ids)).options(selectinload(Transaction.tags))
     ).all()
     visible = [t for t in rows if scope is None or t.account_id is None or t.account_id in scope]
     fields = payload.model_dump(exclude_unset=True)
@@ -233,13 +234,13 @@ def bulk_update(
 
 
 @router.get("/{transaction_id}", response_model=TransactionDetailOut)
-def get_transaction(transaction_id: int, request: Request, db: Session = Depends(get_db)) -> Transaction:
+def get_transaction(transaction_id: int, request: Request, db: Annotated[Session, Depends(get_db)]) -> Transaction:
     return _get_visible_txn(request, db, transaction_id)
 
 
 @router.patch("/{transaction_id}", response_model=TransactionOut)
 def update_transaction(
-    transaction_id: int, payload: TransactionUpdate, request: Request, db: Session = Depends(get_db)
+    transaction_id: int, payload: TransactionUpdate, request: Request, db: Annotated[Session, Depends(get_db)]
 ) -> Transaction:
     txn = _get_visible_txn(request, db, transaction_id)
     data = payload.model_dump(exclude_unset=True)
@@ -256,7 +257,7 @@ def update_transaction(
 
 @router.post("/{transaction_id}/unarchive", response_model=TransactionOut)
 def unarchive_transaction(
-    transaction_id: int, request: Request, db: Session = Depends(get_db)
+    transaction_id: int, request: Request, db: Annotated[Session, Depends(get_db)]
 ) -> Transaction:
     """Restore an archived transaction so it reappears in lists and aggregates
     (retention, backlog #78). Write-gated by the auth middleware."""
@@ -269,20 +270,16 @@ def unarchive_transaction(
 
 @router.post("/{transaction_id}/categorise", response_model=TransactionOut)
 def categorise(
-    transaction_id: int, payload: CategoriseRequest, request: Request, db: Session = Depends(get_db)
+    transaction_id: int, payload: CategoriseRequest, request: Request, db: Annotated[Session, Depends(get_db)]
 ) -> Transaction:
     txn = _get_visible_txn(request, db, transaction_id)
     txn.category_id = payload.category_id
     txn.confidence_score = 1.0  # manual assignment (spec §15.2)
     if payload.category_id is not None:
         if payload.learn_vendor:
-            vendor_service.learn_vendor_category(
-                db, txn.description_raw, txn.merchant_raw, payload.category_id
-            )
+            vendor_service.learn_vendor_category(db, txn.description_raw, txn.merchant_raw, payload.category_id)
         if payload.learn_rule:
-            rule_service.create_rule_from_correction(
-                db, txn, payload.category_id, payload.rule_match_value
-            )
+            rule_service.create_rule_from_correction(db, txn, payload.category_id, payload.rule_match_value)
     db.commit()
     db.refresh(txn)
     return txn
@@ -299,13 +296,13 @@ def _splits_response(txn: Transaction) -> dict:
 
 
 @router.get("/{transaction_id}/splits", response_model=SplitsResponse)
-def get_splits(transaction_id: int, request: Request, db: Session = Depends(get_db)) -> dict:
+def get_splits(transaction_id: int, request: Request, db: Annotated[Session, Depends(get_db)]) -> dict:
     return _splits_response(_get_visible_txn(request, db, transaction_id))
 
 
 @router.post("/{transaction_id}/split", response_model=SplitsResponse)
 def set_splits(
-    transaction_id: int, payload: SetSplitsRequest, request: Request, db: Session = Depends(get_db)
+    transaction_id: int, payload: SetSplitsRequest, request: Request, db: Annotated[Session, Depends(get_db)]
 ) -> dict:
     """Split a transaction across categories/projects (spec §17.2 validation)."""
     txn = _get_visible_txn(request, db, transaction_id)
@@ -327,7 +324,7 @@ def set_splits(
 
 
 @router.delete("/{transaction_id}/split", response_model=SplitsResponse)
-def clear_splits(transaction_id: int, request: Request, db: Session = Depends(get_db)) -> dict:
+def clear_splits(transaction_id: int, request: Request, db: Annotated[Session, Depends(get_db)]) -> dict:
     """Remove a transaction's splits (spec §17.3); its own category applies again."""
     txn = _get_visible_txn(request, db, transaction_id)
     split_service.clear_splits(db, txn)
@@ -336,7 +333,7 @@ def clear_splits(transaction_id: int, request: Request, db: Session = Depends(ge
 
 @router.post("/{transaction_id}/tags", response_model=TransactionDetailOut)
 def set_tags(
-    transaction_id: int, payload: SetTagsRequest, request: Request, db: Session = Depends(get_db)
+    transaction_id: int, payload: SetTagsRequest, request: Request, db: Annotated[Session, Depends(get_db)]
 ) -> Transaction:
     """Replace a transaction's tags (spec §18.3); unknown names are created."""
     txn = _get_visible_txn(request, db, transaction_id)
@@ -346,7 +343,7 @@ def set_tags(
 
 @router.get("/{transaction_id}/receipts", response_model=list[ReceiptOut])
 def list_transaction_receipts(
-    transaction_id: int, request: Request, db: Session = Depends(get_db)
+    transaction_id: int, request: Request, db: Annotated[Session, Depends(get_db)]
 ) -> list[dict]:
     """Receipts attached to this transaction (for the drill-down viewer)."""
     txn = _get_visible_txn(request, db, transaction_id)
@@ -355,10 +352,7 @@ def list_transaction_receipts(
 
 @router.post("/{transaction_id}/receipts", response_model=ReceiptOut, status_code=201)
 async def attach_transaction_receipt(
-    transaction_id: int,
-    request: Request,
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db),
+    transaction_id: int, request: Request, file: Annotated[UploadFile, File()], db: Annotated[Session, Depends(get_db)]
 ) -> dict:
     """Upload a receipt image/PDF and attach it to this transaction. The original
     is kept (so it can be viewed); OCR runs best-effort to fill in fields."""
@@ -381,8 +375,8 @@ async def attach_transaction_receipt(
 def delete_transaction(
     transaction_id: int,
     request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
 ) -> None:
     txn = _get_visible_txn(request, db, transaction_id)
     audit_service.record(

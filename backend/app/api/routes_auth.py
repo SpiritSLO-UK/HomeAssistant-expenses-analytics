@@ -8,6 +8,8 @@ verify), but still require an approved account.
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
@@ -21,46 +23,36 @@ router = APIRouter(prefix="/auth/mfa", tags=["auth"])
 
 
 @router.post("/setup", response_model=SetupOut)
-def setup(
-    db: Session = Depends(get_db), user: User = Depends(get_current_user)
-) -> SetupOut:
+def setup(db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(get_current_user)]) -> SetupOut:
     data = mfa_service.start_enrolment(db, user)
     return SetupOut(**data)
 
 
 @router.post("/enable")
 def enable(
-    payload: CodeIn,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    payload: CodeIn, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(get_current_user)]
 ) -> dict:
     if not mfa_service.enable(db, user, payload.code):
         raise HTTPException(status_code=400, detail="That code didn't match. Try again.")
-    audit_service.record(db, actor=user.display_name, action="mfa_enabled",
-                         entity_type="user", entity_id=user.id)
+    audit_service.record(db, actor=user.display_name, action="mfa_enabled", entity_type="user", entity_id=user.id)
     db.commit()
     return {"status": "enabled"}
 
 
 @router.post("/disable")
 def disable(
-    payload: CodeIn,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    payload: CodeIn, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(get_current_user)]
 ) -> dict:
     if not mfa_service.disable(db, user, payload.code):
         raise HTTPException(status_code=400, detail="MFA is not enabled or the code didn't match.")
-    audit_service.record(db, actor=user.display_name, action="mfa_disabled",
-                         entity_type="user", entity_id=user.id)
+    audit_service.record(db, actor=user.display_name, action="mfa_disabled", entity_type="user", entity_id=user.id)
     db.commit()
     return {"status": "disabled"}
 
 
 @router.post("/verify", response_model=VerifyOut)
 def verify(
-    payload: CodeIn,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    payload: CodeIn, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(get_current_user)]
 ) -> VerifyOut:
     token = mfa_service.verify_and_open(db, user, payload.code)
     if token is None:
@@ -72,8 +64,8 @@ def verify(
 def step_up(
     payload: CodeIn,
     request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
 ) -> dict:
     token = request.headers.get(auth_service.SESSION_HEADER)
     if not mfa_service.step_up(db, user, token, payload.code):

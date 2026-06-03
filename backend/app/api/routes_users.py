@@ -7,6 +7,8 @@ them here. All mutating endpoints require the owner (administrator) role.
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
@@ -21,9 +23,7 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 @router.get("/me", response_model=MeOut)
 def get_me(
-    request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    request: Request, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(get_current_user)]
 ) -> MeOut:
     mfa_required = user.mfa_enabled and not mfa_service.has_valid_session(
         db, user.id, request.headers.get(auth_service.SESSION_HEADER)
@@ -43,7 +43,7 @@ def get_me(
 
 @router.get("/members", response_model=list[MemberOut])
 def list_members(
-    db: Session = Depends(get_db), _user: User = Depends(get_current_user)
+    db: Annotated[Session, Depends(get_db)], _user: Annotated[User, Depends(get_current_user)]
 ) -> list[User]:
     """Approved members for the per-member spend filter (Dashboard + Transactions).
     Any approved user may read this — the spend it maps to is still scoped to the
@@ -52,9 +52,7 @@ def list_members(
 
 
 @router.get("", response_model=list[UserOut])
-def list_users(
-    db: Session = Depends(get_db), _owner: User = Depends(require_owner)
-) -> list[User]:
+def list_users(db: Annotated[Session, Depends(get_db)], _owner: Annotated[User, Depends(require_owner)]) -> list[User]:
     return auth_service.list_users(db)
 
 
@@ -69,8 +67,8 @@ def _get_target(db: Session, user_id: int) -> User:
 def update_user(
     user_id: int,
     payload: UserUpdate,
-    db: Session = Depends(get_db),
-    owner: User = Depends(require_owner_step_up),
+    db: Annotated[Session, Depends(get_db)],
+    owner: Annotated[User, Depends(require_owner_step_up)],
 ) -> User:
     target = _get_target(db, user_id)
     try:
@@ -90,9 +88,7 @@ def update_user(
 
 @router.post("/{user_id}/approve", response_model=UserOut)
 def approve_user(
-    user_id: int,
-    db: Session = Depends(get_db),
-    owner: User = Depends(require_owner_step_up),
+    user_id: int, db: Annotated[Session, Depends(get_db)], owner: Annotated[User, Depends(require_owner_step_up)]
 ) -> User:
     target = _get_target(db, user_id)
     try:
@@ -103,9 +99,7 @@ def approve_user(
 
 @router.delete("/{user_id}")
 def delete_user(
-    user_id: int,
-    db: Session = Depends(get_db),
-    owner: User = Depends(require_owner_step_up),
+    user_id: int, db: Annotated[Session, Depends(get_db)], owner: Annotated[User, Depends(require_owner_step_up)]
 ) -> dict:
     target = _get_target(db, user_id)
     try:

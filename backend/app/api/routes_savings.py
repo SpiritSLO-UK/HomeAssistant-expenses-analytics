@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
@@ -32,7 +34,7 @@ def _require_visible(request: Request, db: Session, account_id: int) -> None:
 
 
 @router.get("/summary", response_model=SavingsSummary)
-def summary(request: Request, db: Session = Depends(get_db)) -> dict:
+def summary(request: Request, db: Annotated[Session, Depends(get_db)]) -> dict:
     return savings_service.summary(db, account_ids=auth_service.visible_account_scope(request, db))
 
 
@@ -40,16 +42,13 @@ def summary(request: Request, db: Session = Depends(get_db)) -> dict:
 
 
 @router.get("/accounts", response_model=list[SavingsAccountOut])
-def list_accounts(request: Request, db: Session = Depends(get_db)) -> list[dict]:
+def list_accounts(request: Request, db: Annotated[Session, Depends(get_db)]) -> list[dict]:
     scope = auth_service.visible_account_scope(request, db)
-    return [
-        savings_service.account_to_dict(db, a)
-        for a in savings_service.list_accounts(db, account_ids=scope)
-    ]
+    return [savings_service.account_to_dict(db, a) for a in savings_service.list_accounts(db, account_ids=scope)]
 
 
 @router.post("/accounts", response_model=SavingsAccountOut, status_code=201)
-def create_account(payload: SavingsAccountCreate, db: Session = Depends(get_db)) -> dict:
+def create_account(payload: SavingsAccountCreate, db: Annotated[Session, Depends(get_db)]) -> dict:
     account = savings_service.create_account(
         db, name=payload.name, institution=payload.institution, currency=payload.currency
     )
@@ -58,7 +57,7 @@ def create_account(payload: SavingsAccountCreate, db: Session = Depends(get_db))
 
 @router.patch("/accounts/{account_id}", response_model=SavingsAccountOut)
 def update_account(
-    account_id: int, payload: SavingsAccountUpdate, request: Request, db: Session = Depends(get_db)
+    account_id: int, payload: SavingsAccountUpdate, request: Request, db: Annotated[Session, Depends(get_db)]
 ) -> dict:
     """Edit a savings account (currently the interest rate)."""
     _require_visible(request, db, account_id)
@@ -73,7 +72,7 @@ def update_account(
 
 
 @router.post("/accounts/{account_id}/adjust", response_model=BalanceOut, status_code=201)
-def adjust_balance(account_id: int, payload: BalanceAdjust, request: Request, db: Session = Depends(get_db)):
+def adjust_balance(account_id: int, payload: BalanceAdjust, request: Request, db: Annotated[Session, Depends(get_db)]):
     """Deposit or withdraw via the +/- control — records a new snapshot at
     latest ± amount."""
     _require_visible(request, db, account_id)
@@ -87,7 +86,7 @@ def adjust_balance(account_id: int, payload: BalanceAdjust, request: Request, db
 
 
 @router.get("/accounts/{account_id}/balances", response_model=list[BalanceOut])
-def balance_history(account_id: int, request: Request, db: Session = Depends(get_db)):
+def balance_history(account_id: int, request: Request, db: Annotated[Session, Depends(get_db)]):
     _require_visible(request, db, account_id)
     try:
         savings_service.get_savings_account(db, account_id)
@@ -97,7 +96,7 @@ def balance_history(account_id: int, request: Request, db: Session = Depends(get
 
 
 @router.post("/accounts/{account_id}/balances", response_model=BalanceOut, status_code=201)
-def record_balance(account_id: int, payload: BalanceCreate, request: Request, db: Session = Depends(get_db)):
+def record_balance(account_id: int, payload: BalanceCreate, request: Request, db: Annotated[Session, Depends(get_db)]):
     _require_visible(request, db, account_id)
     try:
         return savings_service.record_balance(
@@ -111,12 +110,12 @@ def record_balance(account_id: int, payload: BalanceCreate, request: Request, db
 
 
 @router.get("/goals", response_model=list[GoalOut])
-def list_goals(db: Session = Depends(get_db)) -> list[dict]:
+def list_goals(db: Annotated[Session, Depends(get_db)]) -> list[dict]:
     return [savings_service.goal_to_dict(db, g) for g in savings_service.list_goals(db)]
 
 
 @router.post("/goals", response_model=GoalOut, status_code=201)
-def create_goal(payload: GoalCreate, db: Session = Depends(get_db)) -> dict:
+def create_goal(payload: GoalCreate, db: Annotated[Session, Depends(get_db)]) -> dict:
     try:
         goal = savings_service.create_goal(
             db,
@@ -140,7 +139,7 @@ def _get_goal(db: Session, goal_id: int) -> SavingsGoal:
 
 
 @router.patch("/goals/{goal_id}", response_model=GoalOut)
-def update_goal(goal_id: int, payload: GoalUpdate, db: Session = Depends(get_db)) -> dict:
+def update_goal(goal_id: int, payload: GoalUpdate, db: Annotated[Session, Depends(get_db)]) -> dict:
     goal = _get_goal(db, goal_id)
     try:
         goal = savings_service.update_goal(db, goal, **payload.model_dump(exclude_unset=True))
@@ -150,5 +149,5 @@ def update_goal(goal_id: int, payload: GoalUpdate, db: Session = Depends(get_db)
 
 
 @router.delete("/goals/{goal_id}", status_code=204)
-def delete_goal(goal_id: int, db: Session = Depends(get_db)) -> None:
+def delete_goal(goal_id: int, db: Annotated[Session, Depends(get_db)]) -> None:
     savings_service.delete_goal(db, _get_goal(db, goal_id))

@@ -8,6 +8,8 @@ budgets is a parent action (write-gated to owner/member); the child-role gate in
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -22,9 +24,9 @@ router = APIRouter(prefix="/allowance", tags=["allowance"])
 
 @router.get("/summary", response_model=AllowanceSummary)
 def allowance_summary(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
     user_id: int | None = None,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
 ) -> dict:
     """The current user's allowance. A parent (owner/member) may pass ``user_id``
     to view a child's allowance; for anyone else (incl. a child) ``user_id`` is
@@ -39,7 +41,7 @@ def allowance_summary(
 
 
 @router.post("/allocations", response_model=AllocationOut, status_code=201)
-def create_allocation(payload: AllocationCreate, db: Session = Depends(get_db)) -> dict:
+def create_allocation(payload: AllocationCreate, db: Annotated[Session, Depends(get_db)]) -> dict:
     try:
         row = allowance_service.create_allocation(
             db,
@@ -57,13 +59,10 @@ def create_allocation(payload: AllocationCreate, db: Session = Depends(get_db)) 
 
 
 @router.get("/allocations", response_model=list[AllocationOut])
-def list_allocations(user_id: int, db: Session = Depends(get_db)) -> list[dict]:
-    return [
-        allowance_service.allocation_to_dict(db, a)
-        for a in allowance_service.list_allocations(db, user_id)
-    ]
+def list_allocations(user_id: int, db: Annotated[Session, Depends(get_db)]) -> list[dict]:
+    return [allowance_service.allocation_to_dict(db, a) for a in allowance_service.list_allocations(db, user_id)]
 
 
 @router.delete("/allocations/{allocation_id}", status_code=204)
-def delete_allocation(allocation_id: int, db: Session = Depends(get_db)) -> None:
+def delete_allocation(allocation_id: int, db: Annotated[Session, Depends(get_db)]) -> None:
     allowance_service.delete_allocation(db, allocation_id)

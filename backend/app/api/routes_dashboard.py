@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
@@ -36,9 +37,7 @@ def _ref(month: date | None) -> date:
     return month or date.today()
 
 
-def _scope(
-    request: Request, db: Session, view: str = "all", member_id: int | None = None
-) -> set[int] | None:
+def _scope(request: Request, db: Session, view: str = "all", member_id: int | None = None) -> set[int] | None:
     """The caller's visible account-id set, narrowed by the Mine/Shared/All toggle
     or — when ``member_id`` is given — to that member's own accounts (#66/#82)."""
     return auth_service.resolved_account_scope(
@@ -48,67 +47,84 @@ def _scope(
 
 @router.get("/summary", response_model=DashboardSummary)
 def summary(
-    request: Request, month: date | None = None, view: str = "all",
-    member_id: int | None = None, db: Session = Depends(get_db),
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    month: date | None = None,
+    view: str = "all",
+    member_id: int | None = None,
 ) -> dict:
     return dashboard_service.summary(db, _ref(month), account_ids=_scope(request, db, view, member_id))
 
 
 @router.get("/categories", response_model=list[CategoryBreakdownItem])
 def categories(
-    request: Request, month: date | None = None, view: str = "all",
-    member_id: int | None = None, db: Session = Depends(get_db),
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    month: date | None = None,
+    view: str = "all",
+    member_id: int | None = None,
 ) -> list[dict]:
     return dashboard_service.category_breakdown(db, _ref(month), account_ids=_scope(request, db, view, member_id))
 
 
 @router.get("/vendors", response_model=list[VendorBreakdownItem])
 def vendors(
-    request: Request, month: date | None = None, view: str = "all",
-    member_id: int | None = None, db: Session = Depends(get_db),
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    month: date | None = None,
+    view: str = "all",
+    member_id: int | None = None,
 ) -> list[dict]:
     return dashboard_service.vendor_breakdown(db, _ref(month), account_ids=_scope(request, db, view, member_id))
 
 
 @router.get("/by-country", response_model=list[CountryBreakdownItem])
 def by_country(
-    request: Request, month: date | None = None, view: str = "all",
-    member_id: int | None = None, db: Session = Depends(get_db),
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    month: date | None = None,
+    view: str = "all",
+    member_id: int | None = None,
 ) -> list[dict]:
     """Spend by country for the month — the spend-by-location map (spec §16.3)."""
     return dashboard_service.country_breakdown(db, _ref(month), account_ids=_scope(request, db, view, member_id))
 
 
 @router.get("/projects", response_model=list[ProjectTotal])
-def projects(request: Request, member_id: int | None = None, db: Session = Depends(get_db)) -> list[dict]:
+def projects(request: Request, db: Annotated[Session, Depends(get_db)], member_id: int | None = None) -> list[dict]:
     """Per-project totals for the dashboard "Project totals" card (spec §25.1).
     Projects span time, so this is all-time spend, not a single month."""
     return project_service.totals(db, account_ids=_scope(request, db, member_id=member_id))
 
 
 @router.get("/subscriptions", response_model=DashboardSubscriptions)
-def subscriptions(request: Request, member_id: int | None = None, db: Session = Depends(get_db)) -> dict:
+def subscriptions(request: Request, db: Annotated[Session, Depends(get_db)], member_id: int | None = None) -> dict:
     """Active subscriptions + monthly-equivalent total (spec §25.1)."""
     return subscription_service.dashboard_summary(db, account_ids=_scope(request, db, member_id=member_id))
 
 
 @router.get("/monthly", response_model=MonthlySeries)
 def monthly(
-    request: Request, months: int = 6, month: date | None = None, view: str = "all",
-    member_id: int | None = None, db: Session = Depends(get_db),
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    months: int = 6,
+    month: date | None = None,
+    view: str = "all",
+    member_id: int | None = None,
 ) -> dict:
     """Spend/income/net time-series for the last N months + a trend summary
     (backlog #146). ``months`` is clamped to a sane 2–24."""
     return analytics_service.monthly_series(
-        db, _ref(month), months=max(2, min(months, 24)),
+        db,
+        _ref(month),
+        months=max(2, min(months, 24)),
         account_ids=_scope(request, db, view, member_id),
     )
 
 
 @router.get("/outliers", response_model=OutliersResponse)
 def outliers(
-    request: Request, month: date | None = None,
-    member_id: int | None = None, db: Session = Depends(get_db),
+    request: Request, db: Annotated[Session, Depends(get_db)], month: date | None = None, member_id: int | None = None
 ) -> dict:
     """Heads-up list: large charges, category spikes, new merchants, budget
     alerts (backlog #150). Conservative + gated on having enough history."""
@@ -116,7 +132,7 @@ def outliers(
 
 
 @router.get("/by-member", response_model=MemberBreakdown)
-def by_member(request: Request, month: date | None = None, db: Session = Depends(get_db)) -> dict:
+def by_member(request: Request, db: Annotated[Session, Depends(get_db)], month: date | None = None) -> dict:
     """Spend/income/net for the month broken down per household member, plus a
     "Shared / unassigned" row for unowned accounts. Each member's figures cover
     the accounts they own intersected with the caller's own visibility, so a
@@ -142,7 +158,7 @@ def by_member(request: Request, month: date | None = None, db: Session = Depends
 
 
 @router.get("/processing", response_model=ProcessingStats)
-def processing(db: Session = Depends(get_db)) -> dict:
+def processing(db: Annotated[Session, Depends(get_db)]) -> dict:
     """Pipeline status: files/transactions imported, receipt OCR progress, and how
     many enrichment calls went through AI (cloud vs local) + the average AI
     turnaround. Household-wide system metrics (not account-scoped)."""

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -15,19 +17,19 @@ router = APIRouter(prefix="/review", tags=["review"])
 
 @router.get("", response_model=list[ReviewItemOut])
 def list_review_items(
-    db: Session = Depends(get_db), status: str | None = Query(default="open")
+    db: Annotated[Session, Depends(get_db)], status: Annotated[str | None, Query()] = "open"
 ) -> list[ReviewItem]:
     return review_service.list_items(db, status=status)
 
 
 @router.get("/count")
-def review_count(db: Session = Depends(get_db)) -> dict:
+def review_count(db: Annotated[Session, Depends(get_db)]) -> dict:
     return {"open": review_service.open_count(db)}
 
 
 @router.patch("/{item_id}", response_model=ReviewItemOut)
 def update_review_item(
-    item_id: int, payload: ReviewStatusUpdate, db: Session = Depends(get_db)
+    item_id: int, payload: ReviewStatusUpdate, db: Annotated[Session, Depends(get_db)]
 ) -> ReviewItem:
     item = db.get(ReviewItem, item_id)
     if item is None:
