@@ -85,6 +85,26 @@ function gbp(value: string): string {
   return "£" + Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+// Drill-down (umbrella principle): every dashboard breakdown links through to the
+// transactions behind it. The card is scoped to one month, so we carry that month's
+// date range (and any selected member) into the Transactions filter, so the drilled
+// list matches the figure that was clicked. `monthDate` is "YYYY-MM-01".
+function monthRange(monthDate: string): { date_from: string; date_to: string } {
+  const month = monthDate.slice(0, 7); // YYYY-MM
+  const [y, m] = month.split("-").map(Number);
+  const lastDay = new Date(y, m, 0).getDate(); // m is 1-based → day 0 of next month
+  return { date_from: `${month}-01`, date_to: `${month}-${String(lastDay).padStart(2, "0")}` };
+}
+
+function txnLink(params: Record<string, string | number | null | undefined>): string {
+  const sp = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== "") sp.set(k, String(v));
+  }
+  const qs = sp.toString();
+  return `/transactions${qs ? `?${qs}` : ""}`;
+}
+
 export default function Dashboard() {
   const [month, setMonth] = useState(thisMonth());
   const monthDate = `${month}-01`;
@@ -280,7 +300,10 @@ function ProjectsCard({ memberId }: { memberId?: number }) {
           return (
             <li key={p.project_id}>
               <span>
-                <Link to="/projects">{p.name}</Link> <span className="tag">{p.status}</span>
+                <Link to={txnLink({ project_id: p.project_id, member_id: memberId })} title={`See ${p.name} transactions`}>
+                  {p.name}
+                </Link>{" "}
+                <span className="tag">{p.status}</span>
               </span>
               <span>
                 {gbp(p.spent)}
@@ -301,6 +324,7 @@ function CategoriesCard({ monthDate, view, memberId }: { monthDate: string; view
   });
   const data = q.data;
   const max = Math.max(1, ...(data ?? []).map((c) => Number(c.total)));
+  const { date_from, date_to } = monthRange(monthDate);
   return (
     <div className="card">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
@@ -318,7 +342,17 @@ function CategoriesCard({ monthDate, view, memberId }: { monthDate: string; view
           <li key={c.category_id ?? "none"}>
             <div className="bars__row">
               <span className="bars__dot" style={{ background: c.colour ?? "#bbb" }} />
-              <span className="bars__label">{c.name}</span>
+              <Link
+                className="bars__label"
+                title={`See ${c.name} transactions this month`}
+                to={txnLink(
+                  c.category_id != null
+                    ? { category_id: c.category_id, date_from, date_to, member_id: memberId }
+                    : { uncategorised: "true", date_from, date_to, member_id: memberId },
+                )}
+              >
+                {c.name}
+              </Link>
               <span className="bars__value">{gbp(c.total)}</span>
             </div>
             <div className="bars__track">
@@ -340,6 +374,7 @@ function VendorsCard({ monthDate, view, memberId }: { monthDate: string; view: s
     queryFn: () => getVendorBreakdown(monthDate, view, memberId),
   });
   const data = q.data;
+  const { date_from, date_to } = monthRange(monthDate);
   return (
     <div className="card">
       <h2 className="card__title">Top vendors</h2>
@@ -351,7 +386,12 @@ function VendorsCard({ monthDate, view, memberId }: { monthDate: string; view: s
       <ul className="kv">
         {data?.map((v) => (
           <li key={v.vendor_id}>
-            <span>{v.name}</span>
+            <Link
+              title={`See ${v.name} transactions this month`}
+              to={txnLink({ vendor_id: v.vendor_id, date_from, date_to, member_id: memberId })}
+            >
+              {v.name}
+            </Link>
             <span>{gbp(v.total)} <span className="muted">· {v.count}</span></span>
           </li>
         ))}
@@ -368,6 +408,7 @@ function GeoCard({ monthDate, view, memberId }: { monthDate: string; view: strin
   const data = q.data ?? [];
   if (data.length === 0) return null; // non-nagging: nothing to map yet
   const max = Math.max(1, ...data.map((c) => Number(c.total)));
+  const { date_from, date_to } = monthRange(monthDate);
   return (
     <div className="card">
       <h2 className="card__title">Spending by location</h2>
@@ -379,7 +420,17 @@ function GeoCard({ monthDate, view, memberId }: { monthDate: string; view: strin
         {data.slice(0, 12).map((c) => (
           <li key={c.country_code ?? "unknown"}>
             <div className="bars__row">
-              <span className="bars__label">{c.flag} {c.name}</span>
+              {c.country_code ? (
+                <Link
+                  className="bars__label"
+                  title={`See ${c.name} transactions this month`}
+                  to={txnLink({ country: c.country_code, date_from, date_to, member_id: memberId })}
+                >
+                  {c.flag} {c.name}
+                </Link>
+              ) : (
+                <span className="bars__label">{c.flag} {c.name}</span>
+              )}
               <span className="bars__value">{gbp(c.total)} <span className="muted">· {c.count}</span></span>
             </div>
             <div className="bars__track">
@@ -398,6 +449,7 @@ function MemberBreakdownCard({ monthDate }: { monthDate: string }) {
   if (rows.length < 2) return null; // a breakdown only makes sense with ≥2 spenders
   rows.sort((a, b) => Number(b.spend) - Number(a.spend));
   const max = Math.max(1, ...rows.map((r) => Number(r.spend)));
+  const { date_from, date_to } = monthRange(monthDate);
   return (
     <div className="card">
       <h2 className="card__title">Spending by member</h2>
@@ -405,10 +457,21 @@ function MemberBreakdownCard({ monthDate }: { monthDate: string }) {
         {rows.map((r) => (
           <li key={r.member_id ?? "shared"}>
             <div className="bars__row">
-              <span className="bars__label">
-                {r.display_name}
-                {r.role && <span className="muted"> · {r.role}</span>}
-              </span>
+              {r.member_id != null ? (
+                <Link
+                  className="bars__label"
+                  title={`See ${r.display_name}'s transactions this month`}
+                  to={txnLink({ member_id: r.member_id, date_from, date_to })}
+                >
+                  {r.display_name}
+                  {r.role && <span className="muted"> · {r.role}</span>}
+                </Link>
+              ) : (
+                <span className="bars__label">
+                  {r.display_name}
+                  {r.role && <span className="muted"> · {r.role}</span>}
+                </span>
+              )}
               <span className="bars__value">{gbp(r.spend)}</span>
             </div>
             <div className="bars__track">

@@ -198,8 +198,11 @@ export interface TransactionFilters {
   date_to?: string;
   amount_min?: string;
   amount_max?: string;
+  category_id?: number;
+  vendor_id?: number;
   project_id?: number;
   tag_id?: number;
+  country?: string;
   needs_review?: boolean;
   uncategorised?: boolean;
   is_business?: boolean;

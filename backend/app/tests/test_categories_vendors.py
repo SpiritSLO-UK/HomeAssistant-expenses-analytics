@@ -364,3 +364,32 @@ def test_bulk_update_transactions(client):
         for t in client.get("/api/transactions", params={"limit": 500, "include_archived": "true"}).json()["items"]
     }
     assert not (set(ids) & gone)
+
+
+def test_list_filters_drill_down(client):
+    """The Dashboard/Vendors/Business links narrow the Transactions list by
+    country, category and vendor — verify each filter returns matching rows."""
+    client.post("/api/backup/demo")
+    items = client.get("/api/transactions", params={"limit": 500}).json()["items"]
+    assert len(items) > 3
+    ids = [t["id"] for t in items[:3]]
+
+    # Country (spend-by-location drill-down): tag a few rows ES, ?country=ES returns
+    # exactly those; the match is case-insensitive and an untagged country is empty.
+    client.post("/api/transactions/bulk", json={"transaction_ids": ids, "country": "es"})
+    by_country = client.get("/api/transactions", params={"country": "ES", "limit": 500}).json()
+    assert {t["id"] for t in by_country["items"]} == set(ids)
+    assert client.get("/api/transactions", params={"country": "fr", "limit": 500}).json()["total"] == 0
+
+    # Category (spend-by-category drill-down): every returned row has the category.
+    cat = _category_id(client, "Groceries")
+    client.post("/api/transactions/bulk", json={"transaction_ids": ids, "category_id": cat})
+    by_cat = client.get("/api/transactions", params={"category_id": cat, "limit": 500}).json()
+    assert set(ids) <= {t["id"] for t in by_cat["items"]}
+    assert all(t["category_id"] == cat for t in by_cat["items"])
+
+    # Vendor (top-vendors drill-down): assign a fresh vendor, ?vendor_id returns just those.
+    vid = client.post("/api/vendors", json={"canonical_name": "DrillVendor"}).json()["id"]
+    client.post("/api/transactions/bulk", json={"transaction_ids": ids, "merchant_id": vid})
+    by_vendor = client.get("/api/transactions", params={"vendor_id": vid, "limit": 500}).json()
+    assert {t["id"] for t in by_vendor["items"]} == set(ids)
