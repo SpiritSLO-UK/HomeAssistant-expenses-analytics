@@ -110,7 +110,7 @@ export default function Users() {
     <div className="page">
       <div className="page__head">
         <h1 className="page__title">Users &amp; access</h1>
-        <Link className="btn btn--ghost" to="/family-setup">🧭 Family setup wizard</Link>
+        <Link className="btn btn--ghost" to="/setup">🧭 Setup wizard</Link>
       </div>
       <p className="muted">
         People are identified by Home Assistant when they open this add-on. A new person

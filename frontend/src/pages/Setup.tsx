@@ -1,0 +1,129 @@
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
+import { getMe, getSettings, getSupportedCurrencies, updateSettings } from "../api/client";
+
+// A single "Welcome, let's set up" entry that branches by household shape: Solo is
+// a short inline flow (base currency + import); Household/Family hand off to the
+// existing family-setup wizard. Owner-only.
+export default function Setup() {
+  const me = useQuery({ queryKey: ["me"], queryFn: getMe });
+  const [shape, setShape] = useState<null | "solo" | "shared">(null);
+
+  if (me.data && !me.data.is_admin) {
+    return (
+      <div className="page">
+        <h1 className="page__title">Set up</h1>
+        <p className="status status--error">Only an owner (administrator) can set up the household.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="page">
+      <h1 className="page__title">Welcome — let's set up</h1>
+
+      {!shape && (
+        <div className="card">
+          <p className="muted" style={{ marginTop: 0 }}>
+            Who's this for? You can change any of it later — nothing here is locked in.
+          </p>
+          <div className="cols cols--domain">
+            <ShapeCard
+              icon="🧍"
+              title="Just me"
+              detail="A single person. We'll set your currency and get you importing."
+              onPick={() => setShape("solo")}
+            />
+            <ShapeCard
+              icon="🏠"
+              title="Household"
+              detail="A few adults sharing. Approve people, choose shared vs private accounts."
+              onPick={() => setShape("shared")}
+            />
+            <ShapeCard
+              icon="👨‍👩‍👧"
+              title="Family"
+              detail="Adults plus kids. Everything in Household, plus pocket-money allowances."
+              onPick={() => setShape("shared")}
+            />
+          </div>
+        </div>
+      )}
+
+      {shape === "solo" && <SoloSetup onBack={() => setShape(null)} />}
+      {shape === "shared" && <SharedIntro onBack={() => setShape(null)} />}
+    </div>
+  );
+}
+
+function ShapeCard({ icon, title, detail, onPick }: { icon: string; title: string; detail: string; onPick: () => void }) {
+  return (
+    <button className="card setup-shape" onClick={onPick} style={{ textAlign: "left", cursor: "pointer" }}>
+      <div style={{ fontSize: "1.6rem" }}>{icon}</div>
+      <h2 className="card__title" style={{ marginBottom: 4 }}>{title}</h2>
+      <p className="muted" style={{ margin: 0, fontSize: "0.85rem" }}>{detail}</p>
+    </button>
+  );
+}
+
+function SoloSetup({ onBack }: { onBack: () => void }) {
+  const qc = useQueryClient();
+  const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
+  const currencies = useQuery({ queryKey: ["currencies"], queryFn: getSupportedCurrencies });
+  const base = settings.data?.base_currency ?? "GBP";
+  const save = useMutation({
+    mutationFn: (code: string) => updateSettings({ base_currency: code }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["settings"] }),
+  });
+  return (
+    <div className="card">
+      <h2 className="card__title">Just me</h2>
+      <ol className="setup-list">
+        <li>
+          <strong>Base currency</strong> — everything is shown in this currency.
+          <div style={{ marginTop: 6 }}>
+            <select value={base} disabled={save.isPending} onChange={(e) => save.mutate(e.target.value)}>
+              {(currencies.data ?? []).map((c) => (
+                <option key={c.code} value={c.code}>{c.symbol} {c.code} — {c.name}</option>
+              ))}
+            </select>
+            {save.isPending && <span className="muted"> saving…</span>}
+          </div>
+        </li>
+        <li>
+          <strong>Import a statement</strong> — upload a CSV/PDF to pull in your transactions.
+          <div style={{ marginTop: 6 }}><Link className="btn btn--sm" to="/import">Go to Import →</Link></div>
+        </li>
+        <li>
+          <strong>Done!</strong> Explore the dashboard; tweak categories, budgets and rules whenever you like.
+        </li>
+      </ol>
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 12 }}>
+        <button className="btn btn--ghost" onClick={onBack}>← Back</button>
+        <Link className="btn" to="/">Go to the dashboard</Link>
+      </div>
+    </div>
+  );
+}
+
+function SharedIntro({ onBack }: { onBack: () => void }) {
+  return (
+    <div className="card">
+      <h2 className="card__title">Household &amp; family</h2>
+      <p className="muted">
+        Other people appear automatically when they open the add-on through Home Assistant. The family
+        wizard walks you through it:
+      </p>
+      <ol className="setup-list">
+        <li><strong>People &amp; roles</strong> — approve who has access and what they can do.</li>
+        <li><strong>Shared vs private accounts</strong> — keep some accounts to yourself.</li>
+        <li><strong>Kids' allowance</strong> — give children a pocket-money budget (skip if none).</li>
+      </ol>
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 12 }}>
+        <button className="btn btn--ghost" onClick={onBack}>← Back</button>
+        <Link className="btn" to="/family-setup">Continue to family setup →</Link>
+      </div>
+    </div>
+  );
+}
