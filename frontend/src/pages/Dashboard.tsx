@@ -11,6 +11,7 @@ import {
   getCategoryBreakdown,
   getDashboardProjects,
   getMe,
+  getMemberBreakdown,
   getMonthlySeries,
   getOutliers,
   getProcessingStats,
@@ -44,6 +45,7 @@ const OPTIONAL_CARDS: { key: string; label: string }[] = [
   { key: "categories", label: "Spending by category" },
   { key: "vendors", label: "Top vendors" },
   { key: "projects", label: "By project" },
+  { key: "members", label: "By member" },
   { key: "savings", label: "Savings" },
   { key: "budgets", label: "Budgets" },
   { key: "business", label: "Business" },
@@ -243,6 +245,8 @@ export default function Dashboard() {
 
       {show("projects") && <ProjectsCard memberId={mid} />}
 
+      {show("members") && <MemberBreakdownCard monthDate={monthDate} />}
+
       {(show("savings") || show("budgets") || show("business") || show("travel") || show("allowance")) && (
         <div className="cols cols--domain">
           {show("savings") && <SavingsCard />}
@@ -292,6 +296,41 @@ function ProjectsCard({ memberId }: { memberId?: number }) {
             </li>
           );
         })}
+      </ul>
+    </div>
+  );
+}
+
+function MemberBreakdownCard({ monthDate }: { monthDate: string }) {
+  const q = useQuery({ queryKey: ["dash-by-member", monthDate], queryFn: () => getMemberBreakdown(monthDate) });
+  const rows = (q.data?.members ?? []).filter((r) => Number(r.spend) > 0);
+  if (rows.length < 2) return null; // a breakdown only makes sense with ≥2 spenders
+  rows.sort((a, b) => Number(b.spend) - Number(a.spend));
+  const max = Math.max(1, ...rows.map((r) => Number(r.spend)));
+  return (
+    <div className="card">
+      <h2 className="card__title">Spending by member</h2>
+      <ul className="bars">
+        {rows.map((r) => (
+          <li key={r.member_id ?? "shared"}>
+            <div className="bars__row">
+              <span className="bars__label">
+                {r.display_name}
+                {r.role && <span className="muted"> · {r.role}</span>}
+              </span>
+              <span className="bars__value">{gbp(r.spend)}</span>
+            </div>
+            <div className="bars__track">
+              <div
+                className="bars__fill"
+                style={{
+                  width: `${(Number(r.spend) / max) * 100}%`,
+                  background: r.member_id === null ? "var(--muted, #6b7280)" : "var(--sidebar-active, #3b82f6)",
+                }}
+              />
+            </div>
+          </li>
+        ))}
       </ul>
     </div>
   );

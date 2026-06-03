@@ -1060,6 +1060,26 @@ export function getProcessingStats(): Promise<ProcessingStats> {
   return fetchJson<ProcessingStats>("api/dashboard/processing");
 }
 
+export interface MemberSpendRow {
+  member_id: number | null; // null = the "Shared / unassigned" row (unowned accounts)
+  display_name: string;
+  role: string | null;
+  spend: string;
+  income: string;
+  net: string;
+}
+
+export interface MemberBreakdown {
+  month: string;
+  currency: string;
+  members: MemberSpendRow[];
+}
+
+export function getMemberBreakdown(month?: string): Promise<MemberBreakdown> {
+  const qs = month ? `?month=${encodeURIComponent(month)}` : "";
+  return fetchJson<MemberBreakdown>(`api/dashboard/by-member${qs}`);
+}
+
 // --- Savings (spec §12.4; backlog #96, #91) ---
 
 export interface SavingsAccount {

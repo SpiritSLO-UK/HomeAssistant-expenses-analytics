@@ -115,8 +115,12 @@ Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md
   BOM so they open cleanly in Excel.
 - **Customisable dashboard** — a **⚙ Customise** toggle lets you show/hide the
   optional cards (Heads-up, Trends, Spending by category, Top vendors, By project,
-  Savings, Budgets, Business, Travel, Allowance, Processing); the choice is
-  remembered on your device.
+  By member, Savings, Budgets, Business, Travel, Allowance, Processing); the choice
+  is remembered on your device.
+- **Spending by member** — for multi-person households, a card breaking the
+  month's spend down per member (plus a "Shared" row for joint accounts). Each
+  person's figure covers the accounts they own, scoped to what you're allowed to
+  see — so it never exposes another member's private spend.
 - **Domain summary cards** — compact per-area cards (Savings, Budgets, Business,
   Travel, Allowance) appear on the dashboard only when that area has data, each
   toggleable and linking through to its full page — so the dashboard reflects
