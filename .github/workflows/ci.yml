@@ -43,10 +43,13 @@ jobs:
 
       # SonarCloud analysis (Python + TypeScript). Reads sonar-project.properties.
       # Runs ONLY on pushes to main: the free SonarQube Cloud tier analyses the
-      # main branch only (no PR/branch analysis), so scanning feature branches/PRs
-      # would hit the plan limit. Also gated on the secret (absent on fork PRs).
+      # main branch only (no PR/branch analysis). Fire-and-forget — continue-on-error
+      # + a timeout mean a slow or transient scan never reddens main or blocks the
+      # next change; results are read later from SonarCloud, not waited on here.
       - name: SonarCloud Scan
         if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && env.SONAR_TOKEN != '' }}
+        continue-on-error: true
+        timeout-minutes: 10
         env:
           SONAR_HOST_URL: https://sonarcloud.io
         uses: SonarSource/sonarqube-scan-action@v6
