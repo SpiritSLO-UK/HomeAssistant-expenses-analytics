@@ -1,9 +1,18 @@
 name: CI
 
 on:
+  # Only build main on push; feature branches are covered by their pull_request
+  # run. This avoids the duplicate push+pull_request runs on every PR branch,
+  # and keeps the main-only SonarCloud scan triggering on merges to main.
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
+
+# One in-flight run per ref: a new push to a PR branch cancels the previous run.
+# main is never cancelled, so a post-merge SonarCloud scan always finishes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   backend:
