@@ -113,10 +113,10 @@ Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md
   set), plus the data behind the dashboard charts (spending-by-category and the
   monthly spend/income/net trend) from small "⬇ CSV" links. Files carry a UTF-8
   BOM so they open cleanly in Excel.
-- **Customisable dashboard** — a **⚙ Customise** toggle lets you show/hide the
-  optional cards (Heads-up, Trends, Spending by category, Top vendors, By project,
-  By member, Savings, Budgets, Business, Travel, Allowance, Processing); the choice
-  is remembered on your device.
+- **Customisable dashboard** — a **⚙ Customise** toggle lets you show/hide **and
+  reorder** the optional cards (Heads-up, Trends, Spending by category, Top vendors,
+  By project, By member, Savings, Budgets, Business, Travel, Allowance, Processing)
+  with up/down arrows; the layout and order are remembered on your device.
 - **Spending by member** — for multi-person households, a card breaking the
   month's spend down per member (plus a "Shared" row for joint accounts). Each
   person's figure covers the accounts they own, scoped to what you're allowed to

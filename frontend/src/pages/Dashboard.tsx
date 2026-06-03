@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import Sparkline from "../components/Sparkline";
@@ -27,8 +27,10 @@ import {
   type TrendMetric,
 } from "../api/client";
 import {
+  getDashboardCardOrder,
   getDashboardView,
   getHiddenDashboardCards,
+  setDashboardCardOrder,
   setDashboardView,
   setHiddenDashboardCards,
 } from "../prefs";
@@ -54,6 +56,16 @@ const OPTIONAL_CARDS: { key: string; label: string }[] = [
   { key: "processing", label: "Processing" },
 ];
 
+const DEFAULT_CARD_ORDER = OPTIONAL_CARDS.map((c) => c.key);
+
+// Saved order, filtered to known cards and with any newly-added cards appended,
+// so the order pref survives card additions/removals across releases (#84).
+function mergeCardOrder(saved: string[]): string[] {
+  const known = new Set(DEFAULT_CARD_ORDER);
+  const kept = saved.filter((k) => known.has(k));
+  return [...kept, ...DEFAULT_CARD_ORDER.filter((k) => !kept.includes(k))];
+}
+
 function downloadOrAlert(p: Promise<void>): void {
   p.catch((e) => window.alert(String(e instanceof Error ? e.message : e)));
 }
@@ -71,8 +83,9 @@ export default function Dashboard() {
   const [month, setMonth] = useState(thisMonth());
   const monthDate = `${month}-01`;
 
-  // Per-device card show/hide (#86).
+  // Per-device card show/hide (#86) + order (#84).
   const [hidden, setHidden] = useState<Set<string>>(() => getHiddenDashboardCards());
+  const [order, setOrder] = useState<string[]>(() => mergeCardOrder(getDashboardCardOrder()));
   const [customise, setCustomise] = useState(false);
   const show = (key: string) => !hidden.has(key);
   const toggleCard = (key: string) =>
@@ -81,6 +94,16 @@ export default function Dashboard() {
       if (next.has(key)) next.delete(key);
       else next.add(key);
       setHiddenDashboardCards(next);
+      return next;
+    });
+  const moveCard = (key: string, dir: -1 | 1) =>
+    setOrder((prev) => {
+      const i = prev.indexOf(key);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= prev.length) return prev;
+      const next = [...prev];
+      [next[i], next[j]] = [next[j], next[i]];
+      setDashboardCardOrder(next);
       return next;
     });
 
@@ -105,16 +128,24 @@ export default function Dashboard() {
     queryKey: ["summary", monthDate, view, memberId],
     queryFn: () => getSummary(monthDate, view, mid),
   });
-  const categories = useQuery({
-    queryKey: ["dash-categories", monthDate, view, memberId],
-    queryFn: () => getCategoryBreakdown(monthDate, view, mid),
-  });
-  const vendors = useQuery({
-    queryKey: ["dash-vendors", monthDate, view, memberId],
-    queryFn: () => getVendorBreakdown(monthDate, view, mid),
-  });
 
-  const maxCat = Math.max(1, ...(categories.data ?? []).map((c) => Number(c.total)));
+  // Each optional card maps to a self-contained renderer; the dashboard renders
+  // them in the user's saved order (#84), filtered by show/hide (#86). Cards that
+  // have no data render null, so the layout stays clean.
+  const renderers: Record<string, () => JSX.Element | null> = {
+    headsup: () => <HeadsUpCard monthDate={monthDate} memberId={mid} />,
+    trends: () => <TrendsCard monthDate={monthDate} view={view} memberId={mid} />,
+    categories: () => <CategoriesCard monthDate={monthDate} view={view} memberId={mid} />,
+    vendors: () => <VendorsCard monthDate={monthDate} view={view} memberId={mid} />,
+    projects: () => <ProjectsCard memberId={mid} />,
+    members: () => <MemberBreakdownCard monthDate={monthDate} />,
+    savings: () => <SavingsCard />,
+    budgets: () => <BudgetsCard monthDate={monthDate} />,
+    business: () => <BusinessCard />,
+    travel: () => <TravelCard />,
+    allowance: () => <AllowanceCard />,
+    processing: () => <ProcessingCard />,
+  };
 
   return (
     <div className="page">
@@ -156,15 +187,38 @@ export default function Dashboard() {
         <div className="card">
           <h2 className="card__title">Customise dashboard</h2>
           <p className="muted" style={{ marginTop: 0, fontSize: "0.85rem" }}>
-            Choose which cards to show. Saved on this device.
+            Show or hide cards and set their order with the arrows. Saved on this device.
           </p>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 14 }}>
-            {OPTIONAL_CARDS.map((c) => (
-              <label key={c.key} className="checkbox">
-                <input type="checkbox" checked={show(c.key)} onChange={() => toggleCard(c.key)} /> {c.label}
-              </label>
-            ))}
-          </div>
+          <ul className="card-customise">
+            {order.map((key, i) => {
+              const label = OPTIONAL_CARDS.find((c) => c.key === key)?.label ?? key;
+              return (
+                <li key={key}>
+                  <label className="checkbox">
+                    <input type="checkbox" checked={show(key)} onChange={() => toggleCard(key)} /> {label}
+                  </label>
+                  <span className="card-customise__move">
+                    <button
+                      className="btn btn--sm btn--ghost"
+                      disabled={i === 0}
+                      aria-label={`Move ${label} up`}
+                      onClick={() => moveCard(key, -1)}
+                    >
+                      ▲
+                    </button>
+                    <button
+                      className="btn btn--sm btn--ghost"
+                      disabled={i === order.length - 1}
+                      aria-label={`Move ${label} down`}
+                      onClick={() => moveCard(key, 1)}
+                    >
+                      ▼
+                    </button>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
         </div>
       )}
 
@@ -177,9 +231,6 @@ export default function Dashboard() {
         <StatCard label="Transactions" value={summary.data ? String(summary.data.total_transactions) : "—"} />
       </div>
 
-      {show("headsup") && <HeadsUpCard monthDate={monthDate} memberId={mid} />}
-      {show("trends") && <TrendsCard monthDate={monthDate} view={view} memberId={mid} />}
-
       {summary.data && summary.data.total_transactions === 0 && (
         <div className="card">
           <p className="muted">
@@ -188,76 +239,9 @@ export default function Dashboard() {
         </div>
       )}
 
-      {(show("categories") || show("vendors")) && (
-        <div className="cols">
-          {show("categories") && (
-            <div className="card">
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                <h2 className="card__title" style={{ margin: 0 }}>Spending by category</h2>
-                {categories.data && categories.data.length > 0 && (
-                  <button className="link-btn" onClick={() => downloadOrAlert(exportCategoriesCsv(monthDate))}>
-                    ⬇ CSV
-                  </button>
-                )}
-              </div>
-              {categories.isLoading && <p className="muted">Loading…</p>}
-              {categories.data && categories.data.length === 0 && <p className="muted">No spending this month.</p>}
-              <ul className="bars">
-                {categories.data?.map((c) => (
-                  <li key={c.category_id ?? "none"}>
-                    <div className="bars__row">
-                      <span className="bars__dot" style={{ background: c.colour ?? "#bbb" }} />
-                      <span className="bars__label">{c.name}</span>
-                      <span className="bars__value">{gbp(c.total)}</span>
-                    </div>
-                    <div className="bars__track">
-                      <div
-                        className="bars__fill"
-                        style={{ width: `${(Number(c.total) / maxCat) * 100}%`, background: c.colour ?? "#bbb" }}
-                      />
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {show("vendors") && (
-            <div className="card">
-              <h2 className="card__title">Top vendors</h2>
-              {vendors.data && vendors.data.length === 0 && (
-                <p className="muted">
-                  No vendors yet — set up vendor aliases on the <Link to="/vendors">Vendors</Link> page.
-                </p>
-              )}
-              <ul className="kv">
-                {vendors.data?.map((v) => (
-                  <li key={v.vendor_id}>
-                    <span>{v.name}</span>
-                    <span>{gbp(v.total)} <span className="muted">· {v.count}</span></span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      )}
-
-      {show("projects") && <ProjectsCard memberId={mid} />}
-
-      {show("members") && <MemberBreakdownCard monthDate={monthDate} />}
-
-      {(show("savings") || show("budgets") || show("business") || show("travel") || show("allowance")) && (
-        <div className="cols cols--domain">
-          {show("savings") && <SavingsCard />}
-          {show("budgets") && <BudgetsCard monthDate={monthDate} />}
-          {show("business") && <BusinessCard />}
-          {show("travel") && <TravelCard />}
-          {show("allowance") && <AllowanceCard />}
-        </div>
-      )}
-
-      {show("processing") && <ProcessingCard />}
+      {order.filter(show).map((key) => (
+        <Fragment key={key}>{renderers[key]?.()}</Fragment>
+      ))}
 
       {summary.data && summary.data.uncategorised_transactions > 0 && (
         <div className="card">
@@ -296,6 +280,72 @@ function ProjectsCard({ memberId }: { memberId?: number }) {
             </li>
           );
         })}
+      </ul>
+    </div>
+  );
+}
+
+function CategoriesCard({ monthDate, view, memberId }: { monthDate: string; view: string; memberId?: number }) {
+  const q = useQuery({
+    queryKey: ["dash-categories", monthDate, view, memberId ?? ""],
+    queryFn: () => getCategoryBreakdown(monthDate, view, memberId),
+  });
+  const data = q.data;
+  const max = Math.max(1, ...(data ?? []).map((c) => Number(c.total)));
+  return (
+    <div className="card">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+        <h2 className="card__title" style={{ margin: 0 }}>Spending by category</h2>
+        {data && data.length > 0 && (
+          <button className="link-btn" onClick={() => downloadOrAlert(exportCategoriesCsv(monthDate))}>
+            ⬇ CSV
+          </button>
+        )}
+      </div>
+      {q.isLoading && <p className="muted">Loading…</p>}
+      {data && data.length === 0 && <p className="muted">No spending this month.</p>}
+      <ul className="bars">
+        {data?.map((c) => (
+          <li key={c.category_id ?? "none"}>
+            <div className="bars__row">
+              <span className="bars__dot" style={{ background: c.colour ?? "#bbb" }} />
+              <span className="bars__label">{c.name}</span>
+              <span className="bars__value">{gbp(c.total)}</span>
+            </div>
+            <div className="bars__track">
+              <div
+                className="bars__fill"
+                style={{ width: `${(Number(c.total) / max) * 100}%`, background: c.colour ?? "#bbb" }}
+              />
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function VendorsCard({ monthDate, view, memberId }: { monthDate: string; view: string; memberId?: number }) {
+  const q = useQuery({
+    queryKey: ["dash-vendors", monthDate, view, memberId ?? ""],
+    queryFn: () => getVendorBreakdown(monthDate, view, memberId),
+  });
+  const data = q.data;
+  return (
+    <div className="card">
+      <h2 className="card__title">Top vendors</h2>
+      {data && data.length === 0 && (
+        <p className="muted">
+          No vendors yet — set up vendor aliases on the <Link to="/vendors">Vendors</Link> page.
+        </p>
+      )}
+      <ul className="kv">
+        {data?.map((v) => (
+          <li key={v.vendor_id}>
+            <span>{v.name}</span>
+            <span>{gbp(v.total)} <span className="muted">· {v.count}</span></span>
+          </li>
+        ))}
       </ul>
     </div>
   );
