@@ -9,6 +9,7 @@ import {
   getBudgetSummary,
   getBusinessSummary,
   getCategoryBreakdown,
+  getCountryBreakdown,
   getDashboardProjects,
   getInvestmentSummary,
   getMe,
@@ -48,6 +49,7 @@ const OPTIONAL_CARDS: { key: string; label: string }[] = [
   { key: "trends", label: "Trends" },
   { key: "categories", label: "Spending by category" },
   { key: "vendors", label: "Top vendors" },
+  { key: "geo", label: "Spending by location" },
   { key: "projects", label: "By project" },
   { key: "members", label: "By member" },
   { key: "savings", label: "Savings" },
@@ -141,6 +143,7 @@ export default function Dashboard() {
     trends: () => <TrendsCard monthDate={monthDate} view={view} memberId={mid} />,
     categories: () => <CategoriesCard monthDate={monthDate} view={view} memberId={mid} />,
     vendors: () => <VendorsCard monthDate={monthDate} view={view} memberId={mid} />,
+    geo: () => <GeoCard monthDate={monthDate} view={view} memberId={mid} />,
     projects: () => <ProjectsCard memberId={mid} />,
     members: () => <MemberBreakdownCard monthDate={monthDate} />,
     savings: () => <SavingsCard />,
@@ -350,6 +353,37 @@ function VendorsCard({ monthDate, view, memberId }: { monthDate: string; view: s
           <li key={v.vendor_id}>
             <span>{v.name}</span>
             <span>{gbp(v.total)} <span className="muted">· {v.count}</span></span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function GeoCard({ monthDate, view, memberId }: { monthDate: string; view: string; memberId?: number }) {
+  const q = useQuery({
+    queryKey: ["dash-geo", monthDate, view, memberId ?? ""],
+    queryFn: () => getCountryBreakdown(monthDate, view, memberId),
+  });
+  const data = q.data ?? [];
+  if (data.length === 0) return null; // non-nagging: nothing to map yet
+  const max = Math.max(1, ...data.map((c) => Number(c.total)));
+  return (
+    <div className="card">
+      <h2 className="card__title">Spending by location</h2>
+      <p className="muted" style={{ marginTop: 0, fontSize: "0.82rem" }}>
+        By country — a vendor's country if set (Vendors page), otherwise inferred from the currency.
+      </p>
+      <ul className="bars">
+        {data.slice(0, 12).map((c) => (
+          <li key={c.country_code ?? "unknown"}>
+            <div className="bars__row">
+              <span className="bars__label">{c.flag} {c.name}</span>
+              <span className="bars__value">{gbp(c.total)} <span className="muted">· {c.count}</span></span>
+            </div>
+            <div className="bars__track">
+              <div className="bars__fill" style={{ width: `${(Number(c.total) / max) * 100}%` }} />
+            </div>
           </li>
         ))}
       </ul>

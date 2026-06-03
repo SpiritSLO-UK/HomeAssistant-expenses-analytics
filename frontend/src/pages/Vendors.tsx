@@ -7,6 +7,7 @@ import {
   listCategories,
   listVendors,
   setVendorDefaultCategory,
+  updateVendor,
   type Vendor,
 } from "../api/client";
 
@@ -35,6 +36,10 @@ export default function Vendors() {
   const setCategory = useMutation({
     mutationFn: (v: { id: number; categoryId: number | null }) =>
       setVendorDefaultCategory(v.id, v.categoryId),
+    onSuccess: invalidate,
+  });
+  const setCountry = useMutation({
+    mutationFn: (v: { id: number; country: string | null }) => updateVendor(v.id, { country: v.country }),
     onSuccess: invalidate,
   });
   const remove = useMutation({ mutationFn: (id: number) => deleteVendor(id), onSuccess: invalidate });
@@ -76,6 +81,7 @@ export default function Vendors() {
                   <th>Vendor</th>
                   <th>Aliases</th>
                   <th>Default category</th>
+                  <th>Country</th>
                   <th className="num">Txns</th>
                   <th className="num">Total</th>
                   <th></th>
@@ -107,6 +113,12 @@ export default function Vendors() {
                         ))}
                       </select>
                     </td>
+                    <td>
+                      <CountryInput
+                        value={v.country}
+                        onSave={(code) => setCountry.mutate({ id: v.id, country: code })}
+                      />
+                    </td>
                     <td className="num">{v.transaction_count}</td>
                     <td className="num">£{Math.abs(Number(v.total_amount)).toFixed(2)}</td>
                     <td>
@@ -122,6 +134,28 @@ export default function Vendors() {
         )}
       </div>
     </div>
+  );
+}
+
+// A tiny 2-letter ISO country input that saves on blur/Enter (e.g. GB, US, FR).
+function CountryInput({ value, onSave }: { value: string | null; onSave: (code: string | null) => void }) {
+  const [text, setText] = useState(value ?? "");
+  const commit = () => {
+    const code = text.trim().toUpperCase().slice(0, 2);
+    const next = code || null;
+    if (next !== (value ?? null)) onSave(next);
+  };
+  return (
+    <input
+      placeholder="—"
+      value={text}
+      maxLength={2}
+      style={{ width: 48, textTransform: "uppercase" }}
+      title="ISO country code, e.g. GB, US, FR (used by the spending-by-location map)"
+      onChange={(e) => setText(e.target.value.replace(/[^A-Za-z]/g, ""))}
+      onBlur={commit}
+      onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+    />
   );
 }
 

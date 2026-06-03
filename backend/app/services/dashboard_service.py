@@ -22,7 +22,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import AIRequest, Category, Receipt, Statement, Transaction, Vendor
-from app.services import settings_service, split_service
+from app.services import geo, settings_service, split_service
 from app.services.scope import account_scope_condition, archived_condition
 
 
@@ -173,6 +173,44 @@ def vendor_breakdown(db: Session, ref: date, limit: int = 10, *, account_ids: se
         }
         for r in rows
     ]
+
+
+def country_breakdown(db: Session, ref: date, *, account_ids: set[int] | None = None) -> list[dict]:
+    """Spend by country for the month (base currency). A transaction's country is
+    its vendor's country if set, otherwise inferred from the currency (geo.py).
+    Aggregated in Python because the country is a vendor-or-currency fallback."""
+    start, end = month_bounds(ref)
+    rows = db.execute(
+        select(-Transaction.base_amount, Transaction.currency, Vendor.country)
+        .join(Vendor, Vendor.id == Transaction.merchant_id, isouter=True)
+        .where(
+            Transaction.transaction_date >= start,
+            Transaction.transaction_date < end,
+            Transaction.base_amount < 0,
+            *_spendable_conditions(),
+            *account_scope_condition(account_ids),
+            *archived_condition(),
+        )
+    ).all()
+
+    buckets: dict[str, dict] = defaultdict(lambda: {"total": Decimal("0"), "count": 0})
+    for amount, currency, vendor_country in rows:
+        code = geo.country_for(currency, vendor_country) or "??"
+        buckets[code]["total"] += Decimal(amount)
+        buckets[code]["count"] += 1
+
+    out = [
+        {
+            "country_code": None if code == "??" else code,
+            "name": "Unknown" if code == "??" else geo.name(code),
+            "flag": "\U0001F3F3️" if code == "??" else geo.flag(code),
+            "total": str(b["total"].quantize(Decimal("0.01"))),
+            "count": b["count"],
+        }
+        for code, b in buckets.items()
+    ]
+    out.sort(key=lambda x: Decimal(x["total"]), reverse=True)
+    return out
 
 
 # --- Processing stats (backlog: "status of files uploaded/processed, AI vs local") ---

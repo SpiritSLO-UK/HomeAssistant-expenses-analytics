@@ -32,6 +32,14 @@ class VendorBreakdownItem(BaseModel):
     count: int
 
 
+class CountryBreakdownItem(BaseModel):
+    country_code: str | None  # ISO alpha-2, or None when it couldn't be inferred
+    name: str
+    flag: str
+    total: str
+    count: int
+
+
 # --- Trends & outliers (backlog #146, #150) ---
 
 

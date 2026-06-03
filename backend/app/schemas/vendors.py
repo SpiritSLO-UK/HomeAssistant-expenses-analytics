@@ -26,6 +26,7 @@ class VendorOut(BaseModel):
     service_type: str | None
     website: str | None
     notes: str | None
+    country: str | None = None  # ISO alpha-2; used by the spend-by-location map
     last_seen_at: datetime | None
     aliases: list[AliasOut] = []
 
@@ -53,6 +54,7 @@ class VendorUpdate(BaseModel):
     service_type: str | None = None
     website: str | None = None
     notes: str | None = None
+    country: str | None = None  # ISO alpha-2 (e.g. GB, US, FR); "" clears it
 
 
 class AliasCreate(BaseModel):

@@ -24,6 +24,10 @@ class Vendor(Base, TimestampMixin):
     )
     service_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
     website: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # ISO-3166 alpha-2 country code (e.g. GB, US, FR) for the spend-by-location
+    # map. Optional; when unset, a transaction's country is inferred from its
+    # currency. (geo.py / dashboard_service.country_breakdown)
+    country: Mapped[str | None] = mapped_column(String(2), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     confidence_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     # rule | user | local_ai | cloud_ai | import
