@@ -90,7 +90,14 @@ def store_upload(db: Session, filename: str, content: bytes) -> tuple[Receipt, b
 
 def run_ocr(db: Session, receipt: Receipt, *, auto_match: bool = True) -> Receipt:
     """Extract fields from the stored file (best-effort). Falls back cleanly to
-    'skipped' + a review item when no OCR engine can handle the file."""
+    'skipped' + a review item when OCR is turned off or no engine can handle the file."""
+    if not settings_service.get_ocr_enabled(db):
+        receipt.ocr_status = "skipped"
+        receipt.needs_review = True
+        _flag(db, receipt, "low_confidence",
+              "OCR is turned off (Settings → Services) — enter the merchant, date and total manually.")
+        db.commit()
+        return receipt
     path = Path(receipt.storage_path) if receipt.storage_path else None
     if path is None or not path.exists():
         receipt.ocr_status = "failed"

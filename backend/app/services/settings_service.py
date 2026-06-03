@@ -40,6 +40,9 @@ DEMO_MANIFEST = "demo_manifest"
 # new categories, so the user need not set each one (backlog #28; per-category
 # detail stays available behind the Categories "Advanced" reveal).
 CLOUD_AI_PRIVACY_DEFAULT = "cloud_ai_privacy_default"
+# Explicit OCR on/off (Settings → Services). On by default; when off, receipt
+# processing skips OCR and the user enters fields manually.
+OCR_ENABLED = "ocr_enabled"
 
 FX_MODES = {"manual", "frankfurter"}
 RECEIPT_MATCH_MODES = {"suggest", "auto"}
@@ -131,6 +134,12 @@ def get_receipt_delete_after_processing(db: Session) -> bool:
     """Whether a receipt's original file is dropped once it's processed & matched
     (backlog #147). On by default — only an explicit ``"false"`` turns it off."""
     return get(db, RECEIPT_DELETE_AFTER_PROCESSING) != "false"
+
+
+def get_ocr_enabled(db: Session) -> bool:
+    """Whether receipt OCR is allowed to run (Settings → Services). On by default;
+    only an explicit ``"false"`` disables it (then receipts are entered manually)."""
+    return get(db, OCR_ENABLED) != "false"
 
 
 def _int_setting(db: Session, key: str, default: int) -> int:

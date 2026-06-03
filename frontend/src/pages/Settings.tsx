@@ -17,8 +17,10 @@ import {
   getMqttStatus,
   getSecurityHealth,
   getSecurityStatus,
+  getServices,
   getSettings,
   getSupportedCurrencies,
+  updateServiceSettings,
   importConfig,
   listFxRates,
   loadDemoData,
@@ -130,6 +132,8 @@ export default function Settings() {
           </p>
         </div>
       )}
+
+      {me.data?.can_manage_settings && <ServicesCard onMessage={ok} onError={fail} />}
 
       {me.data?.can_manage_settings && <CurrencyFx onMessage={ok} onError={fail} />}
 
@@ -270,6 +274,86 @@ export default function Settings() {
           (spec §25.12). Cloud backup destinations are on the backlog (#15).
         </p>
       </div>
+    </div>
+  );
+}
+
+// Unified on/off + status for every service (backlog §38). AI/OCR/online-FX are
+// runtime-toggleable here; MQTT is add-on-configured, so it's shown read-only.
+function ServicesCard({
+  onMessage,
+  onError,
+}: {
+  onMessage: (m: string) => void;
+  onError: (e: unknown) => void;
+}) {
+  const qc = useQueryClient();
+  const services = useQuery({ queryKey: ["services"], queryFn: getServices });
+  const set = useMutation({
+    mutationFn: updateServiceSettings,
+    onSuccess: () => {
+      onMessage("Services updated.");
+      qc.invalidateQueries(); // FX recompute / AI / settings all may shift
+    },
+    onError,
+  });
+  const s = services.data;
+  const Toggle = ({ on, label, detail, onChange, busy }: {
+    on: boolean; label: string; detail: string; onChange: (v: boolean) => void; busy?: boolean;
+  }) => (
+    <li style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "6px 0" }}>
+      <span>
+        <strong>{label}</strong>
+        <br />
+        <span className="muted" style={{ fontSize: "0.82rem" }}>{detail}</span>
+      </span>
+      <label className="checkbox" style={{ whiteSpace: "nowrap" }}>
+        <input type="checkbox" checked={on} disabled={busy} onChange={(e) => onChange(e.target.checked)} />{" "}
+        {on ? "On" : "Off"}
+      </label>
+    </li>
+  );
+  return (
+    <div className="card">
+      <h2 className="card__title">Services</h2>
+      <p className="muted" style={{ marginTop: 0, fontSize: "0.85rem" }}>
+        Turn each service on or off from one place. AI is off by default; turning it on here keeps it
+        strictly local (no external calls) — choose cloud/local-LLM modes in the AI card below.
+      </p>
+      {!s && <p className="muted">Loading…</p>}
+      {s && (
+        <ul className="kv" style={{ display: "block" }}>
+          <Toggle
+            label="AI assistant"
+            detail={s.ai.detail}
+            on={s.ai.enabled}
+            busy={set.isPending}
+            onChange={(v) => set.mutate({ privacy_mode: v ? "strict_local" : "no_ai" })}
+          />
+          <Toggle
+            label="Receipt OCR"
+            detail={s.ocr.detail}
+            on={s.ocr.enabled}
+            busy={set.isPending}
+            onChange={(v) => set.mutate({ ocr_enabled: v })}
+          />
+          <Toggle
+            label="Online exchange rates"
+            detail={s.fx.detail}
+            on={s.fx.enabled}
+            busy={set.isPending}
+            onChange={(v) => set.mutate({ fx_mode: v ? "frankfurter" : "manual" })}
+          />
+          <li style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "6px 0" }}>
+            <span>
+              <strong>MQTT (Home Assistant)</strong>
+              <br />
+              <span className="muted" style={{ fontSize: "0.82rem" }}>{s.mqtt.detail}</span>
+            </span>
+            <span className={"tag" + (s.mqtt.enabled ? "" : " tag--dup")}>{s.mqtt.enabled ? "On" : "Off"}</span>
+          </li>
+        </ul>
+      )}
     </div>
   );
 }

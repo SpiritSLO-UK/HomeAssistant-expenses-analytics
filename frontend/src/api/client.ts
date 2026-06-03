@@ -1329,6 +1329,34 @@ export function updateSettings(patch: Partial<AppSettings>): Promise<AppSettings
   return fetchJson("api/settings", { method: "PUT", body: JSON.stringify(patch) });
 }
 
+// --- Services control panel (Settings → Services; backlog §38) ---
+
+export interface ServiceState {
+  enabled: boolean;
+  mode?: string;
+  configurable: boolean;
+  detail: string;
+}
+
+export interface ServicesStatus {
+  ai: ServiceState;
+  ocr: ServiceState;
+  fx: ServiceState;
+  mqtt: ServiceState;
+}
+
+export function getServices(): Promise<ServicesStatus> {
+  return fetchJson<ServicesStatus>("api/settings/services");
+}
+
+export function updateServiceSettings(patch: {
+  privacy_mode?: string;
+  fx_mode?: string;
+  ocr_enabled?: boolean;
+}): Promise<unknown> {
+  return fetchJson("api/settings", { method: "PUT", body: JSON.stringify(patch) });
+}
+
 export interface FxRate {
   id: number;
   rate_date: string;

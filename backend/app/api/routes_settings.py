@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.logging import set_level as set_log_level
 from app.models import User
-from app.services import auth_service, fx_service, settings_service
+from app.services import auth_service, fx_service, mqtt_service, ocr_service, settings_service
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -23,6 +23,7 @@ class SettingsUpdate(BaseModel):
     ai_provider: str | None = None  # none | openai_compatible
     ai_base_url: str | None = None
     ai_model: str | None = None
+    ocr_enabled: bool | None = None  # Settings → Services on/off for receipt OCR
     log_level: str | None = None  # DEBUG | INFO | WARNING | ERROR
 
 
@@ -35,6 +36,41 @@ def get_settings(db: Session = Depends(get_db)) -> dict:
 def supported_currencies() -> list[dict]:
     """The curated base-currency choices for the Settings dropdown (top-10)."""
     return settings_service.SUPPORTED_CURRENCIES
+
+
+@router.get("/services")
+def services_status(db: Session = Depends(get_db)) -> dict:
+    """Unified on/off + status for every service, for the Settings → Services panel
+    (backlog §38). AI / OCR / online FX are runtime-toggleable; MQTT is configured
+    in the add-on options, so it's shown read-only."""
+    privacy = settings_service.get_privacy_mode(db)
+    fx_mode = settings_service.get_fx_mode(db)
+    ocr = ocr_service.status()
+    mqtt = mqtt_service.status(db)
+    ai_detail = (
+        "Off — no AI calls" if privacy == "no_ai"
+        else "On — local only, never sent to a cloud provider" if privacy == "strict_local"
+        else f"On — mode: {privacy}"
+    )
+    return {
+        "ai": {"enabled": privacy != "no_ai", "mode": privacy, "configurable": True, "detail": ai_detail},
+        "ocr": {
+            "enabled": settings_service.get_ocr_enabled(db),
+            "configurable": True,
+            "detail": "Engine ready" if ocr["available"] else "No OCR engine installed — manual entry only",
+        },
+        "fx": {
+            "enabled": fx_mode == "frankfurter",
+            "mode": fx_mode,
+            "configurable": True,
+            "detail": "Live rates (Frankfurter)" if fx_mode == "frankfurter" else "Manual rates only (no network)",
+        },
+        "mqtt": {
+            "enabled": bool(mqtt.get("enabled")),
+            "configurable": False,
+            "detail": "Publishing to Home Assistant" if mqtt.get("enabled") else "Off — enable in the add-on options",
+        },
+    }
 
 
 @router.put("")
@@ -75,6 +111,9 @@ def update_settings(
 
     if payload.ai_model is not None:
         settings_service.set_value(db, settings_service.AI_MODEL, payload.ai_model.strip())
+
+    if payload.ocr_enabled is not None:
+        settings_service.set_value(db, settings_service.OCR_ENABLED, "true" if payload.ocr_enabled else "false")
 
     if payload.log_level is not None:
         level = payload.log_level.strip().upper()
