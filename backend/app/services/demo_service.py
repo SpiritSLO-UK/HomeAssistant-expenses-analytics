@@ -42,6 +42,7 @@ from app.models import (
     Rule,
     SavingsGoal,
     Statement,
+    Subscription,
     Transaction,
     User,
     Vendor,
@@ -577,6 +578,9 @@ _MANIFEST_MODELS: dict[str, type] = {
     "projects": Project,
     "budgets": Budget,
     "savings_goals": SavingsGoal,
+    # Subscriptions are auto-detected from the demo's recurring transactions during
+    # the import, so capture them too — otherwise they'd survive a remove (bug fix).
+    "subscriptions": Subscription,
     "users": User,
 }
 
@@ -697,6 +701,9 @@ def remove_demo(db: Session) -> dict:
     counts["budgets"] = _bulk_delete(Budget, manifest.get("budgets", []))
     counts["projects"] = _bulk_delete(Project, manifest.get("projects", []))
     counts["rules"] = _bulk_delete(Rule, manifest.get("rules", []))
+    # Subscriptions detected from the demo's recurring transactions (vendor_id is
+    # FK SET NULL, so order vs vendors doesn't matter).
+    counts["subscriptions"] = _bulk_delete(Subscription, manifest.get("subscriptions", []))
 
     # 3. Accounts (Curve / Sam's Card / Emergency Fund) — only when no transaction
     #    is left on them, so an account a real import also used is kept. Savings

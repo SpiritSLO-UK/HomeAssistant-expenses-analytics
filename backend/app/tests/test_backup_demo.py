@@ -149,6 +149,8 @@ def test_demo_remove_returns_clean_db(client):
     client.post("/api/backup/demo")
     assert client.get("/api/transactions").json()["total"] > 0
     assert client.get("/api/backup/demo").json()["has_demo_data"] is True
+    # The demo's recurring rows (Netflix/Spotify/…) get auto-detected as subscriptions.
+    assert len(client.get("/api/subscriptions").json()) > 0
 
     body = client.delete("/api/backup/demo").json()
     assert body["removed"] is True
@@ -160,6 +162,7 @@ def test_demo_remove_returns_clean_db(client):
     assert client.get("/api/budgets").json() == []
     assert client.get("/api/savings/summary").json()["accounts"] == []
     assert client.get("/api/vendors").json() == []
+    assert client.get("/api/subscriptions").json() == []  # subscriptions cleared too (bug fix)
     assert client.get("/api/review").json() == []
     roles = {u["role"] for u in client.get("/api/users").json()}
     assert "member" not in roles and "child" not in roles
