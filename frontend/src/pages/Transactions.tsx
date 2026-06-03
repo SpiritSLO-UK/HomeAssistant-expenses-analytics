@@ -47,6 +47,9 @@ export default function Transactions() {
   const focusNum = focusId ? Number(focusId) : undefined;
   const [page, setPage] = useState(0);
   const [splitId, setSplitId] = useState<number | null>(null);
+  // Which row's detail panel is expanded (click a row to edit it). The focused
+  // deep-link row opens automatically.
+  const [openId, setOpenId] = useState<number | null>(null);
   const [showAiBatch, setShowAiBatch] = useState(false);
   const [showCloudBatch, setShowCloudBatch] = useState(false);
   const [ruleMsg, setRuleMsg] = useState<string | null>(null);
@@ -356,39 +359,35 @@ export default function Transactions() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.items.map((t) => (
+                  {data.items.map((t) => {
+                    const isOpen = openId === t.id || String(t.id) === focusId;
+                    const catName = t.is_split
+                      ? "Split"
+                      : (categories.data?.find((c) => c.id === t.category_id)?.name ?? null);
+                    const projName = projects.data?.find((p) => p.id === t.project_id)?.name ?? null;
+                    return (
                     <Fragment key={t.id}>
                     <tr
                       id={`txn-row-${t.id}`}
-                      className={String(t.id) === focusId ? "tr--focus" : undefined}
+                      className={
+                        "txn-row" +
+                        (String(t.id) === focusId ? " tr--focus" : "") +
+                        (isOpen ? " txn-row--open" : "")
+                      }
                       style={t.archived_at ? { opacity: 0.6 } : undefined}
                     >
                       <td>{t.transaction_date}</td>
                       <td>
-                        {t.description_raw}
+                        <button
+                          className="link-btn txn-row__toggle"
+                          title="Show details / edit this transaction"
+                          onClick={() => setOpenId(isOpen ? null : t.id)}
+                        >
+                          {isOpen ? "▾ " : "▸ "}{t.description_raw}
+                        </button>
                         {t.merchant_raw && t.merchant_raw !== t.description_raw && (
                           <span className="muted"> · {t.merchant_raw}</span>
                         )}
-                        <div style={{ marginTop: 4 }}>
-                          <select
-                            className={"select--vendor" + (t.merchant_id ? "" : " select--empty")}
-                            value={t.merchant_id ?? ""}
-                            title="Vendor for this transaction"
-                            onChange={(e) =>
-                              setVendor.mutate({
-                                id: t.id,
-                                vendorId: e.target.value ? Number(e.target.value) : null,
-                              })
-                            }
-                          >
-                            <option value="">— vendor —</option>
-                            {vendors.data?.map((v) => (
-                              <option key={v.id} value={v.id}>
-                                {v.display_name || v.canonical_name}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
                       </td>
                       <td className={"num " + (t.direction === "credit" ? "amt--pos" : "amt--neg")}>
                         {t.amount}
@@ -402,142 +401,182 @@ export default function Transactions() {
                           </div>
                         )}
                       </td>
-                      <td>
-                        {t.is_split ? (
-                          <span className="muted">Split across categories</span>
-                        ) : (
-                          <>
-                            <select
-                              className={t.category_id ? "" : "select--empty"}
-                              value={t.category_id ?? ""}
-                              onChange={(e) =>
-                                setCategory.mutate({
-                                  id: t.id,
-                                  categoryId: e.target.value ? Number(e.target.value) : null,
-                                })
-                              }
-                            >
-                              <option value="">— uncategorised —</option>
-                              {categories.data?.map((c) => (
-                                <option key={c.id} value={c.id}>
-                                  {c.name}
-                                </option>
-                              ))}
-                            </select>
-                            {t.category_id !== null && (
-                              <button
-                                className="link-btn"
-                                title="Create a rule so similar transactions auto-categorise"
-                                style={{ marginLeft: 6 }}
-                                onClick={() => makeRule.mutate({ id: t.id, categoryId: t.category_id! })}
-                              >
-                                + rule
-                              </button>
-                            )}
-                            {t.category_id === null && aiStatus.data?.enabled && (
-                              <button
-                                className="link-btn"
-                                title="Ask the AI assistant to suggest a category"
-                                style={{ marginLeft: 6 }}
-                                onClick={() => suggestAi(t)}
-                              >
-                                ✨ suggest
-                              </button>
-                            )}
-                          </>
-                        )}
-                      </td>
-                      <td>
-                        <select
-                          className={t.project_id ? "" : "select--empty"}
-                          value={t.project_id ?? ""}
-                          onChange={(e) =>
-                            setProject.mutate({
-                              id: t.id,
-                              projectId: e.target.value ? Number(e.target.value) : null,
-                            })
-                          }
-                        >
-                          <option value="">— none —</option>
-                          {projects.data?.map((p) => (
-                            <option key={p.id} value={p.id}>{p.name}</option>
-                          ))}
-                        </select>
-                      </td>
+                      <td className={catName ? undefined : "muted"}>{catName ?? "— uncategorised —"}</td>
+                      <td className={projName ? undefined : "muted"}>{projName ?? "—"}</td>
                       <td>
                         {t.is_split && <span className="tag">split</span>}
                         {t.is_transfer && <span className="tag">transfer</span>}
                         {t.is_income && <span className="tag">income</span>}
                         {t.needs_review && <span className="tag tag--dup">review</span>}
+                        {t.is_business && <span className="tag" title="Business expense">💼</span>}
                         {t.archived_at && (
-                          <>
-                            <span className="tag tag--dup" title="Aged out by data retention — hidden from totals">
-                              archived
-                            </span>
-                            <button
-                              className="link-btn"
-                              style={{ marginLeft: 6 }}
-                              disabled={unarchive.isPending}
-                              onClick={() => unarchive.mutate(t.id)}
-                            >
-                              unarchive
-                            </button>
-                          </>
+                          <span className="tag tag--dup" title="Aged out by data retention — hidden from totals">
+                            archived
+                          </span>
                         )}
                         {(t.tags ?? []).map((tag) => (
-                          <span
-                            key={tag.id}
-                            className="tag"
-                            title="Click to remove"
-                            style={{ cursor: "pointer", background: tag.colour ?? undefined }}
-                            onClick={() => removeTag(t, tag.name)}
-                          >
-                            {tag.name} ✕
+                          <span key={tag.id} className="tag" style={{ background: tag.colour ?? undefined }}>
+                            {tag.name}
                           </span>
                         ))}
-                        <button className="link-btn" style={{ marginLeft: 6 }} onClick={() => addTag(t)}>
-                          + tag
-                        </button>
-                        <button
-                          className="link-btn"
-                          style={{ marginLeft: 6 }}
-                          onClick={() => setSplitId(splitId === t.id ? null : t.id)}
-                        >
-                          {t.is_split ? "edit split" : "split"}
-                        </button>
-                        <AssignToChildButton txn={t} base={base} />
-                        {t.is_business && <span className="tag" title="Flagged as a business expense">💼 business</span>}
-                        <button
-                          className="link-btn"
-                          style={{ marginLeft: 6 }}
-                          title={t.is_business ? "Unmark as business" : "Mark as a business expense"}
-                          onClick={() => setBusiness.mutate({ id: t.id, value: !t.is_business })}
-                        >
-                          {t.is_business ? "✓ business" : "mark business"}
-                        </button>
-                        {t.is_business && (
-                          <button className="link-btn" style={{ marginLeft: 6 }} onClick={() => editVat(t)}>
-                            {t.vat_amount ? `VAT ${t.vat_amount}` : "set VAT"}
-                          </button>
-                        )}
                       </td>
                     </tr>
-                    {splitId === t.id && (
-                      <tr>
-                        <td colSpan={6} style={{ background: "rgba(127,127,127,0.06)" }}>
-                          <SplitEditor
-                            txnId={t.id}
-                            amount={t.amount}
-                            currency={t.currency}
-                            isSplit={t.is_split}
-                            categories={categories.data ?? []}
-                            onDone={() => setSplitId(null)}
-                          />
+                    {isOpen && (
+                      <tr className="txn-detail">
+                        <td colSpan={6}>
+                          <div className="txn-detail__grid">
+                            <div className="txn-detail__field">
+                              <span>Category</span>
+                              {t.is_split ? (
+                                <span className="muted">Split across categories — edit the split below.</span>
+                              ) : (
+                                <span className="txn-detail__row">
+                                  <select
+                                    className={t.category_id ? "" : "select--empty"}
+                                    value={t.category_id ?? ""}
+                                    onChange={(e) =>
+                                      setCategory.mutate({
+                                        id: t.id,
+                                        categoryId: e.target.value ? Number(e.target.value) : null,
+                                      })
+                                    }
+                                  >
+                                    <option value="">— uncategorised —</option>
+                                    {categories.data?.map((c) => (
+                                      <option key={c.id} value={c.id}>{c.name}</option>
+                                    ))}
+                                  </select>
+                                  {t.category_id !== null && (
+                                    <button
+                                      className="link-btn"
+                                      title="Create a rule so similar transactions auto-categorise"
+                                      onClick={() => makeRule.mutate({ id: t.id, categoryId: t.category_id! })}
+                                    >
+                                      + rule
+                                    </button>
+                                  )}
+                                  {t.category_id === null && aiStatus.data?.enabled && (
+                                    <button
+                                      className="link-btn"
+                                      title="Ask the AI assistant to suggest a category"
+                                      onClick={() => suggestAi(t)}
+                                    >
+                                      ✨ suggest
+                                    </button>
+                                  )}
+                                </span>
+                              )}
+                            </div>
+                            <div className="txn-detail__field">
+                              <span>Vendor</span>
+                              <select
+                                className={t.merchant_id ? "" : "select--empty"}
+                                value={t.merchant_id ?? ""}
+                                onChange={(e) =>
+                                  setVendor.mutate({
+                                    id: t.id,
+                                    vendorId: e.target.value ? Number(e.target.value) : null,
+                                  })
+                                }
+                              >
+                                <option value="">— none —</option>
+                                {vendors.data?.map((v) => (
+                                  <option key={v.id} value={v.id}>{v.display_name || v.canonical_name}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="txn-detail__field">
+                              <span>Project</span>
+                              <select
+                                className={t.project_id ? "" : "select--empty"}
+                                value={t.project_id ?? ""}
+                                onChange={(e) =>
+                                  setProject.mutate({
+                                    id: t.id,
+                                    projectId: e.target.value ? Number(e.target.value) : null,
+                                  })
+                                }
+                              >
+                                <option value="">— none —</option>
+                                {projects.data?.map((p) => (
+                                  <option key={p.id} value={p.id}>{p.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="txn-detail__field">
+                              <span>Tags</span>
+                              <span className="txn-detail__row">
+                                {(t.tags ?? []).map((tag) => (
+                                  <span
+                                    key={tag.id}
+                                    className="tag"
+                                    title="Click to remove"
+                                    style={{ cursor: "pointer", background: tag.colour ?? undefined }}
+                                    onClick={() => removeTag(t, tag.name)}
+                                  >
+                                    {tag.name} ✕
+                                  </span>
+                                ))}
+                                <button className="link-btn" onClick={() => addTag(t)}>+ tag</button>
+                              </span>
+                            </div>
+                            <div className="txn-detail__field">
+                              <span>Business</span>
+                              <span className="txn-detail__row">
+                                <button
+                                  className="link-btn"
+                                  title={t.is_business ? "Unmark as business" : "Mark as a business expense"}
+                                  onClick={() => setBusiness.mutate({ id: t.id, value: !t.is_business })}
+                                >
+                                  {t.is_business ? "✓ business" : "mark business"}
+                                </button>
+                                {t.is_business && (
+                                  <button className="link-btn" onClick={() => editVat(t)}>
+                                    {t.vat_amount ? `VAT ${t.vat_amount}` : "set VAT"}
+                                  </button>
+                                )}
+                              </span>
+                            </div>
+                            <div className="txn-detail__field">
+                              <span>Actions</span>
+                              <span className="txn-detail__row">
+                                <button
+                                  className="link-btn"
+                                  onClick={() => setSplitId(splitId === t.id ? null : t.id)}
+                                >
+                                  {t.is_split ? "edit split" : "split"}
+                                </button>
+                                <AssignToChildButton txn={t} base={base} />
+                                {t.archived_at && (
+                                  <button
+                                    className="link-btn"
+                                    disabled={unarchive.isPending}
+                                    onClick={() => unarchive.mutate(t.id)}
+                                  >
+                                    unarchive
+                                  </button>
+                                )}
+                              </span>
+                            </div>
+                          </div>
+                          {splitId === t.id && (
+                            <div style={{ marginTop: 10 }}>
+                              <SplitEditor
+                                txnId={t.id}
+                                amount={t.amount}
+                                currency={t.currency}
+                                isSplit={t.is_split}
+                                categories={categories.data ?? []}
+                                onDone={() => setSplitId(null)}
+                              />
+                            </div>
+                          )}
                         </td>
                       </tr>
                     )}
                     </Fragment>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

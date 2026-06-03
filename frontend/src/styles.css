@@ -644,11 +644,48 @@ code {
   border-style: dashed;
 }
 
-/* Compact per-row vendor picker on the Transactions list. */
-.select--vendor {
-  font-size: 0.78rem;
-  padding: 2px 6px;
-  max-width: 180px;
+/* Click-to-expand transaction detail (declutters the Transactions row). */
+.txn-row__toggle {
+  font-weight: 600;
+  text-align: left;
+  color: var(--text);
+}
+
+.txn-row--open > td {
+  border-bottom: none;
+}
+
+.txn-detail > td {
+  background: rgba(127, 127, 127, 0.06);
+  padding: 14px 16px 18px;
+}
+
+.txn-detail__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px 20px;
+}
+
+.txn-detail__field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 0.9rem;
+}
+
+.txn-detail__field > span:first-child {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.txn-detail__row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .link-btn {
