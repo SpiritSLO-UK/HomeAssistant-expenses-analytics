@@ -4,6 +4,9 @@ import {
   confirmReceiptMatch,
   deleteReceipt,
   getOcrStatus,
+  getPaperlessStatus,
+  importPaperlessDocument,
+  listPaperlessDocuments,
   listReceipts,
   matchReceipt,
   updateReceipt,
@@ -57,6 +60,8 @@ export default function Receipts() {
         </button>
       </div>
 
+      <PaperlessCard onError={(e) => setErr(String(e))} />
+
       <div className="card">
         <h2 className="card__title">Your receipts</h2>
         {receipts.isLoading && <p className="muted">Loading…</p>}
@@ -67,6 +72,82 @@ export default function Receipts() {
           {receipts.data?.map((r) => <ReceiptCard key={r.id} r={r} onError={setErr} />)}
         </div>
       </div>
+    </div>
+  );
+}
+
+function PaperlessCard({ onError }: { onError: (e: unknown) => void }) {
+  const qc = useQueryClient();
+  const status = useQuery({ queryKey: ["paperless-status"], queryFn: getPaperlessStatus });
+  const [query, setQuery] = useState("");
+  const [submitted, setSubmitted] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const configured = status.data?.configured ?? false;
+
+  const docs = useQuery({
+    queryKey: ["paperless-docs", submitted],
+    queryFn: () => listPaperlessDocuments(submitted || undefined, 25),
+    enabled: configured && submitted !== null,
+  });
+
+  const importDoc = useMutation({
+    mutationFn: (id: number) => importPaperlessDocument(id),
+    onSuccess: (r) => {
+      setMsg(r.created ? `Imported "${r.filename}" — see it below.` : `"${r.filename}" was already imported.`);
+      qc.invalidateQueries({ queryKey: ["receipts"] });
+      qc.invalidateQueries({ queryKey: ["review"] });
+    },
+    onError,
+  });
+
+  if (status.isLoading) return null;
+
+  return (
+    <div className="card">
+      <h2 className="card__title">Import from Paperless</h2>
+      {!configured ? (
+        <p className="muted">
+          Pull documents from your <strong>Paperless-ngx</strong> instance into receipts. It's
+          one-directional — we only ever request from Paperless, never the other way. To enable,
+          set <code>HAFI_PAPERLESS_URL</code> and <code>HAFI_PAPERLESS_TOKEN</code> in the add-on /
+          environment and restart.
+        </p>
+      ) : (
+        <>
+          <p className="muted" style={{ marginTop: 0 }}>
+            Connected to <code>{status.data?.url}</code>. Search your documents and import one as a receipt.
+          </p>
+          <form className="form-row" onSubmit={(e) => { e.preventDefault(); setSubmitted(query); }}>
+            <input
+              placeholder="Search (blank = most recent)"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              style={{ flex: 1, minWidth: 160 }}
+            />
+            <button className="btn btn--sm" type="submit">{docs.isFetching ? "Searching…" : "Browse"}</button>
+          </form>
+          {msg && <p className="status status--ok" style={{ marginTop: 8 }}>{msg}</p>}
+          {submitted !== null && docs.data && docs.data.length === 0 && (
+            <p className="muted">No documents found.</p>
+          )}
+          {docs.data && docs.data.length > 0 && (
+            <ul className="kv" style={{ marginTop: 8 }}>
+              {docs.data.map((d) => (
+                <li key={d.id}>
+                  <span>{d.title}{d.created && <span className="muted"> · {d.created.slice(0, 10)}</span>}</span>
+                  <button
+                    className="btn btn--sm btn--ghost"
+                    disabled={importDoc.isPending}
+                    onClick={() => importDoc.mutate(d.id)}
+                  >
+                    Import
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
     </div>
   );
 }

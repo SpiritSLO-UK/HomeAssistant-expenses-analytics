@@ -22,6 +22,7 @@ from app.api import (
     routes_investments,
     routes_logs,
     routes_mqtt,
+    routes_paperless,
     routes_projects,
     routes_receipts,
     routes_retention,
@@ -51,6 +52,7 @@ api_router.include_router(routes_projects.router)
 api_router.include_router(routes_tags.router)
 api_router.include_router(routes_subscriptions.router)
 api_router.include_router(routes_receipts.router)
+api_router.include_router(routes_paperless.router)
 api_router.include_router(routes_retention.router)
 api_router.include_router(routes_review.router)
 api_router.include_router(routes_ai.router)
