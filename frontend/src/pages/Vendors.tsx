@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   addVendorAlias,
@@ -119,7 +120,15 @@ export default function Vendors() {
                         onSave={(code) => setCountry.mutate({ id: v.id, country: code })}
                       />
                     </td>
-                    <td className="num">{v.transaction_count}</td>
+                    <td className="num">
+                      {v.transaction_count > 0 ? (
+                        <Link to={`/transactions?vendor_id=${v.id}`} title={`See ${v.canonical_name} transactions`}>
+                          {v.transaction_count}
+                        </Link>
+                      ) : (
+                        v.transaction_count
+                      )}
+                    </td>
                     <td className="num">£{Math.abs(Number(v.total_amount)).toFixed(2)}</td>
                     <td>
                       <button className="btn btn--ghost" onClick={() => remove.mutate(v.id)}>

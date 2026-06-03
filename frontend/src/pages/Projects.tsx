@@ -1,4 +1,5 @@
 import { Fragment, useState } from "react";
+import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   PROJECT_STATUSES,
@@ -125,12 +126,12 @@ function ProjectDetail({ id, base }: { id: number; base: string }) {
         <Breakdown title="By category" rows={s.by_category} base={base} />
         <Breakdown title="By vendor" rows={s.by_vendor} base={base} />
       </div>
-      <ProjectTxns data={txns.data} />
+      <ProjectTxns data={txns.data} projectId={id} />
     </div>
   );
 }
 
-function ProjectTxns({ data }: { data?: TransactionListResponse }) {
+function ProjectTxns({ data, projectId }: { data?: TransactionListResponse; projectId: number }) {
   if (!data) return <p className="muted" style={{ margin: "8px 0 0" }}>Loading transactions…</p>;
   if (data.items.length === 0) {
     return (
@@ -145,16 +146,22 @@ function ProjectTxns({ data }: { data?: TransactionListResponse }) {
       <ul className="kv" style={{ maxWidth: 520 }}>
         {data.items.map((t) => (
           <li key={t.id}>
-            <span><span className="muted">{t.transaction_date}</span> · {t.merchant_raw || t.description_raw}</span>
+            <span>
+              <span className="muted">{t.transaction_date}</span> ·{" "}
+              <Link to={`/transactions?focus=${t.id}`} title="Open this transaction">
+                {t.merchant_raw || t.description_raw}
+              </Link>
+            </span>
             <span style={{ whiteSpace: "nowrap" }}>{t.amount} {t.currency}</span>
           </li>
         ))}
       </ul>
-      {data.total > data.items.length && (
-        <p className="muted" style={{ fontSize: "0.8rem", margin: "4px 0 0" }}>
-          Showing {data.items.length} of {data.total}.
-        </p>
-      )}
+      <p style={{ fontSize: "0.8rem", margin: "4px 0 0" }}>
+        {data.total > data.items.length && (
+          <span className="muted">Showing {data.items.length} of {data.total}. </span>
+        )}
+        <Link className="link-btn" to={`/transactions?project_id=${projectId}`}>Open all in Transactions →</Link>
+      </p>
     </div>
   );
 }

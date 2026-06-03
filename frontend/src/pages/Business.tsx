@@ -1,4 +1,5 @@
 import { Fragment, useState } from "react";
+import { Link } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   exportTransactionsCsv,
@@ -93,7 +94,18 @@ export default function Business() {
                 <tbody>
                   {s.by_category.map((r) => (
                     <tr key={r.category_id ?? "none"}>
-                      <td>{r.name}</td>
+                      <td>
+                        <Link
+                          title={`See business ${r.name} transactions`}
+                          to={
+                            r.category_id != null
+                              ? `/transactions?is_business=true&category_id=${r.category_id}`
+                              : `/transactions?is_business=true&uncategorised=true`
+                          }
+                        >
+                          {r.name}
+                        </Link>
+                      </td>
                       <td className="num">{r.total}</td>
                       <td className="num">{r.vat}</td>
                     </tr>
@@ -168,16 +180,31 @@ function PeriodTxns({ row, cur }: { row: BusinessPeriodRow; cur: string }) {
   const items: Transaction[] = q.data.items;
   if (items.length === 0) return <p className="muted" style={{ margin: "6px 0" }}>No transactions.</p>;
   return (
-    <ul className="kv" style={{ margin: "6px 0", maxWidth: 560 }}>
-      {items.map((t) => (
-        <li key={t.id}>
-          <span><span className="muted">{t.transaction_date}</span> · {t.merchant_raw || t.description_raw}</span>
-          <span style={{ whiteSpace: "nowrap" }}>
-            {t.base_amount ?? t.amount} {cur}
-            {t.vat_amount ? <span className="muted"> · VAT {t.vat_amount}</span> : null}
-          </span>
-        </li>
-      ))}
-    </ul>
+    <>
+      <ul className="kv" style={{ margin: "6px 0", maxWidth: 560 }}>
+        {items.map((t) => (
+          <li key={t.id}>
+            <span>
+              <span className="muted">{t.transaction_date}</span> ·{" "}
+              <Link to={`/transactions?focus=${t.id}`} title="Open this transaction">
+                {t.merchant_raw || t.description_raw}
+              </Link>
+            </span>
+            <span style={{ whiteSpace: "nowrap" }}>
+              {t.base_amount ?? t.amount} {cur}
+              {t.vat_amount ? <span className="muted"> · VAT {t.vat_amount}</span> : null}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p style={{ margin: "0 0 6px" }}>
+        <Link
+          className="link-btn"
+          to={`/transactions?is_business=true&date_from=${row.start}&date_to=${row.end}`}
+        >
+          Open all in Transactions →
+        </Link>
+      </p>
+    </>
   );
 }

@@ -64,15 +64,6 @@ function presetRange(key: string): [string, string] {
 
 export default function Transactions() {
   const qc = useQueryClient();
-  const [search, setSearch] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
-  const [needsReview, setNeedsReview] = useState(false);
-  const [uncategorisedOnly, setUncategorisedOnly] = useState(false);
-  const [showArchived, setShowArchived] = useState(false);
-  const [businessOnly, setBusinessOnly] = useState(false);
-  const [projectFilter, setProjectFilter] = useState("");
-  const [memberFilter, setMemberFilter] = useState("");
   // Deep-link (Review Queue "Open transaction →", trip drill-down): when a
   // ?focus=<id> is present we narrow the list to *just that one transaction* so
   // it's always surfaced — the previous highlight-only approach silently failed
@@ -80,6 +71,21 @@ export default function Transactions() {
   const [searchParams, setSearchParams] = useSearchParams();
   const focusId = searchParams.get("focus");
   const focusNum = focusId ? Number(focusId) : undefined;
+  // The filter controls seed from the URL once, so a drill-down link from the
+  // Dashboard/Vendors/etc. (e.g. ?category_id=5&date_from=…) arrives pre-filtered
+  // and the matching control reflects it — and stays fully editable from here.
+  const [search, setSearch] = useState(() => searchParams.get("search") ?? "");
+  const [dateFrom, setDateFrom] = useState(() => searchParams.get("date_from") ?? "");
+  const [dateTo, setDateTo] = useState(() => searchParams.get("date_to") ?? "");
+  const [needsReview, setNeedsReview] = useState(() => searchParams.get("needs_review") === "true");
+  const [uncategorisedOnly, setUncategorisedOnly] = useState(() => searchParams.get("uncategorised") === "true");
+  const [showArchived, setShowArchived] = useState(() => searchParams.get("include_archived") === "true");
+  const [businessOnly, setBusinessOnly] = useState(() => searchParams.get("is_business") === "true");
+  const [projectFilter, setProjectFilter] = useState(() => searchParams.get("project_id") ?? "");
+  const [memberFilter, setMemberFilter] = useState(() => searchParams.get("member_id") ?? "");
+  const [categoryFilter, setCategoryFilter] = useState(() => searchParams.get("category_id") ?? "");
+  const [vendorFilter, setVendorFilter] = useState(() => searchParams.get("vendor_id") ?? "");
+  const [countryFilter, setCountryFilter] = useState(() => (searchParams.get("country") ?? "").toUpperCase());
   const [page, setPage] = useState(0);
   const [splitId, setSplitId] = useState<number | null>(null);
   // Which row's detail panel is expanded (click a row to edit it). The focused
@@ -104,12 +110,31 @@ export default function Transactions() {
         needs_review: needsReview || undefined,
         uncategorised: uncategorisedOnly || undefined,
         is_business: businessOnly || undefined,
+        category_id: categoryFilter ? Number(categoryFilter) : undefined,
+        vendor_id: vendorFilter ? Number(vendorFilter) : undefined,
+        country: countryFilter || undefined,
         project_id: projectFilter ? Number(projectFilter) : undefined,
         member_id: memberFilter ? Number(memberFilter) : undefined,
         include_archived: showArchived || undefined,
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
       };
+
+  const anyFilterActive = Boolean(
+    search || dateFrom || dateTo || needsReview || uncategorisedOnly || businessOnly ||
+    showArchived || categoryFilter || vendorFilter || countryFilter || projectFilter || memberFilter,
+  );
+
+  // Reset every filter control to its default and drop any drill-down params from
+  // the URL (so a refresh doesn't silently re-apply them).
+  function clearAllFilters() {
+    setSearch(""); setDateFrom(""); setDateTo("");
+    setNeedsReview(false); setUncategorisedOnly(false); setBusinessOnly(false); setShowArchived(false);
+    setCategoryFilter(""); setVendorFilter(""); setCountryFilter("");
+    setProjectFilter(""); setMemberFilter("");
+    setPage(0);
+    if (searchParams.toString()) setSearchParams({});
+  }
 
   const categories = useQuery({ queryKey: ["categories"], queryFn: listCategories });
   const projects = useQuery({ queryKey: ["projects"], queryFn: listProjects });
@@ -365,12 +390,32 @@ export default function Transactions() {
               <button className="link-btn" onClick={() => { setDateFrom(""); setDateTo(""); setPage(0); }}>Clear</button>
             )}
           </span>
+          <label>Category
+            <select value={categoryFilter} onChange={(e) => { setCategoryFilter(e.target.value); setPage(0); }}>
+              <option value="">All</option>
+              {categories.data?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </label>
+          <label>Vendor
+            <select value={vendorFilter} onChange={(e) => { setVendorFilter(e.target.value); setPage(0); }}>
+              <option value="">All</option>
+              {vendors.data?.map((v) => (
+                <option key={v.id} value={v.id}>{v.display_name ?? v.canonical_name}</option>
+              ))}
+            </select>
+          </label>
           <label>Project
             <select value={projectFilter} onChange={(e) => { setProjectFilter(e.target.value); setPage(0); }}>
               <option value="">All</option>
               {projects.data?.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </label>
+          {countryFilter && (
+            <span className="chip-toggle" title="Filtered to one country (from the spend-by-location map)">
+              <span>📍 {countryFilter}</span>
+              <button className="link-btn" onClick={() => { setCountryFilter(""); setPage(0); }}>✕</button>
+            </span>
+          )}
           {(members.data?.length ?? 0) > 1 && (
             <label title="Show one household member's own-account transactions">Member
               <select value={memberFilter} onChange={(e) => { setMemberFilter(e.target.value); setPage(0); }}>
@@ -399,6 +444,12 @@ export default function Transactions() {
             <input type="checkbox" checked={showArchived} onChange={(e) => { setShowArchived(e.target.checked); setPage(0); }} />
             <span>Include archived</span>
           </label>
+          {anyFilterActive && (
+            <>
+              <span className="filter-toggles__sep" aria-hidden="true" />
+              <button className="link-btn" onClick={clearAllFilters}>✕ Clear all filters</button>
+            </>
+          )}
         </div>
         {needsReview && !uncategorisedOnly && (data?.total ?? 0) === 0 && (
           <p className="muted filter-hint">

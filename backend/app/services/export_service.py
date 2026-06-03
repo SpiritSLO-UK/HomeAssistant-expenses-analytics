@@ -60,6 +60,7 @@ def build_transaction_filters(
     vendor_id: int | None = None,
     project_id: int | None = None,
     tag_id: int | None = None,
+    country: str | None = None,
     needs_review: bool | None = None,
     uncategorised: bool | None = None,
     is_business: bool | None = None,
@@ -97,6 +98,10 @@ def build_transaction_filters(
         conditions.append(Transaction.project_id == project_id)
     if tag_id is not None:
         conditions.append(Transaction.tags.any(Tag.id == tag_id))
+    if country:
+        # Drill-down from the "Spending by location" card. Country is stored as an
+        # ISO alpha-2 upper-case code (see the bulk-update normaliser), so match it.
+        conditions.append(Transaction.country == country.strip().upper()[:2])
     if needs_review is not None:
         conditions.append(Transaction.needs_review.is_(needs_review))
     if uncategorised is not None:
