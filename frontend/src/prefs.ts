@@ -38,6 +38,25 @@ export function setHiddenDashboardCards(hidden: Set<string>): void {
   writeString(HIDDEN_CARDS_KEY, JSON.stringify([...hidden]));
 }
 
+// --- Sidebar nav show/hide (per device) ---
+
+const HIDDEN_NAV_KEY = "hafi_nav_hidden";
+
+export function getHiddenNavKeys(): Set<string> {
+  const raw = readString(HIDDEN_NAV_KEY);
+  if (!raw) return new Set();
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? new Set(parsed.map(String)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+export function setHiddenNavKeys(hidden: Set<string>): void {
+  writeString(HIDDEN_NAV_KEY, JSON.stringify([...hidden]));
+}
+
 // --- Dashboard Mine/Shared/All view toggle (backlog #66/#82) ---
 
 const DASH_VIEW_KEY = "hafi_dashboard_view";

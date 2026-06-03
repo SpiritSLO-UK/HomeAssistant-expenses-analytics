@@ -101,6 +101,49 @@ body {
   color: #6b7686;
 }
 
+/* Customise (show/hide tabs) — the edit toggle + the per-tab edit rows. */
+.sidebar__customise {
+  display: block;
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 7px 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: var(--sidebar-fg);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.sidebar__customise:hover {
+  color: #fff;
+}
+
+.sidebar__hint {
+  margin: 0 0 8px;
+  font-size: 0.72rem;
+  line-height: 1.3;
+}
+
+/* A nav row rendered as a button (Customise mode). Reset native button styling
+   so it matches the <a> rows. */
+button.sidebar__link {
+  width: 100%;
+  background: none;
+  border: none;
+  border-left: 3px solid transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.sidebar__link--off {
+  opacity: 0.5;
+}
+
+button.sidebar__link:disabled {
+  cursor: default;
+}
+
 /* --- Content --- */
 .content {
   flex: 1;

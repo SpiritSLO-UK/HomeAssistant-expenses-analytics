@@ -1,13 +1,38 @@
+import { useState } from "react";
 import { NavLink } from "react-router-dom";
 import { NAV_ITEMS } from "../nav";
+import { getHiddenNavKeys, setHiddenNavKeys } from "../prefs";
+
+// Core pages that can never be hidden — you always need a way home and a way
+// back to Settings (and Customise itself lives in the sidebar regardless).
+const ALWAYS_SHOWN = new Set(["/", "/settings"]);
 
 export default function Sidebar({ role = "owner" }: { role?: string }) {
   const isAdmin = role === "owner";
   const isChild = role === "child";
-  const items = NAV_ITEMS.filter((item) => {
-    if (isChild) return item.childVisible; // child sees only its allowance
+  const [hidden, setHidden] = useState<Set<string>>(() => getHiddenNavKeys());
+  const [editing, setEditing] = useState(false);
+
+  // Role visibility (child → allowance only; ownerOnly → admin). Unchanged.
+  const roleItems = NAV_ITEMS.filter((item) => {
+    if (isChild) return item.childVisible;
     return !item.ownerOnly || isAdmin;
   });
+
+  const toggle = (path: string) =>
+    setHidden((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      setHiddenNavKeys(next);
+      return next;
+    });
+
+  // Normal mode drops hidden tabs; edit mode shows them all so they can be
+  // re-enabled. The child role never hides anything (its one page).
+  const items =
+    isChild || editing ? roleItems : roleItems.filter((i) => !hidden.has(i.path));
+
   return (
     <aside className="sidebar">
       <div className="sidebar__brand">
@@ -15,21 +40,66 @@ export default function Sidebar({ role = "owner" }: { role?: string }) {
         <span className="sidebar__brand-text">Finance</span>
       </div>
       <nav className="sidebar__nav">
-        {items.map((item) => (
-          <NavLink
-            key={item.path}
-            to={item.path}
-            end={item.path === "/"}
-            className={({ isActive }) =>
-              "sidebar__link" + (isActive ? " sidebar__link--active" : "")
-            }
-          >
-            <span className="sidebar__link-icon">{item.icon}</span>
-            <span>{item.label}</span>
-          </NavLink>
-        ))}
+        {items.map((item) =>
+          editing ? (
+            <EditRow
+              key={item.path}
+              item={item}
+              shown={!hidden.has(item.path)}
+              locked={ALWAYS_SHOWN.has(item.path)}
+              onToggle={() => toggle(item.path)}
+            />
+          ) : (
+            <NavLink
+              key={item.path}
+              to={item.path}
+              end={item.path === "/"}
+              className={({ isActive }) =>
+                "sidebar__link" + (isActive ? " sidebar__link--active" : "")
+              }
+            >
+              <span className="sidebar__link-icon">{item.icon}</span>
+              <span>{item.label}</span>
+            </NavLink>
+          ),
+        )}
       </nav>
-      <div className="sidebar__footer">Local-first · v0.1.0</div>
+      <div className="sidebar__footer">
+        {!isChild && (
+          <button className="sidebar__customise" onClick={() => setEditing((v) => !v)}>
+            {editing ? "✓ Done" : "✏️ Customise tabs"}
+          </button>
+        )}
+        {editing && <p className="sidebar__hint">Hidden tabs stay reachable by their URL.</p>}
+        <div>Local-first · v0.1.0</div>
+      </div>
     </aside>
+  );
+}
+
+function EditRow({
+  item,
+  shown,
+  locked,
+  onToggle,
+}: {
+  item: { path: string; label: string; icon: string };
+  shown: boolean;
+  locked: boolean;
+  onToggle: () => void;
+}) {
+  const title = locked ? "Always shown" : shown ? "Hide this tab" : "Show this tab";
+  return (
+    <button
+      type="button"
+      className={"sidebar__link sidebar__link--edit" + (shown ? "" : " sidebar__link--off")}
+      disabled={locked}
+      onClick={onToggle}
+      title={title}
+    >
+      <span className="sidebar__link-icon">{item.icon}</span>
+      <span style={{ flex: 1, textAlign: "left" }}>{item.label}</span>
+      <span aria-hidden="true">{locked ? "🔒" : shown ? "👁️" : "🚫"}</span>
+    </button>
   );
 }
