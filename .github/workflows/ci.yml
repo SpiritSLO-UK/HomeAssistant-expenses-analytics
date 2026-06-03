@@ -53,3 +53,14 @@ jobs:
       - name: Build (tsc + vite)
         working-directory: frontend
         run: npm run build
+
+  docker:
+    name: Docker image (standalone build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Build the runnable image (multi-stage: frontend build + backend runtime),
+      # so the standalone `docker compose up` path is verified on every change.
+      - name: Build image
+        run: docker build -f addon/Dockerfile -t ha-finance-intelligence:ci .

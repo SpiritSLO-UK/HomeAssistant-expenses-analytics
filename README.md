@@ -12,6 +12,26 @@ categories. All privacy-first, with **strict local mode as the default**.
 Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md)
 (the build-status section at the top tracks progress).
 
+## 🧪 Beta — run it standalone (no Home Assistant needed)
+
+This is the **v0.9.0-beta** release: a complete, standalone app you can run today
+with Docker. The Home Assistant add-on (one-click install, ingress SSO, MQTT
+sensors) is scaffolded under [`addon/`](addon/) but ships in a **later** release.
+
+```bash
+git clone https://github.com/SpiritSLO-UK/HomeAssistant-expenses-analytics.git
+cd HomeAssistant-expenses-analytics
+docker compose up -d --build      # build + start
+# open http://localhost:8099
+```
+
+Your data (SQLite DB + uploads + safety backups) is kept in the `finance_data`
+Docker volume. Standalone, the app runs single-user as a local owner. Set your
+base currency and other options in [`docker-compose.yml`](docker-compose.yml) (or
+`HAFI_*` env vars), then **Settings → Demo data → Load demo data** to explore.
+See the [CHANGELOG](CHANGELOG.md) for what's in this beta. _Beta software: no
+warranty, not financial advice — keep your own backups._
+
 ## Status
 
 | Stage | What | State |

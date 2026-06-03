@@ -1,0 +1,33 @@
+# HA Finance Intelligence — standalone beta (run WITHOUT Home Assistant).
+#
+#   docker compose up -d --build        # build + start
+#   open http://localhost:8099          # the app
+#   docker compose logs -f              # follow logs
+#   docker compose down                 # stop (your data is kept in the volume)
+#
+# Your data (SQLite DB + uploads + safety backups) lives in the named volume
+# `finance_data`. Running standalone there is no Home Assistant identity, so the
+# app runs single-user as a local owner. Home Assistant integration ships in a
+# later release; see addon/ for the work-in-progress add-on.
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: addon/Dockerfile
+    image: ha-finance-intelligence:0.9.0-beta
+    container_name: ha-finance
+    restart: unless-stopped
+    environment:
+      HAFI_DATABASE_PATH: /data/finance.db
+      HAFI_CURRENCY: GBP                # your base currency (e.g. GBP, USD, EUR)
+      HAFI_PRIVACY_MODE: strict_local   # AI is off by default — no external calls
+      HAFI_MQTT_ENABLED: "false"        # MQTT/HA sensors are a later release
+      HAFI_LOG_LEVEL: INFO
+    volumes:
+      - finance_data:/data
+    ports:
+      - "8099:8099"
+
+volumes:
+  finance_data:

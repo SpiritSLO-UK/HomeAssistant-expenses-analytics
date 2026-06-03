@@ -82,7 +82,7 @@ export default function Sidebar({
           </button>
         )}
         {editing && <p className="sidebar__hint">Hidden tabs stay reachable by their URL.</p>}
-        <div>Local-first · v0.1.0</div>
+        <div>Local-first · v0.9.0-beta</div>
       </div>
     </aside>
   );
