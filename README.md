@@ -178,6 +178,20 @@ examples/   Sample (fake) bank CSVs
 scripts/    test.sh / dev.sh (bash; Linux/macOS/WSL + Git Bash)
 ```
 
+## Requirements & recommended hardware
+
+It's deliberately light — SQLite + FastAPI, no heavy services. As a Home Assistant
+add-on it runs comfortably on a **Raspberry Pi 4 (or 5)** or any HA host (x86/ARM);
+a Pi 3 works but will feel slower on imports/OCR.
+
+- **CPU/RAM:** modest — a few hundred MB; the app itself is I/O-light.
+- **Disk:** small (your statements + SQLite DB + optional safety backups); receipt
+  images are the main consumer if you store them.
+- **Optional extras add load:** OCR (Tesseract) and PDF rasterising are CPU-spikey
+  on a Pi during processing; at-rest **encryption** (SQLCipher) adds a little CPU.
+  AI is off by default and, when enabled, can point at a local LLM or a cloud
+  endpoint (your choice).
+
 ## Quick start (local, no Home Assistant)
 
 Prerequisites: **Python 3.12+** and **Node.js 20+**.
