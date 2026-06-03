@@ -26,6 +26,7 @@ from app.api import (
     routes_review,
     routes_rules,
     routes_savings,
+    routes_search,
     routes_security,
     routes_settings,
     routes_subscriptions,
@@ -57,6 +58,7 @@ api_router.include_router(routes_settings.router)
 api_router.include_router(routes_fx.router)
 api_router.include_router(routes_rules.router)
 api_router.include_router(routes_savings.router)
+api_router.include_router(routes_search.router)
 api_router.include_router(routes_security.router)
 api_router.include_router(routes_users.router)
 api_router.include_router(routes_auth.router)

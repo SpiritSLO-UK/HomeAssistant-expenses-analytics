@@ -134,6 +134,9 @@ Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md
 - **Resizable columns** — drag the edge of any column header on the Transactions
   table to set its width; the widths are remembered on your device ("↔ Reset
   columns" restores the defaults).
+- **Global search** — a **Search** page finds any transaction (by description,
+  merchant or amount), vendor, category or project and links straight to it.
+  Transaction results are scoped to what you're allowed to see.
 - **Customisable dashboard** — a **⚙ Customise** toggle lets you show/hide **and
   reorder** the optional cards (Heads-up, Trends, Spending by category, Top vendors,
   By project, By member, Savings, Budgets, Business, Travel, Allowance, Processing)
