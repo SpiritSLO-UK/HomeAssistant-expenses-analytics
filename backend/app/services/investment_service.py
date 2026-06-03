@@ -19,9 +19,13 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import settings as env_settings
+from app.logging import get_logger
 from app.models import Account, AccountValue, Holding
-from app.services import settings_service
+from app.services import price_service, settings_service
 from app.services.household_service import get_or_create_default_household
+
+logger = get_logger(__name__)
 
 INVESTMENT_TYPES = {"investment", "pension"}
 TWO_DP = Decimal("0.01")
@@ -287,3 +291,49 @@ def summary(db: Session, *, account_ids: set[int] | None = None) -> dict:
         "by_type": {k: str(v.quantize(TWO_DP)) for k, v in by_type.items()},
         "accounts": accounts,
     }
+
+
+# --- Price feed (optional; spec §27) -----------------------------------------
+
+
+def price_status(db: Session) -> dict:
+    """The configured price feed + whether a sync can actually run."""
+    source = settings_service.get_investment_price_source(db)
+    api_key = env_settings.investment_api_key
+    return {
+        "source": source,
+        "api_key_present": bool(api_key),
+        "ready": price_service.source_ready(source, api_key),
+    }
+
+
+def sync_prices(db: Session, *, account_ids: set[int] | None = None,
+                source: str | None = None, api_key: str | None = None) -> dict:
+    """Fetch the latest quote for every holding (in scope) and update its
+    ``last_price``. A no-op when the source is ``manual`` / not configured. Each
+    holding is independent — one failed lookup leaves that holding's price as-is."""
+    source = source or settings_service.get_investment_price_source(db)
+    api_key = api_key if api_key is not None else env_settings.investment_api_key
+    result = {"source": source, "ran": False, "updated": 0, "failed": 0, "total": 0}
+    if not price_service.source_ready(source, api_key):
+        return result  # manual / unconfigured → nothing leaves the box
+    result["ran"] = True
+    for account in list_accounts(db, account_ids=account_ids):
+        for holding in list_holdings(db, account.id):
+            result["total"] += 1
+            price = price_service.fetch_quote(holding.symbol, source, api_key)
+            if price is None:
+                result["failed"] += 1
+                continue
+            update_holding(db, holding, last_price=price)
+            result["updated"] += 1
+    return result
+
+
+def sync_prices_safe(db: Session) -> dict:
+    """Startup wrapper — acts only if a price source is configured; never raises."""
+    try:
+        return sync_prices(db)
+    except Exception:  # pragma: no cover - a price sweep must never break startup
+        logger.warning("Investment price sync failed", exc_info=True)
+        return {"source": "error", "ran": False, "updated": 0, "failed": 0, "total": 0}

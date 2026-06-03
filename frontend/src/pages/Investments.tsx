@@ -7,12 +7,17 @@ import {
   createInvestmentAccount,
   deleteHolding,
   getHoldings,
+  getInvestmentPriceStatus,
   getInvestmentSummary,
+  getMe,
   getValueHistory,
   recordAccountValue,
+  syncInvestmentPrices,
   updateHolding,
+  updateSettings,
   type Holding,
   type InvestmentAccount,
+  type PriceSyncResult,
 } from "../api/client";
 
 function today(): string {
@@ -59,6 +64,8 @@ export default function Investments() {
         feed is coming.
       </p>
       {err && <p className="status status--error">{err}</p>}
+
+      <PricesCard onSynced={invalidate} onError={fail} />
 
       {summary.data && summary.data.accounts.length > 0 && (
         <div className="card">
@@ -127,6 +134,78 @@ function NewAccountForm({ onCreated, onError }: { onCreated: () => void; onError
         {create.isPending ? "Adding…" : "Add account"}
       </button>
     </form>
+  );
+}
+
+const PRICE_SOURCES: { value: string; label: string }[] = [
+  { value: "manual", label: "Manual (off) — type prices yourself" },
+  { value: "stooq", label: "Stooq — free, no API key (suffix tickers: aapl.us, vwrl.uk)" },
+  { value: "alphavantage", label: "Alpha Vantage — needs HAFI_INVESTMENT_API_KEY" },
+];
+
+function PricesCard({ onSynced, onError }: { onSynced: () => void; onError: (e: unknown) => void }) {
+  const qc = useQueryClient();
+  const me = useQuery({ queryKey: ["me"], queryFn: getMe });
+  const status = useQuery({ queryKey: ["investment-price-status"], queryFn: getInvestmentPriceStatus });
+  const [result, setResult] = useState<PriceSyncResult | null>(null);
+  const canManage = me.data?.can_manage_settings === true || me.data?.is_admin === true;
+
+  const setSource = useMutation({
+    mutationFn: (source: string) => updateSettings({ investment_price_source: source }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["investment-price-status"] }),
+    onError,
+  });
+  const sync = useMutation({
+    mutationFn: () => syncInvestmentPrices(),
+    onSuccess: (r) => { setResult(r); onSynced(); },
+    onError,
+  });
+
+  const source = status.data?.source ?? "manual";
+  const ready = status.data?.ready ?? false;
+
+  return (
+    <div className="card">
+      <h2 className="card__title">Price updates</h2>
+      <p className="muted" style={{ marginTop: 0, fontSize: "0.85rem" }}>
+        Keep holding prices current automatically. Only the ticker symbol is ever sent —
+        never balances or holdings. Off by default; also runs on startup when enabled.
+      </p>
+      <div className="form-row" style={{ alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <label className="muted" style={{ fontSize: "0.85rem" }}>
+          Source{" "}
+          <select
+            value={source}
+            disabled={!canManage || setSource.isPending}
+            onChange={(e) => setSource.mutate(e.target.value)}
+          >
+            {PRICE_SOURCES.map((s) => (
+              <option key={s.value} value={s.value}>{s.label}</option>
+            ))}
+          </select>
+        </label>
+        <button className="btn btn--sm" disabled={!ready || sync.isPending} onClick={() => sync.mutate()}>
+          {sync.isPending ? "Syncing…" : "Sync prices now"}
+        </button>
+      </div>
+      {!canManage && (
+        <p className="muted" style={{ fontSize: "0.8rem", margin: "6px 0 0" }}>
+          Only a settings manager can change the source. You can still sync when it's enabled.
+        </p>
+      )}
+      {source === "alphavantage" && status.data && !status.data.api_key_present && (
+        <p className="status status--warn" style={{ marginTop: 6 }}>
+          Set <code>HAFI_INVESTMENT_API_KEY</code> in the add-on/env to use Alpha Vantage.
+        </p>
+      )}
+      {result && (
+        <p className="muted" style={{ marginTop: 6, fontSize: "0.85rem" }}>
+          {result.ran
+            ? `Updated ${result.updated} of ${result.total} holding(s)${result.failed ? ` · ${result.failed} not found` : ""}.`
+            : "Nothing to sync (source is manual)."}
+        </p>
+      )}
+    </div>
   );
 }
 

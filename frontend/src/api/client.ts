@@ -1341,6 +1341,29 @@ export function deleteHolding(holdingId: number): Promise<void> {
   return fetchJson(`api/investments/holdings/${holdingId}`, { method: "DELETE" });
 }
 
+export interface InvestmentPriceStatus {
+  source: string; // manual | stooq | alphavantage
+  api_key_present: boolean;
+  ready: boolean;
+}
+
+export function getInvestmentPriceStatus(): Promise<InvestmentPriceStatus> {
+  return fetchJson<InvestmentPriceStatus>("api/investments/price-status");
+}
+
+export interface PriceSyncResult {
+  source: string;
+  ran: boolean;
+  updated: number;
+  failed: number;
+  total: number;
+}
+
+// Fetch latest quotes for the caller's holdings (no-op when source is manual).
+export function syncInvestmentPrices(): Promise<PriceSyncResult> {
+  return fetchJson<PriceSyncResult>("api/investments/sync-prices", { method: "POST" });
+}
+
 // --- Backup / restore / demo (spec §26.5; backlog #9, #10, #16) ---
 
 export function loadDemoData(): Promise<{ rows_detected: number; new: number; duplicates: number }> {

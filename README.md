@@ -81,8 +81,11 @@ warranty, not financial advice — keep your own backups._
 - **Investments & pensions** — track investment platforms and pensions: record a
   **value** from a statement (best for pensions, with a growth sparkline) or add
   **holdings** (units of a ticker with an average cost and a last price) to see
-  market value and unrealised gain (±£ and %). Prices are entered manually for
-  now; an optional price feed is on the way.
+  market value and unrealised gain (±£ and %). An **optional price feed** keeps
+  holding prices current — **off by default**, with a choice of source: keyless
+  public quotes (Stooq) or a keyed provider (Alpha Vantage via
+  `HAFI_INVESTMENT_API_KEY`). Only the ticker symbol is ever sent — never your
+  balances or holdings — and you can always just enter prices by hand.
 - **Subscriptions** — recurring payments detected automatically, with a monthly
   cost total, plus **alerts** for renewals due soon and payments that look
   missed (also surfaced in the dashboard heads-up).
