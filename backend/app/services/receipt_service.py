@@ -360,5 +360,45 @@ def to_dict(db: Session, receipt: Receipt) -> dict:
         "ocr_status": receipt.ocr_status,
         "ocr_confidence": receipt.ocr_confidence,
         "needs_review": receipt.needs_review,
+        "has_file": bool(receipt.storage_path),
         "matches": matches,
     }
+
+
+def receipts_for_transaction(db: Session, transaction_id: int) -> list[Receipt]:
+    """Receipts linked to a transaction (any match status), newest first."""
+    return list(
+        db.scalars(
+            select(Receipt)
+            .join(TransactionReceiptMatch, TransactionReceiptMatch.receipt_id == Receipt.id)
+            .where(TransactionReceiptMatch.transaction_id == transaction_id)
+            .order_by(Receipt.created_at.desc())
+        ).all()
+    )
+
+
+def attach_to_transaction(db: Session, receipt: Receipt, transaction_id: int) -> TransactionReceiptMatch:
+    """Link a receipt to a transaction as a user-confirmed match and **keep** the
+    original file. Unlike :func:`confirm_match` it never drops the original — the
+    whole point of an attached receipt is to be able to view it later."""
+    txn = db.get(Transaction, transaction_id)
+    if txn is None:
+        raise ValueError("Transaction not found")
+    chosen: TransactionReceiptMatch | None = None
+    for m in _existing_matches(db, receipt.id):
+        if m.transaction_id == transaction_id:
+            chosen = m
+        else:
+            db.delete(m)
+    if chosen is None:
+        chosen = TransactionReceiptMatch(transaction_id=transaction_id, receipt_id=receipt.id)
+        db.add(chosen)
+    chosen.match_status = "confirmed"
+    chosen.matched_by = "user"
+    receipt.needs_review = False
+    review_service.resolve_for(db, item_type="receipt", item_id=receipt.id, reason="receipt_unmatched")
+    review_service.resolve_for(db, item_type="receipt", item_id=receipt.id, reason="low_confidence")
+    _propagate_vat(txn, receipt)
+    db.commit()
+    db.refresh(chosen)
+    return chosen

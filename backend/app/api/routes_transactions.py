@@ -5,13 +5,14 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.db.session import get_db
 from app.models import Category, Project, Transaction, User, Vendor
+from app.schemas.receipts import ReceiptOut
 from app.schemas.tags import SetTagsRequest
 from app.schemas.transactions import (
     SetSplitsRequest,
@@ -25,6 +26,7 @@ from app.services import (
     audit_service,
     export_service,
     import_service,
+    receipt_service,
     rule_service,
     split_service,
     tag_service,
@@ -334,6 +336,39 @@ def set_tags(
     txn = _get_visible_txn(request, db, transaction_id)
     tag_service.set_transaction_tags(db, txn, payload.tags)
     return txn
+
+
+@router.get("/{transaction_id}/receipts", response_model=list[ReceiptOut])
+def list_transaction_receipts(
+    transaction_id: int, request: Request, db: Session = Depends(get_db)
+) -> list[dict]:
+    """Receipts attached to this transaction (for the drill-down viewer)."""
+    txn = _get_visible_txn(request, db, transaction_id)
+    return [receipt_service.to_dict(db, r) for r in receipt_service.receipts_for_transaction(db, txn.id)]
+
+
+@router.post("/{transaction_id}/receipts", response_model=ReceiptOut, status_code=201)
+async def attach_transaction_receipt(
+    transaction_id: int,
+    request: Request,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Upload a receipt image/PDF and attach it to this transaction. The original
+    is kept (so it can be viewed); OCR runs best-effort to fill in fields."""
+    txn = _get_visible_txn(request, db, transaction_id)
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty file")
+    if len(content) > 15 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="File too large (max 15 MB)")
+    receipt, created = receipt_service.store_upload(db, file.filename or "receipt", content)
+    if created:
+        # Best-effort OCR for the extracted fields, but don't auto-match elsewhere —
+        # the user is explicitly attaching it here.
+        receipt_service.run_ocr(db, receipt, auto_match=False)
+    receipt_service.attach_to_transaction(db, receipt, txn.id)
+    return receipt_service.to_dict(db, receipt)
 
 
 @router.delete("/{transaction_id}", status_code=204)

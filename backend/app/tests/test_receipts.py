@@ -112,3 +112,42 @@ def test_delete_receipt(client):
     rid = _upload(client).json()["id"]
     assert client.delete(f"/api/receipts/{rid}").status_code == 204
     assert client.get("/api/receipts").json() == []
+
+
+# --- per-transaction attach + viewer (drill-down receipt) ---
+
+def test_attach_receipt_to_transaction_keeps_original(client):
+    _import(client, _curve([("2026-05-02", "ALDI STORE 412", "-37.85")]))
+    txn = _txn(client, "ALDI STORE 412")
+
+    res = client.post(
+        f"/api/transactions/{txn['id']}/receipts",
+        files={"file": ("aldi.png", b"fake-image-bytes", "image/png")},
+    )
+    assert res.status_code == 201
+    receipt = res.json()
+    # The original is kept (viewable) even though delete-after-processing defaults on.
+    assert receipt["has_file"] is True
+    assert any(
+        m["transaction_id"] == txn["id"] and m["match_status"] == "confirmed" for m in receipt["matches"]
+    )
+
+    # Listed against the transaction...
+    listed = client.get(f"/api/transactions/{txn['id']}/receipts").json()
+    assert [r["id"] for r in listed] == [receipt["id"]]
+
+    # ...and the original is served back for viewing.
+    served = client.get(f"/api/receipts/{receipt['id']}/file")
+    assert served.status_code == 200
+    assert served.content == b"fake-image-bytes"
+
+
+def test_attach_receipt_validation(client):
+    _import(client, _curve([("2026-05-02", "BP CONNECT", "-59.80")]))
+    txn = _txn(client, "BP CONNECT")
+    assert client.post(
+        f"/api/transactions/{txn['id']}/receipts", files={"file": ("x.png", b"", "image/png")}
+    ).status_code == 400
+    assert client.post(
+        "/api/transactions/999999/receipts", files={"file": ("x.png", b"data", "image/png")}
+    ).status_code == 404
