@@ -937,6 +937,7 @@ export interface Vendor {
   service_type: string | null;
   website: string | null;
   notes: string | null;
+  country: string | null;  // ISO alpha-2 (spend-by-location map)
   last_seen_at: string | null;
   aliases: VendorAlias[];
   transaction_count: number;
@@ -956,6 +957,11 @@ export function addVendorAlias(id: number, alias: string, matchType = "contains"
     method: "POST",
     body: JSON.stringify({ alias, match_type: matchType }),
   });
+}
+
+// Patch vendor fields (e.g. country for the spend-by-location map; "" → null clears).
+export function updateVendor(id: number, patch: Record<string, unknown>): Promise<Vendor> {
+  return fetchJson<Vendor>(`api/vendors/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
 }
 
 export function setVendorDefaultCategory(id: number, categoryId: number | null): Promise<Vendor> {
@@ -1017,6 +1023,18 @@ export function getCategoryBreakdown(month?: string, view?: string, memberId?: n
 
 export function getVendorBreakdown(month?: string, view?: string, memberId?: number): Promise<VendorBreakdownItem[]> {
   return fetchJson<VendorBreakdownItem[]>(`api/dashboard/vendors${dashQuery(month, view, memberId)}`);
+}
+
+export interface CountryBreakdownItem {
+  country_code: string | null;
+  name: string;
+  flag: string;
+  total: string;
+  count: number;
+}
+
+export function getCountryBreakdown(month?: string, view?: string, memberId?: number): Promise<CountryBreakdownItem[]> {
+  return fetchJson<CountryBreakdownItem[]>(`api/dashboard/by-country${dashQuery(month, view, memberId)}`);
 }
 
 // --- Trends & outliers (backlog #146, #150) ---

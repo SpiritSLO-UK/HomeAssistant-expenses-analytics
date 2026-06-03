@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.schemas.dashboard import (
     CategoryBreakdownItem,
+    CountryBreakdownItem,
     DashboardSummary,
     MemberBreakdown,
     MonthlySeries,
@@ -67,6 +68,15 @@ def vendors(
     member_id: int | None = None, db: Session = Depends(get_db),
 ) -> list[dict]:
     return dashboard_service.vendor_breakdown(db, _ref(month), account_ids=_scope(request, db, view, member_id))
+
+
+@router.get("/by-country", response_model=list[CountryBreakdownItem])
+def by_country(
+    request: Request, month: date | None = None, view: str = "all",
+    member_id: int | None = None, db: Session = Depends(get_db),
+) -> list[dict]:
+    """Spend by country for the month — the spend-by-location map (spec §16.3)."""
+    return dashboard_service.country_breakdown(db, _ref(month), account_ids=_scope(request, db, view, member_id))
 
 
 @router.get("/projects", response_model=list[ProjectTotal])
