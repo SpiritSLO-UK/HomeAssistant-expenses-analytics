@@ -267,6 +267,7 @@ export interface BulkUpdate {
   merchant_id?: number | null;
   is_business?: boolean;
   add_tag?: string;
+  country?: string | null;  // ISO alpha-2 for the spend-by-location map
   archive?: boolean;
   delete?: boolean;
 }

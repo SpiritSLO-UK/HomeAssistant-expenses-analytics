@@ -11,11 +11,13 @@ from app.services import dashboard_service, geo
 # --- geo helpers (pure) ---
 
 
-def test_country_for_prefers_vendor_then_currency():
-    assert geo.country_for("GBP", "FR") == "FR"   # vendor wins
-    assert geo.country_for("EUR", None) == "EU"   # currency fallback
+def test_country_for_precedence():
+    # txn country wins over vendor, which wins over currency.
+    assert geo.country_for("EUR", "FR", "ES") == "ES"  # txn (a trip to Spain) wins
+    assert geo.country_for("GBP", "FR") == "FR"          # vendor over currency
+    assert geo.country_for("EUR", None) == "EU"          # currency fallback (coarse)
     assert geo.country_for("GBP", None) == "GB"
-    assert geo.country_for("ZZZ", None) is None    # unknown currency, no vendor
+    assert geo.country_for("ZZZ", None) is None           # unknown currency, no vendor
 
 
 def test_flag_and_name():
@@ -29,7 +31,7 @@ def test_flag_and_name():
 # --- aggregation (service level) ---
 
 
-def _txn(db, *, base, currency="GBP", merchant_id=None, day=15):
+def _txn(db, *, base, currency="GBP", merchant_id=None, day=15, country=None):
     db.add(Transaction(
         transaction_date=date(2026, 5, day),
         description_raw="x",
@@ -38,6 +40,7 @@ def _txn(db, *, base, currency="GBP", merchant_id=None, day=15):
         currency=currency,
         direction="debit",
         merchant_id=merchant_id,
+        country=country,
     ))
 
 
@@ -64,6 +67,17 @@ def test_country_breakdown(db):
     # Sorted by spend, descending.
     ordered = [r["name"] for r in dashboard_service.country_breakdown(db, date(2026, 5, 1))]
     assert ordered[0] == "United Kingdom"
+
+
+def test_txn_country_overrides_currency_eu(db):
+    # A EUR trip to Spain, tagged ES, shows as Spain — not the coarse 'Eurozone'.
+    _txn(db, base="-80", currency="EUR", country="ES")
+    _txn(db, base="-20", currency="EUR")  # untagged EUR → Eurozone
+    db.commit()
+    rows = {r["name"]: r for r in dashboard_service.country_breakdown(db, date(2026, 5, 1))}
+    assert Decimal(rows["Spain"]["total"]) == Decimal("80.00")
+    assert rows["Spain"]["country_code"] == "ES"
+    assert Decimal(rows["Eurozone"]["total"]) == Decimal("20.00")
 
 
 def test_country_breakdown_excludes_other_months_and_income(db):

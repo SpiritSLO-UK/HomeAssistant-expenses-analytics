@@ -372,7 +372,8 @@ function GeoCard({ monthDate, view, memberId }: { monthDate: string; view: strin
     <div className="card">
       <h2 className="card__title">Spending by location</h2>
       <p className="muted" style={{ marginTop: 0, fontSize: "0.82rem" }}>
-        By country — a vendor's country if set (Vendors page), otherwise inferred from the currency.
+        By country — a transaction's own country (tag a trip on Travel), else its vendor's country
+        (Vendors page), else inferred from the currency.
       </p>
       <ul className="bars">
         {data.slice(0, 12).map((c) => (

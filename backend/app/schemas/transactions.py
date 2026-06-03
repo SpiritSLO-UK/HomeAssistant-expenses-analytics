@@ -36,6 +36,7 @@ class TransactionOut(BaseModel):
     merchant_id: int | None
     amount: Decimal
     currency: str
+    country: str | None = None  # per-transaction country for the spend-by-location map
     direction: str
     base_amount: Decimal | None
     fx_rate: Decimal | None

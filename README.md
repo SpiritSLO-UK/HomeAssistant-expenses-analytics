@@ -184,10 +184,10 @@ warranty, not financial advice — keep your own backups._
 - **Global search** — a **Search** page finds any transaction (by description,
   merchant or amount), vendor, category or project and links straight to it.
 - **Spending by location** — a dashboard card ranks the month's spend **by
-  country**. Each transaction's country is its vendor's country when you set one
-  (a small field on the Vendors page), otherwise inferred from the currency — so
-  it populates from foreign-currency/travel spend out of the box. All local, no
-  geocoding service is called.
+  country**. A transaction's country comes from (in order) its **own country**
+  (tag a whole trip on the **Travel** page — so a trip to Spain shows as Spain,
+  not the coarse "Eurozone"), else its **vendor's** country (Vendors page), else
+  it's inferred from the **currency**. All local, no geocoding service is called.
   Transaction results are scoped to what you're allowed to see.
 - **Customisable dashboard** — a **⚙ Customise** toggle lets you show/hide **and
   reorder** the optional cards (Heads-up, Trends, Spending by category, Top vendors,

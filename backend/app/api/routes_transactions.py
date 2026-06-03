@@ -72,6 +72,7 @@ class BulkUpdateRequest(BaseModel):
     merchant_id: int | None = None
     is_business: bool | None = None
     add_tag: str | None = None
+    country: str | None = None  # ISO alpha-2 for the spend-by-location map ("" clears)
     archive: bool | None = None  # True = archive, False = unarchive
     delete: bool = False
 
@@ -216,6 +217,9 @@ def bulk_update(
             txn.merchant_id = fields["merchant_id"]
         if "is_business" in fields:
             txn.is_business = fields["is_business"]
+        if "country" in fields:
+            code = (fields["country"] or "").strip().upper()[:2]
+            txn.country = code or None
         if "archive" in fields:
             txn.archived_at = now if fields["archive"] else None
         if fields.get("add_tag"):
