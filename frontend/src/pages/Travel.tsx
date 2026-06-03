@@ -2,6 +2,7 @@ import { Fragment, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  bulkUpdateTransactions,
   createProjectFromTrip,
   getTravelByCurrency,
   getTravelTrips,
@@ -10,6 +11,27 @@ import {
 
 function fmtRange(first: string, last: string): string {
   return first === last ? first : `${first} → ${last}`;
+}
+
+// A tiny 2-letter country tagger for a trip (e.g. ES). Tags all the trip's
+// transactions so the spend-by-location map shows the real country.
+function TripCountry({ onSet, pending }: { onSet: (code: string) => void; pending: boolean }) {
+  const [code, setCode] = useState("");
+  return (
+    <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+      <input
+        placeholder="ES"
+        value={code}
+        maxLength={2}
+        style={{ width: 44, textTransform: "uppercase" }}
+        title="Tag this trip's spend with a country (ISO code, e.g. ES) for the spending-by-location map"
+        onChange={(e) => setCode(e.target.value.replace(/[^A-Za-z]/g, ""))}
+      />
+      <button className="btn btn--sm btn--ghost" disabled={!code || pending} onClick={() => onSet(code.toUpperCase())}>
+        Set country
+      </button>
+    </span>
+  );
 }
 
 export default function Travel() {
@@ -28,6 +50,19 @@ export default function Travel() {
       qc.invalidateQueries({ queryKey: ["projects"] });
       qc.invalidateQueries({ queryKey: ["transactions"] });
       qc.invalidateQueries({ queryKey: ["travel-trips"] });
+    },
+    onError: (e) => setMsg(String(e instanceof Error ? e.message : e)),
+  });
+
+  // Tag a whole trip's transactions with a country, so the spend-by-location map
+  // shows e.g. Spain instead of the coarse "Eurozone" currency fallback.
+  const setCountry = useMutation({
+    mutationFn: (v: { ids: number[]; country: string }) =>
+      bulkUpdateTransactions(v.ids, { country: v.country }),
+    onSuccess: (_r, v) => {
+      setMsg(`Tagged ${v.ids.length} transaction(s) as ${v.country} — the spend-by-location map will use it.`);
+      qc.invalidateQueries({ queryKey: ["dash-geo"] });
+      qc.invalidateQueries({ queryKey: ["transactions"] });
     },
     onError: (e) => setMsg(String(e instanceof Error ? e.message : e)),
   });
@@ -132,13 +167,19 @@ export default function Travel() {
                         <td className="num">{trip.base_total} {trip.base_currency}</td>
                         <td className="num">{trip.transaction_count}</td>
                         <td>
-                          <button
-                            className="btn btn--sm"
-                            disabled={makeProject.isPending}
-                            onClick={() => createFor(trip)}
-                          >
-                            Create project
-                          </button>
+                          <div className="form-row" style={{ gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}>
+                            <TripCountry
+                              pending={setCountry.isPending}
+                              onSet={(code) => setCountry.mutate({ ids: trip.transaction_ids, country: code })}
+                            />
+                            <button
+                              className="btn btn--sm"
+                              disabled={makeProject.isPending}
+                              onClick={() => createFor(trip)}
+                            >
+                              Create project
+                            </button>
+                          </div>
                         </td>
                       </tr>
                       {open && (

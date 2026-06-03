@@ -181,7 +181,7 @@ def country_breakdown(db: Session, ref: date, *, account_ids: set[int] | None = 
     Aggregated in Python because the country is a vendor-or-currency fallback."""
     start, end = month_bounds(ref)
     rows = db.execute(
-        select(-Transaction.base_amount, Transaction.currency, Vendor.country)
+        select(-Transaction.base_amount, Transaction.currency, Transaction.country, Vendor.country)
         .join(Vendor, Vendor.id == Transaction.merchant_id, isouter=True)
         .where(
             Transaction.transaction_date >= start,
@@ -194,8 +194,8 @@ def country_breakdown(db: Session, ref: date, *, account_ids: set[int] | None = 
     ).all()
 
     buckets: dict[str, dict] = defaultdict(lambda: {"total": Decimal("0"), "count": 0})
-    for amount, currency, vendor_country in rows:
-        code = geo.country_for(currency, vendor_country) or "??"
+    for amount, currency, txn_country, vendor_country in rows:
+        code = geo.country_for(currency, vendor_country, txn_country) or "??"
         buckets[code]["total"] += Decimal(amount)
         buckets[code]["count"] += 1
 

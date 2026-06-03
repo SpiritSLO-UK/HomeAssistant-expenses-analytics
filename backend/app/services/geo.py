@@ -31,10 +31,16 @@ COUNTRY_NAMES = {
 }
 
 
-def country_for(currency: str | None, vendor_country: str | None) -> str | None:
-    """Resolve a transaction's country code, or None when it can't be inferred."""
-    if vendor_country:
-        return vendor_country.upper()
+def country_for(
+    currency: str | None, vendor_country: str | None, txn_country: str | None = None
+) -> str | None:
+    """Resolve a transaction's country code, or None when it can't be inferred.
+
+    Precedence: the transaction's own country (e.g. tagged for a trip to Spain) →
+    the vendor's country → inferred from the currency (the coarsest fallback)."""
+    for explicit in (txn_country, vendor_country):
+        if explicit:
+            return explicit.upper()
     if currency:
         return CURRENCY_COUNTRY.get(currency.upper())
     return None

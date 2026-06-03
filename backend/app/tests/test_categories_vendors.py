@@ -316,6 +316,11 @@ def test_bulk_update_transactions(client):
         "/api/transactions/bulk", json={"transaction_ids": ids, "category_id": 999_999}
     ).status_code == 400
 
+    # Bulk set a country (the Travel "set country for this trip" action) — normalised upper-case.
+    client.post("/api/transactions/bulk", json={"transaction_ids": ids, "country": "es"})
+    withc = {t["id"]: t for t in client.get("/api/transactions", params={"limit": 500}).json()["items"]}
+    assert all(withc[i]["country"] == "ES" for i in ids)
+
     # Bulk archive → hidden from the default list, shown with include_archived.
     client.post("/api/transactions/bulk", json={"transaction_ids": ids, "archive": True})
     visible = {t["id"] for t in client.get("/api/transactions", params={"limit": 500}).json()["items"]}

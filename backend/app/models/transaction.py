@@ -43,6 +43,10 @@ class Transaction(Base, TimestampMixin):
 
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="GBP")
+    # Optional ISO-3166 alpha-2 country for the spend-by-location map (e.g. a trip
+    # to Spain → ES). Highest-precedence signal; falls back to vendor country then
+    # currency. (geo.py / dashboard_service.country_breakdown)
+    country: Mapped[str | None] = mapped_column(String(2), nullable=True)
     # debit | credit
     direction: Mapped[str] = mapped_column(String(8), nullable=False)
 
