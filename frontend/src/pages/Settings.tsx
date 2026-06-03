@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { QRCodeSVG } from "qrcode.react";
 import {
   addFxRate,
   backfillFx,
@@ -794,8 +795,15 @@ function MfaCard({
       {!enabled && setup && (
         <>
           <p className="muted">
-            Add this to your authenticator app — scan the URI as a QR code, or enter the secret by
-            hand — then type the current 6-digit code to confirm.
+            Add this to your authenticator app — <strong>scan the QR code</strong> below, or enter
+            the secret by hand — then type the current 6-digit code to confirm.
+          </p>
+          {/* The QR encodes the otpauth:// URI the server returned; nothing leaves the device. */}
+          <div style={{ background: "#fff", padding: 12, borderRadius: 8, display: "inline-block" }}>
+            <QRCodeSVG value={setup.otpauth_uri} size={176} />
+          </div>
+          <p className="muted" style={{ fontSize: "0.82rem", marginTop: 8 }}>
+            Can't scan? Enter the secret manually:
           </p>
           <ul className="kv">
             <li><span>Secret</span><span style={{ fontFamily: "monospace" }}>{setup.secret}</span></li>
