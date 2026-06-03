@@ -2,14 +2,13 @@ name: CI
 
 on:
   # Only build main on push; feature branches are covered by their pull_request
-  # run. This avoids the duplicate push+pull_request runs on every PR branch,
-  # and keeps the main-only SonarCloud scan triggering on merges to main.
+  # run. This avoids the duplicate push+pull_request runs on every PR branch.
+  # (SonarCloud runs via Automatic Analysis on its own servers, not in CI.)
   push:
     branches: [main]
   pull_request:
 
 # One in-flight run per ref: a new push to a PR branch cancels the previous run.
-# main is never cancelled, so a post-merge SonarCloud scan always finishes.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -18,15 +17,8 @@ jobs:
   backend:
     name: Backend (ruff + pytest)
     runs-on: ubuntu-latest
-    env:
-      # Hoisted to job level so the scan step's `if` can read it (a step can't
-      # see env defined in its own block). Empty on fork PRs → scan is skipped.
-      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          # SonarCloud needs full history for accurate new-code / blame data.
-          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -46,22 +38,9 @@ jobs:
         working-directory: backend
         run: python -m ruff check .
 
-      - name: Tests (pytest + coverage)
+      - name: Tests (pytest)
         working-directory: backend
-        run: python -m pytest -q --cov=app --cov-report=xml
-
-      # SonarCloud analysis (Python + TypeScript). Reads sonar-project.properties.
-      # Runs ONLY on pushes to main: the free SonarQube Cloud tier analyses the
-      # main branch only (no PR/branch analysis). Fire-and-forget — continue-on-error
-      # + a timeout mean a slow or transient scan never reddens main or blocks the
-      # next change; results are read later from SonarCloud, not waited on here.
-      - name: SonarCloud Scan
-        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && env.SONAR_TOKEN != '' }}
-        continue-on-error: true
-        timeout-minutes: 10
-        env:
-          SONAR_HOST_URL: https://sonarcloud.io
-        uses: SonarSource/sonarqube-scan-action@v6
+        run: python -m pytest -q
 
   frontend:
     name: Frontend (type-check + build)
