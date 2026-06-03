@@ -62,6 +62,9 @@ Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md
 - **Receipts** — upload a photo/PDF; optional local OCR (Tesseract) reads the
   merchant/date/total, or enter them by hand, then match to a transaction
   (amount/date/vendor scoring). OCR runs in the add-on; the rest works anywhere.
+  You can also **attach a receipt directly to a transaction** from its drill-down
+  detail and **view the image/PDF** there — attached receipts keep their original
+  (so they stay viewable) regardless of the delete-after-processing setting.
 - **Review queue** — a safety net listing anything uncertain (unmatched receipt,
   low-confidence read, …) to resolve or ignore.
 - **AI assistant (opt-in)** — off by default; when enabled, suggests a category

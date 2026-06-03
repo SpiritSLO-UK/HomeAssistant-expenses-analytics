@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   approveAiRequest,
+  attachTransactionReceipt,
   bulkUpdateTransactions,
   categoriseTransaction,
   classifyWithAi,
@@ -12,9 +13,11 @@ import {
   listCategories,
   listMembers,
   listProjects,
+  listTransactionReceipts,
   listTransactions,
   listVendors,
   recategorise,
+  receiptFileUrl,
   setTransactionTags,
   unarchiveTransaction,
   updateTransaction,
@@ -711,6 +714,11 @@ export default function Transactions() {
                                 )}
                               </span>
                             </div>
+
+                            <div className="txn-detail__field">
+                              <span>Receipt</span>
+                              <ReceiptsField txnId={t.id} />
+                            </div>
                           </div>
                           {splitId === t.id && (
                             <div style={{ marginTop: 10 }}>
@@ -748,5 +756,55 @@ export default function Transactions() {
         )}
       </div>
     </div>
+  );
+}
+
+// Attach a receipt image/PDF to a transaction and view what's attached (the
+// original is kept so it stays viewable). Drill-down receipt viewer.
+function ReceiptsField({ txnId }: { txnId: number }) {
+  const qc = useQueryClient();
+  const [err, setErr] = useState<string | null>(null);
+  const q = useQuery({ queryKey: ["txn-receipts", txnId], queryFn: () => listTransactionReceipts(txnId) });
+  const attach = useMutation({
+    mutationFn: (file: File) => attachTransactionReceipt(txnId, file),
+    onSuccess: () => {
+      setErr(null);
+      qc.invalidateQueries({ queryKey: ["txn-receipts", txnId] });
+      qc.invalidateQueries({ queryKey: ["transactions"] });
+    },
+    onError: (e) => setErr(String(e instanceof Error ? e.message : e)),
+  });
+  const receipts = q.data ?? [];
+  return (
+    <span className="txn-detail__row" style={{ flexDirection: "column", alignItems: "flex-start", gap: 6 }}>
+      {receipts.map((r) => (
+        <span key={r.id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {r.has_file ? (
+            <a href={receiptFileUrl(r.id)} target="_blank" rel="noreferrer">
+              🧾 {r.source_filename || `receipt #${r.id}`}
+            </a>
+          ) : (
+            <span className="muted">🧾 {r.source_filename || `receipt #${r.id}`} (original removed)</span>
+          )}
+          {r.total_amount && <span className="muted">· {r.total_amount}</span>}
+        </span>
+      ))}
+      {receipts.length === 0 && <span className="muted">No receipt attached.</span>}
+      <label className="link-btn" style={{ cursor: "pointer" }}>
+        {attach.isPending ? "Uploading…" : "+ Attach receipt"}
+        <input
+          type="file"
+          accept="image/*,application/pdf"
+          style={{ display: "none" }}
+          disabled={attach.isPending}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) attach.mutate(f);
+            e.target.value = ""; // allow re-selecting the same file
+          }}
+        />
+      </label>
+      {err && <span className="status status--error">{err}</span>}
+    </span>
   );
 }

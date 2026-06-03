@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import mimetypes
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -58,6 +62,18 @@ def _get(db: Session, receipt_id: int) -> Receipt:
 @router.get("/{receipt_id}", response_model=ReceiptOut)
 def get_receipt(receipt_id: int, db: Session = Depends(get_db)) -> dict:
     return receipt_service.to_dict(db, _get(db, receipt_id))
+
+
+@router.get("/{receipt_id}/file")
+def get_receipt_file(receipt_id: int, db: Session = Depends(get_db)) -> FileResponse:
+    """Serve the stored original (image/PDF) so an attached receipt can be viewed.
+    404 if retention has dropped the original (#78/#147)."""
+    receipt = _get(db, receipt_id)
+    path = Path(receipt.storage_path) if receipt.storage_path else None
+    if path is None or not path.exists():
+        raise HTTPException(status_code=404, detail="Receipt original is not available")
+    media_type = mimetypes.guess_type(receipt.source_filename or path.name)[0] or "application/octet-stream"
+    return FileResponse(path, media_type=media_type, filename=receipt.source_filename or path.name)
 
 
 @router.post("/{receipt_id}/ocr", response_model=ReceiptOut)

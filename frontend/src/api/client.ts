@@ -619,6 +619,7 @@ export interface Receipt {
   ocr_status: string;
   ocr_confidence: number | null;
   needs_review: boolean;
+  has_file: boolean;
   matches: ReceiptMatch[];
 }
 
@@ -681,6 +682,26 @@ export function confirmReceiptMatch(id: number, transactionId: number): Promise<
 export async function deleteReceipt(id: number): Promise<void> {
   const res = await fetch(apiUrl(`api/receipts/${id}`), { method: "DELETE" });
   if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
+}
+
+// Per-transaction receipt attach + viewer (backlog: receipt image on a transaction).
+export function receiptFileUrl(id: number): string {
+  return apiUrl(`api/receipts/${id}/file`);
+}
+
+export function listTransactionReceipts(transactionId: number): Promise<Receipt[]> {
+  return fetchJson<Receipt[]>(`api/transactions/${transactionId}/receipts`);
+}
+
+export async function attachTransactionReceipt(transactionId: number, file: File): Promise<Receipt> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(apiUrl(`api/transactions/${transactionId}/receipts`), { method: "POST", body: form });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error(detail.detail || `Attach failed: ${res.status}`);
+  }
+  return res.json();
 }
 
 // --- Review queue (spec §23) ---

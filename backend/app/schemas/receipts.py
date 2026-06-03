@@ -26,6 +26,7 @@ class ReceiptOut(BaseModel):
     ocr_status: str
     ocr_confidence: float | None
     needs_review: bool
+    has_file: bool = False  # the original is still on disk (viewable), not dropped by retention
     matches: list[ReceiptMatchOut]
 
 
