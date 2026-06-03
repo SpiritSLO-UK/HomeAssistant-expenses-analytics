@@ -644,6 +644,24 @@ code {
   border-style: dashed;
 }
 
+/* Multi-edit: selection column + bulk-actions bar. */
+.col-select {
+  width: 28px;
+  text-align: center;
+}
+
+.bulk-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--sidebar-active);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--sidebar-active) 8%, transparent);
+}
+
 /* Click-to-expand transaction detail (declutters the Transactions row). */
 .txn-row__toggle {
   font-weight: 600;

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.db.session import get_db
-from app.models import Project, Transaction, User, Vendor
+from app.models import Category, Project, Transaction, User, Vendor
 from app.schemas.tags import SetTagsRequest
 from app.schemas.transactions import (
     SetSplitsRequest,
@@ -57,6 +57,21 @@ class CategoriseRequest(BaseModel):
 class BatchCategoriseRequest(BaseModel):
     transaction_ids: list[int]
     category_id: int | None = None
+
+
+class BulkUpdateRequest(BaseModel):
+    """Apply one or more edits to many transactions at once (multi-edit, §25.3).
+    Only the fields actually sent are applied (so category_id/project_id/
+    merchant_id can be set to null to clear them)."""
+
+    transaction_ids: list[int]
+    category_id: int | None = None
+    project_id: int | None = None
+    merchant_id: int | None = None
+    is_business: bool | None = None
+    add_tag: str | None = None
+    archive: bool | None = None  # True = archive, False = unarchive
+    delete: bool = False
 
 
 class RecategoriseRequest(BaseModel):
@@ -143,6 +158,68 @@ def categorise_batch(payload: BatchCategoriseRequest, request: Request, db: Sess
     for txn in visible:
         txn.category_id = payload.category_id
         txn.confidence_score = 1.0  # manual assignment (spec §15.2)
+    db.commit()
+    return {"updated": len(visible)}
+
+
+@router.post("/bulk")
+def bulk_update(
+    payload: BulkUpdateRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Apply one or more edits to many transactions at once (multi-edit, §25.3):
+    set category/project/vendor, mark business, add a tag, archive/unarchive, or
+    delete. Only transactions the caller can see are touched."""
+    scope = visible_account_scope(request, db)
+    rows = db.scalars(
+        select(Transaction)
+        .where(Transaction.id.in_(payload.transaction_ids))
+        .options(selectinload(Transaction.tags))
+    ).all()
+    visible = [t for t in rows if scope is None or t.account_id is None or t.account_id in scope]
+    fields = payload.model_dump(exclude_unset=True)
+
+    # Validate referenced ids up front (a single bad id fails the whole call).
+    if fields.get("category_id") is not None and db.get(Category, fields["category_id"]) is None:
+        raise HTTPException(status_code=400, detail="Unknown category")
+    if fields.get("project_id") is not None and db.get(Project, fields["project_id"]) is None:
+        raise HTTPException(status_code=400, detail="Unknown project")
+    if fields.get("merchant_id") is not None and db.get(Vendor, fields["merchant_id"]) is None:
+        raise HTTPException(status_code=400, detail="Unknown vendor")
+
+    if payload.delete:
+        for txn in visible:
+            db.delete(txn)
+        if visible:
+            audit_service.record(
+                db,
+                actor=user.display_name,
+                action="bulk_delete_transactions",
+                entity_type="transaction",
+                details={"count": len(visible), "ids": [t.id for t in visible]},
+            )
+        db.commit()
+        return {"deleted": len(visible)}
+
+    now = datetime.now(UTC).replace(tzinfo=None)
+    for txn in visible:
+        if "category_id" in fields:
+            txn.category_id = fields["category_id"]
+            txn.confidence_score = 1.0  # manual assignment (spec §15.2)
+        if "project_id" in fields:
+            txn.project_id = fields["project_id"]
+        if "merchant_id" in fields:
+            txn.merchant_id = fields["merchant_id"]
+        if "is_business" in fields:
+            txn.is_business = fields["is_business"]
+        if "archive" in fields:
+            txn.archived_at = now if fields["archive"] else None
+        if fields.get("add_tag"):
+            current = [tag.name for tag in txn.tags]
+            if fields["add_tag"] not in current:
+                tag_service.set_transaction_tags(db, txn, [*current, fields["add_tag"]])
     db.commit()
     return {"updated": len(visible)}
 

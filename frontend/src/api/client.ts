@@ -258,6 +258,29 @@ export function unarchiveTransaction(id: number): Promise<Transaction> {
   return fetchJson<Transaction>(`api/transactions/${id}/unarchive`, { method: "POST" });
 }
 
+// Multi-edit: apply one or more changes to many transactions at once. Only the
+// fields present are applied (category_id/project_id/merchant_id may be null to
+// clear them); `delete: true` removes them.
+export interface BulkUpdate {
+  category_id?: number | null;
+  project_id?: number | null;
+  merchant_id?: number | null;
+  is_business?: boolean;
+  add_tag?: string;
+  archive?: boolean;
+  delete?: boolean;
+}
+
+export function bulkUpdateTransactions(
+  ids: number[],
+  patch: BulkUpdate,
+): Promise<{ updated?: number; deleted?: number }> {
+  return fetchJson(`api/transactions/bulk`, {
+    method: "POST",
+    body: JSON.stringify({ transaction_ids: ids, ...patch }),
+  });
+}
+
 export function setTransactionTags(id: number, tags: string[]): Promise<Transaction> {
   return fetchJson<Transaction>(`api/transactions/${id}/tags`, {
     method: "POST",
