@@ -8,10 +8,11 @@ import {
   type Category,
 } from "../api/client";
 
-// Cloud-AI privacy levels a category can be set to (spec §22.4, §28).
+// Cloud-AI privacy levels a category can be set to (spec §22.4, §28). Each level
+// has its own icon so the three read at a glance in the chip selector + legend.
 const PRIVACY_OPTIONS: { value: string; label: string }[] = [
-  { value: "normal", label: "cloud OK" },
-  { value: "sensitive", label: "• sensitive" },
+  { value: "normal", label: "☁️ cloud OK" },
+  { value: "sensitive", label: "🛡️ sensitive" },
   { value: "never_cloud", label: "🔒 never cloud" },
 ];
 
@@ -87,8 +88,8 @@ export default function Categories() {
           ))}
         </div>
         <p className="muted" style={{ marginTop: 12 }}>
-          <strong>Cloud-AI privacy</strong> (per category, your choice): <strong>cloud OK</strong> = may be
-          sent to cloud AI (always globally redacted first); <strong>• sensitive</strong> = extra-redacted
+          <strong>Cloud-AI privacy</strong> (per category, your choice): <strong>☁️ cloud OK</strong> = may be
+          sent to cloud AI (always globally redacted first); <strong>🛡️ sensitive</strong> = extra-redacted
           before any cloud send; <strong>🔒 never cloud</strong> = never sent to a cloud provider, kept
           fully on-device. AI is off by default regardless. System categories can't be deleted here
           (merge/archive arrives in a later stage).
