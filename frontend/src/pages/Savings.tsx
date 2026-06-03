@@ -31,6 +31,7 @@ export default function Savings() {
   const fail = (e: unknown) => setErr(String(e));
 
   const base = summary.data?.currency ?? "GBP";
+  const [showNew, setShowNew] = useState(false);
 
   return (
     <div className="page">
@@ -54,14 +55,21 @@ export default function Savings() {
       )}
 
       <div className="card">
-        <h2 className="card__title">Savings accounts</h2>
-        {summary.data && summary.data.accounts.length === 0 && (
-          <p className="muted">No savings accounts yet — add one below.</p>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+          <h2 className="card__title" style={{ margin: 0 }}>Savings accounts</h2>
+          <button className="btn btn--sm" onClick={() => setShowNew((v) => !v)}>
+            {showNew ? "Cancel" : "＋ New account"}
+          </button>
+        </div>
+        {showNew && (
+          <NewAccountForm onCreated={() => { invalidate(); setShowNew(false); }} onError={fail} />
+        )}
+        {summary.data && summary.data.accounts.length === 0 && !showNew && (
+          <p className="muted">No savings accounts yet — add one with ＋ New account.</p>
         )}
         {summary.data?.accounts.map((a) => (
           <AccountCard key={a.id} account={a} base={base} onChange={invalidate} onError={fail} />
         ))}
-        <NewAccountForm onCreated={invalidate} onError={fail} />
       </div>
 
       <GoalsCard
@@ -86,6 +94,7 @@ function AccountCard({
   onChange: () => void;
   onError: (e: unknown) => void;
 }) {
+  const [open, setOpen] = useState(false);
   const history = useQuery({
     queryKey: ["savings-history", account.id],
     queryFn: () => getBalanceHistory(account.id),
@@ -116,14 +125,35 @@ function AccountCard({
     onSuccess: () => refresh(),
     onError,
   });
-  const points = (history.data ?? []).map((b) => Number(b.balance));
+
+  // Confirm a deposit/withdraw, showing the resulting balance, before applying.
+  function doAdjust(direction: "deposit" | "withdraw") {
+    const amt = Number(delta);
+    if (!amt) return;
+    const current = Number(account.latest_balance ?? 0);
+    const next = direction === "deposit" ? current + amt : current - amt;
+    const verb = direction === "deposit" ? "Deposit" : "Withdraw";
+    if (window.confirm(`${verb} ${amt.toFixed(2)} ${base}?\nNew balance: ${next.toFixed(2)} ${base}.`)) {
+      adjust.mutate(direction);
+    }
+  }
+
+  const hist = history.data ?? [];
+  const points = hist.map((b) => Number(b.balance));
+  // Balance-change log (newest first) with the delta vs the previous snapshot.
+  const log = hist
+    .map((b, i) => ({ ...b, delta: i > 0 ? Number(b.balance) - Number(hist[i - 1].balance) : null }))
+    .reverse();
 
   return (
     <div style={{ borderTop: "1px solid #2a2a2a", padding: "12px 0" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
         <div>
-          <strong>{account.name}</strong>{" "}
+          <button className="link-btn" style={{ fontWeight: 700 }} onClick={() => setOpen((v) => !v)}>
+            {open ? "▾ " : "▸ "}{account.name}
+          </button>{" "}
           {account.institution && <span className="muted">· {account.institution}</span>}
+          {account.interest_rate && <span className="muted"> · {account.interest_rate}%</span>}
           <div style={{ fontSize: "1.2rem" }}>
             {account.latest_balance ? `${account.latest_balance} ${account.currency}` : <span className="muted">no balance yet</span>}
           </div>
@@ -131,62 +161,92 @@ function AccountCard({
         {points.length >= 2 && <Sparkline values={points} color="#3aa55a" />}
       </div>
 
-      {/* Quick deposit / withdraw — adjusts the latest balance by a delta. */}
-      <div className="form-row" style={{ marginTop: 8, alignItems: "center", gap: 6 }}>
-        <input
-          placeholder={`Amount (${base})`}
-          value={delta}
-          style={{ width: 120 }}
-          onChange={(e) => setDelta(e.target.value)}
-        />
-        <button className="btn btn--sm" disabled={!delta || adjust.isPending} onClick={() => adjust.mutate("deposit")}>
-          ＋ Deposit
-        </button>
-        <button className="btn btn--sm btn--ghost" disabled={!delta || adjust.isPending} onClick={() => adjust.mutate("withdraw")}>
-          － Withdraw
-        </button>
-      </div>
+      {open && (
+        <div style={{ marginTop: 8 }}>
+          {/* Deposit / withdraw — adjusts the latest balance (confirmed). */}
+          <div className="form-row" style={{ alignItems: "center", gap: 6 }}>
+            <input
+              placeholder={`Amount (${base})`}
+              value={delta}
+              style={{ width: 120 }}
+              onChange={(e) => setDelta(e.target.value)}
+            />
+            <button className="btn btn--sm" disabled={!delta || adjust.isPending} onClick={() => doAdjust("deposit")}>
+              ＋ Deposit
+            </button>
+            <button className="btn btn--sm btn--ghost" disabled={!delta || adjust.isPending} onClick={() => doAdjust("withdraw")}>
+              － Withdraw
+            </button>
+          </div>
 
-      {/* Interest rate + projected annual interest. */}
-      <div className="form-row" style={{ marginTop: 6, alignItems: "center", gap: 6 }}>
-        <label className="muted" style={{ fontSize: "0.85rem" }}>
-          Interest{" "}
-          <input
-            type="number" step="0.01" min="0"
-            placeholder="0.00"
-            value={rate}
-            style={{ width: 70 }}
-            onChange={(e) => setRate(e.target.value)}
-          />
-          %
-        </label>
-        <button className="btn btn--sm btn--ghost" disabled={saveRate.isPending} onClick={() => saveRate.mutate()}>
-          Save rate
-        </button>
-        {account.interest_rate && account.projected_annual_interest && (
-          <span className="muted" style={{ fontSize: "0.82rem" }}>
-            ≈ {account.projected_annual_interest} {account.currency}/yr
-          </span>
-        )}
-      </div>
+          {/* Interest rate + projected annual interest. */}
+          <div className="form-row" style={{ marginTop: 6, alignItems: "center", gap: 6 }}>
+            <label className="muted" style={{ fontSize: "0.85rem" }}>
+              Interest{" "}
+              <input
+                type="number" step="0.01" min="0"
+                placeholder="0.00"
+                value={rate}
+                style={{ width: 70 }}
+                onChange={(e) => setRate(e.target.value)}
+              />
+              %
+            </label>
+            <button className="btn btn--sm btn--ghost" disabled={saveRate.isPending} onClick={() => saveRate.mutate()}>
+              Save rate
+            </button>
+            {account.interest_rate && account.projected_annual_interest && (
+              <span className="muted" style={{ fontSize: "0.82rem" }}>
+                ≈ {account.projected_annual_interest} {account.currency}/yr
+              </span>
+            )}
+          </div>
 
-      {/* Set an absolute balance (e.g. from a statement). */}
-      <form
-        className="form-row"
-        style={{ marginTop: 6 }}
-        onSubmit={(e) => { e.preventDefault(); if (amount) setBalance.mutate(); }}
-      >
-        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-        <input
-          placeholder={`Set balance (${base})`}
-          value={amount}
-          style={{ width: 150 }}
-          onChange={(e) => setAmount(e.target.value)}
-        />
-        <button className="btn btn--sm btn--ghost" type="submit" disabled={!amount || setBalance.isPending}>
-          {setBalance.isPending ? "Saving…" : "Set from statement"}
-        </button>
-      </form>
+          {/* Set an absolute balance (e.g. from a statement). */}
+          <form
+            className="form-row"
+            style={{ marginTop: 6 }}
+            onSubmit={(e) => { e.preventDefault(); if (amount) setBalance.mutate(); }}
+          >
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            <input
+              placeholder={`Set balance (${base})`}
+              value={amount}
+              style={{ width: 150 }}
+              onChange={(e) => setAmount(e.target.value)}
+            />
+            <button className="btn btn--sm btn--ghost" type="submit" disabled={!amount || setBalance.isPending}>
+              {setBalance.isPending ? "Saving…" : "Set from statement"}
+            </button>
+          </form>
+
+          {/* Balance-change history (the account's deposits/withdrawals). */}
+          <div style={{ marginTop: 10 }}>
+            <div className="muted" style={{ fontSize: "0.72rem", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 4 }}>
+              History
+            </div>
+            {log.length === 0 ? (
+              <p className="muted" style={{ margin: 0 }}>No balances recorded yet.</p>
+            ) : (
+              <ul className="kv" style={{ margin: 0, maxWidth: 460 }}>
+                {log.map((b) => (
+                  <li key={b.id}>
+                    <span className="muted">{b.as_of_date}{b.note ? ` · ${b.note}` : ""}</span>
+                    <span style={{ whiteSpace: "nowrap" }}>
+                      {b.balance} {account.currency}
+                      {b.delta != null && b.delta !== 0 && (
+                        <span className={b.delta > 0 ? "amt--pos" : "amt--neg"} style={{ marginLeft: 6, fontSize: "0.82rem" }}>
+                          {b.delta > 0 ? "+" : ""}{b.delta.toFixed(2)}
+                        </span>
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
