@@ -381,6 +381,19 @@ you can verify it. Duplicate rows (and re-uploaded files) are detected and skipp
   removal plan, a safety backup before every purge (trimmed by age/size), and a
   default-on "delete a receipt's original once processed" toggle.
 
+## Documentation
+
+Full docs live in [`docs/`](docs/README.md) — start there for the index. Key guides:
+
+- **[Configuration reference](docs/configuration.md)** — every setting: `HAFI_*`
+  env vars, add-on options, and the in-app Settings, with defaults.
+- **[Troubleshooting](docs/troubleshooting.md)** — fixes for common install /
+  import / OCR / MQTT / AI / unlock / FX issues.
+- **[Rules](docs/rules.md)** — auto-categorisation: precedence, every condition
+  and action, worked examples.
+- **[Privacy](docs/privacy.md)** · **[Security & isolation](docs/security.md)** ·
+  **[Architecture](docs/architecture.md)**.
+
 ## Home Assistant add-on
 
 The [`addon/`](addon/) folder contains everything to run this as a local add-on
