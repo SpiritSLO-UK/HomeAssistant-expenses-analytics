@@ -86,6 +86,10 @@ warranty, not financial advice — keep your own backups._
   public quotes (Stooq) or a keyed provider (Alpha Vantage via
   `HAFI_INVESTMENT_API_KEY`). Only the ticker symbol is ever sent — never your
   balances or holdings — and you can always just enter prices by hand.
+- **Cars & assets** — track a car, your home or anything else with a log timeline.
+  A car's **refuel** entries (odometer + litres + cost) yield **MPG** (imperial
+  gallon) and **L/100km** between full fills, plus servicing/running costs and a
+  per-fill economy history. Odometer is in your unit (miles by default, or km).
 - **Subscriptions** — recurring payments detected automatically, with a monthly
   cost total, plus **alerts** for renewals due soon and payments that look
   missed (also surfaced in the dashboard heads-up).

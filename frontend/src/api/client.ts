@@ -1364,6 +1364,95 @@ export function syncInvestmentPrices(): Promise<PriceSyncResult> {
   return fetchJson<PriceSyncResult>("api/investments/sync-prices", { method: "POST" });
 }
 
+// --- Assets (car/home/other; spec §25.1) ---
+
+export interface CarSegment {
+  date: string;
+  from_odometer: string;
+  to_odometer: string;
+  distance: string;
+  litres: string;
+  l_per_100km: number;
+  mpg: number;
+  cost: string | null;
+}
+
+export interface CarStats {
+  distance_unit: string;
+  refuel_count: number;
+  latest_odometer: string | null;
+  total_fuel_cost: string;
+  total_litres: string;
+  avg_l_per_100km: number | null;
+  avg_mpg: number | null;
+  last_l_per_100km: number | null;
+  last_mpg: number | null;
+  segments: CarSegment[];
+}
+
+export interface AssetLog {
+  id: number;
+  asset_id: number;
+  log_date: string;
+  kind: string; // refuel | service | expense | reading | note
+  note: string | null;
+  cost: string | null;
+  odometer: string | null;
+  litres: string | null;
+  is_full_tank: boolean | null;
+  fuel_type: string | null;
+  meter: string | null;
+  reading: string | null;
+  unit: string | null;
+  transaction_id: number | null;
+}
+
+export interface Asset {
+  id: number;
+  name: string;
+  kind: string; // car | home | other
+  identifier: string | null;
+  distance_unit: string;
+  is_active: boolean;
+  log_count: number;
+  total_cost: string;
+  car?: CarStats;
+  logs?: AssetLog[];
+}
+
+export function listAssets(kind?: string): Promise<Asset[]> {
+  return fetchJson<Asset[]>(`api/assets${kind ? `?kind=${encodeURIComponent(kind)}` : ""}`);
+}
+
+export function getAsset(id: number): Promise<Asset> {
+  return fetchJson<Asset>(`api/assets/${id}`);
+}
+
+export function createAsset(data: {
+  name: string;
+  kind: string;
+  identifier?: string;
+  distance_unit?: string;
+}): Promise<Asset> {
+  return fetchJson("api/assets", { method: "POST", body: JSON.stringify(data) });
+}
+
+export function updateAsset(id: number, data: Record<string, unknown>): Promise<Asset> {
+  return fetchJson(`api/assets/${id}`, { method: "PATCH", body: JSON.stringify(data) });
+}
+
+export function deleteAsset(id: number): Promise<void> {
+  return fetchJson(`api/assets/${id}`, { method: "DELETE" });
+}
+
+export function addAssetLog(assetId: number, data: Record<string, unknown>): Promise<AssetLog> {
+  return fetchJson(`api/assets/${assetId}/logs`, { method: "POST", body: JSON.stringify(data) });
+}
+
+export function deleteAssetLog(logId: number): Promise<void> {
+  return fetchJson(`api/assets/logs/${logId}`, { method: "DELETE" });
+}
+
 // --- Backup / restore / demo (spec §26.5; backlog #9, #10, #16) ---
 
 export function loadDemoData(): Promise<{ rows_detected: number; new: number; duplicates: number }> {

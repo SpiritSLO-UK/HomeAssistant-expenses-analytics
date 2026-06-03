@@ -12,6 +12,7 @@ import {
   getDashboardProjects,
   getInvestmentSummary,
   getMe,
+  listAssets,
   getMemberBreakdown,
   getMonthlySeries,
   getOutliers,
@@ -51,6 +52,7 @@ const OPTIONAL_CARDS: { key: string; label: string }[] = [
   { key: "members", label: "By member" },
   { key: "savings", label: "Savings" },
   { key: "investments", label: "Investments" },
+  { key: "assets", label: "Cars & assets" },
   { key: "budgets", label: "Budgets" },
   { key: "business", label: "Business" },
   { key: "travel", label: "Travel" },
@@ -143,6 +145,7 @@ export default function Dashboard() {
     members: () => <MemberBreakdownCard monthDate={monthDate} />,
     savings: () => <SavingsCard />,
     investments: () => <InvestmentsCard />,
+    assets: () => <AssetsCard />,
     budgets: () => <BudgetsCard monthDate={monthDate} />,
     business: () => <BusinessCard />,
     travel: () => <TravelCard />,
@@ -440,6 +443,32 @@ function InvestmentsCard() {
           </li>
         )}
         <li><span>Accounts</span><span>{s.accounts.length}</span></li>
+      </ul>
+    </div>
+  );
+}
+
+function AssetsCard() {
+  const q = useQuery({ queryKey: ["dash-assets"], queryFn: () => listAssets() });
+  const items = q.data ?? [];
+  if (items.length === 0) return null; // non-nagging: no card until there's an asset
+  const icon: Record<string, string> = { car: "🚗", home: "🏠", other: "📦" };
+  return (
+    <div className="card">
+      <CardHead title="Cars & assets" to="/assets" />
+      <ul className="kv">
+        {items.slice(0, 5).map((a) => (
+          <li key={a.id}>
+            <span>{icon[a.kind] ?? "📦"} {a.name}</span>
+            <span>
+              {a.car && a.car.avg_mpg != null ? (
+                <>{a.car.avg_mpg} MPG <span className="muted">· {gbp(a.total_cost)}</span></>
+              ) : (
+                gbp(a.total_cost)
+              )}
+            </span>
+          </li>
+        ))}
       </ul>
     </div>
   );

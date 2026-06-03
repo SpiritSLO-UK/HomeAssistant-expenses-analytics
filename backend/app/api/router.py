@@ -8,6 +8,7 @@ from app.api import (
     routes_accounts,
     routes_ai,
     routes_allowance,
+    routes_assets,
     routes_auth,
     routes_backup,
     routes_budgets,
@@ -60,6 +61,7 @@ api_router.include_router(routes_fx.router)
 api_router.include_router(routes_rules.router)
 api_router.include_router(routes_savings.router)
 api_router.include_router(routes_investments.router)
+api_router.include_router(routes_assets.router)
 api_router.include_router(routes_search.router)
 api_router.include_router(routes_security.router)
 api_router.include_router(routes_users.router)

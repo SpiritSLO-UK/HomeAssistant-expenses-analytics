@@ -1,0 +1,306 @@
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  addAssetLog,
+  createAsset,
+  deleteAsset,
+  deleteAssetLog,
+  getAsset,
+  listAssets,
+  type Asset,
+  type AssetLog,
+} from "../api/client";
+
+function today(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function gbp(value: string | null): string {
+  if (value == null) return "—";
+  return "£" + Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+const KIND_ICON: Record<string, string> = { car: "🚗", home: "🏠", other: "📦" };
+
+export default function Assets() {
+  const [err, setErr] = useState<string | null>(null);
+  const assets = useQuery({ queryKey: ["assets"], queryFn: () => listAssets() });
+  const [showNew, setShowNew] = useState(false);
+  const qc = useQueryClient();
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["assets"] });
+  const fail = (e: unknown) => setErr(String(e));
+
+  return (
+    <div className="page">
+      <div className="page__head">
+        <h1 className="page__title">Cars &amp; assets</h1>
+        <button className="btn btn--sm" onClick={() => setShowNew((v) => !v)}>
+          {showNew ? "Cancel" : "＋ New asset"}
+        </button>
+      </div>
+      <p className="muted">
+        Track a car, your home or anything else. Log a car's refuels (odometer + litres + cost) to
+        get <strong>MPG</strong> and <strong>L/100km</strong>, plus servicing and running costs.
+      </p>
+      {err && <p className="status status--error">{err}</p>}
+
+      {showNew && (
+        <div className="card">
+          <NewAssetForm onCreated={() => { invalidate(); setShowNew(false); }} onError={fail} />
+        </div>
+      )}
+
+      {assets.data && assets.data.length === 0 && !showNew && (
+        <div className="card"><p className="muted">No assets yet — add a car with ＋ New asset.</p></div>
+      )}
+
+      {assets.data?.map((a) => (
+        <AssetCard key={a.id} asset={a} onChange={invalidate} onError={fail} />
+      ))}
+    </div>
+  );
+}
+
+function NewAssetForm({ onCreated, onError }: { onCreated: () => void; onError: (e: unknown) => void }) {
+  const [name, setName] = useState("");
+  const [kind, setKind] = useState("car");
+  const [identifier, setIdentifier] = useState("");
+  const [unit, setUnit] = useState("mi");
+  const create = useMutation({
+    mutationFn: () =>
+      createAsset({ name, kind, identifier: identifier || undefined, distance_unit: unit }),
+    onSuccess: () => { setName(""); setIdentifier(""); onCreated(); },
+    onError,
+  });
+  return (
+    <form
+      className="form-row"
+      style={{ flexWrap: "wrap" }}
+      onSubmit={(e) => { e.preventDefault(); if (name) create.mutate(); }}
+    >
+      <input placeholder="Name (e.g. Family car)" value={name} onChange={(e) => setName(e.target.value)} />
+      <select value={kind} onChange={(e) => setKind(e.target.value)}>
+        <option value="car">Car</option>
+        <option value="home">Home</option>
+        <option value="other">Other</option>
+      </select>
+      <input
+        placeholder={kind === "car" ? "Reg / model (optional)" : "Label (optional)"}
+        value={identifier}
+        onChange={(e) => setIdentifier(e.target.value)}
+      />
+      {kind === "car" && (
+        <select value={unit} onChange={(e) => setUnit(e.target.value)} title="Odometer unit">
+          <option value="mi">miles</option>
+          <option value="km">km</option>
+        </select>
+      )}
+      <button className="btn" type="submit" disabled={!name || create.isPending}>
+        {create.isPending ? "Adding…" : "Add asset"}
+      </button>
+    </form>
+  );
+}
+
+function AssetCard({ asset, onChange, onError }: { asset: Asset; onChange: () => void; onError: (e: unknown) => void }) {
+  const [open, setOpen] = useState(false);
+  const qc = useQueryClient();
+  const detail = useQuery({
+    queryKey: ["asset", asset.id],
+    queryFn: () => getAsset(asset.id),
+    enabled: open,
+  });
+  const refresh = () => { onChange(); qc.invalidateQueries({ queryKey: ["asset", asset.id] }); };
+
+  const remove = useMutation({
+    mutationFn: () => deleteAsset(asset.id),
+    onSuccess: onChange,
+    onError,
+  });
+
+  const car = asset.car;
+  return (
+    <div className="card">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+        <div>
+          <button className="link-btn" style={{ fontWeight: 700, fontSize: "1.05rem" }} onClick={() => setOpen((v) => !v)}>
+            {open ? "▾ " : "▸ "}{KIND_ICON[asset.kind] ?? "📦"} {asset.name}
+          </button>
+          {asset.identifier && <span className="muted"> · {asset.identifier}</span>}
+          <div className="muted" style={{ fontSize: "0.85rem", marginTop: 2 }}>
+            {car && car.avg_mpg != null ? <>≈ {car.avg_mpg} MPG · {car.avg_l_per_100km} L/100km · </> : null}
+            Total cost {gbp(asset.total_cost)}
+            {car && car.latest_odometer && <> · {car.latest_odometer} {car.distance_unit}</>}
+          </div>
+        </div>
+        <button
+          className="link-btn"
+          onClick={() => { if (window.confirm(`Delete "${asset.name}" and all its logs?`)) remove.mutate(); }}
+        >
+          ✕
+        </button>
+      </div>
+
+      {open && (
+        <div style={{ marginTop: 12 }}>
+          {detail.isLoading && <p className="muted">Loading…</p>}
+          {detail.data?.kind === "car" && detail.data.car && <CarStatsPanel car={detail.data.car} />}
+          {detail.data?.kind === "car" && (
+            <RefuelForm assetId={asset.id} unit={asset.distance_unit} onAdded={refresh} onError={onError} />
+          )}
+          <EntryForm assetId={asset.id} onAdded={refresh} onError={onError} />
+          {detail.data && <LogHistory asset={detail.data} logs={detail.data.logs ?? []} onChange={refresh} onError={onError} />}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CarStatsPanel({ car }: { car: NonNullable<Asset["car"]> }) {
+  return (
+    <div className="stat-grid" style={{ marginBottom: 12 }}>
+      <Stat label="Avg economy" value={car.avg_mpg != null ? `${car.avg_mpg} MPG` : "—"} />
+      <Stat label="Avg consumption" value={car.avg_l_per_100km != null ? `${car.avg_l_per_100km} L/100km` : "—"} />
+      <Stat label="Last fill" value={car.last_mpg != null ? `${car.last_mpg} MPG` : "—"} />
+      <Stat label="Fuel cost" value={gbp(car.total_fuel_cost)} />
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="stat">
+      <div className="stat__label">{label}</div>
+      <div className="stat__value" style={{ fontSize: "1.1rem" }}>{value}</div>
+    </div>
+  );
+}
+
+function RefuelForm({ assetId, unit, onAdded, onError }: {
+  assetId: number; unit: string; onAdded: () => void; onError: (e: unknown) => void;
+}) {
+  const [date, setDate] = useState(today());
+  const [odometer, setOdometer] = useState("");
+  const [litres, setLitres] = useState("");
+  const [cost, setCost] = useState("");
+  const [fullTank, setFullTank] = useState(true);
+
+  const add = useMutation({
+    mutationFn: () =>
+      addAssetLog(assetId, {
+        log_date: date,
+        kind: "refuel",
+        odometer,
+        litres,
+        cost: cost || undefined,
+        is_full_tank: fullTank,
+      }),
+    onSuccess: () => { setOdometer(""); setLitres(""); setCost(""); onAdded(); },
+    onError,
+  });
+
+  return (
+    <form
+      className="form-row"
+      style={{ flexWrap: "wrap", gap: 6, marginBottom: 8 }}
+      onSubmit={(e) => { e.preventDefault(); if (odometer && litres) add.mutate(); }}
+    >
+      <strong style={{ alignSelf: "center", fontSize: "0.85rem" }}>⛽ Refuel:</strong>
+      <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+      <input placeholder={`Odometer (${unit})`} value={odometer} style={{ width: 120 }} onChange={(e) => setOdometer(e.target.value)} />
+      <input placeholder="Litres" value={litres} style={{ width: 80 }} onChange={(e) => setLitres(e.target.value)} />
+      <input placeholder="Cost £" value={cost} style={{ width: 80 }} onChange={(e) => setCost(e.target.value)} />
+      <label className="muted" style={{ fontSize: "0.82rem", display: "flex", alignItems: "center", gap: 4 }}>
+        <input type="checkbox" checked={fullTank} onChange={(e) => setFullTank(e.target.checked)} /> full tank
+      </label>
+      <button className="btn btn--sm" type="submit" disabled={!odometer || !litres || add.isPending}>
+        {add.isPending ? "…" : "Add"}
+      </button>
+    </form>
+  );
+}
+
+function EntryForm({ assetId, onAdded, onError }: { assetId: number; onAdded: () => void; onError: (e: unknown) => void }) {
+  const [date, setDate] = useState(today());
+  const [kind, setKind] = useState("expense");
+  const [cost, setCost] = useState("");
+  const [note, setNote] = useState("");
+
+  const add = useMutation({
+    mutationFn: () => addAssetLog(assetId, { log_date: date, kind, cost: cost || undefined, note: note || undefined }),
+    onSuccess: () => { setCost(""); setNote(""); onAdded(); },
+    onError,
+  });
+
+  return (
+    <form
+      className="form-row"
+      style={{ flexWrap: "wrap", gap: 6, marginBottom: 8 }}
+      onSubmit={(e) => { e.preventDefault(); if (cost || note) add.mutate(); }}
+    >
+      <strong style={{ alignSelf: "center", fontSize: "0.85rem" }}>🔧 Entry:</strong>
+      <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+      <select value={kind} onChange={(e) => setKind(e.target.value)}>
+        <option value="expense">Expense</option>
+        <option value="service">Service</option>
+        <option value="note">Note</option>
+      </select>
+      <input placeholder="Cost £" value={cost} style={{ width: 80 }} onChange={(e) => setCost(e.target.value)} />
+      <input placeholder="Note" value={note} style={{ flex: 1, minWidth: 140 }} onChange={(e) => setNote(e.target.value)} />
+      <button className="btn btn--sm btn--ghost" type="submit" disabled={(!cost && !note) || add.isPending}>
+        {add.isPending ? "…" : "Add"}
+      </button>
+    </form>
+  );
+}
+
+function LogHistory({ asset, logs, onChange, onError }: {
+  asset: Asset; logs: AssetLog[]; onChange: () => void; onError: (e: unknown) => void;
+}) {
+  const remove = useMutation({
+    mutationFn: (id: number) => deleteAssetLog(id),
+    onSuccess: onChange,
+    onError,
+  });
+  // Map each refuel's per-segment economy by the "to" odometer for inline display.
+  const mpgByOdo = new Map<string, number>();
+  asset.car?.segments.forEach((s) => mpgByOdo.set(s.to_odometer, s.mpg));
+
+  const rows = [...logs].reverse(); // newest first
+  if (rows.length === 0) return <p className="muted">No log entries yet.</p>;
+  return (
+    <div className="table-wrap" style={{ marginTop: 6 }}>
+      <table className="table">
+        <thead>
+          <tr><th>Date</th><th>Kind</th><th>Detail</th><th>Cost</th><th></th></tr>
+        </thead>
+        <tbody>
+          {rows.map((lg) => {
+            const mpg = lg.odometer != null ? mpgByOdo.get(lg.odometer) : undefined;
+            return (
+              <tr key={lg.id}>
+                <td style={{ whiteSpace: "nowrap" }}>{lg.log_date}</td>
+                <td>{lg.kind}</td>
+                <td>
+                  {lg.kind === "refuel" ? (
+                    <>
+                      {lg.odometer} · {lg.litres} L
+                      {lg.is_full_tank === false && <span className="muted"> · partial</span>}
+                      {mpg != null && <span className="amt--pos"> · {mpg} MPG</span>}
+                    </>
+                  ) : (
+                    lg.note ?? <span className="muted">—</span>
+                  )}
+                </td>
+                <td style={{ whiteSpace: "nowrap" }}>{lg.cost != null ? gbp(lg.cost) : "—"}</td>
+                <td>
+                  <button className="link-btn" onClick={() => { if (window.confirm("Delete this entry?")) remove.mutate(lg.id); }}>✕</button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
