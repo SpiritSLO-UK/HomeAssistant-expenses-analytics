@@ -25,7 +25,7 @@ class Transaction(Base, TimestampMixin):
         ForeignKey("households.id", ondelete="CASCADE"), nullable=True
     )
     account_id: Mapped[int | None] = mapped_column(
-        ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True
+        ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True, index=True
     )
     statement_id: Mapped[int | None] = mapped_column(
         ForeignKey("statements.id", ondelete="SET NULL"), nullable=True
@@ -38,7 +38,7 @@ class Transaction(Base, TimestampMixin):
     description_raw: Mapped[str] = mapped_column(Text, nullable=False)
     merchant_raw: Mapped[str | None] = mapped_column(String(300), nullable=True)
     merchant_id: Mapped[int | None] = mapped_column(
-        ForeignKey("vendors.id", ondelete="SET NULL"), nullable=True
+        ForeignKey("vendors.id", ondelete="SET NULL"), nullable=True, index=True
     )
 
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
@@ -47,10 +47,10 @@ class Transaction(Base, TimestampMixin):
     direction: Mapped[str] = mapped_column(String(8), nullable=False)
 
     category_id: Mapped[int | None] = mapped_column(
-        ForeignKey("categories.id", ondelete="SET NULL"), nullable=True
+        ForeignKey("categories.id", ondelete="SET NULL"), nullable=True, index=True
     )
     project_id: Mapped[int | None] = mapped_column(
-        ForeignKey("projects.id", ondelete="SET NULL"), nullable=True
+        ForeignKey("projects.id", ondelete="SET NULL"), nullable=True, index=True
     )
 
     is_split: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -81,7 +81,7 @@ class Transaction(Base, TimestampMixin):
     # Set by the retention engine (backlog #78): archived transactions are hidden
     # from every aggregate and the default list (kept until a later purge). NULL =
     # active. Excluded via services/scope.archived_condition.
-    archived_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
 
     splits: Mapped[list[TransactionSplit]] = relationship(
         back_populates="transaction", cascade="all, delete-orphan"
@@ -94,13 +94,13 @@ class TransactionSplit(Base, TimestampMixin):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     transaction_id: Mapped[int] = mapped_column(
-        ForeignKey("transactions.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("transactions.id", ondelete="CASCADE"), nullable=False, index=True
     )
     category_id: Mapped[int | None] = mapped_column(
-        ForeignKey("categories.id", ondelete="SET NULL"), nullable=True
+        ForeignKey("categories.id", ondelete="SET NULL"), nullable=True, index=True
     )
     project_id: Mapped[int | None] = mapped_column(
-        ForeignKey("projects.id", ondelete="SET NULL"), nullable=True
+        ForeignKey("projects.id", ondelete="SET NULL"), nullable=True, index=True
     )
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     description: Mapped[str | None] = mapped_column(String(300), nullable=True)
