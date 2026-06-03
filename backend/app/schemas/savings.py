@@ -21,11 +21,25 @@ class SavingsAccountOut(BaseModel):
     currency: str
     latest_balance: str | None
     balance_count: int
+    interest_rate: str | None = None
+    projected_annual_interest: str | None = None
+
+
+class SavingsAccountUpdate(BaseModel):
+    interest_rate: Decimal | None = None
 
 
 class BalanceCreate(BaseModel):
     as_of_date: date
     balance: Decimal
+    note: str | None = None
+
+
+class BalanceAdjust(BaseModel):
+    """A deposit/withdraw delta applied to the latest balance (the +/- control)."""
+
+    amount: Decimal = Field(gt=0)
+    direction: str = "deposit"  # deposit | withdraw
     note: str | None = None
 
 

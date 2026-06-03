@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.models import SavingsGoal
 from app.schemas.savings import (
+    BalanceAdjust,
     BalanceCreate,
     BalanceOut,
     GoalCreate,
@@ -15,6 +16,7 @@ from app.schemas.savings import (
     GoalUpdate,
     SavingsAccountCreate,
     SavingsAccountOut,
+    SavingsAccountUpdate,
     SavingsSummary,
 )
 from app.services import auth_service, savings_service
@@ -52,6 +54,36 @@ def create_account(payload: SavingsAccountCreate, db: Session = Depends(get_db))
         db, name=payload.name, institution=payload.institution, currency=payload.currency
     )
     return savings_service.account_to_dict(db, account)
+
+
+@router.patch("/accounts/{account_id}", response_model=SavingsAccountOut)
+def update_account(
+    account_id: int, payload: SavingsAccountUpdate, request: Request, db: Session = Depends(get_db)
+) -> dict:
+    """Edit a savings account (currently the interest rate)."""
+    _require_visible(request, db, account_id)
+    fields = payload.model_dump(exclude_unset=True)
+    try:
+        if "interest_rate" in fields:
+            savings_service.set_interest_rate(db, account_id, fields["interest_rate"])
+        account = savings_service.get_savings_account(db, account_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return savings_service.account_to_dict(db, account)
+
+
+@router.post("/accounts/{account_id}/adjust", response_model=BalanceOut, status_code=201)
+def adjust_balance(account_id: int, payload: BalanceAdjust, request: Request, db: Session = Depends(get_db)):
+    """Deposit or withdraw via the +/- control — records a new snapshot at
+    latest ± amount."""
+    _require_visible(request, db, account_id)
+    if payload.direction not in ("deposit", "withdraw"):
+        raise HTTPException(status_code=400, detail="direction must be 'deposit' or 'withdraw'")
+    delta = payload.amount if payload.direction == "deposit" else -payload.amount
+    try:
+        return savings_service.adjust_balance(db, account_id, delta=delta, note=payload.note)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/accounts/{account_id}/balances", response_model=list[BalanceOut])

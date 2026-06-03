@@ -45,6 +45,39 @@ def test_total_sums_all_savings_accounts(client):
     assert Decimal(client.get("/api/savings/summary").json()["total_savings"]) == Decimal("3500")
 
 
+def test_deposit_and_withdraw_adjust_latest_balance(client):
+    aid = _account(client)
+    _add_balance(client, aid, "2026-01-31", "1000")
+
+    dep = client.post(f"/api/savings/accounts/{aid}/adjust", json={"amount": "250", "direction": "deposit"})
+    assert dep.status_code == 201
+    assert Decimal(dep.json()["balance"]) == Decimal("1250.00")
+
+    wd = client.post(f"/api/savings/accounts/{aid}/adjust", json={"amount": "100", "direction": "withdraw"})
+    assert Decimal(wd.json()["balance"]) == Decimal("1150.00")
+
+    assert Decimal(client.get("/api/savings/summary").json()["total_savings"]) == Decimal("1150.00")
+    # A bad direction is rejected.
+    assert client.post(f"/api/savings/accounts/{aid}/adjust", json={"amount": "5", "direction": "sideways"}).status_code == 400
+
+
+def test_interest_rate_and_projection(client):
+    aid = _account(client)
+    _add_balance(client, aid, "2026-01-31", "2000")
+
+    patched = client.patch(f"/api/savings/accounts/{aid}", json={"interest_rate": "4.5"})
+    assert patched.status_code == 200
+    acct = next(a for a in client.get("/api/savings/summary").json()["accounts"] if a["id"] == aid)
+    assert Decimal(acct["interest_rate"]) == Decimal("4.5")
+    assert Decimal(acct["projected_annual_interest"]) == Decimal("90.00")  # 2000 * 4.5%
+
+    # Clearing the rate drops the projection.
+    client.patch(f"/api/savings/accounts/{aid}", json={"interest_rate": None})
+    acct = next(a for a in client.get("/api/savings/summary").json()["accounts"] if a["id"] == aid)
+    assert acct["interest_rate"] is None
+    assert acct["projected_annual_interest"] is None
+
+
 def test_goal_linked_to_account_tracks_balance(client):
     aid = _account(client)
     _add_balance(client, aid, "2026-01-31", "500")

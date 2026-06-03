@@ -64,6 +64,26 @@ def get_savings_account(db: Session, account_id: int) -> Account:
 # --- Balance snapshots -------------------------------------------------------
 
 
+def adjust_balance(db: Session, account_id: int, *, delta: Decimal,
+                   note: str | None = None) -> SavingsBalance:
+    """Deposit (positive delta) or withdraw (negative) by recording a new balance
+    snapshot for today at ``latest + delta``. Reuses the snapshot history so the
+    +/- control and manual balances live in one timeline."""
+    current = latest_balance(db, account_id) or Decimal("0")
+    new_balance = (current + Decimal(delta)).quantize(TWO_DP)
+    return record_balance(db, account_id, as_of=date.today(), balance=new_balance, note=note)
+
+
+def set_interest_rate(db: Session, account_id: int, rate: Decimal | None) -> Account:
+    account = get_savings_account(db, account_id)
+    account.interest_rate = (
+        Decimal(rate).quantize(Decimal("0.001")) if rate is not None else None
+    )
+    db.commit()
+    db.refresh(account)
+    return account
+
+
 def record_balance(db: Session, account_id: int, *, as_of: date, balance: Decimal,
                    note: str | None = None) -> SavingsBalance:
     account = get_savings_account(db, account_id)
@@ -114,13 +134,21 @@ def total_savings(
 
 def account_to_dict(db: Session, account: Account) -> dict:
     history = balance_history(db, account.id)
+    latest = latest_balance(db, account.id) if history else None
+    rate = Decimal(account.interest_rate) if account.interest_rate is not None else None
+    # Simple projection: one year of interest at the current balance + rate.
+    projected = (
+        (latest * rate / 100).quantize(TWO_DP) if latest is not None and rate is not None else None
+    )
     return {
         "id": account.id,
         "name": account.name,
         "institution": account.institution,
         "currency": account.currency,
-        "latest_balance": str(latest_balance(db, account.id)) if history else None,
+        "latest_balance": str(latest) if latest is not None else None,
         "balance_count": len(history),
+        "interest_rate": str(rate) if rate is not None else None,
+        "projected_annual_interest": str(projected) if projected is not None else None,
     }
 
 
