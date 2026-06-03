@@ -243,6 +243,12 @@ foreign-currency **trips** (so the **Travel** page populates) and a few
 VAT). Open the **Dashboard**, then explore **Transactions**, **Travel** and
 **Business**; the **Trends** card shows the month-on-month shape.
 
+Done exploring? **Settings → Remove demo data** (owner-only) deletes everything the
+demo seeded — its transactions, example projects/budgets/savings, demo members,
+vendors and review items — leaving a clean database. It removes **only** the
+demo's own rows (tracked from when it was loaded), so any real statements you have
+imported and anything you added yourself are left untouched.
+
 ## Testing
 
 ```bash

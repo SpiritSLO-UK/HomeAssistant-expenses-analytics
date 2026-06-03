@@ -24,14 +24,29 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from app.models import Account, Budget, Category, Project, Rule, Transaction, User, Vendor, VendorAlias
+from app.models import (
+    Account,
+    Budget,
+    Category,
+    ChildAllocation,
+    Project,
+    ReviewItem,
+    Rule,
+    SavingsGoal,
+    Statement,
+    Transaction,
+    User,
+    Vendor,
+    VendorAlias,
+)
 from app.services import (
     allowance_service,
     fx_service,
@@ -550,10 +565,48 @@ def _seed_examples(db: Session, statement_id: int) -> None:
     db.commit()
 
 
+# --- Demo manifest (so "Remove demo data" deletes exactly what a load made) ---
+# Tables whose *new* rows are captured by a before/after id diff during a load.
+# Transactions aren't listed — they're derived from the demo statements at removal
+# time. Savings accounts are regular Accounts, so they ride the "accounts" key.
+_MANIFEST_MODELS: dict[str, type] = {
+    "statements": Statement,
+    "accounts": Account,
+    "vendors": Vendor,
+    "rules": Rule,
+    "projects": Project,
+    "budgets": Budget,
+    "savings_goals": SavingsGoal,
+    "users": User,
+}
+
+
+def _snapshot_ids(db: Session) -> dict[str, set[int]]:
+    """The current set of ids in each manifest table (used to diff a load)."""
+    return {
+        name: set(db.scalars(select(model.id)).all())
+        for name, model in _MANIFEST_MODELS.items()
+    }
+
+
+def _record_manifest(db: Session, before: dict[str, set[int]], after: dict[str, set[int]]) -> None:
+    """Persist the rows this load created, merged with any prior manifest, so a
+    later "Remove demo data" deletes only the demo's own rows (never a real import
+    or anything the user added afterwards). Pre-existing rows are in ``before`` and
+    so are never captured."""
+    raw = settings_service.get(db, settings_service.DEMO_MANIFEST)
+    manifest: dict[str, list[int]] = json.loads(raw) if raw else {}
+    for name in _MANIFEST_MODELS:
+        created = after[name] - before[name]
+        manifest[name] = sorted(set(manifest.get(name, [])) | created)
+    settings_service.set_value(db, settings_service.DEMO_MANIFEST, json.dumps(manifest))
+
+
 def load_demo(db: Session) -> dict:
     """Import + enrich the demo dataset, then seed an example of each feature.
     Idempotent within a day (duplicates are skipped); returns the import report."""
     today = date.today()
+    before = _snapshot_ids(db)
     specs = _build_specs()
     csv_text = _build_csv(today, specs)
 
@@ -577,6 +630,9 @@ def load_demo(db: Session) -> dict:
         for key in ("rows_detected", "new", "duplicates", "errors"):
             report[key] = report.get(key, 0) + member_report.get(key, 0)
 
+    # Record exactly what this load created so "Remove demo data" can undo it.
+    _record_manifest(db, before, _snapshot_ids(db))
+
     # Demo defaults to DEBUG logging so there's something to see in the Logs/
     # add-on panel while exploring (reversible from Settings → Logging).
     from app.logging import set_level
@@ -584,3 +640,109 @@ def load_demo(db: Session) -> dict:
     settings_service.set_value(db, settings_service.LOG_LEVEL, "DEBUG")
     set_level("DEBUG")
     return report
+
+
+def has_demo_data(db: Session) -> bool:
+    """True when a manifest from a previous load is present (something to remove)."""
+    return bool(settings_service.get(db, settings_service.DEMO_MANIFEST))
+
+
+def remove_demo(db: Session) -> dict:
+    """Delete everything a previous :func:`load_demo` created, using the recorded
+    manifest of row ids — so only demo rows go, never a real import or anything the
+    user added afterwards. Shared entities (accounts, vendors) are removed only when
+    nothing outside the demo still references them. Manual FX rates seeded for the
+    demo's foreign rows are left in place (harmless, and they help real foreign
+    spend on the same dates). Idempotent: with no manifest there is nothing to do."""
+    raw = settings_service.get(db, settings_service.DEMO_MANIFEST)
+    if not raw:
+        return {"removed": False, "counts": {}}
+    manifest: dict[str, list[int]] = json.loads(raw)
+    counts: dict[str, int] = {}
+
+    def _bulk_delete(model: type, ids: list[int]) -> int:
+        if not ids:
+            return 0
+        stmt = delete(model).where(model.id.in_(ids)).execution_options(synchronize_session=False)
+        return db.execute(stmt).rowcount or 0
+
+    # 1. Transactions on the demo statements (derived — not stored in the manifest).
+    stmt_ids = manifest.get("statements", [])
+    txn_ids = (
+        list(db.scalars(select(Transaction.id).where(Transaction.statement_id.in_(stmt_ids))).all())
+        if stmt_ids
+        else []
+    )
+    if txn_ids:
+        # Review items reference transactions by plain id (no FK) — drop them first.
+        counts["review_items"] = db.execute(
+            delete(ReviewItem)
+            .where(ReviewItem.item_type == "transaction", ReviewItem.item_id.in_(txn_ids))
+            .execution_options(synchronize_session=False)
+        ).rowcount or 0
+        # Allowance allocations drawn from these transactions (also cascade when the
+        # demo child is deleted; cleared here so no non-demo child can dangle).
+        db.execute(
+            delete(ChildAllocation)
+            .where(ChildAllocation.transaction_id.in_(txn_ids))
+            .execution_options(synchronize_session=False)
+        )
+        # Transactions: splits / receipt-matches / tag links cascade (FK ON DELETE).
+        counts["transactions"] = _bulk_delete(Transaction, txn_ids)
+    counts["statements"] = _bulk_delete(Statement, stmt_ids)
+
+    # 2. Savings goals (before any savings account they point at), then the uniquely
+    #    demo budgets / projects / rules.
+    counts["savings_goals"] = _bulk_delete(SavingsGoal, manifest.get("savings_goals", []))
+    counts["budgets"] = _bulk_delete(Budget, manifest.get("budgets", []))
+    counts["projects"] = _bulk_delete(Project, manifest.get("projects", []))
+    counts["rules"] = _bulk_delete(Rule, manifest.get("rules", []))
+
+    # 3. Accounts (Curve / Sam's Card / Emergency Fund) — only when no transaction
+    #    is left on them, so an account a real import also used is kept. Savings
+    #    balance snapshots cascade (FK ON DELETE).
+    removed_accounts = 0
+    for acc_id in manifest.get("accounts", []):
+        account = db.get(Account, acc_id)
+        if account is None:
+            continue
+        if db.scalar(select(func.count()).select_from(Transaction).where(Transaction.account_id == acc_id)):
+            continue
+        db.delete(account)
+        removed_accounts += 1
+    counts["accounts"] = removed_accounts
+
+    # 4. Vendors — only those no surviving transaction still links to (demo txns are
+    #    gone, so demo vendors are now unreferenced). Aliases cascade (FK ON DELETE).
+    removed_vendors = 0
+    for v_id in manifest.get("vendors", []):
+        vendor = db.get(Vendor, v_id)
+        if vendor is None:
+            continue
+        if db.scalar(select(func.count()).select_from(Transaction).where(Transaction.merchant_id == v_id)):
+            continue
+        db.delete(vendor)
+        removed_vendors += 1
+    counts["vendors"] = removed_vendors
+
+    # 5. Demo users last (cascades any remaining allocations; owned accounts/budgets
+    #    were handled above and otherwise FK SET NULL).
+    removed_users = 0
+    for u_id in manifest.get("users", []):
+        user = db.get(User, u_id)
+        if user is None:
+            continue
+        db.delete(user)
+        removed_users += 1
+    counts["users"] = removed_users
+
+    # The manifest is spent; clear it and undo the demo's DEBUG logging default.
+    from app.logging import set_level
+
+    settings_service.set_value(db, settings_service.DEMO_MANIFEST, "")
+    default_level = settings_service._defaults()[settings_service.LOG_LEVEL]
+    settings_service.set_value(db, settings_service.LOG_LEVEL, default_level)
+    set_level(default_level)
+
+    db.commit()
+    return {"removed": True, "counts": counts}
