@@ -1390,6 +1390,28 @@ export interface CarStats {
   segments: CarSegment[];
 }
 
+export interface MeterSegment {
+  date: string;
+  usage: string;
+  days: number;
+  avg_per_day: number | null;
+  cost: string | null;
+}
+
+export interface MeterStats {
+  meter: string;
+  unit: string | null;
+  latest_reading: string;
+  reading_count: number;
+  total_usage: string;
+  total_cost: string;
+  segments: MeterSegment[];
+}
+
+export interface HomeStats {
+  meters: MeterStats[];
+}
+
 export interface AssetLog {
   id: number;
   asset_id: number;
@@ -1417,6 +1439,7 @@ export interface Asset {
   log_count: number;
   total_cost: string;
   car?: CarStats;
+  home?: HomeStats;
   logs?: AssetLog[];
 }
 

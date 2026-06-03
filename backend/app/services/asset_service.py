@@ -226,6 +226,54 @@ def car_stats(db: Session, asset: Asset, logs: list[AssetLog] | None = None) -> 
     }
 
 
+# --- Home utility readings ---------------------------------------------------
+
+
+def home_stats(db: Session, asset: Asset, logs: list[AssetLog] | None = None) -> dict:
+    """Per-meter usage for a home, computed between consecutive readings of the
+    same meter (electricity/gas/water…). A meter reset/rollover (usage < 0) is
+    skipped rather than counted as huge negative consumption."""
+    logs = logs if logs is not None else list_logs(db, asset.id)
+    readings = [
+        lg for lg in logs if lg.kind == "reading" and lg.meter and lg.reading is not None
+    ]
+    by_meter: dict[str, list[AssetLog]] = {}
+    for lg in sorted(readings, key=lambda lg: (lg.log_date, lg.id)):
+        by_meter.setdefault(lg.meter, []).append(lg)
+
+    meters = []
+    for meter, rs in by_meter.items():
+        unit = next((r.unit for r in rs if r.unit), None)
+        segments = []
+        total_usage = Decimal("0")
+        total_cost = Decimal("0")
+        for prev, cur in zip(rs, rs[1:], strict=False):
+            usage = Decimal(cur.reading) - Decimal(prev.reading)
+            if usage < 0:  # meter reset / new meter — don't count
+                continue
+            days = (cur.log_date - prev.log_date).days
+            total_usage += usage
+            if cur.cost is not None:
+                total_cost += Decimal(cur.cost)
+            segments.append({
+                "date": cur.log_date.isoformat(),
+                "usage": str(usage),
+                "days": days,
+                "avg_per_day": round(float(usage / days), 3) if days > 0 else None,
+                "cost": str(cur.cost) if cur.cost is not None else None,
+            })
+        meters.append({
+            "meter": meter,
+            "unit": unit,
+            "latest_reading": str(rs[-1].reading),
+            "reading_count": len(rs),
+            "total_usage": str(total_usage),
+            "total_cost": str(total_cost.quantize(TWO_DP)),
+            "segments": segments,
+        })
+    return {"meters": meters}
+
+
 def asset_to_dict(db: Session, asset: Asset, *, with_logs: bool = False) -> dict:
     logs = list_logs(db, asset.id)
     total_cost = sum(
@@ -243,6 +291,8 @@ def asset_to_dict(db: Session, asset: Asset, *, with_logs: bool = False) -> dict
     }
     if asset.kind == "car":
         out["car"] = car_stats(db, asset, logs)
+    if asset.kind == "home":
+        out["home"] = home_stats(db, asset, logs)
     if with_logs:
         out["logs"] = [log_to_dict(lg) for lg in logs]
     return out
