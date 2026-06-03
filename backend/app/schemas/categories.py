@@ -45,3 +45,7 @@ class CategoryUpdate(BaseModel):
 
 class CategoryMerge(BaseModel):
     target_id: int  # the category to merge this one into (it absorbs all references)
+
+
+class CategoryPrivacyLevel(BaseModel):
+    level: str  # one of category_service.PRIVACY_LEVELS — applied to every category

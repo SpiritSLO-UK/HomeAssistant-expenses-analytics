@@ -44,6 +44,9 @@ Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md
   cloud-AI privacy level, **delete** one (its transactions fall back to
   uncategorised) or **merge** one into another. This now includes the built-in
   library categories; deleted built-ins can be restored with "Import library".
+  Set the **cloud-AI privacy level for every category at once** (it also becomes
+  the default new categories inherit), with per-category fine-tuning behind an
+  "Advanced" toggle.
 - **Split** a transaction across several categories/projects; the dashboard uses
   the split parts.
 - **Projects & tags** — collect spend toward a goal (renovation, holiday, car)

@@ -891,6 +891,14 @@ export function mergeCategory(id: number, targetId: number): Promise<Category> {
   });
 }
 
+export function getCategoryPrivacyDefault(): Promise<{ level: string }> {
+  return fetchJson("api/categories/privacy");
+}
+
+export function setAllCategoryPrivacy(level: string): Promise<{ updated: number; level: string }> {
+  return fetchJson("api/categories/privacy", { method: "POST", body: JSON.stringify({ level }) });
+}
+
 // --- Vendors (spec §24.6) ---
 
 export interface VendorAlias {

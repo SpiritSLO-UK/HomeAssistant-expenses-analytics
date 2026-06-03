@@ -3,8 +3,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createCategory,
   deleteCategory,
+  getCategoryPrivacyDefault,
   listCategories,
   mergeCategory,
+  setAllCategoryPrivacy,
   updateCategory,
   type Category,
 } from "../api/client";
@@ -24,6 +26,19 @@ export default function Categories() {
   const [colour, setColour] = useState("#4CAF50");
   const [mergeSource, setMergeSource] = useState("");
   const [mergeTarget, setMergeTarget] = useState("");
+  const [advanced, setAdvanced] = useState(false);
+
+  const privacyDefault = useQuery({ queryKey: ["category-privacy"], queryFn: getCategoryPrivacyDefault });
+
+  // One cloud-AI privacy level applied to every category at once (#28); the
+  // per-category fine-tuning lives behind the "Advanced" reveal below.
+  const applyPrivacy = useMutation({
+    mutationFn: (level: string) => setAllCategoryPrivacy(level),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["categories"] });
+      qc.invalidateQueries({ queryKey: ["category-privacy"] });
+    },
+  });
 
   const create = useMutation({
     mutationFn: () => createCategory({ name, colour }),
@@ -125,6 +140,39 @@ export default function Categories() {
       </div>
 
       <div className="card">
+        <h2 className="card__title">Cloud-AI privacy</h2>
+        <p className="muted" style={{ marginTop: 0, fontSize: "0.85rem" }}>
+          Set one level for every category in one go — you don't have to configure each. Fine-tune
+          individual categories with “Advanced” below. AI is off by default regardless.
+        </p>
+        <div className="form-row" style={{ alignItems: "center", flexWrap: "wrap" }}>
+          <span className="muted">Apply to all:</span>
+          {PRIVACY_OPTIONS.map((o) => (
+            <button
+              key={o.value}
+              className={"btn btn--sm" + (privacyDefault.data?.level === o.value ? "" : " btn--ghost")}
+              disabled={applyPrivacy.isPending}
+              onClick={() => {
+                if (
+                  window.confirm(
+                    `Set every category to “${o.label}”? This overwrites any per-category choices.`,
+                  )
+                ) {
+                  applyPrivacy.mutate(o.value);
+                }
+              }}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+        <label className="checkbox" style={{ marginTop: 10 }}>
+          <input type="checkbox" checked={advanced} onChange={(e) => setAdvanced(e.target.checked)} />{" "}
+          Advanced — set the level per category
+        </label>
+      </div>
+
+      <div className="card">
         <h2 className="card__title">Category library ({cats.length})</h2>
         {isLoading && <p className="muted">Loading…</p>}
         <div className="chips">
@@ -132,16 +180,18 @@ export default function Categories() {
             <span key={c.id} className="chip">
               <span className="chip__dot" style={{ background: c.colour ?? "#bbb" }} />
               {c.name}
-              <select
-                className="chip__priv"
-                value={c.privacy_sensitivity}
-                title="What this category may send to cloud AI — pick 🔒 never cloud to keep it fully on-device"
-                onChange={(e) => setPrivacy.mutate({ id: c.id, level: e.target.value })}
-              >
-                {PRIVACY_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
+              {advanced && (
+                <select
+                  className="chip__priv"
+                  value={c.privacy_sensitivity}
+                  title="What this category may send to cloud AI — pick 🔒 never cloud to keep it fully on-device"
+                  onChange={(e) => setPrivacy.mutate({ id: c.id, level: e.target.value })}
+                >
+                  {PRIVACY_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+              )}
               <button
                 className="chip__x"
                 title={c.is_system ? "Delete (built-in)" : "Delete"}
