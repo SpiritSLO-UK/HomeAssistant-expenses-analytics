@@ -5,17 +5,23 @@ import Sparkline from "../components/Sparkline";
 import {
   exportCategoriesCsv,
   exportMonthlyCsv,
+  getAllowanceSummary,
+  getBudgetSummary,
+  getBusinessSummary,
   getCategoryBreakdown,
   getDashboardProjects,
   getMe,
   getMonthlySeries,
   getOutliers,
   getProcessingStats,
+  getSavingsSummary,
   getSecurityHealth,
   getSummary,
+  getTravelTrips,
   getVendorBreakdown,
   listAccounts,
   listMembers,
+  type Member,
   type MonthlyPoint,
   type TrendMetric,
 } from "../api/client";
@@ -38,6 +44,11 @@ const OPTIONAL_CARDS: { key: string; label: string }[] = [
   { key: "categories", label: "Spending by category" },
   { key: "vendors", label: "Top vendors" },
   { key: "projects", label: "By project" },
+  { key: "savings", label: "Savings" },
+  { key: "budgets", label: "Budgets" },
+  { key: "business", label: "Business" },
+  { key: "travel", label: "Travel" },
+  { key: "allowance", label: "Allowance" },
   { key: "processing", label: "Processing" },
 ];
 
@@ -232,6 +243,16 @@ export default function Dashboard() {
 
       {show("projects") && <ProjectsCard memberId={mid} />}
 
+      {(show("savings") || show("budgets") || show("business") || show("travel") || show("allowance")) && (
+        <div className="cols cols--domain">
+          {show("savings") && <SavingsCard />}
+          {show("budgets") && <BudgetsCard monthDate={monthDate} />}
+          {show("business") && <BusinessCard />}
+          {show("travel") && <TravelCard />}
+          {show("allowance") && <AllowanceCard />}
+        </div>
+      )}
+
       {show("processing") && <ProcessingCard />}
 
       {summary.data && summary.data.uncategorised_transactions > 0 && (
@@ -273,6 +294,144 @@ function ProjectsCard({ memberId }: { memberId?: number }) {
         })}
       </ul>
     </div>
+  );
+}
+
+// --- Per-domain summary cards (#83). Each is self-contained and renders null
+// until that area has data, so the dashboard only shows domains in use. ---
+
+function CardHead({ title, to }: { title: string; to: string }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+      <h2 className="card__title" style={{ margin: 0 }}>{title}</h2>
+      <Link className="link-btn" to={to}>Open →</Link>
+    </div>
+  );
+}
+
+function SavingsCard() {
+  const q = useQuery({ queryKey: ["dash-savings"], queryFn: getSavingsSummary });
+  const s = q.data;
+  if (!s || (s.accounts.length === 0 && s.goals.length === 0)) return null;
+  const topGoal = s.goals.length ? [...s.goals].sort((a, b) => b.percent - a.percent)[0] : null;
+  return (
+    <div className="card">
+      <CardHead title="Savings" to="/savings" />
+      <ul className="kv">
+        <li><span>Total saved</span><span>{gbp(s.total_savings)}</span></li>
+        <li><span>Accounts</span><span>{s.accounts.length}</span></li>
+        {topGoal && (
+          <li><span>Top goal · {topGoal.name}</span><span>{topGoal.percent}%</span></li>
+        )}
+      </ul>
+    </div>
+  );
+}
+
+function BudgetsCard({ monthDate }: { monthDate: string }) {
+  const q = useQuery({ queryKey: ["dash-budgets", monthDate], queryFn: () => getBudgetSummary(monthDate) });
+  const items = q.data ?? [];
+  if (items.length === 0) return null;
+  const over = items.filter((b) => b.status === "over").length;
+  const near = items.filter((b) => b.status === "warn").length;
+  return (
+    <div className="card">
+      <CardHead title="Budgets" to="/budgets" />
+      <ul className="kv">
+        <li>
+          <span>Active budgets</span>
+          <span>
+            {items.length}
+            {over > 0 && <span className="status status--warn"> · {over} over</span>}
+            {near > 0 && <span className="muted"> · {near} near</span>}
+          </span>
+        </li>
+        {items.slice(0, 4).map((b) => (
+          <li key={b.budget_id}>
+            <span>{b.name}</span>
+            <span>
+              {gbp(b.spent)} <span className="muted">/ {gbp(b.amount)} · {b.percent}%</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function BusinessCard() {
+  const q = useQuery({ queryKey: ["dash-business"], queryFn: () => getBusinessSummary("month") });
+  const s = q.data;
+  if (!s || s.transaction_count === 0) return null;
+  return (
+    <div className="card">
+      <CardHead title="Business" to="/business" />
+      <ul className="kv">
+        <li><span>Business spend</span><span>{gbp(s.total)}</span></li>
+        <li><span>Reclaimable VAT</span><span>{gbp(s.vat)}</span></li>
+        <li><span>Transactions</span><span>{s.transaction_count}</span></li>
+      </ul>
+    </div>
+  );
+}
+
+function TravelCard() {
+  const q = useQuery({ queryKey: ["dash-travel"], queryFn: () => getTravelTrips() });
+  const trips = q.data ?? [];
+  if (trips.length === 0) return null;
+  const total = trips.reduce((sum, t) => sum + Number(t.base_total), 0);
+  return (
+    <div className="card">
+      <CardHead title="Travel" to="/travel" />
+      <ul className="kv">
+        <li><span>Trips</span><span>{trips.length}</span></li>
+        <li><span>Spend abroad</span><span>{gbp(String(total))}</span></li>
+        {trips.slice(0, 3).map((t) => (
+          <li key={t.transaction_ids[0] ?? t.label}>
+            <span>{t.label}</span>
+            <span>{gbp(t.base_total)}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function AllowanceCard() {
+  const members = useQuery({ queryKey: ["members"], queryFn: listMembers });
+  const children = (members.data ?? []).filter((m) => m.role === "child");
+  if (children.length === 0) return null;
+  return (
+    <div className="card">
+      <CardHead title="Allowance" to="/allowance" />
+      <ul className="kv">
+        {children.map((c) => (
+          <ChildAllowanceRow key={c.id} child={c} />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ChildAllowanceRow({ child }: { child: Member }) {
+  const q = useQuery({ queryKey: ["dash-allowance", child.id], queryFn: () => getAllowanceSummary(child.id) });
+  const s = q.data;
+  const budget = s?.budgets[0];
+  return (
+    <li>
+      <span>{child.display_name}</span>
+      <span>
+        {budget ? (
+          <>
+            {gbp(budget.spent)} <span className="muted">/ {gbp(budget.amount)}</span>
+          </>
+        ) : s ? (
+          <span className="muted">{s.items.length} item(s)</span>
+        ) : (
+          <span className="muted">…</span>
+        )}
+      </span>
+    </li>
   );
 }
 

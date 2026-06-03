@@ -115,7 +115,12 @@ Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md
   BOM so they open cleanly in Excel.
 - **Customisable dashboard** — a **⚙ Customise** toggle lets you show/hide the
   optional cards (Heads-up, Trends, Spending by category, Top vendors, By project,
-  Processing); the choice is remembered on your device.
+  Savings, Budgets, Business, Travel, Allowance, Processing); the choice is
+  remembered on your device.
+- **Domain summary cards** — compact per-area cards (Savings, Budgets, Business,
+  Travel, Allowance) appear on the dashboard only when that area has data, each
+  toggleable and linking through to its full page — so the dashboard reflects
+  exactly the features you actually use.
 - **Processing card** — a pipeline-status snapshot: statements and transactions
   imported, receipt OCR progress, and how many enrichment calls went through AI
   (cloud vs local) with the average AI turnaround — so you can see at a glance how
