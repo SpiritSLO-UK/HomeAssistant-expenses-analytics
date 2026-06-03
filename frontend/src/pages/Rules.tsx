@@ -34,6 +34,7 @@ export default function Rules() {
   const [actionValue, setActionValue] = useState("");
   const [priority, setPriority] = useState(150);
   const [test, setTest] = useState<RuleTestResult | null>(null);
+  const [help, setHelp] = useState(false);
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["rules"] });
@@ -85,7 +86,14 @@ export default function Rules() {
 
   return (
     <div className="page">
-      <h1 className="page__title">Rules</h1>
+      <div className="page__head">
+        <h1 className="page__title">Rules</h1>
+        <button className="btn btn--ghost" onClick={() => setHelp((v) => !v)}>
+          {help ? "Hide help" : "❔ How rules work"}
+        </button>
+      </div>
+
+      {help && <RulesHelp />}
 
       <div className="card">
         <h2 className="card__title">New rule</h2>
@@ -180,6 +188,74 @@ export default function Rules() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+const CONDITION_HELP: { type: string; what: string; example: string }[] = [
+  { type: "description_contains", what: "text anywhere in the raw description (case-insensitive)", example: "NETFLIX" },
+  { type: "merchant_contains", what: "text in the cleaned-up merchant name", example: "TFL" },
+  { type: "vendor_equals", what: "a specific vendor you've set up", example: "(pick a vendor)" },
+  { type: "account_equals", what: "transactions on one account", example: "(an account id)" },
+  { type: "category_equals", what: "transactions already in a category — handy to re-route", example: "(a category id)" },
+  { type: "amount_equals", what: "an exact amount (spend is negative)", example: "-9.99" },
+  { type: "amount_between", what: "a low,high range (signed)", example: "-100,-10" },
+];
+
+const ACTION_HELP: { type: string; what: string }[] = [
+  { type: "set_category", what: "put the transaction in a category" },
+  { type: "set_vendor", what: "tag it with a vendor" },
+  { type: "set_project", what: "assign it to a project" },
+  { type: "mark_transfer", what: "flag it as a transfer (excluded from spend)" },
+  { type: "mark_income", what: "flag it as income" },
+  { type: "mark_subscription", what: "flag it as a recurring subscription" },
+  { type: "require_review", what: "send it to the Review Queue to check" },
+  { type: "block_cloud_ai", what: "never send this transaction to a cloud AI" },
+];
+
+function RulesHelp() {
+  return (
+    <div className="card" style={{ borderLeft: "3px solid var(--sidebar-active, #3b82f6)" }}>
+      <h2 className="card__title">How rules work</h2>
+      <p className="muted">
+        Rules apply automatically on import and when you re-categorise. They run <strong>just below your
+        manual choices</strong>: manual → <strong>rule</strong> → vendor default → keyword. Among rules,
+        <strong> higher priority wins</strong> (your rules default to 150–200; the built-in library uses ~100).
+        Toggle any rule off without deleting it, and use <strong>Test</strong> to see how many existing
+        transactions a condition matches before you create it.
+      </p>
+
+      <h3 style={{ marginBottom: 4 }}>Conditions — the “if”</h3>
+      <ul className="kv">
+        {CONDITION_HELP.map((c) => (
+          <li key={c.type}>
+            <span><code>{c.type.replace(/_/g, " ")}</code> — {c.what}</span>
+            <span className="muted">e.g. {c.example}</span>
+          </li>
+        ))}
+      </ul>
+
+      <h3 style={{ marginBottom: 4, marginTop: 12 }}>Actions — the “then”</h3>
+      <ul className="kv">
+        {ACTION_HELP.map((a) => (
+          <li key={a.type}>
+            <span><code>{a.type.replace(/_/g, " ")}</code></span>
+            <span className="muted">{a.what}</span>
+          </li>
+        ))}
+      </ul>
+
+      <h3 style={{ marginBottom: 4, marginTop: 12 }}>Worked examples</h3>
+      <ol className="muted" style={{ marginTop: 0, paddingLeft: 18 }}>
+        <li><strong>Coffee → Eating Out:</strong> if <em>description contains</em> “COSTA”, then <em>set category</em> Eating Out.</li>
+        <li><strong>Catch big one-offs:</strong> if <em>amount between</em> “-100000,-500”, then <em>require review</em>.</li>
+        <li><strong>Keep payslips private:</strong> if <em>description contains</em> “SALARY”, then <em>block cloud AI</em>.</li>
+        <li><strong>Commute as transport:</strong> if <em>merchant contains</em> “TFL”, then <em>set category</em> Transport (priority 200 so it beats the library).</li>
+      </ol>
+      <p className="muted" style={{ marginBottom: 0 }}>
+        Tip: the quickest way to make a rule is “make rule” on a transaction you've just corrected — it
+        pre-fills the condition for you.
+      </p>
     </div>
   );
 }
