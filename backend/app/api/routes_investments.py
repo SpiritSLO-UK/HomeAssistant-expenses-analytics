@@ -7,6 +7,8 @@ Investment and pension accounts are scoped exactly like every other account
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
@@ -46,31 +48,27 @@ def _holding_in_scope(request: Request, db: Session, holding_id: int) -> Holding
 
 
 @router.get("/summary", response_model=InvestmentSummary)
-def summary(request: Request, db: Session = Depends(get_db)) -> dict:
-    return investment_service.summary(
-        db, account_ids=auth_service.visible_account_scope(request, db)
-    )
+def summary(request: Request, db: Annotated[Session, Depends(get_db)]) -> dict:
+    return investment_service.summary(db, account_ids=auth_service.visible_account_scope(request, db))
 
 
 @router.get("/history", response_model=InvestmentHistory)
-def history(request: Request, days: int = 365, db: Session = Depends(get_db)) -> dict:
+def history(request: Request, db: Annotated[Session, Depends(get_db)], days: int = 365) -> dict:
     """Portfolio value over time + day/month/year change (for the charts)."""
-    return investment_service.history(
-        db, account_ids=auth_service.visible_account_scope(request, db), days=days
-    )
+    return investment_service.history(db, account_ids=auth_service.visible_account_scope(request, db), days=days)
 
 
 # --- Price feed (optional; spec §27) ---
 
 
 @router.get("/price-status")
-def price_status(db: Session = Depends(get_db)) -> dict:
+def price_status(db: Annotated[Session, Depends(get_db)]) -> dict:
     """The configured price source + whether a sync can run (no network call)."""
     return investment_service.price_status(db)
 
 
 @router.post("/sync-prices")
-def sync_prices(request: Request, db: Session = Depends(get_db)) -> dict:
+def sync_prices(request: Request, db: Annotated[Session, Depends(get_db)]) -> dict:
     """Fetch the latest quotes for the caller's visible holdings (no-op when the
     price source is manual / unconfigured). Only ticker symbols leave the box."""
     scope = auth_service.visible_account_scope(request, db)
@@ -81,16 +79,13 @@ def sync_prices(request: Request, db: Session = Depends(get_db)) -> dict:
 
 
 @router.get("/accounts", response_model=list[InvestmentAccountOut])
-def list_accounts(request: Request, db: Session = Depends(get_db)) -> list[dict]:
+def list_accounts(request: Request, db: Annotated[Session, Depends(get_db)]) -> list[dict]:
     scope = auth_service.visible_account_scope(request, db)
-    return [
-        investment_service.account_to_dict(db, a)
-        for a in investment_service.list_accounts(db, account_ids=scope)
-    ]
+    return [investment_service.account_to_dict(db, a) for a in investment_service.list_accounts(db, account_ids=scope)]
 
 
 @router.post("/accounts", response_model=InvestmentAccountOut, status_code=201)
-def create_account(payload: InvestmentAccountCreate, db: Session = Depends(get_db)) -> dict:
+def create_account(payload: InvestmentAccountCreate, db: Annotated[Session, Depends(get_db)]) -> dict:
     try:
         account = investment_service.create_account(
             db,
@@ -108,7 +103,7 @@ def create_account(payload: InvestmentAccountCreate, db: Session = Depends(get_d
 
 
 @router.get("/accounts/{account_id}/values", response_model=list[ValueOut])
-def value_history(account_id: int, request: Request, db: Session = Depends(get_db)):
+def value_history(account_id: int, request: Request, db: Annotated[Session, Depends(get_db)]):
     _require_visible(request, db, account_id)
     try:
         investment_service.get_investment_account(db, account_id)
@@ -118,7 +113,7 @@ def value_history(account_id: int, request: Request, db: Session = Depends(get_d
 
 
 @router.post("/accounts/{account_id}/values", response_model=ValueOut, status_code=201)
-def record_value(account_id: int, payload: ValueCreate, request: Request, db: Session = Depends(get_db)):
+def record_value(account_id: int, payload: ValueCreate, request: Request, db: Annotated[Session, Depends(get_db)]):
     _require_visible(request, db, account_id)
     try:
         return investment_service.record_value(
@@ -129,7 +124,7 @@ def record_value(account_id: int, payload: ValueCreate, request: Request, db: Se
 
 
 @router.post("/accounts/{account_id}/adjust", response_model=ValueOut, status_code=201)
-def adjust_value(account_id: int, payload: ValueAdjust, request: Request, db: Session = Depends(get_db)):
+def adjust_value(account_id: int, payload: ValueAdjust, request: Request, db: Annotated[Session, Depends(get_db)]):
     """Record a contribution/withdrawal — a new snapshot at latest ± amount."""
     _require_visible(request, db, account_id)
     if payload.direction not in ("contribution", "withdrawal"):
@@ -145,20 +140,19 @@ def adjust_value(account_id: int, payload: ValueAdjust, request: Request, db: Se
 
 
 @router.get("/accounts/{account_id}/holdings", response_model=list[HoldingOut])
-def list_holdings(account_id: int, request: Request, db: Session = Depends(get_db)) -> list[dict]:
+def list_holdings(account_id: int, request: Request, db: Annotated[Session, Depends(get_db)]) -> list[dict]:
     _require_visible(request, db, account_id)
     try:
         investment_service.get_investment_account(db, account_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return [
-        investment_service.holding_to_dict(db, h)
-        for h in investment_service.list_holdings(db, account_id)
-    ]
+    return [investment_service.holding_to_dict(db, h) for h in investment_service.list_holdings(db, account_id)]
 
 
 @router.post("/accounts/{account_id}/holdings", response_model=HoldingOut, status_code=201)
-def create_holding(account_id: int, payload: HoldingCreate, request: Request, db: Session = Depends(get_db)) -> dict:
+def create_holding(
+    account_id: int, payload: HoldingCreate, request: Request, db: Annotated[Session, Depends(get_db)]
+) -> dict:
     _require_visible(request, db, account_id)
     try:
         holding = investment_service.create_holding(
@@ -176,13 +170,15 @@ def create_holding(account_id: int, payload: HoldingCreate, request: Request, db
 
 
 @router.patch("/holdings/{holding_id}", response_model=HoldingOut)
-def update_holding(holding_id: int, payload: HoldingUpdate, request: Request, db: Session = Depends(get_db)) -> dict:
+def update_holding(
+    holding_id: int, payload: HoldingUpdate, request: Request, db: Annotated[Session, Depends(get_db)]
+) -> dict:
     holding = _holding_in_scope(request, db, holding_id)
     holding = investment_service.update_holding(db, holding, **payload.model_dump(exclude_unset=True))
     return investment_service.holding_to_dict(db, holding)
 
 
 @router.delete("/holdings/{holding_id}", status_code=204)
-def delete_holding(holding_id: int, request: Request, db: Session = Depends(get_db)) -> None:
+def delete_holding(holding_id: int, request: Request, db: Annotated[Session, Depends(get_db)]) -> None:
     holding = _holding_in_scope(request, db, holding_id)
     investment_service.delete_holding(db, holding)

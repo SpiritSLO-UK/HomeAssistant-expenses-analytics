@@ -6,6 +6,8 @@ DB session.
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -69,16 +71,14 @@ def disable(payload: Passphrase) -> dict:
 
 
 @router.get("/health")
-def health(db: Session = Depends(get_db), owner: User = Depends(require_owner)) -> dict:
+def health(db: Annotated[Session, Depends(get_db)], owner: Annotated[User, Depends(require_owner)]) -> dict:
     """Owner-only security-health summary: which protections are on/off (#128)."""
     return security_health_service.evaluate(db, owner)
 
 
 @router.post("/health/dismiss")
 def dismiss_health(
-    payload: DismissRequest,
-    db: Session = Depends(get_db),
-    _owner: User = Depends(require_owner),
+    payload: DismissRequest, db: Annotated[Session, Depends(get_db)], _owner: Annotated[User, Depends(require_owner)]
 ) -> dict:
     dismissed, snoozed_until = security_health_service.dismiss(
         db, payload.check_id, snooze_days=payload.snooze_days, clear=payload.clear

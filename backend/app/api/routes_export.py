@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import Response
@@ -35,7 +36,7 @@ def _csv_response(text: str, stem: str) -> Response:
 @router.get("/transactions.csv")
 def export_transactions(
     request: Request,
-    db: Session = Depends(get_db),
+    db: Annotated[Session, Depends(get_db)],
     date_from: date | None = None,
     date_to: date | None = None,
     account_id: int | None = None,
@@ -50,12 +51,10 @@ def export_transactions(
     amount_min: Decimal | None = None,
     amount_max: Decimal | None = None,
     search: str | None = None,
-    include_archived: bool = Query(False, description="Include archived (aged-out) transactions"),
+    include_archived: Annotated[bool, Query(description="Include archived (aged-out) transactions")] = False,
 ) -> Response:
     """Export transactions as CSV, honouring the same filters as the list view."""
-    scope = auth_service.resolved_account_scope(
-        db, auth_service.get_current_user(request, db), member_id=member_id
-    )
+    scope = auth_service.resolved_account_scope(db, auth_service.get_current_user(request, db), member_id=member_id)
     conditions = export_service.build_transaction_filters(
         date_from=date_from,
         date_to=date_to,
@@ -77,7 +76,7 @@ def export_transactions(
 
 
 @router.get("/categories.csv")
-def export_categories(request: Request, month: date | None = None, db: Session = Depends(get_db)) -> Response:
+def export_categories(request: Request, db: Annotated[Session, Depends(get_db)], month: date | None = None) -> Response:
     """Spending-by-category totals for a month (the data behind the chart)."""
     scope = auth_service.visible_account_scope(request, db)
     return _csv_response(
@@ -88,9 +87,9 @@ def export_categories(request: Request, month: date | None = None, db: Session =
 @router.get("/monthly.csv")
 def export_monthly(
     request: Request,
-    months: int = Query(default=6, ge=2, le=24),
+    db: Annotated[Session, Depends(get_db)],
+    months: Annotated[int, Query(ge=2, le=24)] = 6,
     month: date | None = None,
-    db: Session = Depends(get_db),
 ) -> Response:
     """The spend/income/net monthly trend series (the data behind the sparklines)."""
     scope = auth_service.visible_account_scope(request, db)

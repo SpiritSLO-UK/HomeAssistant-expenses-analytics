@@ -8,6 +8,8 @@ can't PATCH → 404) an account that's private to someone else.
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -37,7 +39,7 @@ def _to_dict(account: Account, owner_names: dict[int, str]) -> dict:
 
 
 @router.get("", response_model=list[AccountOut])
-def list_accounts(request: Request, db: Session = Depends(get_db)) -> list[dict]:
+def list_accounts(request: Request, db: Annotated[Session, Depends(get_db)]) -> list[dict]:
     scope = auth_service.visible_account_scope(request, db)
     stmt = select(Account)
     if scope is not None:
@@ -52,8 +54,8 @@ def update_account(
     account_id: int,
     payload: AccountUpdate,
     request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
 ) -> dict:
     account = db.get(Account, account_id)
     scope = auth_service.visible_account_scope(request, db)

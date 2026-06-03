@@ -12,6 +12,8 @@ backup before any purge (inside ``retention_service.run``).
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -49,15 +51,15 @@ def _validate_backup_trim(raw: dict) -> dict:
 
 
 @router.get("/policy")
-def get_policy(db: Session = Depends(get_db), _owner: User = Depends(require_owner)) -> dict:
+def get_policy(db: Annotated[Session, Depends(get_db)], _owner: Annotated[User, Depends(require_owner)]) -> dict:
     return _policy_response(db)
 
 
 @router.put("/policy")
 def update_policy(
     payload: RetentionPolicyUpdate,
-    db: Session = Depends(get_db),
-    owner: User = Depends(require_owner_step_up),
+    db: Annotated[Session, Depends(get_db)],
+    owner: Annotated[User, Depends(require_owner_step_up)],
 ) -> dict:
     if payload.policy is not None:
         try:
@@ -95,12 +97,12 @@ def update_policy(
 
 
 @router.get("/preview")
-def preview(db: Session = Depends(get_db), _owner: User = Depends(require_owner)) -> dict:
+def preview(db: Annotated[Session, Depends(get_db)], _owner: Annotated[User, Depends(require_owner)]) -> dict:
     return retention_service.preview(db)
 
 
 @router.post("/run")
-def run(db: Session = Depends(get_db), owner: User = Depends(require_owner_step_up)) -> dict:
+def run(db: Annotated[Session, Depends(get_db)], owner: Annotated[User, Depends(require_owner_step_up)]) -> dict:
     result = retention_service.run(db, actor=owner.display_name, purge_mode="all")
     audit_service.record(
         db,

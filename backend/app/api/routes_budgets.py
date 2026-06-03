@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
@@ -37,16 +38,16 @@ def _validate(
 
 
 @router.get("", response_model=list[BudgetOut])
-def list_budgets(db: Session = Depends(get_db)) -> list[Budget]:
+def list_budgets(db: Annotated[Session, Depends(get_db)]) -> list[Budget]:
     return list(db.scalars(select(Budget).order_by(Budget.name)).all())
 
 
 @router.get("/summary", response_model=list[BudgetSummaryItem])
 def budgets_summary(
     request: Request,
-    db: Session = Depends(get_db),
-    month: date | None = Query(default=None),
-    annual: bool = Query(default=False, description="Evaluate the whole year vs an annualised cap"),
+    db: Annotated[Session, Depends(get_db)],
+    month: Annotated[date | None, Query()] = None,
+    annual: Annotated[bool, Query(description="Evaluate the whole year vs an annualised cap")] = False,
 ) -> list[dict]:
     """Spend/remaining/percent/status for every budget (spec §19.2)."""
     scope = auth_service.visible_account_scope(request, db)
@@ -57,22 +58,20 @@ def budgets_summary(
 def budget_transactions(
     budget_id: int,
     request: Request,
-    db: Session = Depends(get_db),
-    month: date | None = Query(default=None),
-    annual: bool = Query(default=False),
+    db: Annotated[Session, Depends(get_db)],
+    month: Annotated[date | None, Query()] = None,
+    annual: Annotated[bool, Query()] = False,
 ) -> list[dict]:
     """The transactions counting toward a budget in its window (drill-down)."""
     budget = db.get(Budget, budget_id)
     if budget is None:
         raise HTTPException(status_code=404, detail="Budget not found")
     scope = auth_service.visible_account_scope(request, db)
-    return budget_service.budget_transactions(
-        db, budget, month or date.today(), account_ids=scope, annual=annual
-    )
+    return budget_service.budget_transactions(db, budget, month or date.today(), account_ids=scope, annual=annual)
 
 
 @router.post("", response_model=BudgetOut, status_code=201)
-def create_budget(payload: BudgetIn, db: Session = Depends(get_db)) -> Budget:
+def create_budget(payload: BudgetIn, db: Annotated[Session, Depends(get_db)]) -> Budget:
     _validate(
         db,
         period=payload.period,
@@ -103,7 +102,7 @@ def create_budget(payload: BudgetIn, db: Session = Depends(get_db)) -> Budget:
 
 
 @router.patch("/{budget_id}", response_model=BudgetOut)
-def update_budget(budget_id: int, payload: BudgetUpdate, db: Session = Depends(get_db)) -> Budget:
+def update_budget(budget_id: int, payload: BudgetUpdate, db: Annotated[Session, Depends(get_db)]) -> Budget:
     budget = db.get(Budget, budget_id)
     if budget is None:
         raise HTTPException(status_code=404, detail="Budget not found")
@@ -126,7 +125,7 @@ def update_budget(budget_id: int, payload: BudgetUpdate, db: Session = Depends(g
 
 
 @router.delete("/{budget_id}", status_code=204)
-def delete_budget(budget_id: int, db: Session = Depends(get_db)) -> None:
+def delete_budget(budget_id: int, db: Annotated[Session, Depends(get_db)]) -> None:
     budget = db.get(Budget, budget_id)
     if budget is None:
         raise HTTPException(status_code=404, detail="Budget not found")

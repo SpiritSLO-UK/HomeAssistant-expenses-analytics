@@ -7,6 +7,7 @@ write-gated action to turn a detected trip into a Project.
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
@@ -23,15 +24,15 @@ def _scope(request: Request, db: Session) -> set[int] | None:
 
 
 @router.get("/by-currency")
-def by_currency(request: Request, db: Session = Depends(get_db)) -> dict:
+def by_currency(request: Request, db: Annotated[Session, Depends(get_db)]) -> dict:
     return travel_service.by_currency(db, account_ids=_scope(request, db))
 
 
 @router.get("/trips")
 def trips(
     request: Request,
-    gap_days: int = Query(travel_service.DEFAULT_TRIP_GAP_DAYS, ge=1, le=120),
-    db: Session = Depends(get_db),
+    db: Annotated[Session, Depends(get_db)],
+    gap_days: Annotated[int, Query(ge=1, le=120)] = travel_service.DEFAULT_TRIP_GAP_DAYS,
 ) -> list[dict]:
     return travel_service.detect_trips(db, account_ids=_scope(request, db), gap_days=gap_days)
 
@@ -43,7 +44,7 @@ class TripProjectRequest(BaseModel):
 
 
 @router.post("/trips/project", status_code=201)
-def trip_to_project(payload: TripProjectRequest, request: Request, db: Session = Depends(get_db)) -> dict:
+def trip_to_project(payload: TripProjectRequest, request: Request, db: Annotated[Session, Depends(get_db)]) -> dict:
     """Turn a detected trip into a Project (write-gated by the auth middleware)."""
     if not payload.name.strip():
         raise HTTPException(status_code=400, detail="A project name is required.")

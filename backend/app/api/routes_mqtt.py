@@ -3,6 +3,8 @@ preview that works whether or not a broker is configured."""
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -14,12 +16,12 @@ router = APIRouter(prefix="/mqtt", tags=["mqtt"])
 
 
 @router.get("/status")
-def mqtt_status(db: Session = Depends(get_db)) -> dict:
+def mqtt_status(db: Annotated[Session, Depends(get_db)]) -> dict:
     return mqtt_service.status(db)
 
 
 @router.get("/preview")
-def mqtt_preview(db: Session = Depends(get_db)) -> dict:
+def mqtt_preview(db: Annotated[Session, Depends(get_db)]) -> dict:
     """The sensor state + discovery messages that would be published. Useful for
     the UI and for verifying without a live broker."""
     return {
@@ -29,7 +31,7 @@ def mqtt_preview(db: Session = Depends(get_db)) -> dict:
 
 
 @router.post("/publish")
-def mqtt_publish(db: Session = Depends(get_db)) -> dict:
+def mqtt_publish(db: Annotated[Session, Depends(get_db)]) -> dict:
     """Publish now (spec §27.1 manual trigger)."""
     if not settings.mqtt_enabled:
         raise HTTPException(status_code=400, detail="MQTT is disabled (set mqtt_enabled).")

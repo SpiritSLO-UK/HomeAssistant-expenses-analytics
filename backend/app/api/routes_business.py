@@ -7,6 +7,8 @@ the VAT + business columns).
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
@@ -19,9 +21,7 @@ router = APIRouter(prefix="/business", tags=["business"])
 @router.get("/summary")
 def summary(
     request: Request,
-    period: str = Query("month", description="day | week | month | year"),
-    db: Session = Depends(get_db),
+    db: Annotated[Session, Depends(get_db)],
+    period: Annotated[str, Query(description="day | week | month | year")] = "month",
 ) -> dict:
-    return business_service.summary(
-        db, account_ids=auth_service.visible_account_scope(request, db), period=period
-    )
+    return business_service.summary(db, account_ids=auth_service.visible_account_scope(request, db), period=period)
