@@ -85,7 +85,7 @@ def test_local_classify_suggests_without_applying(client):
 
     assert res["status"] == "ok"
     assert res["category_name"] == "Groceries"
-    assert res["confidence"] == 0.8
+    assert res["confidence"] == pytest.approx(0.8)
     # AI must NOT apply the category itself (spec §22.1).
     assert client.get(f"/api/transactions/{txn_id}").json()["category_id"] is None
     # audited as completed (spec §22.6)

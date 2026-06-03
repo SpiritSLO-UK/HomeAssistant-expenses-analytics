@@ -739,15 +739,16 @@ export default function Transactions() {
                               <span>Tags</span>
                               <span className="txn-detail__row">
                                 {(t.tags ?? []).map((tag) => (
-                                  <span
+                                  <button
                                     key={tag.id}
+                                    type="button"
                                     className="tag"
-                                    title="Click to remove"
-                                    style={{ cursor: "pointer", background: tag.colour ?? undefined }}
+                                    title="Remove tag"
+                                    style={{ cursor: "pointer", background: tag.colour ?? undefined, border: "none", font: "inherit" }}
                                     onClick={() => removeTag(t, tag.name)}
                                   >
                                     {tag.name} ✕
-                                  </span>
+                                  </button>
                                 ))}
                                 <button className="link-btn" onClick={() => addTag(t)}>+ tag</button>
                               </span>
