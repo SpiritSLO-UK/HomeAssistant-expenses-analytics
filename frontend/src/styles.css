@@ -30,7 +30,10 @@ body {
 
 .layout {
   display: flex;
-  min-height: 100vh;
+  /* Bound to the viewport so the page itself never scrolls — the sidebar stays
+     put and only the columns scroll internally (see .sidebar / .content). */
+  height: 100vh;
+  overflow: hidden;
 }
 
 /* --- Sidebar --- */
@@ -42,6 +45,10 @@ body {
   display: flex;
   flex-direction: column;
   padding: 16px 0;
+  /* Fixed/non-scrolling alongside the content; if the nav is taller than the
+     viewport it scrolls within the sidebar, not the whole page. */
+  height: 100vh;
+  overflow-y: auto;
 }
 
 .sidebar__brand {
