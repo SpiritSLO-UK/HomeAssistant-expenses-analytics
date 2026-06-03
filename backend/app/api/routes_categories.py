@@ -20,8 +20,17 @@ def list_categories(
     return category_service.list_categories(db, include_inactive=include_inactive)
 
 
+def _check_privacy(value: str | None) -> None:
+    if value is not None and value not in category_service.PRIVACY_LEVELS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"privacy_sensitivity must be one of {list(category_service.PRIVACY_LEVELS)}",
+        )
+
+
 @router.post("", response_model=CategoryOut, status_code=201)
 def create_category(payload: CategoryCreate, db: Session = Depends(get_db)) -> Category:
+    _check_privacy(payload.privacy_sensitivity)
     return category_service.create_category(db, payload.model_dump(exclude_unset=True))
 
 
@@ -43,6 +52,7 @@ def get_category(category_id: int, db: Session = Depends(get_db)) -> Category:
 def update_category(
     category_id: int, payload: CategoryUpdate, db: Session = Depends(get_db)
 ) -> Category:
+    _check_privacy(payload.privacy_sensitivity)
     category = category_service.update_category(
         db, category_id, payload.model_dump(exclude_unset=True)
     )

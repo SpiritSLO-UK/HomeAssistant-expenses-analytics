@@ -554,6 +554,17 @@ code {
   font-size: 0.75rem;
 }
 
+/* Per-category cloud-AI privacy selector inside a chip. */
+.chip__priv {
+  font-size: 0.72rem;
+  padding: 1px 4px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface, #fff);
+  color: var(--muted);
+  cursor: pointer;
+}
+
 .chip__x {
   border: none;
   background: none;
