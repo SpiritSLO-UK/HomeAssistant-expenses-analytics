@@ -87,11 +87,12 @@ warranty, not financial advice — keep your own backups._
   `HAFI_INVESTMENT_API_KEY`). Only the ticker symbol is ever sent — never your
   balances or holdings — and you can always just enter prices by hand.
 - **Cars & assets** — track a car, your home or anything else with a log timeline.
-  A car's **refuel** entries (odometer + litres + cost) yield **MPG** (imperial
-  gallon) and **L/100km** between full fills, plus servicing/running costs and a
-  per-fill economy history. Odometer is in your unit (miles by default, or km).
-  A **home** tracks **utility meter readings** (electricity/gas/water) → usage and
-  cost between readings, plus maintenance/running costs.
+  A car uses **one consistent measurement system** (no mix): **imperial** (miles ·
+  gallons · **MPG**) or **metric** (km · litres · **L/100km**). Its **refuel**
+  entries (odometer + fuel + cost) give economy between full fills, plus
+  servicing/running costs and a per-fill economy history. A **home** tracks
+  **utility meter readings** (electricity/gas/water) → usage and cost between
+  readings, plus maintenance/running costs.
 - **Subscriptions** — recurring payments detected automatically, with a monthly
   cost total, plus **alerts** for renewals due soon and payments that look
   missed (also surfaced in the dashboard heads-up).

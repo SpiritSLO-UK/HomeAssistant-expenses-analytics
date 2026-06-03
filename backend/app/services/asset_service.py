@@ -172,6 +172,9 @@ def car_stats(db: Session, asset: Asset, logs: list[AssetLog] | None = None) -> 
     """Consumption + cost stats for a car, computed tank-to-tank between full fills."""
     logs = logs if logs is not None else list_logs(db, asset.id)
     unit = asset.distance_unit or "mi"
+    # One consistent system, never a mix: imperial = miles + gallons + MPG;
+    # metric = km + litres + L/100km. Driven by the asset's distance unit.
+    imperial = unit == "mi"
     refuels = sorted(
         [lg for lg in logs if lg.kind == "refuel" and lg.odometer is not None and lg.litres is not None],
         key=lambda lg: (Decimal(lg.odometer), lg.id),
@@ -191,14 +194,19 @@ def car_stats(db: Session, asset: Asset, logs: list[AssetLog] | None = None) -> 
         dist_mi = dist if unit == "mi" else dist / MI_PER_KM
         tot_km += dist_km
         tot_litres += litres
+        seg_l_per_100km = round(float(litres / dist_km * 100), 2)
+        seg_mpg = round(float(dist_mi / (litres / IMPERIAL_GALLON_L)), 1)
         segments.append({
             "date": cur.log_date.isoformat(),
             "from_odometer": str(prev.odometer),
             "to_odometer": str(cur.odometer),
             "distance": str(dist),
             "litres": str(litres),
-            "l_per_100km": round(float(litres / dist_km * 100), 2),
-            "mpg": round(float(dist_mi / (litres / IMPERIAL_GALLON_L)), 1),
+            "l_per_100km": seg_l_per_100km,
+            "mpg": seg_mpg,
+            # Single-system fields the UI displays (no mix):
+            "economy": seg_mpg if imperial else seg_l_per_100km,
+            "fuel": str((litres / IMPERIAL_GALLON_L).quantize(TWO_DP)) if imperial else str(litres),
             "cost": str(cur.cost) if cur.cost is not None else None,
         })
 
@@ -214,12 +222,24 @@ def car_stats(db: Session, asset: Asset, logs: list[AssetLog] | None = None) -> 
     last = segments[-1] if segments else None
     return {
         "distance_unit": unit,
+        "system": "imperial" if imperial else "metric",
+        "fuel_unit": "gal" if imperial else "L",
+        "economy_unit": "MPG" if imperial else "L/100km",
         "refuel_count": len(refuels),
         "latest_odometer": str(refuels[-1].odometer) if refuels else None,
         "total_fuel_cost": str(fuel_cost),
         "total_litres": str(tot_litres) if tot_litres > 0 else "0",
+        # Fuel total in the asset's own system (gallons for imperial).
+        "total_fuel": (
+            str((tot_litres / IMPERIAL_GALLON_L).quantize(TWO_DP))
+            if imperial
+            else (str(tot_litres) if tot_litres > 0 else "0")
+        ),
         "avg_l_per_100km": avg_l_per_100km,
         "avg_mpg": avg_mpg,
+        # Single-system economy the UI shows (no mix):
+        "avg_economy": avg_mpg if imperial else avg_l_per_100km,
+        "last_economy": (last["mpg"] if imperial else last["l_per_100km"]) if last else None,
         "last_l_per_100km": last["l_per_100km"] if last else None,
         "last_mpg": last["mpg"] if last else None,
         "segments": segments,

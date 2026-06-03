@@ -495,8 +495,8 @@ function AssetsCard() {
           <li key={a.id}>
             <span>{icon[a.kind] ?? "📦"} {a.name}</span>
             <span>
-              {a.car && a.car.avg_mpg != null ? (
-                <>{a.car.avg_mpg} MPG <span className="muted">· {gbp(a.total_cost)}</span></>
+              {a.car && a.car.avg_economy != null ? (
+                <>{a.car.avg_economy} {a.car.economy_unit} <span className="muted">· {gbp(a.total_cost)}</span></>
               ) : (
                 gbp(a.total_cost)
               )}

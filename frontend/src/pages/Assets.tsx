@@ -15,6 +15,10 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+// UK/imperial gallon — fuel is stored canonically in litres; imperial cars enter
+// and display gallons, converted here so the system is never mixed.
+const IMP_GALLON = 4.54609;
+
 function gbp(value: string | null): string {
   if (value == null) return "—";
   return "£" + Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -90,9 +94,9 @@ function NewAssetForm({ onCreated, onError }: { onCreated: () => void; onError: 
         onChange={(e) => setIdentifier(e.target.value)}
       />
       {kind === "car" && (
-        <select value={unit} onChange={(e) => setUnit(e.target.value)} title="Odometer unit">
-          <option value="mi">miles</option>
-          <option value="km">km</option>
+        <select value={unit} onChange={(e) => setUnit(e.target.value)} title="Measurement system">
+          <option value="mi">Imperial (miles · gallons · MPG)</option>
+          <option value="km">Metric (km · litres · L/100km)</option>
         </select>
       )}
       <button className="btn" type="submit" disabled={!name || create.isPending}>
@@ -128,7 +132,7 @@ function AssetCard({ asset, onChange, onError }: { asset: Asset; onChange: () =>
           </button>
           {asset.identifier && <span className="muted"> · {asset.identifier}</span>}
           <div className="muted" style={{ fontSize: "0.85rem", marginTop: 2 }}>
-            {car && car.avg_mpg != null ? <>≈ {car.avg_mpg} MPG · {car.avg_l_per_100km} L/100km · </> : null}
+            {car && car.avg_economy != null ? <>≈ {car.avg_economy} {car.economy_unit} · </> : null}
             Total cost {gbp(asset.total_cost)}
             {car && car.latest_odometer && <> · {car.latest_odometer} {car.distance_unit}</>}
           </div>
@@ -161,11 +165,12 @@ function AssetCard({ asset, onChange, onError }: { asset: Asset; onChange: () =>
 }
 
 function CarStatsPanel({ car }: { car: NonNullable<Asset["car"]> }) {
+  const eu = car.economy_unit;
   return (
     <div className="stat-grid" style={{ marginBottom: 12 }}>
-      <Stat label="Avg economy" value={car.avg_mpg != null ? `${car.avg_mpg} MPG` : "—"} />
-      <Stat label="Avg consumption" value={car.avg_l_per_100km != null ? `${car.avg_l_per_100km} L/100km` : "—"} />
-      <Stat label="Last fill" value={car.last_mpg != null ? `${car.last_mpg} MPG` : "—"} />
+      <Stat label="Avg economy" value={car.avg_economy != null ? `${car.avg_economy} ${eu}` : "—"} />
+      <Stat label="Last fill" value={car.last_economy != null ? `${car.last_economy} ${eu}` : "—"} />
+      <Stat label={`Fuel used (${car.fuel_unit})`} value={Number(car.total_fuel) > 0 ? car.total_fuel : "—"} />
       <Stat label="Fuel cost" value={gbp(car.total_fuel_cost)} />
     </div>
   );
@@ -253,9 +258,10 @@ function ReadingForm({ assetId, onAdded, onError }: { assetId: number; onAdded: 
 function RefuelForm({ assetId, unit, onAdded, onError }: {
   assetId: number; unit: string; onAdded: () => void; onError: (e: unknown) => void;
 }) {
+  const imperial = unit === "mi";
   const [date, setDate] = useState(today());
   const [odometer, setOdometer] = useState("");
-  const [litres, setLitres] = useState("");
+  const [fuel, setFuel] = useState("");  // entered in the asset's system (gal or L)
   const [cost, setCost] = useState("");
   const [fullTank, setFullTank] = useState(true);
 
@@ -265,11 +271,12 @@ function RefuelForm({ assetId, unit, onAdded, onError }: {
         log_date: date,
         kind: "refuel",
         odometer,
-        litres,
+        // Stored canonically in litres; convert from gallons for imperial cars.
+        litres: imperial ? String(Number(fuel) * IMP_GALLON) : fuel,
         cost: cost || undefined,
         is_full_tank: fullTank,
       }),
-    onSuccess: () => { setOdometer(""); setLitres(""); setCost(""); onAdded(); },
+    onSuccess: () => { setOdometer(""); setFuel(""); setCost(""); onAdded(); },
     onError,
   });
 
@@ -277,17 +284,17 @@ function RefuelForm({ assetId, unit, onAdded, onError }: {
     <form
       className="form-row"
       style={{ flexWrap: "wrap", gap: 6, marginBottom: 8 }}
-      onSubmit={(e) => { e.preventDefault(); if (odometer && litres) add.mutate(); }}
+      onSubmit={(e) => { e.preventDefault(); if (odometer && fuel) add.mutate(); }}
     >
       <strong style={{ alignSelf: "center", fontSize: "0.85rem" }}>⛽ Refuel:</strong>
       <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
       <input placeholder={`Odometer (${unit})`} value={odometer} style={{ width: 120 }} onChange={(e) => setOdometer(e.target.value)} />
-      <input placeholder="Litres" value={litres} style={{ width: 80 }} onChange={(e) => setLitres(e.target.value)} />
+      <input placeholder={imperial ? "Gallons" : "Litres"} value={fuel} style={{ width: 80 }} onChange={(e) => setFuel(e.target.value)} />
       <input placeholder="Cost £" value={cost} style={{ width: 80 }} onChange={(e) => setCost(e.target.value)} />
       <label className="muted" style={{ fontSize: "0.82rem", display: "flex", alignItems: "center", gap: 4 }}>
         <input type="checkbox" checked={fullTank} onChange={(e) => setFullTank(e.target.checked)} /> full tank
       </label>
-      <button className="btn btn--sm" type="submit" disabled={!odometer || !litres || add.isPending}>
+      <button className="btn btn--sm" type="submit" disabled={!odometer || !fuel || add.isPending}>
         {add.isPending ? "…" : "Add"}
       </button>
     </form>
@@ -336,9 +343,13 @@ function LogHistory({ asset, logs, onChange, onError }: {
     onSuccess: onChange,
     onError,
   });
-  // Map each refuel's per-segment economy by the "to" odometer for inline display.
-  const mpgByOdo = new Map<string, number>();
-  asset.car?.segments.forEach((s) => mpgByOdo.set(s.to_odometer, s.mpg));
+  // Per-segment economy (in the asset's system) keyed by the "to" odometer.
+  const econByOdo = new Map<string, number>();
+  asset.car?.segments.forEach((s) => econByOdo.set(s.to_odometer, s.economy));
+  const imperial = asset.car?.system === "imperial";
+  const economyUnit = asset.car?.economy_unit ?? "MPG";
+  const fuelDisplay = (litres: string) =>
+    imperial ? `${(Number(litres) / IMP_GALLON).toFixed(2)} gal` : `${litres} L`;
 
   const rows = [...logs].reverse(); // newest first
   if (rows.length === 0) return <p className="muted">No log entries yet.</p>;
@@ -350,7 +361,7 @@ function LogHistory({ asset, logs, onChange, onError }: {
         </thead>
         <tbody>
           {rows.map((lg) => {
-            const mpg = lg.odometer != null ? mpgByOdo.get(lg.odometer) : undefined;
+            const econ = lg.odometer != null ? econByOdo.get(lg.odometer) : undefined;
             return (
               <tr key={lg.id}>
                 <td style={{ whiteSpace: "nowrap" }}>{lg.log_date}</td>
@@ -358,9 +369,9 @@ function LogHistory({ asset, logs, onChange, onError }: {
                 <td>
                   {lg.kind === "refuel" ? (
                     <>
-                      {lg.odometer} · {lg.litres} L
+                      {lg.odometer} · {lg.litres != null ? fuelDisplay(lg.litres) : "—"}
                       {lg.is_full_tank === false && <span className="muted"> · partial</span>}
-                      {mpg != null && <span className="amt--pos"> · {mpg} MPG</span>}
+                      {econ != null && <span className="amt--pos"> · {econ} {economyUnit}</span>}
                     </>
                   ) : lg.kind === "reading" ? (
                     <>
