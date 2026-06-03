@@ -78,6 +78,11 @@ warranty, not financial advice — keep your own backups._
 - **Savings** — track savings-account balances over time (manual snapshots, with
   a growth sparkline) and set **goals** with progress bars; a goal can follow a
   savings account's latest balance or be tracked by hand.
+- **Investments & pensions** — track investment platforms and pensions: record a
+  **value** from a statement (best for pensions, with a growth sparkline) or add
+  **holdings** (units of a ticker with an average cost and a last price) to see
+  market value and unrealised gain (±£ and %). Prices are entered manually for
+  now; an optional price feed is on the way.
 - **Subscriptions** — recurring payments detected automatically, with a monthly
   cost total, plus **alerts** for renewals due soon and payments that look
   missed (also surfaced in the dashboard heads-up).

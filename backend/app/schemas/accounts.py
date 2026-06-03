@@ -5,7 +5,10 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 # Account types the model documents (account.py).
-ACCOUNT_TYPES = {"current_account", "credit_card", "savings", "loan", "mortgage", "cash", "other"}
+ACCOUNT_TYPES = {
+    "current_account", "credit_card", "savings", "loan", "mortgage", "cash",
+    "investment", "pension", "other",
+}
 
 
 class AccountOut(BaseModel):

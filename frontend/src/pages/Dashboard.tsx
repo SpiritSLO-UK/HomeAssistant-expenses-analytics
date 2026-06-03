@@ -10,6 +10,7 @@ import {
   getBusinessSummary,
   getCategoryBreakdown,
   getDashboardProjects,
+  getInvestmentSummary,
   getMe,
   getMemberBreakdown,
   getMonthlySeries,
@@ -49,6 +50,7 @@ const OPTIONAL_CARDS: { key: string; label: string }[] = [
   { key: "projects", label: "By project" },
   { key: "members", label: "By member" },
   { key: "savings", label: "Savings" },
+  { key: "investments", label: "Investments" },
   { key: "budgets", label: "Budgets" },
   { key: "business", label: "Business" },
   { key: "travel", label: "Travel" },
@@ -140,6 +142,7 @@ export default function Dashboard() {
     projects: () => <ProjectsCard memberId={mid} />,
     members: () => <MemberBreakdownCard monthDate={monthDate} />,
     savings: () => <SavingsCard />,
+    investments: () => <InvestmentsCard />,
     budgets: () => <BudgetsCard monthDate={monthDate} />,
     business: () => <BusinessCard />,
     travel: () => <TravelCard />,
@@ -412,6 +415,31 @@ function SavingsCard() {
         {topGoal && (
           <li><span>Top goal · {topGoal.name}</span><span>{topGoal.percent}%</span></li>
         )}
+      </ul>
+    </div>
+  );
+}
+
+function InvestmentsCard() {
+  const q = useQuery({ queryKey: ["dash-investments"], queryFn: getInvestmentSummary });
+  const s = q.data;
+  if (!s || s.accounts.length === 0) return null; // non-nagging: no card until there's an account
+  const gain = s.total_gain != null ? Number(s.total_gain) : null;
+  return (
+    <div className="card">
+      <CardHead title="Investments" to="/investments" />
+      <ul className="kv">
+        <li><span>Portfolio value</span><span>{gbp(s.total_value)}</span></li>
+        {gain != null && (
+          <li>
+            <span>Unrealised gain</span>
+            <span className={gain >= 0 ? "amt--pos" : "amt--neg"}>
+              {gain >= 0 ? "+" : ""}{gbp(s.total_gain!)}
+              {s.total_gain_pct != null && ` · ${gain >= 0 ? "+" : ""}${s.total_gain_pct}%`}
+            </span>
+          </li>
+        )}
+        <li><span>Accounts</span><span>{s.accounts.length}</span></li>
       </ul>
     </div>
   );
