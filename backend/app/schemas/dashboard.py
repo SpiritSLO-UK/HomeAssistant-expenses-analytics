@@ -77,6 +77,21 @@ class OutliersResponse(BaseModel):
 # --- Processing stats (backlog: files uploaded/processed, AI vs local) ---
 
 
+class MemberSpendRow(BaseModel):
+    member_id: int | None  # None = the "Shared / unassigned" row (unowned accounts)
+    display_name: str
+    role: str | None = None
+    spend: str
+    income: str
+    net: str
+
+
+class MemberBreakdown(BaseModel):
+    month: str
+    currency: str
+    members: list[MemberSpendRow]
+
+
 class ProcessingStats(BaseModel):
     statements_imported: int
     transactions_imported: int

@@ -11,6 +11,7 @@ from app.db.session import get_db
 from app.schemas.dashboard import (
     CategoryBreakdownItem,
     DashboardSummary,
+    MemberBreakdown,
     MonthlySeries,
     OutliersResponse,
     ProcessingStats,
@@ -23,6 +24,7 @@ from app.services import (
     auth_service,
     dashboard_service,
     project_service,
+    settings_service,
     subscription_service,
 )
 
@@ -101,6 +103,32 @@ def outliers(
     """Heads-up list: large charges, category spikes, new merchants, budget
     alerts (backlog #150). Conservative + gated on having enough history."""
     return analytics_service.outliers(db, _ref(month), account_ids=_scope(request, db, member_id=member_id))
+
+
+@router.get("/by-member", response_model=MemberBreakdown)
+def by_member(request: Request, month: date | None = None, db: Session = Depends(get_db)) -> dict:
+    """Spend/income/net for the month broken down per household member, plus a
+    "Shared / unassigned" row for unowned accounts. Each member's figures cover
+    the accounts they own intersected with the caller's own visibility, so a
+    member can never see another's private spend (the same boundary as the
+    per-member filter)."""
+    user = auth_service.get_current_user(request, db)
+    ref = _ref(month)
+
+    def _money(account_ids: set[int] | None) -> dict:
+        s = dashboard_service.summary(db, ref, account_ids=account_ids)
+        return {"spend": s["spend_this_month"], "income": s["income_this_month"], "net": s["net_this_month"]}
+
+    rows: list[dict] = []
+    for m in auth_service.list_members(db):
+        scope = auth_service.member_account_scope(db, user, m.id)
+        rows.append({"member_id": m.id, "display_name": m.display_name, "role": m.role, **_money(scope)})
+
+    shared_scope = auth_service.unowned_account_scope(db, user)
+    if shared_scope:
+        rows.append({"member_id": None, "display_name": "Shared / unassigned", "role": None, **_money(shared_scope)})
+
+    return {"month": ref.isoformat(), "currency": settings_service.get_base_currency(db), "members": rows}
 
 
 @router.get("/processing", response_model=ProcessingStats)

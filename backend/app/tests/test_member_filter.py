@@ -104,6 +104,31 @@ def test_member_filter_export_matches_view(client):
     assert "ALICE BUY" not in csv and "SHARED SHOP" not in csv
 
 
+def test_member_breakdown_splits_spend_by_owner(client):
+    """The per-member breakdown card attributes each account's spend to its owner,
+    with unowned accounts in a "Shared" row — together a clean partition."""
+    _seed(client)
+    data = client.get("/api/dashboard/by-member", params=MONTH).json()
+    rows = {r["display_name"]: r for r in data["members"]}
+    assert Decimal(rows["Alice"]["spend"]) == Decimal("3.00")
+    assert Decimal(rows["Bob"]["spend"]) == Decimal("7.00")
+    assert Decimal(rows["Shared / unassigned"]["spend"]) == Decimal("10.00")
+    assert rows["Shared / unassigned"]["member_id"] is None
+    # Members + shared sum to the whole household spend (no double-counting).
+    assert sum(Decimal(r["spend"]) for r in data["members"]) == Decimal("20.00")
+
+
+def test_member_breakdown_respects_caller_visibility(client):
+    """A member sees their own + shared spend in the breakdown, never another
+    member's private spend (the same scope boundary as the per-member filter)."""
+    _seed(client)
+    alice = _hdr("ha-alice", "Alice")
+    rows = {r["display_name"]: r for r in client.get("/api/dashboard/by-member", params=MONTH, headers=alice).json()["members"]}
+    assert Decimal(rows["Alice"]["spend"]) == Decimal("3.00")
+    assert Decimal(rows["Bob"]["spend"]) == Decimal("0")  # Bob's private account is invisible to Alice
+    assert Decimal(rows["Shared / unassigned"]["spend"]) == Decimal("10.00")
+
+
 def test_demo_attributes_spend_to_a_member(client):
     """The demo gives the partner member their own account + spend, so the
     per-member filter has data to show (not an empty view)."""

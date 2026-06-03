@@ -182,6 +182,17 @@ def member_account_scope(db: Session, user: User, member_id: int) -> set[int]:
     return owned if base is None else (owned & base)
 
 
+def unowned_account_scope(db: Session, user: User) -> set[int]:
+    """Account ids with **no owner** (household/shared-without-a-person),
+    intersected with what ``user`` may see. Used for the "Shared / unassigned"
+    row of the per-member breakdown — every account is either owned by exactly one
+    member (their row) or unowned (this row), so the two partition all spend with
+    no double-counting."""
+    unowned = set(db.scalars(select(Account.id).where(Account.owner_user_id.is_(None))).all())
+    base = visible_account_ids(db, user)
+    return unowned if base is None else (unowned & base)
+
+
 def resolved_account_scope(
     db: Session, user: User, *, view: str = "all", member_id: int | None = None
 ) -> set[int] | None:
