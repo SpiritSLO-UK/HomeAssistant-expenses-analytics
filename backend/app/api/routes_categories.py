@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.models import Category
+from app.models import Category, User
 from app.schemas.categories import (
     CategoryCreate,
     CategoryMerge,
@@ -14,7 +14,7 @@ from app.schemas.categories import (
     CategoryPrivacyLevel,
     CategoryUpdate,
 )
-from app.services import category_service
+from app.services import auth_service, category_service
 
 router = APIRouter(prefix="/categories", tags=["categories"])
 
@@ -47,15 +47,23 @@ def import_library(db: Session = Depends(get_db)) -> dict:
 
 
 @router.get("/privacy", response_model=dict)
-def get_privacy_default(db: Session = Depends(get_db)) -> dict:
-    """The household default cloud-AI privacy level (backlog #28)."""
+def get_privacy_default(
+    db: Session = Depends(get_db),
+    _user: User = Depends(auth_service.require_settings_manager),
+) -> dict:
+    """The household default cloud-AI privacy level (backlog #28). A
+    privacy/settings concern, so it's owner / settings-manager only."""
     return {"level": category_service.get_privacy_default(db)}
 
 
 @router.post("/privacy", response_model=dict)
-def set_all_privacy(payload: CategoryPrivacyLevel, db: Session = Depends(get_db)) -> dict:
+def set_all_privacy(
+    payload: CategoryPrivacyLevel,
+    db: Session = Depends(get_db),
+    _user: User = Depends(auth_service.require_settings_manager),
+) -> dict:
     """Apply one cloud-AI privacy level to every category at once + make it the
-    default new categories inherit."""
+    default new categories inherit. Owner / settings-manager only."""
     try:
         updated = category_service.set_all_privacy(db, payload.level)
     except ValueError as exc:
@@ -85,13 +93,25 @@ def update_category(
 
 
 @router.delete("/{category_id}", status_code=204)
-def delete_category(category_id: int, db: Session = Depends(get_db)) -> None:
+def delete_category(
+    category_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(auth_service.require_owner),
+) -> None:
+    """Deleting a category (built-ins included) is structural — owner only."""
     if not category_service.delete_category(db, category_id):
         raise HTTPException(status_code=404, detail="Category not found")
 
 
 @router.post("/{category_id}/merge", response_model=CategoryOut)
-def merge_category(category_id: int, payload: CategoryMerge, db: Session = Depends(get_db)) -> Category:
+def merge_category(
+    category_id: int,
+    payload: CategoryMerge,
+    db: Session = Depends(get_db),
+    _user: User = Depends(auth_service.require_owner),
+) -> Category:
+    """Merging folds one category's references into another then deletes it —
+    structural/destructive, so owner only."""
     try:
         target = category_service.merge_category(db, category_id, payload.target_id)
     except ValueError as exc:
