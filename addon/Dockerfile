@@ -3,7 +3,7 @@
 # serves the built frontend. Build context is the repository root.
 
 # ---- Stage 1: build frontend ----
-FROM node:20-slim AS frontend
+FROM node:22-slim AS frontend
 WORKDIR /build/frontend
 COPY frontend/package.json frontend/package-lock.json* ./
 RUN npm install
