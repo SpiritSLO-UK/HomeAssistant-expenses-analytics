@@ -39,7 +39,9 @@ Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md
   mapper) with duplicate detection on re-upload. PDF statements import
   best-effort, with each extracted row flagged for review.
 - **Categorise** automatically (priority order: manual > rule > vendor default >
-  keyword); correct one transaction and optionally turn it into a **rule**.
+  keyword); correct one transaction and optionally turn it into a **rule**. The
+  Rules page has a built-in **"How rules work"** guide explaining every condition
+  and action with worked examples.
 - **Manage categories** — add your own, recolour or rename any category, set its
   cloud-AI privacy level, **delete** one (its transactions fall back to
   uncategorised) or **merge** one into another. This now includes the built-in
