@@ -6,6 +6,8 @@ upload→manual-fields→match→confirm flow doesn't depend on a Tesseract bina
 
 from __future__ import annotations
 
+import pytest
+
 from app.services import receipt_parser
 
 SAMPLE = """TESCO STORES
@@ -29,7 +31,7 @@ def test_parser_extracts_level1_fields():
     assert str(f["total_amount"]) == "42.18"   # TOTAL, not the £38.00 subtotal
     assert str(f["vat_amount"]) == "4.18"
     assert f["currency"] == "GBP"
-    assert f["parse_confidence"] == 1.0
+    assert f["parse_confidence"] == pytest.approx(1.0)
 
 
 def test_parser_total_falls_back_to_largest_amount():

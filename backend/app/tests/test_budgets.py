@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 
 def _curve(rows: list[tuple[str, str, str]]) -> bytes:
     head = "Date,Description,Amount,Currency,Card,Category\n"
@@ -71,7 +73,7 @@ def test_category_budget_status(client):
     s = _summary(client, "2026-05-01")[bid]
     assert s["spent"] == "210.00"
     assert s["remaining"] == "90.00"
-    assert s["percent"] == 70.0
+    assert s["percent"] == pytest.approx(70.0)
     assert s["status"] == "ok"
 
 

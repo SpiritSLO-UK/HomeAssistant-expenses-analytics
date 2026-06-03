@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
+import pytest
+
 from app.models import Budget, Category, Transaction
 from app.services import analytics_service
 
@@ -37,7 +39,7 @@ def test_monthly_series_and_trend(db):
     # March spend (900) is up vs February (600); net (1100) is down vs (1400).
     assert s["trend"]["spend"]["direction"] == "up"
     assert s["trend"]["net"]["direction"] == "down"
-    assert s["trend"]["spend"]["pct"] == 50.0  # (900-600)/600
+    assert s["trend"]["spend"]["pct"] == pytest.approx(50.0)  # (900-600)/600
 
 
 def test_large_charge_is_flagged(db):

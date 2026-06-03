@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 
 def test_search_matches_transactions_and_vendor(client):
     client.post("/api/backup/demo")
@@ -23,7 +25,7 @@ def test_search_by_amount(client):
     client.post("/api/backup/demo")
     # The demo mortgage is 875.00 (stored as -875.00); an amount query finds it.
     txns = client.get("/api/search", params={"q": "875.00"}).json()["transactions"]
-    assert any(abs(float(t["amount"])) == 875.00 for t in txns)
+    assert any(abs(float(t["amount"])) == pytest.approx(875.00) for t in txns)
 
 
 def test_search_short_query_returns_empty(client):
