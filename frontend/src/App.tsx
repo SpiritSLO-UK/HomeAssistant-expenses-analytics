@@ -3,6 +3,7 @@ import { Route, Routes } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Sidebar from "./components/Sidebar";
 import Dashboard from "./pages/Dashboard";
+import Search from "./pages/Search";
 import Import from "./pages/Import";
 import Transactions from "./pages/Transactions";
 import Categories from "./pages/Categories";
@@ -58,6 +59,7 @@ export default function App() {
     <AppShell role={me.data?.role ?? "owner"} canManageTabs={me.data?.can_manage_settings ?? false}>
       <Routes>
           <Route path="/" element={<Dashboard />} />
+          <Route path="/search" element={<Search />} />
           <Route path="/import" element={<Import />} />
           <Route path="/transactions" element={<Transactions />} />
           <Route path="/categories" element={<Categories />} />

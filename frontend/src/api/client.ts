@@ -1357,6 +1357,20 @@ export function updateServiceSettings(patch: {
   return fetchJson("api/settings", { method: "PUT", body: JSON.stringify(patch) });
 }
 
+// --- Global search ---
+
+export interface SearchResults {
+  query: string;
+  transactions: { id: number; transaction_date: string; description: string; amount: string; currency: string }[];
+  vendors: { id: number; name: string }[];
+  categories: { id: number; name: string; colour: string | null }[];
+  projects: { id: number; name: string; status: string }[];
+}
+
+export function searchAll(q: string): Promise<SearchResults> {
+  return fetchJson<SearchResults>(`api/search?q=${encodeURIComponent(q)}`);
+}
+
 export interface FxRate {
   id: number;
   rate_date: string;
