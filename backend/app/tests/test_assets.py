@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 import pytest
 
 
@@ -96,6 +98,31 @@ def test_update_and_delete_asset(client):
 
 def test_log_on_missing_asset_404(client):
     assert client.post("/api/assets/9999/logs", json={"log_date": "2026-01-01", "kind": "service", "cost": "10"}).status_code == 404
+
+
+def test_car_reports_one_system_not_a_mix(client):
+    # Imperial (miles): economy in MPG, fuel total in gallons.
+    imp = _asset(client, name="Imperial car", distance_unit="mi")
+    _refuel(client, imp, date="2026-01-01", odometer=10000, litres=35)
+    _refuel(client, imp, date="2026-01-20", odometer=10300, litres=30)  # 300 mi on 30 L
+    car = client.get(f"/api/assets/{imp}").json()["car"]
+    assert car["system"] == "imperial"
+    assert car["economy_unit"] == "MPG"
+    assert car["fuel_unit"] == "gal"
+    assert car["avg_economy"] == car["avg_mpg"]
+    assert Decimal(car["total_fuel"]) == pytest.approx(Decimal(str(30 / 4.54609)), abs=Decimal("0.01"))  # gallons
+
+    # Metric (km): economy in L/100km, fuel total in litres.
+    met = _asset(client, name="Metric car", distance_unit="km")
+    _refuel(client, met, date="2026-02-01", odometer=50000, litres=45)
+    _refuel(client, met, date="2026-02-20", odometer=50500, litres=40)  # 500 km on 40 L
+    car = client.get(f"/api/assets/{met}").json()["car"]
+    assert car["system"] == "metric"
+    assert car["economy_unit"] == "L/100km"
+    assert car["fuel_unit"] == "L"
+    assert car["avg_economy"] == car["avg_l_per_100km"]
+    assert Decimal(car["total_fuel"]) == Decimal("40")  # litres unchanged
+    assert car["segments"][0]["economy"] == car["segments"][0]["l_per_100km"]
 
 
 def test_list_filtered_by_kind(client):

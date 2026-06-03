@@ -1392,17 +1392,25 @@ export interface CarSegment {
   litres: string;
   l_per_100km: number;
   mpg: number;
+  economy: number;   // in the asset's system (MPG or L/100km)
+  fuel: string;      // in the asset's system (gal or L)
   cost: string | null;
 }
 
 export interface CarStats {
   distance_unit: string;
+  system: string;        // "imperial" | "metric"
+  fuel_unit: string;     // "gal" | "L"
+  economy_unit: string;  // "MPG" | "L/100km"
   refuel_count: number;
   latest_odometer: string | null;
   total_fuel_cost: string;
   total_litres: string;
+  total_fuel: string;    // in the asset's system
   avg_l_per_100km: number | null;
   avg_mpg: number | null;
+  avg_economy: number | null;   // in the asset's system
+  last_economy: number | null;  // in the asset's system
   last_l_per_100km: number | null;
   last_mpg: number | null;
   segments: CarSegment[];
