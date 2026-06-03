@@ -28,7 +28,6 @@ Repository = "https://github.com/SpiritSLO-UK/HomeAssistant-expenses-analytics"
 [project.optional-dependencies]
 dev = [
     "pytest>=8.3",
-    "pytest-cov>=5.0",
     "httpx>=0.28",
     "ruff>=0.8",
 ]
@@ -84,10 +83,3 @@ extend-immutable-calls = [
 
 [tool.pytest.ini_options]
 testpaths = ["app/tests"]
-
-[tool.coverage.run]
-# Coverage for the SonarCloud quality gate. The default (absolute) source path
-# is written into coverage.xml; since the Sonar scan runs on the same CI
-# checkout, the scanner resolves those paths directly to the indexed files.
-source = ["app"]
-omit = ["app/tests/*", "app/migrations/*"]
