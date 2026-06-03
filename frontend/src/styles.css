@@ -636,6 +636,45 @@ code {
   background: color-mix(in srgb, var(--sidebar-active) 12%, transparent);
 }
 
+/* Family-setup wizard stepper. */
+.wizard-steps {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0;
+  margin: 0 0 14px;
+}
+.wizard-steps li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+.wizard-steps li.is-current {
+  border-color: var(--sidebar-active);
+  color: var(--text);
+  font-weight: 600;
+}
+.wizard-steps li.is-done {
+  color: var(--ok);
+  border-color: var(--ok);
+}
+.wizard-steps__num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--border);
+  font-size: 0.72rem;
+}
+
 /* Dashboard "Customise" reorder list (#84). */
 .card-customise {
   list-style: none;
