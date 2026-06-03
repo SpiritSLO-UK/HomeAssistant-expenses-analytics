@@ -98,82 +98,16 @@ export default function Categories() {
     <div className="page">
       <h1 className="page__title">Categories</h1>
 
+      {/* 1. The library itself — the main thing you look at — with inline add. */}
       <div className="card">
-        <h2 className="card__title">Add a category</h2>
-        <div className="form-row">
-          <input placeholder="Category name" value={name} onChange={(e) => setName(e.target.value)} />
+        <h2 className="card__title">Category library ({cats.length})</h2>
+        <div className="form-row" style={{ marginBottom: 10 }}>
+          <input placeholder="New category name" value={name} onChange={(e) => setName(e.target.value)} />
           <input type="color" value={colour} onChange={(e) => setColour(e.target.value)} title="Colour" />
           <button className="btn" disabled={!name || create.isPending} onClick={() => create.mutate()}>
             Add
           </button>
         </div>
-      </div>
-
-      <div className="card">
-        <h2 className="card__title">Merge categories</h2>
-        <p className="muted" style={{ marginTop: 0, fontSize: "0.85rem" }}>
-          Move everything from one category into another, then remove the first — handy for folding
-          duplicates or a built-in you don't use into one you do.
-        </p>
-        <div className="form-row" style={{ alignItems: "center", flexWrap: "wrap" }}>
-          <select value={mergeSource} onChange={(e) => setMergeSource(e.target.value)}>
-            <option value="">Merge…</option>
-            {cats.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
-          <span className="muted">into</span>
-          <select value={mergeTarget} onChange={(e) => setMergeTarget(e.target.value)}>
-            <option value="">…another category</option>
-            {cats.filter((c) => String(c.id) !== mergeSource).map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
-          <button
-            className="btn"
-            disabled={!mergeSource || !mergeTarget || mergeSource === mergeTarget || merge.isPending}
-            onClick={confirmMerge}
-          >
-            {merge.isPending ? "Merging…" : "Merge"}
-          </button>
-        </div>
-      </div>
-
-      <div className="card">
-        <h2 className="card__title">Cloud-AI privacy</h2>
-        <p className="muted" style={{ marginTop: 0, fontSize: "0.85rem" }}>
-          Set one level for every category in one go — you don't have to configure each. Fine-tune
-          individual categories with “Advanced” below. AI is off by default regardless.
-        </p>
-        <div className="form-row" style={{ alignItems: "center", flexWrap: "wrap" }}>
-          <span className="muted">Apply to all:</span>
-          {PRIVACY_OPTIONS.map((o) => (
-            <button
-              key={o.value}
-              className={"btn btn--sm" + (privacyDefault.data?.level === o.value ? "" : " btn--ghost")}
-              disabled={applyPrivacy.isPending}
-              onClick={() => {
-                if (
-                  window.confirm(
-                    `Set every category to “${o.label}”? This overwrites any per-category choices.`,
-                  )
-                ) {
-                  applyPrivacy.mutate(o.value);
-                }
-              }}
-            >
-              {o.label}
-            </button>
-          ))}
-        </div>
-        <label className="checkbox" style={{ marginTop: 10 }}>
-          <input type="checkbox" checked={advanced} onChange={(e) => setAdvanced(e.target.checked)} />{" "}
-          Advanced — set the level per category
-        </label>
-      </div>
-
-      <div className="card">
-        <h2 className="card__title">Category library ({cats.length})</h2>
         {isLoading && <p className="muted">Loading…</p>}
         <div className="chips">
           {cats.map((c: Category) => (
@@ -210,6 +144,72 @@ export default function Categories() {
           renamed, recoloured, deleted (its transactions become uncategorised) or merged into another;
           deleted built-ins can be restored with “Import library”.
         </p>
+      </div>
+
+      {/* 2. Cloud-AI privacy — one level for all, advanced reveal for per-category. */}
+      <div className="card">
+        <h2 className="card__title">Cloud-AI privacy</h2>
+        <p className="muted" style={{ marginTop: 0, fontSize: "0.85rem" }}>
+          Set one level for every category in one go — you don't have to configure each. Fine-tune
+          individual categories with “Advanced” (the per-category picker then appears in the library
+          above). AI is off by default regardless.
+        </p>
+        <div className="form-row" style={{ alignItems: "center", flexWrap: "wrap" }}>
+          <span className="muted">Apply to all:</span>
+          {PRIVACY_OPTIONS.map((o) => (
+            <button
+              key={o.value}
+              className={"btn btn--sm" + (privacyDefault.data?.level === o.value ? "" : " btn--ghost")}
+              disabled={applyPrivacy.isPending}
+              onClick={() => {
+                if (
+                  window.confirm(
+                    `Set every category to “${o.label}”? This overwrites any per-category choices.`,
+                  )
+                ) {
+                  applyPrivacy.mutate(o.value);
+                }
+              }}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+        <label className="checkbox" style={{ marginTop: 10 }}>
+          <input type="checkbox" checked={advanced} onChange={(e) => setAdvanced(e.target.checked)} />{" "}
+          Advanced — set the level per category
+        </label>
+      </div>
+
+      {/* 3. Merge categories. */}
+      <div className="card">
+        <h2 className="card__title">Merge categories</h2>
+        <p className="muted" style={{ marginTop: 0, fontSize: "0.85rem" }}>
+          Move everything from one category into another, then remove the first — handy for folding
+          duplicates or a built-in you don't use into one you do.
+        </p>
+        <div className="form-row" style={{ alignItems: "center", flexWrap: "wrap" }}>
+          <select value={mergeSource} onChange={(e) => setMergeSource(e.target.value)}>
+            <option value="">Merge…</option>
+            {cats.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+          <span className="muted">into</span>
+          <select value={mergeTarget} onChange={(e) => setMergeTarget(e.target.value)}>
+            <option value="">…another category</option>
+            {cats.filter((c) => String(c.id) !== mergeSource).map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+          <button
+            className="btn"
+            disabled={!mergeSource || !mergeTarget || mergeSource === mergeTarget || merge.isPending}
+            onClick={confirmMerge}
+          >
+            {merge.isPending ? "Merging…" : "Merge"}
+          </button>
+        </div>
       </div>
     </div>
   );
