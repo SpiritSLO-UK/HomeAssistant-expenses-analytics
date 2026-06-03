@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.logging import set_level as set_log_level
 from app.models import User
-from app.services import auth_service, fx_service, mqtt_service, ocr_service, settings_service
+from app.services import ai_service, auth_service, fx_service, mqtt_service, ocr_service, settings_service
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -43,22 +43,42 @@ def services_status(db: Session = Depends(get_db)) -> dict:
     """Unified on/off + status for every service, for the Settings → Services panel
     (backlog §38). AI / OCR / online FX are runtime-toggleable; MQTT is configured
     in the add-on options, so it's shown read-only."""
-    privacy = settings_service.get_privacy_mode(db)
     fx_mode = settings_service.get_fx_mode(db)
     ocr = ocr_service.status()
     mqtt = mqtt_service.status(db)
-    ai_detail = (
-        "Off — no AI calls" if privacy == "no_ai"
-        else "On — local only, never sent to a cloud provider" if privacy == "strict_local"
-        else f"On — mode: {privacy}"
-    )
+
+    # AI: in the engine, strict_local AND no_ai both refuse AI (ai_service.OFF_MODES).
+    # "On" therefore means a real mode is selected (local LLM / cloud); enabling needs
+    # a mode + provider chosen in the AI card, so here we only report + offer "turn off".
+    ai = ai_service.status(db)
+    mode = ai["privacy_mode"]
+    active = mode not in ai_service.OFF_MODES
+    if not active:
+        ai_detail = "Off — the assistant makes no suggestions (no model is called)"
+    elif not ai["configured"]:
+        ai_detail = f"Set to '{mode}', but no AI provider is configured yet — finish it in AI settings"
+    elif ai["is_cloud"]:
+        ai_detail = f"On — cloud ({mode}); payloads are redacted and every call is audited"
+    else:
+        ai_detail = "On — local LLM, on-device only"
+
+    ocr_on = settings_service.get_ocr_enabled(db)
+    if not ocr_on:
+        ocr_detail = "Off — receipts are entered manually"
+    elif ocr["available"]:
+        ocr_detail = "On — OCR engine ready"
+    else:
+        ocr_detail = "On, but no OCR engine is installed — manual entry only"
+
     return {
-        "ai": {"enabled": privacy != "no_ai", "mode": privacy, "configurable": True, "detail": ai_detail},
-        "ocr": {
-            "enabled": settings_service.get_ocr_enabled(db),
+        "ai": {
+            "enabled": active,
+            "mode": mode,
+            "configured": ai["configured"],
             "configurable": True,
-            "detail": "Engine ready" if ocr["available"] else "No OCR engine installed — manual entry only",
+            "detail": ai_detail,
         },
+        "ocr": {"enabled": ocr_on, "configurable": True, "detail": ocr_detail},
         "fx": {
             "enabled": fx_mode == "frankfurter",
             "mode": fx_mode,

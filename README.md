@@ -81,10 +81,10 @@ Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md
   time you enable a cloud mode, a one-time disclaimer spells out exactly what
   this means.
 - **Services panel** — a **Settings → Services** card to see and switch each
-  service on/off from one place: the AI assistant (a kill-switch; on = strictly
-  local), receipt **OCR**, and **online exchange rates** (manual vs live). MQTT is
-  shown read-only (it's configured in the add-on options). Owner/settings-manager
-  only.
+  service from one place: the **AI assistant** (a status + "turn off" — it reads
+  *On* only when a real local/cloud mode is configured, *Off* otherwise), receipt
+  **OCR** on/off, and **online exchange rates** on/off. MQTT is shown read-only
+  (it's configured in the add-on options). Owner/settings-manager only.
 - **Multi-currency** — original amount kept and converted to your base currency;
   manual rates by default, opt-in online ECB rates (Frankfurter).
 - **Multi-user & roles** — identity comes from Home Assistant (the first person

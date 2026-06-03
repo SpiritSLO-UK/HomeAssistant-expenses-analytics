@@ -13,12 +13,23 @@ def test_services_status_shape_and_defaults(client):
     assert s["mqtt"]["configurable"] is False   # configured in the add-on, not here
 
 
-def test_ai_kill_switch(client):
+def test_ai_on_off_reflects_real_modes(client):
+    # no_ai and strict_local are BOTH AI-off in the engine, so the panel shows Off.
     client.put("/api/settings", json={"privacy_mode": "no_ai"})
     assert client.get("/api/settings/services").json()["ai"]["enabled"] is False
     client.put("/api/settings", json={"privacy_mode": "strict_local"})
+    assert client.get("/api/settings/services").json()["ai"]["enabled"] is False
+    # A real mode reads On (active), even before a provider is configured.
+    client.put("/api/settings", json={"privacy_mode": "cloud_manual"})
     ai = client.get("/api/settings/services").json()["ai"]
-    assert ai["enabled"] is True and ai["mode"] == "strict_local"
+    assert ai["enabled"] is True and ai["mode"] == "cloud_manual" and ai["configured"] is False
+
+
+def test_ocr_detail_reflects_toggle(client):
+    client.put("/api/settings", json={"ocr_enabled": False})
+    assert client.get("/api/settings/services").json()["ocr"]["detail"].startswith("Off")
+    client.put("/api/settings", json={"ocr_enabled": True})
+    assert client.get("/api/settings/services").json()["ocr"]["detail"].startswith("On")
 
 
 def test_fx_toggle(client):
