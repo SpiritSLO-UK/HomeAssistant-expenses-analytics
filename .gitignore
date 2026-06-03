@@ -16,6 +16,7 @@ dist/
 .mypy_cache/
 .ruff_cache/
 .coverage
+coverage.xml
 htmlcov/
 
 # ---- Node / frontend ----
@@ -45,6 +46,14 @@ config/finance/
 .DS_Store
 Thumbs.db
 *.swp
+
+# ---- Per-user assistant tooling (keep secrets/tokens out of the repo) ----
+# Copilot/SonarQube-MCP instructions are auto-generated per machine; the matching
+# MCP config can hold a SonarCloud token, so never let these get committed.
+# NB: .github/workflows/ stays tracked (that's CI) — only /instructions/ is ignored.
+.github/instructions/
+# Claude Code MCP server config (holds a ${SONARQUBE_TOKEN} env reference; per-user).
+.mcp.json
 
 # ---- Logs ----
 *.log
