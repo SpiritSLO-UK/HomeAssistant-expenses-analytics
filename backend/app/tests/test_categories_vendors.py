@@ -105,6 +105,24 @@ def test_category_merge_validation(client):
     assert client.post("/api/categories/999999/merge", json={"target_id": a}).status_code == 404
 
 
+def test_global_privacy_applies_to_all_and_new(client):
+    """One privacy level can be applied to every category at once; it becomes the
+    default new categories inherit, and a bad level is rejected."""
+    assert client.get("/api/categories/privacy").json()["level"] == "normal"  # default
+
+    res = client.post("/api/categories/privacy", json={"level": "never_cloud"})
+    assert res.status_code == 200 and res.json()["updated"] >= 22
+    assert client.get("/api/categories/privacy").json()["level"] == "never_cloud"
+    levels = {c["privacy_sensitivity"] for c in client.get("/api/categories").json()}
+    assert levels == {"never_cloud"}  # every existing category updated
+
+    # A category created afterwards inherits the new default.
+    created = client.post("/api/categories", json={"name": "Inheritor"}).json()
+    assert created["privacy_sensitivity"] == "never_cloud"
+
+    assert client.post("/api/categories/privacy", json={"level": "bogus"}).status_code == 400
+
+
 # --- keyword auto-categorisation on import ---
 
 def test_auto_categorisation_by_keyword(client, samples_dir):

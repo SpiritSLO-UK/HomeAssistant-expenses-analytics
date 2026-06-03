@@ -25,6 +25,7 @@ from app.models import (
     TransactionSplit,
     Vendor,
 )
+from app.services import settings_service
 from app.services.household_service import get_or_create_default_household
 
 logger = get_logger(__name__)
@@ -110,6 +111,12 @@ def get_category(db: Session, category_id: int) -> Category | None:
     return db.get(Category, category_id)
 
 
+def get_privacy_default(db: Session) -> str:
+    """The household's default cloud-AI privacy level (backlog #28)."""
+    level = settings_service.get(db, settings_service.CLOUD_AI_PRIVACY_DEFAULT)
+    return level if level in PRIVACY_LEVELS else "normal"
+
+
 def create_category(db: Session, data: dict) -> Category:
     household = get_or_create_default_household(db)
     category = Category(
@@ -121,13 +128,28 @@ def create_category(db: Session, data: dict) -> Category:
         icon=data.get("icon"),
         colour=data.get("colour"),
         is_budgetable=data.get("is_budgetable", True),
-        privacy_sensitivity=data.get("privacy_sensitivity", "normal"),
+        # New categories inherit the household default unless one is given.
+        privacy_sensitivity=data.get("privacy_sensitivity") or get_privacy_default(db),
         is_system=False,
     )
     db.add(category)
     db.commit()
     db.refresh(category)
     return category
+
+
+def set_all_privacy(db: Session, level: str) -> int:
+    """Set every category's cloud-AI privacy level at once and remember it as the
+    household default (so new categories inherit it). Returns the count updated.
+    Raises ``ValueError`` for an unknown level."""
+    if level not in PRIVACY_LEVELS:
+        raise ValueError(f"privacy level must be one of {list(PRIVACY_LEVELS)}")
+    result = db.execute(
+        update(Category).values(privacy_sensitivity=level).execution_options(synchronize_session=False)
+    )
+    settings_service.set_value(db, settings_service.CLOUD_AI_PRIVACY_DEFAULT, level)
+    db.commit()
+    return result.rowcount or 0
 
 
 def update_category(db: Session, category_id: int, data: dict) -> Category | None:

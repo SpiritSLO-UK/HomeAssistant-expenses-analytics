@@ -36,6 +36,10 @@ LOG_LEVEL = "log_level"
 # Manifest of the row ids a ``load_demo`` created (JSON), so "Remove demo data"
 # can delete exactly the demo's own rows and nothing a real import/user added.
 DEMO_MANIFEST = "demo_manifest"
+# Default cloud-AI privacy level applied to all categories at once + inherited by
+# new categories, so the user need not set each one (backlog #28; per-category
+# detail stays available behind the Categories "Advanced" reveal).
+CLOUD_AI_PRIVACY_DEFAULT = "cloud_ai_privacy_default"
 
 FX_MODES = {"manual", "frankfurter"}
 RECEIPT_MATCH_MODES = {"suggest", "auto"}
@@ -76,6 +80,7 @@ def _defaults() -> dict[str, str]:
         AI_BASE_URL: "",
         AI_MODEL: "",
         LOG_LEVEL: env_settings.log_level.upper(),
+        CLOUD_AI_PRIVACY_DEFAULT: "normal",
     }
 
 

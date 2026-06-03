@@ -7,7 +7,13 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models import Category
-from app.schemas.categories import CategoryCreate, CategoryMerge, CategoryOut, CategoryUpdate
+from app.schemas.categories import (
+    CategoryCreate,
+    CategoryMerge,
+    CategoryOut,
+    CategoryPrivacyLevel,
+    CategoryUpdate,
+)
 from app.services import category_service
 
 router = APIRouter(prefix="/categories", tags=["categories"])
@@ -38,6 +44,23 @@ def create_category(payload: CategoryCreate, db: Session = Depends(get_db)) -> C
 def import_library(db: Session = Depends(get_db)) -> dict:
     created = category_service.import_library(db)
     return {"created": created}
+
+
+@router.get("/privacy", response_model=dict)
+def get_privacy_default(db: Session = Depends(get_db)) -> dict:
+    """The household default cloud-AI privacy level (backlog #28)."""
+    return {"level": category_service.get_privacy_default(db)}
+
+
+@router.post("/privacy", response_model=dict)
+def set_all_privacy(payload: CategoryPrivacyLevel, db: Session = Depends(get_db)) -> dict:
+    """Apply one cloud-AI privacy level to every category at once + make it the
+    default new categories inherit."""
+    try:
+        updated = category_service.set_all_privacy(db, payload.level)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"updated": updated, "level": payload.level}
 
 
 @router.get("/{category_id}", response_model=CategoryOut)
