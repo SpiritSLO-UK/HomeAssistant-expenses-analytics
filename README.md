@@ -126,6 +126,9 @@ Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md
   set), plus the data behind the dashboard charts (spending-by-category and the
   monthly spend/income/net trend) from small "⬇ CSV" links. Files carry a UTF-8
   BOM so they open cleanly in Excel.
+- **Resizable columns** — drag the edge of any column header on the Transactions
+  table to set its width; the widths are remembered on your device ("↔ Reset
+  columns" restores the defaults).
 - **Customisable dashboard** — a **⚙ Customise** toggle lets you show/hide **and
   reorder** the optional cards (Heads-up, Trends, Spending by category, Top vendors,
   By project, By member, Savings, Budgets, Business, Travel, Allowance, Processing)
