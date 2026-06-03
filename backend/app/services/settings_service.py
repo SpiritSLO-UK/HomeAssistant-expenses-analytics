@@ -43,8 +43,13 @@ CLOUD_AI_PRIVACY_DEFAULT = "cloud_ai_privacy_default"
 # Explicit OCR on/off (Settings → Services). On by default; when off, receipt
 # processing skips OCR and the user enters fields manually.
 OCR_ENABLED = "ocr_enabled"
+# Investment price feed source (spec §27). Off by default — ``manual`` makes no
+# network calls; ``stooq`` is keyless; ``alphavantage`` is a keyed provider
+# (HAFI_INVESTMENT_API_KEY). Only ticker symbols are ever sent.
+INVESTMENT_PRICE_SOURCE = "investment_price_source"
 
 FX_MODES = {"manual", "frankfurter"}
+INVESTMENT_PRICE_SOURCES = {"manual", "stooq", "alphavantage"}
 RECEIPT_MATCH_MODES = {"suggest", "auto"}
 
 # Curated base-currency choices for the Settings dropdown (the top-10 world
@@ -84,6 +89,7 @@ def _defaults() -> dict[str, str]:
         AI_MODEL: "",
         LOG_LEVEL: env_settings.log_level.upper(),
         CLOUD_AI_PRIVACY_DEFAULT: "normal",
+        INVESTMENT_PRICE_SOURCE: "manual",
     }
 
 
@@ -134,6 +140,13 @@ def get_receipt_delete_after_processing(db: Session) -> bool:
     """Whether a receipt's original file is dropped once it's processed & matched
     (backlog #147). On by default — only an explicit ``"false"`` turns it off."""
     return get(db, RECEIPT_DELETE_AFTER_PROCESSING) != "false"
+
+
+def get_investment_price_source(db: Session) -> str:
+    """The configured investment price feed (spec §27). Defaults to ``manual``
+    (no network); an unknown stored value falls back to ``manual``."""
+    source = get(db, INVESTMENT_PRICE_SOURCE) or "manual"
+    return source if source in INVESTMENT_PRICE_SOURCES else "manual"
 
 
 def get_ocr_enabled(db: Session) -> bool:

@@ -25,6 +25,7 @@ class SettingsUpdate(BaseModel):
     ai_model: str | None = None
     ocr_enabled: bool | None = None  # Settings → Services on/off for receipt OCR
     log_level: str | None = None  # DEBUG | INFO | WARNING | ERROR
+    investment_price_source: str | None = None  # manual | stooq | alphavantage
 
 
 @router.get("")
@@ -134,6 +135,16 @@ def update_settings(
 
     if payload.ocr_enabled is not None:
         settings_service.set_value(db, settings_service.OCR_ENABLED, "true" if payload.ocr_enabled else "false")
+
+    if payload.investment_price_source is not None:
+        if payload.investment_price_source not in settings_service.INVESTMENT_PRICE_SOURCES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"investment_price_source must be one of {sorted(settings_service.INVESTMENT_PRICE_SOURCES)}",
+            )
+        settings_service.set_value(
+            db, settings_service.INVESTMENT_PRICE_SOURCE, payload.investment_price_source
+        )
 
     if payload.log_level is not None:
         level = payload.log_level.strip().upper()

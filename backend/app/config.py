@@ -85,6 +85,12 @@ class Settings(BaseSettings):
     ai_api_key: str | None = None
     ai_timeout_seconds: float = 30.0
 
+    # --- Investment price feed (spec §27). Off by default (manual). A keyed
+    # provider (e.g. Alpha Vantage) reads its API key here; keyless sources
+    # (Stooq) and manual mode need nothing. Only ticker symbols are ever sent —
+    # never balances or holdings sizes — so a price fetch is privacy-safe.
+    investment_api_key: str | None = None
+
     # --- At-rest DB encryption (backlog #15b) ---
     # Optional. When the DB is encrypted in "stored" unlock mode, the passphrase
     # is supplied here (env HAFI_DB_KEY) so the add-on can start unattended. In

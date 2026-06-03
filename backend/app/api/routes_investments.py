@@ -51,6 +51,23 @@ def summary(request: Request, db: Session = Depends(get_db)) -> dict:
     )
 
 
+# --- Price feed (optional; spec §27) ---
+
+
+@router.get("/price-status")
+def price_status(db: Session = Depends(get_db)) -> dict:
+    """The configured price source + whether a sync can run (no network call)."""
+    return investment_service.price_status(db)
+
+
+@router.post("/sync-prices")
+def sync_prices(request: Request, db: Session = Depends(get_db)) -> dict:
+    """Fetch the latest quotes for the caller's visible holdings (no-op when the
+    price source is manual / unconfigured). Only ticker symbols leave the box."""
+    scope = auth_service.visible_account_scope(request, db)
+    return investment_service.sync_prices(db, account_ids=scope)
+
+
 # --- Accounts ---
 
 

@@ -50,7 +50,12 @@ async def lifespan(_app: FastAPI):
         # is an idempotent safety net so a fresh add-on starts.
         Base.metadata.create_all(bind=dbsession.get_engine())
         # Seed the default category library on first run (spec §15.4, §33).
-        from app.services import mqtt_service, retention_service, settings_service
+        from app.services import (
+            investment_service,
+            mqtt_service,
+            retention_service,
+            settings_service,
+        )
         from app.services.category_service import ensure_default_categories
 
         with dbsession.SessionLocal() as db:
@@ -64,6 +69,9 @@ async def lifespan(_app: FastAPI):
             retention_service.run_safe(db)
             # Publish MQTT sensors on startup (spec §27.1). No-op unless enabled.
             mqtt_service.publish_safe(db)
+            # Refresh investment prices on startup (spec §27). No-op unless a
+            # price source is configured (default manual = no network).
+            investment_service.sync_prices_safe(db)
     yield
     logger.info("Shutting down %s", settings.app_name)
 
