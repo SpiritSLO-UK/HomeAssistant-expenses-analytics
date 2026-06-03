@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.db.session import get_db
-from app.models import Project, Transaction, User
+from app.models import Project, Transaction, User, Vendor
 from app.schemas.tags import SetTagsRequest
 from app.schemas.transactions import (
     SetSplitsRequest,
@@ -160,6 +160,8 @@ def update_transaction(
     data = payload.model_dump(exclude_unset=True)
     if data.get("project_id") is not None and db.get(Project, data["project_id"]) is None:
         raise HTTPException(status_code=400, detail="Unknown project")
+    if data.get("merchant_id") is not None and db.get(Vendor, data["merchant_id"]) is None:
+        raise HTTPException(status_code=400, detail="Unknown vendor")
     for field, value in data.items():
         setattr(txn, field, value)
     db.commit()

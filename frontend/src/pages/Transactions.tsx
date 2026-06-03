@@ -12,6 +12,7 @@ import {
   listMembers,
   listProjects,
   listTransactions,
+  listVendors,
   recategorise,
   setTransactionTags,
   unarchiveTransaction,
@@ -71,6 +72,7 @@ export default function Transactions() {
   const categories = useQuery({ queryKey: ["categories"], queryFn: listCategories });
   const projects = useQuery({ queryKey: ["projects"], queryFn: listProjects });
   const members = useQuery({ queryKey: ["members"], queryFn: listMembers });
+  const vendors = useQuery({ queryKey: ["vendors"], queryFn: listVendors });
   const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
   const aiStatus = useQuery({ queryKey: ["ai-status"], queryFn: getAiStatus });
   const base = settings.data?.base_currency ?? "GBP";
@@ -163,6 +165,17 @@ export default function Transactions() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["transactions"] });
       qc.invalidateQueries({ queryKey: ["dashboard-projects"] });
+    },
+  });
+
+  // Manually assign (or clear) a vendor on a row (spec §15.3).
+  const setVendor = useMutation({
+    mutationFn: (v: { id: number; vendorId: number | null }) =>
+      updateTransaction(v.id, { merchant_id: v.vendorId }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["transactions"] });
+      qc.invalidateQueries({ queryKey: ["vendors"] });
+      qc.invalidateQueries({ queryKey: ["dash-vendors"] });
     },
   });
 
@@ -356,6 +369,26 @@ export default function Transactions() {
                         {t.merchant_raw && t.merchant_raw !== t.description_raw && (
                           <span className="muted"> · {t.merchant_raw}</span>
                         )}
+                        <div style={{ marginTop: 4 }}>
+                          <select
+                            className={"select--vendor" + (t.merchant_id ? "" : " select--empty")}
+                            value={t.merchant_id ?? ""}
+                            title="Vendor for this transaction"
+                            onChange={(e) =>
+                              setVendor.mutate({
+                                id: t.id,
+                                vendorId: e.target.value ? Number(e.target.value) : null,
+                              })
+                            }
+                          >
+                            <option value="">— vendor —</option>
+                            {vendors.data?.map((v) => (
+                              <option key={v.id} value={v.id}>
+                                {v.display_name || v.canonical_name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
                       </td>
                       <td className={"num " + (t.direction === "credit" ? "amt--pos" : "amt--neg")}>
                         {t.amount}
