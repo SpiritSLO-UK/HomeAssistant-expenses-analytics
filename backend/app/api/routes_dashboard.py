@@ -13,6 +13,7 @@ from app.schemas.dashboard import (
     DashboardSummary,
     MonthlySeries,
     OutliersResponse,
+    ProcessingStats,
     VendorBreakdownItem,
 )
 from app.schemas.projects import ProjectTotal
@@ -100,3 +101,11 @@ def outliers(
     """Heads-up list: large charges, category spikes, new merchants, budget
     alerts (backlog #150). Conservative + gated on having enough history."""
     return analytics_service.outliers(db, _ref(month), account_ids=_scope(request, db, member_id=member_id))
+
+
+@router.get("/processing", response_model=ProcessingStats)
+def processing(db: Session = Depends(get_db)) -> dict:
+    """Pipeline status: files/transactions imported, receipt OCR progress, and how
+    many enrichment calls went through AI (cloud vs local) + the average AI
+    turnaround. Household-wide system metrics (not account-scoped)."""
+    return dashboard_service.processing_stats(db)

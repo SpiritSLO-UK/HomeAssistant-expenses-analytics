@@ -21,7 +21,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import Category, Transaction, Vendor
+from app.models import AIRequest, Category, Receipt, Statement, Transaction, Vendor
 from app.services import settings_service, split_service
 from app.services.scope import account_scope_condition, archived_condition
 
@@ -173,3 +173,68 @@ def vendor_breakdown(db: Session, ref: date, limit: int = 10, *, account_ids: se
         }
         for r in rows
     ]
+
+
+# --- Processing stats (backlog: "status of files uploaded/processed, AI vs local") ---
+
+_CLOUD_MODES = ("cloud_manual", "cloud_auto")
+
+
+def _count(db: Session, model: type, *conditions) -> int:
+    return db.scalar(select(func.count()).select_from(model).where(*conditions)) or 0
+
+
+def processing_stats(db: Session) -> dict:
+    """A pipeline-status snapshot for the dashboard's processing card: how many
+    files/transactions were imported, receipt OCR progress, and how many enrichment
+    calls went through AI (cloud vs local) with the average AI turnaround. These are
+    system/processing metrics, so they are household-wide (not account-scoped)."""
+    statements_imported = _count(db, Statement, Statement.status == "imported")
+    transactions_imported = _count(db, Transaction)
+
+    receipts_total = _count(db, Receipt)
+    receipts_processed = _count(db, Receipt, Receipt.ocr_status == "processed")
+    receipts_failed = _count(db, Receipt, Receipt.ocr_status == "failed")
+    receipts_pending = receipts_total - receipts_processed - receipts_failed
+
+    ai_total = _count(db, AIRequest)
+    ai_completed = _count(db, AIRequest, AIRequest.status == "completed")
+    ai_failed = _count(db, AIRequest, AIRequest.status == "failed")
+    ai_pending = _count(db, AIRequest, AIRequest.status == "pending")
+    ai_cloud = _count(db, AIRequest, AIRequest.privacy_mode.in_(_CLOUD_MODES))
+    ai_local = ai_total - ai_cloud
+
+    # Per-task tally (classify_transaction, parse_receipt, …) for the breakdown.
+    by_task = {
+        task: int(n)
+        for task, n in db.execute(
+            select(AIRequest.task_type, func.count()).group_by(AIRequest.task_type)
+        ).all()
+    }
+
+    # Average AI turnaround (created → completed), computed in Python so it stays
+    # database-agnostic. None until at least one call has completed.
+    pairs = db.execute(
+        select(AIRequest.created_at, AIRequest.completed_at).where(
+            AIRequest.status == "completed", AIRequest.completed_at.is_not(None)
+        )
+    ).all()
+    durations = [(done - started).total_seconds() for started, done in pairs if started and done]
+    ai_avg_seconds = round(sum(durations) / len(durations), 2) if durations else None
+
+    return {
+        "statements_imported": statements_imported,
+        "transactions_imported": transactions_imported,
+        "receipts_total": receipts_total,
+        "receipts_processed": receipts_processed,
+        "receipts_failed": receipts_failed,
+        "receipts_pending": receipts_pending,
+        "ai_total": ai_total,
+        "ai_completed": ai_completed,
+        "ai_failed": ai_failed,
+        "ai_pending": ai_pending,
+        "ai_cloud": ai_cloud,
+        "ai_local": ai_local,
+        "ai_avg_seconds": ai_avg_seconds,
+        "ai_by_task": by_task,
+    }

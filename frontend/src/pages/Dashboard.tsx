@@ -10,6 +10,7 @@ import {
   getMe,
   getMonthlySeries,
   getOutliers,
+  getProcessingStats,
   getSecurityHealth,
   getSummary,
   getVendorBreakdown,
@@ -37,6 +38,7 @@ const OPTIONAL_CARDS: { key: string; label: string }[] = [
   { key: "categories", label: "Spending by category" },
   { key: "vendors", label: "Top vendors" },
   { key: "projects", label: "By project" },
+  { key: "processing", label: "Processing" },
 ];
 
 function downloadOrAlert(p: Promise<void>): void {
@@ -230,6 +232,8 @@ export default function Dashboard() {
 
       {show("projects") && <ProjectsCard memberId={mid} />}
 
+      {show("processing") && <ProcessingCard />}
+
       {summary.data && summary.data.uncategorised_transactions > 0 && (
         <div className="card">
           <p className="status status--warn">
@@ -268,6 +272,73 @@ function ProjectsCard({ memberId }: { memberId?: number }) {
           );
         })}
       </ul>
+    </div>
+  );
+}
+
+function ProcessingCard() {
+  const q = useQuery({ queryKey: ["processing-stats"], queryFn: getProcessingStats });
+  const s = q.data;
+  if (!s) return null;
+  if (s.transactions_imported === 0 && s.receipts_total === 0 && s.ai_total === 0) {
+    return null; // non-nagging: no card until something has been processed
+  }
+  const tasks = Object.entries(s.ai_by_task).sort((a, b) => b[1] - a[1]);
+  return (
+    <div className="card">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+        <h2 className="card__title" style={{ margin: 0 }}>Processing</h2>
+        <Link className="link-btn" to="/logs">Logs →</Link>
+      </div>
+      <p className="muted" style={{ marginTop: 4, fontSize: "0.85rem" }}>
+        How much has been imported and enriched — and how much went through AI vs locally.
+      </p>
+      <ul className="kv">
+        <li><span>Statements imported</span><span>{s.statements_imported}</span></li>
+        <li><span>Transactions</span><span>{s.transactions_imported}</span></li>
+        {s.receipts_total > 0 && (
+          <li>
+            <span>Receipts processed</span>
+            <span>
+              {s.receipts_processed} / {s.receipts_total}
+              {s.receipts_failed > 0 && <span className="muted"> · {s.receipts_failed} failed</span>}
+              {s.receipts_pending > 0 && <span className="muted"> · {s.receipts_pending} pending</span>}
+            </span>
+          </li>
+        )}
+        <li>
+          <span>AI enrichment calls</span>
+          <span>
+            {s.ai_total === 0 ? (
+              <span className="muted">none — all processed locally</span>
+            ) : (
+              <>
+                {s.ai_total} <span className="muted">· {s.ai_cloud} cloud / {s.ai_local} local</span>
+              </>
+            )}
+          </span>
+        </li>
+        {s.ai_total > 0 && (s.ai_failed > 0 || s.ai_pending > 0) && (
+          <li>
+            <span>AI call status</span>
+            <span className="muted">
+              {s.ai_completed} done
+              {s.ai_failed > 0 ? ` · ${s.ai_failed} failed` : ""}
+              {s.ai_pending > 0 ? ` · ${s.ai_pending} pending` : ""}
+            </span>
+          </li>
+        )}
+        {s.ai_avg_seconds != null && (
+          <li><span>Average AI turnaround</span><span>{s.ai_avg_seconds}s</span></li>
+        )}
+      </ul>
+      {tasks.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+          {tasks.map(([task, n]) => (
+            <span key={task} className="tag">{task.replace(/_/g, " ")} · {n}</span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
