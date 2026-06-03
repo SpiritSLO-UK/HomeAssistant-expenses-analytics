@@ -96,13 +96,20 @@ export default function SplitEditor({ txnId, amount, currency, isSplit, categori
   function removeRow(i: number) {
     setRows((rs) => (rs.length > 2 ? rs.filter((_, idx) => idx !== i) : rs));
   }
-  // Pour the remaining amount into the last row (spec §17.3 "auto-balance").
-  function autoBalance() {
+  // Split the total evenly across every part (spec §17.3). Pennies that don't
+  // divide cleanly are spread one-each across the first rows so the parts still
+  // sum to the total exactly.
+  function splitEvenly() {
     setRows((rs) => {
-      if (rs.length === 0) return rs;
-      const last = rs.length - 1;
-      const target = toCents(rs[last].amount) + (totalCents - rs.reduce((a, r) => a + toCents(r.amount), 0));
-      return rs.map((r, idx) => (idx === last ? { ...r, amount: fromCents(Math.max(0, target)) } : r));
+      const n = rs.length;
+      if (n === 0) return rs;
+      const base = Math.floor(totalCents / n);
+      let extra = totalCents - base * n;
+      return rs.map((r) => {
+        const cents = base + (extra > 0 ? 1 : 0);
+        if (extra > 0) extra -= 1;
+        return { ...r, amount: fromCents(cents) };
+      });
     });
   }
 
@@ -171,7 +178,9 @@ export default function SplitEditor({ txnId, amount, currency, isSplit, categori
 
       <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
         <button className="link-btn" onClick={addRow}>+ Add part</button>
-        <button className="link-btn" onClick={autoBalance} disabled={balanced}>Auto-balance</button>
+        <button className="link-btn" onClick={splitEvenly} title="Divide the total equally across every part">
+          Split evenly
+        </button>
         <span className={"muted"} style={{ marginLeft: "auto" }}>
           {balanced ? (
             <span className="tag">balanced ✓</span>
