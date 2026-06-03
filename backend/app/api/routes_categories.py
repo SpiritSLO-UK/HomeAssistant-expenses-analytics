@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models import Category
-from app.schemas.categories import CategoryCreate, CategoryOut, CategoryUpdate
+from app.schemas.categories import CategoryCreate, CategoryMerge, CategoryOut, CategoryUpdate
 from app.services import category_service
 
 router = APIRouter(prefix="/categories", tags=["categories"])
@@ -65,3 +65,14 @@ def update_category(
 def delete_category(category_id: int, db: Session = Depends(get_db)) -> None:
     if not category_service.delete_category(db, category_id):
         raise HTTPException(status_code=404, detail="Category not found")
+
+
+@router.post("/{category_id}/merge", response_model=CategoryOut)
+def merge_category(category_id: int, payload: CategoryMerge, db: Session = Depends(get_db)) -> Category:
+    try:
+        target = category_service.merge_category(db, category_id, payload.target_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if target is None:
+        raise HTTPException(status_code=404, detail="Category not found")
+    return target

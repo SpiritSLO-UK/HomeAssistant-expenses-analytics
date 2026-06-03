@@ -41,3 +41,7 @@ class CategoryUpdate(BaseModel):
     is_active: bool | None = None
     is_budgetable: bool | None = None
     privacy_sensitivity: str | None = None
+
+
+class CategoryMerge(BaseModel):
+    target_id: int  # the category to merge this one into (it absorbs all references)

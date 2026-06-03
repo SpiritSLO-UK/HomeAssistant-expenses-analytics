@@ -40,6 +40,10 @@ Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md
   best-effort, with each extracted row flagged for review.
 - **Categorise** automatically (priority order: manual > rule > vendor default >
   keyword); correct one transaction and optionally turn it into a **rule**.
+- **Manage categories** — add your own, recolour or rename any category, set its
+  cloud-AI privacy level, **delete** one (its transactions fall back to
+  uncategorised) or **merge** one into another. This now includes the built-in
+  library categories; deleted built-ins can be restored with "Import library".
 - **Split** a transaction across several categories/projects; the dashboard uses
   the split parts.
 - **Projects & tags** — collect spend toward a goal (renovation, holiday, car)

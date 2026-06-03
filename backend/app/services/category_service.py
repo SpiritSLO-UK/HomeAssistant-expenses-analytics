@@ -11,11 +11,20 @@ import re
 from functools import lru_cache
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.logging import get_logger
-from app.models import Category
+from app.models import (
+    Budget,
+    Category,
+    ChildAllocation,
+    ReceiptItem,
+    Rule,
+    Transaction,
+    TransactionSplit,
+    Vendor,
+)
 from app.services.household_service import get_or_create_default_household
 
 logger = get_logger(__name__)
@@ -135,14 +144,53 @@ def update_category(db: Session, category_id: int, data: dict) -> Category | Non
 
 
 def delete_category(db: Session, category_id: int) -> bool:
-    """Delete a category. Transactions referencing it have category_id set to
-    NULL via the FK (spec keeps the transaction as source of truth)."""
+    """Delete a category (system or user). Anything referencing it — transactions,
+    splits, budgets, vendor defaults, receipt items, allocations, child categories
+    — has its link set to NULL via the FK, so the data survives as uncategorised
+    (the transaction stays the source of truth)."""
     category = db.get(Category, category_id)
     if category is None:
         return False
     db.delete(category)
     db.commit()
     return True
+
+
+def merge_category(db: Session, source_id: int, target_id: int) -> Category | None:
+    """Merge ``source_id`` into ``target_id``: re-point every reference from the
+    source to the target, then delete the source. Returns the target, ``None`` if
+    either id is unknown. Raises ``ValueError`` if asked to merge into itself."""
+    if source_id == target_id:
+        raise ValueError("Cannot merge a category into itself.")
+    source = db.get(Category, source_id)
+    target = db.get(Category, target_id)
+    if source is None or target is None:
+        return None
+
+    opts = {"synchronize_session": False}
+    for model in (Transaction, TransactionSplit, Budget, ReceiptItem, ChildAllocation):
+        db.execute(
+            update(model).where(model.category_id == source_id).values(category_id=target_id).execution_options(**opts)
+        )
+    db.execute(
+        update(Vendor).where(Vendor.default_category_id == source_id)
+        .values(default_category_id=target_id).execution_options(**opts)
+    )
+    # Re-parent any child categories of the source onto the target.
+    db.execute(
+        update(Category).where(Category.parent_id == source_id)
+        .values(parent_id=target_id).execution_options(**opts)
+    )
+    # Rules that set this category hold the id as a string in ``action_value``.
+    db.execute(
+        update(Rule).where(Rule.action_type == "set_category", Rule.action_value == str(source_id))
+        .values(action_value=str(target_id)).execution_options(**opts)
+    )
+
+    db.delete(source)
+    db.commit()
+    db.refresh(target)
+    return target
 
 
 def categorise_text(db: Session, description: str) -> tuple[int | None, float | None]:
