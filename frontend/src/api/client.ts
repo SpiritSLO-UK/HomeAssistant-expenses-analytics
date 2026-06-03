@@ -1293,6 +1293,25 @@ export function getInvestmentSummary(): Promise<InvestmentSummary> {
   return fetchJson<InvestmentSummary>("api/investments/summary");
 }
 
+export interface PeriodChange {
+  change: string;
+  pct: number | null;
+}
+
+export interface InvestmentHistory {
+  currency: string;
+  total_value: string;
+  points: { date: string; value: string }[];
+  change_day: PeriodChange;
+  change_month: PeriodChange;
+  change_year: PeriodChange;
+}
+
+// Portfolio value over time + day/month/year change (for the charts).
+export function getInvestmentHistory(days = 365): Promise<InvestmentHistory> {
+  return fetchJson<InvestmentHistory>(`api/investments/history?days=${days}`);
+}
+
 export function listInvestmentAccounts(): Promise<InvestmentAccount[]> {
   return fetchJson<InvestmentAccount[]>("api/investments/accounts");
 }

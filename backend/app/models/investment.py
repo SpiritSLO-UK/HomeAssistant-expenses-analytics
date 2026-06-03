@@ -41,6 +41,25 @@ class AccountValue(Base):
     )
 
 
+class HoldingPrice(Base):
+    """Price history for a holding — one row per (holding, date), recorded whenever
+    the price is set/updated/synced. Lets the portfolio value be reconstructed over
+    time for charts + day/month/year change figures (today's `Holding.last_price` is
+    only the latest point)."""
+
+    __tablename__ = "holding_prices"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    holding_id: Mapped[int] = mapped_column(
+        ForeignKey("holdings.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    as_of_date: Mapped[date] = mapped_column(Date, nullable=False)
+    price: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )
+
+
 class Holding(Base, TimestampMixin):
     __tablename__ = "holdings"
 

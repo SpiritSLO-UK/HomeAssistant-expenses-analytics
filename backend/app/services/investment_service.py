@@ -13,7 +13,7 @@ is reported only where a cost basis (avg_cost) is known.
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings as env_settings
 from app.logging import get_logger
-from app.models import Account, AccountValue, Holding
+from app.models import Account, AccountValue, Holding, HoldingPrice
 from app.services import price_service, settings_service
 from app.services.household_service import get_or_create_default_household
 
@@ -139,6 +139,22 @@ def get_holding(db: Session, holding_id: int) -> Holding:
     return holding
 
 
+def _record_holding_price(db: Session, holding_id: int, price: Decimal) -> None:
+    """Record/refresh today's price point for a holding (one row per holding+date),
+    so the portfolio value can be charted over time."""
+    today = date.today()
+    row = db.scalars(
+        select(HoldingPrice).where(
+            HoldingPrice.holding_id == holding_id, HoldingPrice.as_of_date == today
+        )
+    ).first()
+    if row is None:
+        db.add(HoldingPrice(holding_id=holding_id, as_of_date=today, price=Decimal(price)))
+    else:
+        row.price = Decimal(price)
+    db.commit()
+
+
 def create_holding(db: Session, account_id: int, *, symbol: str, units: Decimal,
                    name: str | None = None, avg_cost: Decimal | None = None,
                    last_price: Decimal | None = None) -> Holding:
@@ -156,6 +172,8 @@ def create_holding(db: Session, account_id: int, *, symbol: str, units: Decimal,
     db.add(holding)
     db.commit()
     db.refresh(holding)
+    if holding.last_price is not None:
+        _record_holding_price(db, holding.id, holding.last_price)
     return holding
 
 
@@ -170,15 +188,19 @@ def update_holding(db: Session, holding: Holding, **fields) -> Holding:
         holding.avg_cost = (
             Decimal(fields["avg_cost"]).quantize(SIX_DP) if fields["avg_cost"] is not None else None
         )
+    price_changed = False
     if "last_price" in fields:
         if fields["last_price"] is not None:
             holding.last_price = Decimal(fields["last_price"]).quantize(SIX_DP)
             holding.last_price_at = _now()
+            price_changed = True
         else:
             holding.last_price = None
             holding.last_price_at = None
     db.commit()
     db.refresh(holding)
+    if price_changed and holding.last_price is not None:
+        _record_holding_price(db, holding.id, holding.last_price)
     return holding
 
 
@@ -290,6 +312,96 @@ def summary(db: Session, *, account_ids: set[int] | None = None) -> dict:
         "total_gain_pct": _gain_pct(total_gain, total_cost) if has_cost else None,
         "by_type": {k: str(v.quantize(TWO_DP)) for k, v in by_type.items()},
         "accounts": accounts,
+    }
+
+
+# --- Value history & period changes (charts) --------------------------------
+
+
+def _holding_price_as_of(db: Session, holding_id: int, on: date) -> Decimal | None:
+    row = db.scalars(
+        select(HoldingPrice)
+        .where(HoldingPrice.holding_id == holding_id, HoldingPrice.as_of_date <= on)
+        .order_by(HoldingPrice.as_of_date.desc(), HoldingPrice.id.desc())
+        .limit(1)
+    ).first()
+    return Decimal(row.price) if row else None
+
+
+def _account_value_as_of(db: Session, account: Account, on: date) -> Decimal | None:
+    """An account's value on a date: holdings (Σ units × price-as-of) when it has
+    any, else its latest value snapshot on/before that date. None when unknown."""
+    holdings = list_holdings(db, account.id)
+    if holdings:
+        total = Decimal("0")
+        priced = False
+        for h in holdings:
+            price = _holding_price_as_of(db, h.id, on)
+            if price is not None:
+                total += Decimal(h.units) * price
+                priced = True
+        return total.quantize(TWO_DP) if priced else None
+    row = db.scalars(
+        select(AccountValue)
+        .where(AccountValue.account_id == account.id, AccountValue.as_of_date <= on)
+        .order_by(AccountValue.as_of_date.desc(), AccountValue.id.desc())
+        .limit(1)
+    ).first()
+    return Decimal(row.value) if row else None
+
+
+def total_value_as_of(db: Session, accounts: list[Account], on: date) -> Decimal:
+    total = Decimal("0")
+    for account in accounts:
+        value = _account_value_as_of(db, account, on)
+        if value is not None:
+            total += value
+    return total.quantize(TWO_DP)
+
+
+def _change(current: Decimal, prev: Decimal) -> dict:
+    change = (current - prev).quantize(TWO_DP)
+    pct = round(float(change / prev * 100), 1) if prev > 0 else None
+    return {"change": str(change), "pct": pct}
+
+
+def history(db: Session, *, account_ids: set[int] | None = None, days: int = 365) -> dict:
+    """Portfolio value over time (points at snapshot/price dates) + day/month/year
+    change. Reconstructed from value snapshots + holding price history, so changes
+    reflect recorded history (a holding only contributes once it has a price point)."""
+    accounts = list_accounts(db, account_ids=account_ids)
+    today = date.today()
+    start = today - timedelta(days=max(1, days))
+    acct_ids = [a.id for a in accounts]
+
+    dates: set[date] = {today}
+    if acct_ids:
+        for d in db.scalars(
+            select(AccountValue.as_of_date).where(
+                AccountValue.account_id.in_(acct_ids), AccountValue.as_of_date >= start
+            )
+        ).all():
+            dates.add(d)
+        for d in db.scalars(
+            select(HoldingPrice.as_of_date)
+            .join(Holding, Holding.id == HoldingPrice.holding_id)
+            .where(Holding.account_id.in_(acct_ids), HoldingPrice.as_of_date >= start)
+        ).all():
+            dates.add(d)
+
+    ordered = sorted(d for d in dates if d <= today)
+    points = [
+        {"date": d.isoformat(), "value": str(total_value_as_of(db, accounts, d))}
+        for d in ordered
+    ]
+    current = total_value_as_of(db, accounts, today)
+    return {
+        "currency": settings_service.get_base_currency(db),
+        "total_value": str(current),
+        "points": points,
+        "change_day": _change(current, total_value_as_of(db, accounts, today - timedelta(days=1))),
+        "change_month": _change(current, total_value_as_of(db, accounts, today - timedelta(days=30))),
+        "change_year": _change(current, total_value_as_of(db, accounts, today - timedelta(days=365))),
     }
 
 
