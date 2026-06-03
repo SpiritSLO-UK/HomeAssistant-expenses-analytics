@@ -36,6 +36,24 @@ LOG_LEVEL = "log_level"
 
 FX_MODES = {"manual", "frankfurter"}
 RECEIPT_MATCH_MODES = {"suggest", "auto"}
+
+# Curated base-currency choices for the Settings dropdown (the top-10 world
+# currencies by usage). The base currency is display-only — amounts are stored in
+# their original currency; changing it just re-converts for display. (code, name,
+# symbol); order = how they appear in the dropdown.
+SUPPORTED_CURRENCIES: list[dict[str, str]] = [
+    {"code": "GBP", "name": "British Pound", "symbol": "£"},
+    {"code": "USD", "name": "US Dollar", "symbol": "$"},
+    {"code": "EUR", "name": "Euro", "symbol": "€"},
+    {"code": "JPY", "name": "Japanese Yen", "symbol": "¥"},
+    {"code": "CNY", "name": "Chinese Yuan", "symbol": "¥"},
+    {"code": "AUD", "name": "Australian Dollar", "symbol": "A$"},
+    {"code": "CAD", "name": "Canadian Dollar", "symbol": "C$"},
+    {"code": "CHF", "name": "Swiss Franc", "symbol": "CHF"},
+    {"code": "HKD", "name": "Hong Kong Dollar", "symbol": "HK$"},
+    {"code": "SGD", "name": "Singapore Dollar", "symbol": "S$"},
+]
+SUPPORTED_CURRENCY_CODES = {c["code"] for c in SUPPORTED_CURRENCIES}
 PRIVACY_MODES = {"strict_local", "local_llm", "cloud_manual", "cloud_auto", "no_ai"}
 AI_PROVIDERS = {"none", "openai_compatible"}
 LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR"}

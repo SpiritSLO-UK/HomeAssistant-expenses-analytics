@@ -17,6 +17,7 @@ import {
   getSecurityHealth,
   getSecurityStatus,
   getSettings,
+  getSupportedCurrencies,
   importConfig,
   listFxRates,
   loadDemoData,
@@ -287,6 +288,7 @@ function CurrencyFx({
 }) {
   const qc = useQueryClient();
   const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
+  const currencies = useQuery({ queryKey: ["currencies"], queryFn: getSupportedCurrencies });
   const rates = useQuery({ queryKey: ["fx-rates"], queryFn: listFxRates });
   const [rateDate, setRateDate] = useState("");
   const [quote, setQuote] = useState("");
@@ -335,21 +337,38 @@ function CurrencyFx({
   const base = settings.data?.base_currency ?? "GBP";
   const mode = settings.data?.fx_mode ?? "manual";
 
+  // Curated list, plus the current base if it's somehow not in the list (so the
+  // dropdown always shows the actual value and never silently changes it).
+  const options = currencies.data ?? [];
+  const knownBase = options.some((c) => c.code === base);
+
+  const chooseBase = (code: string) => {
+    if (!code || code === base) return;
+    const c = options.find((o) => o.code === code);
+    const label = c ? `${c.name} (${c.symbol})` : code;
+    const ok = window.confirm(
+      `Change your base currency to ${code} — ${label}?\n\n` +
+        "Every transaction's converted amount is recomputed for display using your " +
+        "current FX rates / source. Your stored exchange rates are never rewritten — only " +
+        "the currency shown changes.",
+    );
+    if (ok) save.mutate({ base_currency: code });
+  };
+
   return (
     <div className="card">
       <h2 className="card__title">Currency &amp; exchange rates</h2>
       <div className="form-row">
         <label>
           Base currency{" "}
-          <input
-            defaultValue={base}
-            maxLength={3}
-            style={{ width: 70, textTransform: "uppercase" }}
-            onBlur={(e) => {
-              const v = e.target.value.trim().toUpperCase();
-              if (v && v !== base) save.mutate({ base_currency: v });
-            }}
-          />
+          <select value={base} onChange={(e) => chooseBase(e.target.value)}>
+            {!knownBase && <option value={base}>{base}</option>}
+            {options.map((c) => (
+              <option key={c.code} value={c.code}>
+                {c.symbol} {c.code} — {c.name}
+              </option>
+            ))}
+          </select>
         </label>
         <label>
           FX rates{" "}

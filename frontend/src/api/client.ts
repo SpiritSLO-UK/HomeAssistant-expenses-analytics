@@ -1181,6 +1181,17 @@ export function getSettings(): Promise<AppSettings> {
   return fetchJson<AppSettings>("api/settings");
 }
 
+export interface Currency {
+  code: string;
+  name: string;
+  symbol: string;
+}
+
+// Curated base-currency choices for the Settings dropdown (top-10).
+export function getSupportedCurrencies(): Promise<Currency[]> {
+  return fetchJson<Currency[]>("api/settings/currencies");
+}
+
 export function updateSettings(patch: Partial<AppSettings>): Promise<AppSettings & { recompute?: unknown }> {
   return fetchJson("api/settings", { method: "PUT", body: JSON.stringify(patch) });
 }
