@@ -1048,6 +1048,8 @@ export interface SavingsAccount {
   currency: string;
   latest_balance: string | null;
   balance_count: number;
+  interest_rate: string | null;
+  projected_annual_interest: string | null;
 }
 
 export interface SavingsBalance {
@@ -1102,6 +1104,28 @@ export function recordBalance(
 ): Promise<SavingsBalance> {
   return fetchJson(`api/savings/accounts/${accountId}/balances`, {
     method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+// Deposit/withdraw via the +/- control (records a snapshot at latest ± amount).
+export function adjustSavingsBalance(
+  accountId: number,
+  data: { amount: string; direction: "deposit" | "withdraw"; note?: string },
+): Promise<SavingsBalance> {
+  return fetchJson(`api/savings/accounts/${accountId}/adjust`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+// Edit a savings account (currently the interest rate; null clears it).
+export function updateSavingsAccount(
+  accountId: number,
+  data: { interest_rate?: string | null },
+): Promise<SavingsAccount> {
+  return fetchJson(`api/savings/accounts/${accountId}`, {
+    method: "PATCH",
     body: JSON.stringify(data),
   });
 }

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from sqlalchemy import Boolean, ForeignKey, String
+from decimal import Decimal
+
+from sqlalchemy import Boolean, ForeignKey, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin
@@ -26,3 +28,6 @@ class Account(Base, TimestampMixin):
     last_four: Mapped[str | None] = mapped_column(String(4), nullable=True)
     is_shared: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Optional annual interest rate (percent) — used by savings pots for a
+    # projected-growth estimate. NULL = unknown / not interest-bearing.
+    interest_rate: Mapped[Decimal | None] = mapped_column(Numeric(6, 3), nullable=True)

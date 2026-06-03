@@ -2,12 +2,14 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Sparkline from "../components/Sparkline";
 import {
+  adjustSavingsBalance,
   createSavingsAccount,
   createSavingsGoal,
   deleteSavingsGoal,
   getBalanceHistory,
   getSavingsSummary,
   recordBalance,
+  updateSavingsAccount,
   updateSavingsGoal,
   type SavingsAccount,
   type SavingsGoal,
@@ -89,20 +91,35 @@ function AccountCard({
     queryFn: () => getBalanceHistory(account.id),
   });
   const [date, setDate] = useState(today());
-  const [amount, setAmount] = useState("");
-  const add = useMutation({
+  const [amount, setAmount] = useState("");   // absolute "set balance" (from statement)
+  const [delta, setDelta] = useState("");     // deposit / withdraw amount
+  const [rate, setRate] = useState(account.interest_rate ?? "");
+
+  const refresh = () => {
+    onChange();
+    history.refetch();
+  };
+  const setBalance = useMutation({
     mutationFn: () => recordBalance(account.id, { as_of_date: date, balance: amount }),
-    onSuccess: () => {
-      setAmount("");
-      onChange();
-      history.refetch();
-    },
+    onSuccess: () => { setAmount(""); refresh(); },
+    onError,
+  });
+  const adjust = useMutation({
+    mutationFn: (direction: "deposit" | "withdraw") =>
+      adjustSavingsBalance(account.id, { amount: delta, direction }),
+    onSuccess: () => { setDelta(""); refresh(); },
+    onError,
+  });
+  const saveRate = useMutation({
+    mutationFn: () =>
+      updateSavingsAccount(account.id, { interest_rate: rate.trim() === "" ? null : rate.trim() }),
+    onSuccess: () => refresh(),
     onError,
   });
   const points = (history.data ?? []).map((b) => Number(b.balance));
 
   return (
-    <div style={{ borderTop: "1px solid #2a2a2a", padding: "10px 0" }}>
+    <div style={{ borderTop: "1px solid #2a2a2a", padding: "12px 0" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
         <div>
           <strong>{account.name}</strong>{" "}
@@ -113,20 +130,61 @@ function AccountCard({
         </div>
         {points.length >= 2 && <Sparkline values={points} color="#3aa55a" />}
       </div>
+
+      {/* Quick deposit / withdraw — adjusts the latest balance by a delta. */}
+      <div className="form-row" style={{ marginTop: 8, alignItems: "center", gap: 6 }}>
+        <input
+          placeholder={`Amount (${base})`}
+          value={delta}
+          style={{ width: 120 }}
+          onChange={(e) => setDelta(e.target.value)}
+        />
+        <button className="btn btn--sm" disabled={!delta || adjust.isPending} onClick={() => adjust.mutate("deposit")}>
+          ＋ Deposit
+        </button>
+        <button className="btn btn--sm btn--ghost" disabled={!delta || adjust.isPending} onClick={() => adjust.mutate("withdraw")}>
+          － Withdraw
+        </button>
+      </div>
+
+      {/* Interest rate + projected annual interest. */}
+      <div className="form-row" style={{ marginTop: 6, alignItems: "center", gap: 6 }}>
+        <label className="muted" style={{ fontSize: "0.85rem" }}>
+          Interest{" "}
+          <input
+            type="number" step="0.01" min="0"
+            placeholder="0.00"
+            value={rate}
+            style={{ width: 70 }}
+            onChange={(e) => setRate(e.target.value)}
+          />
+          %
+        </label>
+        <button className="btn btn--sm btn--ghost" disabled={saveRate.isPending} onClick={() => saveRate.mutate()}>
+          Save rate
+        </button>
+        {account.interest_rate && account.projected_annual_interest && (
+          <span className="muted" style={{ fontSize: "0.82rem" }}>
+            ≈ {account.projected_annual_interest} {account.currency}/yr
+          </span>
+        )}
+      </div>
+
+      {/* Set an absolute balance (e.g. from a statement). */}
       <form
         className="form-row"
         style={{ marginTop: 6 }}
-        onSubmit={(e) => { e.preventDefault(); if (amount) add.mutate(); }}
+        onSubmit={(e) => { e.preventDefault(); if (amount) setBalance.mutate(); }}
       >
         <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
         <input
-          placeholder={`Balance (${base})`}
+          placeholder={`Set balance (${base})`}
           value={amount}
-          style={{ width: 140 }}
+          style={{ width: 150 }}
           onChange={(e) => setAmount(e.target.value)}
         />
-        <button className="btn btn--sm" type="submit" disabled={!amount || add.isPending}>
-          {add.isPending ? "Saving…" : "Record balance"}
+        <button className="btn btn--sm btn--ghost" type="submit" disabled={!amount || setBalance.isPending}>
+          {setBalance.isPending ? "Saving…" : "Set from statement"}
         </button>
       </form>
     </div>
