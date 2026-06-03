@@ -623,14 +623,17 @@ code {
   position: absolute;
   top: 0;
   right: 0;
-  width: 7px;
+  width: 9px;
   height: 100%;
   cursor: col-resize;
   user-select: none;
   touch-action: none;
+  /* Always-visible divider so it's obvious where to grab to resize (#56). */
+  border-right: 2px solid var(--border);
 }
 .col-resize:hover {
-  background: var(--border);
+  border-right-color: var(--sidebar-active);
+  background: color-mix(in srgb, var(--sidebar-active) 12%, transparent);
 }
 
 /* Dashboard "Customise" reorder list (#84). */
