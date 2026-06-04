@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { QRCodeSVG } from "qrcode.react";
 import {
@@ -327,29 +327,42 @@ export default function Settings() {
   );
 }
 
-// Unified on/off + status for every service (backlog §38). AI/OCR/online-FX are
-// runtime-toggleable here; MQTT is add-on-configured, so it's shown read-only.
-// One service row: a labelled on/off toggle. Module-level so it isn't recreated
-// (and remounted) on every ServicesCard render.
-function Toggle({
+// Settings → Services (backlog §38; per-service panels #67/#68). AI/OCR/online-FX
+// are runtime-toggleable; MQTT is add-on-configured, so it's read-only. Each
+// service gets its own panel with a consistent header + status tag + control.
+// Module-level so they aren't recreated (and remounted) on every render.
+
+// A compact labelled on/off control used inside a service panel.
+function ServiceToggle({
   on,
-  label,
-  detail,
-  onChange,
   busy,
-}: Readonly<{ on: boolean; label: string; detail: string; onChange: (v: boolean) => void; busy?: boolean }>) {
+  onChange,
+}: Readonly<{ on: boolean; busy?: boolean; onChange: (v: boolean) => void }>) {
   return (
-    <li style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "6px 0" }}>
-      <span>
-        <strong>{label}</strong>
-        <br />
-        <span className="muted" style={{ fontSize: "0.82rem" }}>{detail}</span>
-      </span>
-      <label className="checkbox" style={{ whiteSpace: "nowrap" }}>
-        <input type="checkbox" checked={on} disabled={busy} onChange={(e) => onChange(e.target.checked)} />{" "}
-        {on ? "On" : "Off"}
-      </label>
-    </li>
+    <label className="checkbox" style={{ whiteSpace: "nowrap" }}>
+      <input type="checkbox" checked={on} disabled={busy} onChange={(e) => onChange(e.target.checked)} />{" "}
+      {on ? "On" : "Off"}
+    </label>
+  );
+}
+
+// One self-contained service panel: name + On/Off status tag, a detail line and
+// the service's own control (a toggle, a button or a read-only note).
+function ServicePanel({
+  title,
+  detail,
+  on,
+  children,
+}: Readonly<{ title: string; detail: string; on: boolean; children?: ReactNode }>) {
+  return (
+    <div className="service-panel">
+      <div className="service-panel__head">
+        <strong>{title}</strong>
+        <span className={"tag" + (on ? "" : " tag--dup")}>{on ? "On" : "Off"}</span>
+      </div>
+      <span className="muted service-panel__detail">{detail}</span>
+      {children}
+    </div>
   );
 }
 
@@ -375,52 +388,31 @@ function ServicesCard({
     <div className="card">
       <h2 className="card__title">Services</h2>
       <p className="muted" style={{ marginTop: 0, fontSize: "0.85rem" }}>
-        See and switch services from one place. The AI assistant stays off until you choose a mode
-        and provider in the AI section below — but you can always turn it off here.
+        Each service has its own panel. The AI assistant stays off until you choose a mode and
+        provider in the AI section below — but you can always turn it off here.
       </p>
       {!s && <p className="muted">Loading…</p>}
       {s && (
-        <ul className="kv" style={{ display: "block" }}>
-          <li style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "6px 0" }}>
-            <span>
-              <strong>AI assistant</strong>
-              <br />
-              <span className="muted" style={{ fontSize: "0.82rem" }}>{s.ai.detail}</span>
-            </span>
-            <span style={{ whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 8 }}>
-              <span className={"tag" + (s.ai.enabled ? "" : " tag--dup")}>{s.ai.enabled ? "On" : "Off"}</span>
-              {s.ai.enabled ? (
-                <button className="btn btn--sm btn--ghost" disabled={set.isPending} onClick={() => set.mutate({ privacy_mode: "no_ai" })}>
-                  Turn off
-                </button>
-              ) : (
-                <span className="muted" style={{ fontSize: "0.8rem" }}>set up below ↓</span>
-              )}
-            </span>
-          </li>
-          <Toggle
-            label="Receipt OCR"
-            detail={s.ocr.detail}
-            on={s.ocr.enabled}
-            busy={set.isPending}
-            onChange={(v) => set.mutate({ ocr_enabled: v })}
-          />
-          <Toggle
-            label="Online exchange rates"
-            detail={s.fx.detail}
-            on={s.fx.enabled}
-            busy={set.isPending}
-            onChange={(v) => set.mutate({ fx_mode: v ? "frankfurter" : "manual" })}
-          />
-          <li style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "6px 0" }}>
-            <span>
-              <strong>MQTT (Home Assistant)</strong>
-              <br />
-              <span className="muted" style={{ fontSize: "0.82rem" }}>{s.mqtt.detail}</span>
-            </span>
-            <span className={"tag" + (s.mqtt.enabled ? "" : " tag--dup")}>{s.mqtt.enabled ? "On" : "Off"}</span>
-          </li>
-        </ul>
+        <div className="service-grid">
+          <ServicePanel title="AI assistant" detail={s.ai.detail} on={s.ai.enabled}>
+            {s.ai.enabled ? (
+              <button className="btn btn--sm btn--ghost" disabled={set.isPending} onClick={() => set.mutate({ privacy_mode: "no_ai" })}>
+                Turn off
+              </button>
+            ) : (
+              <span className="muted" style={{ fontSize: "0.8rem" }}>Choose a mode in the AI section below ↓</span>
+            )}
+          </ServicePanel>
+          <ServicePanel title="Receipt OCR" detail={s.ocr.detail} on={s.ocr.enabled}>
+            <ServiceToggle on={s.ocr.enabled} busy={set.isPending} onChange={(v) => set.mutate({ ocr_enabled: v })} />
+          </ServicePanel>
+          <ServicePanel title="Online exchange rates" detail={s.fx.detail} on={s.fx.enabled}>
+            <ServiceToggle on={s.fx.enabled} busy={set.isPending} onChange={(v) => set.mutate({ fx_mode: v ? "frankfurter" : "manual" })} />
+          </ServicePanel>
+          <ServicePanel title="MQTT (Home Assistant)" detail={s.mqtt.detail} on={s.mqtt.enabled}>
+            <span className="muted" style={{ fontSize: "0.8rem" }}>Read-only — set in the add-on options.</span>
+          </ServicePanel>
+        </div>
       )}
     </div>
   );
