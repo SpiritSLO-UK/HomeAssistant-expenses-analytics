@@ -988,6 +988,7 @@ code {
 
 /* Spend-by-location world map (Dashboard GeoCard) */
 .worldmap {
+  position: relative;
   width: 100%;
   margin: 4px 0 14px;
 }
@@ -996,16 +997,36 @@ code {
   width: 100%;
   height: auto;
   border-radius: 6px;
+  touch-action: none; /* let drag-to-pan work on touch without scrolling the page */
+}
+.worldmap svg.is-zoomed {
+  cursor: grab;
+}
+.worldmap svg.is-dragging {
+  cursor: grabbing;
+}
+/* Zoom controls, top-right over the map */
+.worldmap__controls {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 4px;
+  z-index: 1;
+}
+.worldmap__controls button {
+  min-width: 30px;
+  background: var(--panel);
 }
 /* var()/color-mix() only resolve in CSS, not in SVG presentation attributes,
    so the theme-driven map fills live here. */
 .worldmap__ocean {
   fill: var(--surface);
 }
-.worldmap__land {
-  fill: color-mix(in srgb, var(--muted) 20%, var(--surface));
-  stroke: var(--border);
-  stroke-width: 0.5px;
+.worldmap__country {
+  fill: color-mix(in srgb, var(--muted) 18%, var(--surface));
+  stroke: color-mix(in srgb, var(--muted) 45%, transparent);
+  stroke-width: 0.5px; /* with vector-effect: non-scaling-stroke → stays crisp when zoomed */
 }
 .worldmap circle {
   stroke: var(--panel);
