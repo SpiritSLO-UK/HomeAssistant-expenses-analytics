@@ -38,7 +38,7 @@ export default function ReviewQueue() {
       <div className="page__head">
         <h1 className="page__title">Review Queue</h1>
         <label className="checkbox">
-          <input type="checkbox" checked={showResolved} onChange={(e) => setShowResolved(e.target.checked)} />
+          <input type="checkbox" checked={showResolved} onChange={(e) => setShowResolved(e.target.checked)} />{" "}
           Show resolved
         </label>
       </div>
@@ -49,7 +49,7 @@ export default function ReviewQueue() {
 
       <div className="card">
         {items.isLoading && <p className="muted">Loading…</p>}
-        {items.data && items.data.length === 0 && (
+        {items.data?.length === 0 && (
           <p className="muted">{showResolved ? "Nothing resolved yet." : "All clear — nothing to review. 🎉"}</p>
         )}
         <div>
@@ -59,7 +59,7 @@ export default function ReviewQueue() {
                 <span className="tag" style={{ background: SEVERITY_COLOUR[item.severity] }}>
                   {REASON_LABEL[item.reason] ?? item.reason}
                 </span>{" "}
-                <span className="muted">{item.item_type}{item.item_id != null ? ` #${item.item_id}` : ""}</span>
+                <span className="muted">{item.item_type}{item.item_id == null ? "" : ` #${item.item_id}`}</span>
                 {item.suggested_action && <div style={{ marginTop: 4 }}>{item.suggested_action}</div>}
               </div>
               <div style={{ display: "flex", gap: 6, flexShrink: 0, alignItems: "center" }}>

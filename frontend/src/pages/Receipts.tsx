@@ -65,7 +65,7 @@ export default function Receipts() {
       <div className="card">
         <h2 className="card__title">Your receipts</h2>
         {receipts.isLoading && <p className="muted">Loading…</p>}
-        {receipts.data && receipts.data.length === 0 && (
+        {receipts.data?.length === 0 && (
           <p className="muted">No receipts yet. Upload one above.</p>
         )}
         <div>
@@ -105,14 +105,7 @@ function PaperlessCard({ onError }: Readonly<{ onError: (e: unknown) => void }>)
   return (
     <div className="card">
       <h2 className="card__title">Import from Paperless</h2>
-      {!configured ? (
-        <p className="muted">
-          Pull documents from your <strong>Paperless-ngx</strong> instance into receipts. It's
-          one-directional — we only ever request from Paperless, never the other way. To enable,
-          set <code>HAFI_PAPERLESS_URL</code> and <code>HAFI_PAPERLESS_TOKEN</code> in the add-on /
-          environment and restart.
-        </p>
-      ) : (
+      {configured ? (
         <>
           <p className="muted" style={{ marginTop: 0 }}>
             Connected to <code>{status.data?.url}</code>. Search your documents and import one as a receipt.
@@ -127,7 +120,7 @@ function PaperlessCard({ onError }: Readonly<{ onError: (e: unknown) => void }>)
             <button className="btn btn--sm" type="submit">{docs.isFetching ? "Searching…" : "Browse"}</button>
           </form>
           {msg && <p className="status status--ok" style={{ marginTop: 8 }}>{msg}</p>}
-          {submitted !== null && docs.data && docs.data.length === 0 && (
+          {submitted !== null && docs.data?.length === 0 && (
             <p className="muted">No documents found.</p>
           )}
           {docs.data && docs.data.length > 0 && (
@@ -147,6 +140,13 @@ function PaperlessCard({ onError }: Readonly<{ onError: (e: unknown) => void }>)
             </ul>
           )}
         </>
+      ) : (
+        <p className="muted">
+          Pull documents from your <strong>Paperless-ngx</strong> instance into receipts. It's
+          one-directional — we only ever request from Paperless, never the other way. To enable,
+          set <code>HAFI_PAPERLESS_URL</code> and <code>HAFI_PAPERLESS_TOKEN</code> in the add-on /
+          environment and restart.
+        </p>
       )}
     </div>
   );

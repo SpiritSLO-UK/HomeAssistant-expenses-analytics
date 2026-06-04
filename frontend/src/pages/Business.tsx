@@ -52,7 +52,7 @@ export default function Business() {
 
       {summary.isLoading && <p className="muted">Loading…</p>}
 
-      {s && s.transaction_count === 0 && (
+      {s?.transaction_count === 0 && (
         <div className="card">
           <p className="muted">
             No business expenses yet. On the <strong>Transactions</strong> page, use the
@@ -98,9 +98,9 @@ export default function Business() {
                         <Link
                           title={`See business ${r.name} transactions`}
                           to={
-                            r.category_id != null
-                              ? `/transactions?is_business=true&category_id=${r.category_id}`
-                              : `/transactions?is_business=true&uncategorised=true`
+                            r.category_id == null
+                              ? `/transactions?is_business=true&uncategorised=true`
+                              : `/transactions?is_business=true&category_id=${r.category_id}`
                           }
                         >
                           {r.name}

@@ -87,7 +87,7 @@ export default function Budgets() {
       <div className="card">
         <h2 className="card__title">Your budgets</h2>
         {summary.isLoading && <p className="muted">Loading…</p>}
-        {summary.data && summary.data.length === 0 && (
+        {summary.data?.length === 0 && (
           <p className="muted">No budgets yet. Add one above to track spending against a limit.</p>
         )}
         <div className="budget-list">
@@ -128,9 +128,9 @@ function BudgetRow({
   const [open, setOpen] = useState(false);
   const colour = STATUS_COLOUR[b.status] ?? "#3a9b5c";
   const scope =
-    b.category_id != null ? (categoryName ?? "Category")
-    : b.project_id != null ? "Project"
-    : "All spending";
+    b.category_id == null
+    ? (b.project_id == null ? "All spending" : "Project")
+    : (categoryName ?? "Category");
   const txns = useQuery({
     queryKey: ["budget-txns", b.budget_id, month, annual],
     queryFn: () => getBudgetTransactions(b.budget_id, { month, annual }),
@@ -263,7 +263,7 @@ function NewBudget({
             value={threshold}
             onChange={(e) => setThreshold(e.target.value)}
             style={{ width: 64 }}
-          />
+          />{" "}
           %
         </label>
         <button className="btn" disabled={!valid || create.isPending} onClick={() => create.mutate()}>

@@ -42,7 +42,7 @@ export default function Projects() {
       <div className="card">
         <h2 className="card__title">Your projects</h2>
         {projects.isLoading && <p className="muted">Loading…</p>}
-        {projects.data && projects.data.length === 0 && (
+        {projects.data?.length === 0 && (
           <p className="muted">No projects yet. Create one above (e.g. “Bathroom renovation”), then assign transactions to it on the Transactions page.</p>
         )}
         <div className="project-list">

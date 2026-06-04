@@ -54,7 +54,7 @@ export default function Assets() {
         </div>
       )}
 
-      {assets.data && assets.data.length === 0 && !showNew && (
+      {assets.data?.length === 0 && !showNew && (
         <div className="card"><p className="muted">No assets yet — add a car with ＋ New asset.</p></div>
       )}
 
@@ -132,9 +132,9 @@ function AssetCard({ asset, onChange, onError }: Readonly<{ asset: Asset; onChan
           </button>
           {asset.identifier && <span className="muted"> · {asset.identifier}</span>}
           <div className="muted" style={{ fontSize: "0.85rem", marginTop: 2 }}>
-            {car && car.avg_economy != null ? <>≈ {car.avg_economy} {car.economy_unit} · </> : null}
+            {car?.avg_economy != null ? <>≈ {car.avg_economy} {car.economy_unit} · </> : null}
             Total cost {gbp(asset.total_cost)}
-            {car && car.latest_odometer && <> · {car.latest_odometer} {car.distance_unit}</>}
+            {car?.latest_odometer && <> · {car.latest_odometer} {car.distance_unit}</>}
           </div>
         </div>
         <button
@@ -168,8 +168,8 @@ function CarStatsPanel({ car }: Readonly<{ car: NonNullable<Asset["car"]> }>) {
   const eu = car.economy_unit;
   return (
     <div className="stat-grid" style={{ marginBottom: 12 }}>
-      <Stat label="Avg economy" value={car.avg_economy != null ? `${car.avg_economy} ${eu}` : "—"} />
-      <Stat label="Last fill" value={car.last_economy != null ? `${car.last_economy} ${eu}` : "—"} />
+      <Stat label="Avg economy" value={car.avg_economy == null ? "—" : `${car.avg_economy} ${eu}`} />
+      <Stat label="Last fill" value={car.last_economy == null ? "—" : `${car.last_economy} ${eu}`} />
       <Stat label={`Fuel used (${car.fuel_unit})`} value={Number(car.total_fuel) > 0 ? car.total_fuel : "—"} />
       <Stat label="Fuel cost" value={gbp(car.total_fuel_cost)} />
     </div>
@@ -361,7 +361,7 @@ function LogHistory({ asset, logs, onChange, onError }: Readonly<{
         </thead>
         <tbody>
           {rows.map((lg) => {
-            const econ = lg.odometer != null ? econByOdo.get(lg.odometer) : undefined;
+            const econ = lg.odometer == null ? undefined : econByOdo.get(lg.odometer);
             return (
               <tr key={lg.id}>
                 <td style={{ whiteSpace: "nowrap" }}>{lg.log_date}</td>
@@ -369,7 +369,7 @@ function LogHistory({ asset, logs, onChange, onError }: Readonly<{
                 <td>
                   {lg.kind === "refuel" ? (
                     <>
-                      {lg.odometer} · {lg.litres != null ? fuelDisplay(lg.litres) : "—"}
+                      {lg.odometer} · {lg.litres == null ? "—" : fuelDisplay(lg.litres)}
                       {lg.is_full_tank === false && <span className="muted"> · partial</span>}
                       {econ != null && <span className="amt--pos"> · {econ} {economyUnit}</span>}
                     </>
@@ -382,7 +382,7 @@ function LogHistory({ asset, logs, onChange, onError }: Readonly<{
                     lg.note ?? <span className="muted">—</span>
                   )}
                 </td>
-                <td style={{ whiteSpace: "nowrap" }}>{lg.cost != null ? gbp(lg.cost) : "—"}</td>
+                <td style={{ whiteSpace: "nowrap" }}>{lg.cost == null ? "—" : gbp(lg.cost)}</td>
                 <td>
                   <button className="link-btn" onClick={() => { if (globalThis.confirm("Delete this entry?")) remove.mutate(lg.id); }}>✕</button>
                 </td>

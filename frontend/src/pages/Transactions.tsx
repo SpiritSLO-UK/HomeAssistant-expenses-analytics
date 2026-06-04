@@ -302,7 +302,7 @@ export default function Transactions() {
         res = await approveAiRequest(res.ai_request_id);
       }
       if (res.status === "ok" && res.category_id) {
-        const pct = res.confidence != null ? ` (${Math.round(res.confidence * 100)}%)` : "";
+        const pct = res.confidence == null ? "" : ` (${Math.round(res.confidence * 100)}%)`;
         if (globalThis.confirm(`AI suggests: ${res.category_name}${pct}\n${res.rationale ?? ""}\n\nApply this category?`)) {
           setCategory.mutate({ id: t.id, categoryId: res.category_id });
         }
@@ -390,13 +390,13 @@ export default function Transactions() {
               <button className="link-btn" onClick={() => { setDateFrom(""); setDateTo(""); setPage(0); }}>Clear</button>
             )}
           </span>
-          <label>Category
+          <label>Category{" "}
             <select value={categoryFilter} onChange={(e) => { setCategoryFilter(e.target.value); setPage(0); }}>
               <option value="">All</option>
               {categories.data?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </label>
-          <label>Vendor
+          <label>Vendor{" "}
             <select value={vendorFilter} onChange={(e) => { setVendorFilter(e.target.value); setPage(0); }}>
               <option value="">All</option>
               {vendors.data?.map((v) => (
@@ -404,7 +404,7 @@ export default function Transactions() {
               ))}
             </select>
           </label>
-          <label>Project
+          <label>Project{" "}
             <select value={projectFilter} onChange={(e) => { setProjectFilter(e.target.value); setPage(0); }}>
               <option value="">All</option>
               {projects.data?.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -417,7 +417,7 @@ export default function Transactions() {
             </span>
           )}
           {(members.data?.length ?? 0) > 1 && (
-            <label title="Show one household member's own-account transactions">Member
+            <label title="Show one household member's own-account transactions">Member{" "}
               <select value={memberFilter} onChange={(e) => { setMemberFilter(e.target.value); setPage(0); }}>
                 <option value="">All members</option>
                 {members.data?.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}
@@ -467,7 +467,7 @@ export default function Transactions() {
       <div className="card">
         {isLoading && <p className="muted">Loading…</p>}
         {isError && <p className="status status--error">{String(error)}</p>}
-        {data && data.items.length === 0 && (
+        {data?.items.length === 0 && (
           focusId ? (
             <p className="muted">
               Transaction #{focusId} wasn't found — it may have been deleted or isn't visible to you.{" "}

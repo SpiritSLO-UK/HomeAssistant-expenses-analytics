@@ -80,7 +80,7 @@ export default function FamilySetup() {
           <h2 className="card__title">1. People &amp; roles</h2>
           <p className="muted">
             People appear here when they open the add-on through Home Assistant. Approve who should have
-            access and pick a role: <em>owner</em> (admin), <em>member</em> (read/write), <em>viewer</em>
+            access and pick a role: <em>owner</em> (admin), <em>member</em> (read/write), <em>viewer</em>{" "}
             (read-only), or <em>child</em> (allowance-only).
           </p>
           {pending.length > 0 && (
@@ -124,8 +124,8 @@ export default function FamilySetup() {
         <div className="card">
           <h2 className="card__title">2. Shared vs private accounts</h2>
           <p className="muted">
-            A <strong>shared</strong> account is visible to the whole household. Mark an account
-            <strong> private</strong> and assign an <strong>owner</strong> to keep it (and its transactions)
+            A <strong>shared</strong> account is visible to the whole household. Mark an account{" "}
+            <strong>private</strong> and assign an <strong>owner</strong> to keep it (and its transactions)
             off everyone else's dashboards, budgets and lists — only the owner and you see it.
           </p>
           <div className="table-wrap">

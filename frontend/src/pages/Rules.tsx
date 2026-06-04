@@ -219,8 +219,8 @@ function RulesHelp() {
       <h2 className="card__title">How rules work</h2>
       <p className="muted">
         Rules apply automatically on import and when you re-categorise. They run <strong>just below your
-        manual choices</strong>: manual → <strong>rule</strong> → vendor default → keyword. Among rules,
-        <strong> higher priority wins</strong> (your rules default to 150–200; the built-in library uses ~100).
+        manual choices</strong>: manual → <strong>rule</strong> → vendor default → keyword. Among rules,{" "}
+        <strong>higher priority wins</strong> (your rules default to 150–200; the built-in library uses ~100).
         Toggle any rule off without deleting it, and use <strong>Test</strong> to see how many existing
         transactions a condition matches before you create it.
       </p>

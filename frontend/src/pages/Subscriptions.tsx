@@ -102,7 +102,7 @@ export default function Subscriptions() {
 
       <div className="card">
         {subs.isLoading && <p className="muted">Loading…</p>}
-        {subs.data && subs.data.length === 0 && (
+        {subs.data?.length === 0 && (
           <p className="muted">
             No subscriptions detected yet. Import a few months of statements (or click <strong>Detect now</strong>) — recurring charges show up here.
           </p>
@@ -126,11 +126,11 @@ export default function Subscriptions() {
                 {subs.data.map((s: Subscription) => (
                   <tr key={s.id} style={{ opacity: s.status === "cancelled" || s.status === "ignored" ? 0.55 : 1 }}>
                     <td>{s.name}</td>
-                    <td className="num">{s.amount} {s.currency !== base ? s.currency : ""}</td>
+                    <td className="num">{s.amount} {s.currency === base ? "" : s.currency}</td>
                     <td>{s.frequency}</td>
                     <td className="num">{s.monthly_amount} {base}</td>
                     <td>{s.next_expected_date ?? "—"}</td>
-                    <td>{s.confidence_score != null ? `${Math.round(s.confidence_score * 100)}%` : "—"}</td>
+                    <td>{s.confidence_score == null ? "—" : `${Math.round(s.confidence_score * 100)}%`}</td>
                     <td>
                       <select value={s.status} onChange={(e) => setStatus.mutate({ id: s.id, status: e.target.value })}>
                         {SUBSCRIPTION_STATUSES.map((st) => (

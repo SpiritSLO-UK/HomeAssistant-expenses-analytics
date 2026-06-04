@@ -64,7 +64,7 @@ export default function Savings() {
         {showNew && (
           <NewAccountForm onCreated={() => { invalidate(); setShowNew(false); }} onError={fail} />
         )}
-        {summary.data && summary.data.accounts.length === 0 && !showNew && (
+        {summary.data?.accounts.length === 0 && !showNew && (
           <p className="muted">No savings accounts yet — add one with ＋ New account.</p>
         )}
         {summary.data?.accounts.map((a) => (
@@ -189,7 +189,7 @@ function AccountCard({
                 value={rate}
                 style={{ width: 70 }}
                 onChange={(e) => setRate(e.target.value)}
-              />
+              />{" "}
               %
             </label>
             <button className="btn btn--sm btn--ghost" disabled={saveRate.isPending} onClick={() => saveRate.mutate()}>
@@ -345,7 +345,7 @@ function GoalsCard({
                       className="link-btn"
                       onClick={() => {
                         const v = globalThis.prompt(`Update current amount for "${g.name}" (${base})`, g.current_amount);
-                        if (v != null && v.trim()) setCurrent.mutate({ id: g.id, current_amount: v.trim() });
+                        if (v?.trim()) setCurrent.mutate({ id: g.id, current_amount: v.trim() });
                       }}
                     >
                       update amount

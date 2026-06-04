@@ -46,7 +46,7 @@ export default function Logs() {
             type="checkbox"
             checked={includeArchived}
             onChange={(e) => setIncludeArchived(e.target.checked)}
-          />
+          />{" "}
           Include archived
         </label>
       </div>
@@ -95,7 +95,7 @@ function ActivityCard({ includeArchived }: Readonly<{ includeArchived: boolean }
       </div>
 
       {log.isLoading && <p className="muted">Loading…</p>}
-      {log.data && log.data.length === 0 && (
+      {log.data?.length === 0 && (
         <p className="muted">No activity recorded yet{action ? " for this action" : ""}.</p>
       )}
       {log.data && log.data.length > 0 && (
@@ -111,7 +111,7 @@ function ActivityCard({ includeArchived }: Readonly<{ includeArchived: boolean }
                   <td>{row.actor ?? "system"}</td>
                   <td><code>{row.action}</code></td>
                   <td className="muted">
-                    {row.entity_type ? `${row.entity_type}${row.entity_id != null ? ` #${row.entity_id}` : ""}` : "—"}
+                    {row.entity_type ? `${row.entity_type}${row.entity_id == null ? "" : ` #${row.entity_id}`}` : "—"}
                   </td>
                   <td className="muted" style={{ fontSize: "0.82rem" }}>{describe(row)}</td>
                 </tr>
