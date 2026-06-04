@@ -5,10 +5,12 @@ import {
   bulkUpdateTransactions,
   createProjectFromTrip,
   getTravelByCurrency,
+  getTravelHistory,
   getTravelTrips,
   type Trip,
 } from "../api/client";
 import CountrySelect from "../components/CountrySelect";
+import OverTimeChart from "../components/OverTimeChart";
 
 function fmtRange(first: string, last: string): string {
   return first === last ? first : `${first} → ${last}`;
@@ -36,10 +38,12 @@ function TripCountry({ onSet, pending }: Readonly<{ onSet: (code: string) => voi
 export default function Travel() {
   const qc = useQueryClient();
   const [gapDays, setGapDays] = useState(14);
+  const [months, setMonths] = useState(12);
   const [msg, setMsg] = useState<string | null>(null);
   const [openTrip, setOpenTrip] = useState<string | null>(null);
 
   const byCurrency = useQuery({ queryKey: ["travel-by-currency"], queryFn: getTravelByCurrency });
+  const history = useQuery({ queryKey: ["travel-history", months], queryFn: () => getTravelHistory(months) });
   const trips = useQuery({ queryKey: ["travel-trips", gapDays], queryFn: () => getTravelTrips(gapDays) });
 
   const makeProject = useMutation({
@@ -87,6 +91,15 @@ export default function Travel() {
       </p>
 
       {msg && <p className="status status--ok">{msg}</p>}
+
+      <OverTimeChart
+        title="Travel spend over time"
+        series={history.data}
+        months={months}
+        onMonths={setMonths}
+        color="#f0883e"
+        emptyHint="No foreign-currency spend yet — this chart fills in as travel transactions arrive."
+      />
 
       <div className="card">
         <h2 className="card__title">Spend by currency</h2>

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 
 
@@ -114,3 +116,16 @@ def test_project_filter_on_transactions(client):
     items = client.get(f"/api/transactions?project_id={pid}").json()["items"]
     assert len(items) == 1
     assert items[0]["description_raw"] == "SHELL FUEL"
+
+
+def test_projects_history(client):
+    """Project spend bucketed per month (all projects, split-aware) for the chart."""
+    today = date.today().isoformat()
+    _import(client, _curve([(today, "KITCHEN TILES", "-100.00")]))
+    pid = client.post("/api/projects", json={"name": "Kitchen"}).json()["id"]
+    t = _txn(client, "KITCHEN TILES")
+    assert client.patch(f"/api/transactions/{t['id']}", json={"project_id": pid}).status_code == 200
+    h = client.get("/api/projects/history?months=3").json()
+    assert len(h["months"]) == 3
+    assert all({"month", "total"} == set(m) for m in h["months"])
+    assert h["months"][-1]["total"] == "100.00"  # current month

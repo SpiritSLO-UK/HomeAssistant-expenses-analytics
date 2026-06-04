@@ -28,6 +28,16 @@ def by_currency(request: Request, db: Annotated[Session, Depends(get_db)]) -> di
     return travel_service.by_currency(db, account_ids=_scope(request, db))
 
 
+@router.get("/history")
+def history(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    months: Annotated[int, Query(ge=1, le=60)] = 12,
+) -> dict:
+    """Foreign-spend over-time series (base currency) for the Travel chart."""
+    return travel_service.history(db, account_ids=_scope(request, db), months=months)
+
+
 @router.get("/trips")
 def trips(
     request: Request,
