@@ -37,6 +37,7 @@ ACTION_TYPES = {
     "set_category",
     "set_vendor",
     "set_project",
+    "set_country",
     "mark_transfer",
     "mark_income",
     "mark_subscription",
@@ -107,6 +108,14 @@ def _apply_set_category(txn: Transaction, av: str | None) -> None:
         txn.confidence_score = RULE_CONFIDENCE
 
 
+def _apply_set_country(txn: Transaction, av: str | None) -> None:
+    """Tag the transaction's spend location (ISO alpha-2). Normalised exactly like
+    the manual/bulk country edits (upper, first two chars; blank clears) so the
+    spend-by-location map sees a consistent code (#79/#107/#109)."""
+    code = (av or "").strip().upper()[:2]
+    txn.country = code or None
+
+
 def apply_action(rule: Rule, txn: Transaction) -> None:
     at = rule.action_type
     av = rule.action_value
@@ -121,6 +130,8 @@ def apply_action(rule: Rule, txn: Transaction) -> None:
         value = _int_action_value(av)
         if value is not None:
             txn.project_id = value
+    elif at == "set_country":
+        _apply_set_country(txn, av)
     elif at == "mark_transfer":
         txn.is_transfer = True
     elif at == "mark_income":

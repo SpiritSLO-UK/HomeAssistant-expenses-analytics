@@ -81,6 +81,7 @@ export default function Rules() {
       const v = vendors.data?.find((x) => String(x.id) === r.action_value);
       return `→ vendor: ${v?.canonical_name ?? r.action_value}`;
     }
+    if (r.action_type === "set_country") return `→ country: ${r.action_value}`;
     return `→ ${r.action_type.replace("_", " ")}` + (r.action_value ? `: ${r.action_value}` : "");
   }
 
@@ -127,9 +128,20 @@ export default function Rules() {
               {vendors.data?.map((v) => <option key={v.id} value={v.id}>{v.canonical_name}</option>)}
             </select>
           )}
-          {!NO_VALUE_ACTIONS.has(actionType) && actionType !== "set_category" && actionType !== "set_vendor" && (
-            <input placeholder="value" value={actionValue} onChange={(e) => setActionValue(e.target.value)} />
+          {actionType === "set_country" && (
+            <input
+              style={{ width: 90 }}
+              placeholder="ES, GB, US…"
+              value={actionValue}
+              onChange={(e) => setActionValue(e.target.value.toUpperCase().slice(0, 2))}
+            />
           )}
+          {!NO_VALUE_ACTIONS.has(actionType) &&
+            actionType !== "set_category" &&
+            actionType !== "set_vendor" &&
+            actionType !== "set_country" && (
+              <input placeholder="value" value={actionValue} onChange={(e) => setActionValue(e.target.value)} />
+            )}
           <label className="muted">prio <input type="number" style={{ width: 70 }} value={priority} onChange={(e) => setPriority(Number(e.target.value))} /></label>
         </div>
         <div className="form-row" style={{ marginTop: 8 }}>
@@ -206,6 +218,7 @@ const ACTION_HELP: { type: string; what: string }[] = [
   { type: "set_category", what: "put the transaction in a category" },
   { type: "set_vendor", what: "tag it with a vendor" },
   { type: "set_project", what: "assign it to a project" },
+  { type: "set_country", what: "tag its spend location (ISO alpha-2, e.g. ES) for the location map" },
   { type: "mark_transfer", what: "flag it as a transfer (excluded from spend)" },
   { type: "mark_income", what: "flag it as income" },
   { type: "mark_subscription", what: "flag it as a recurring subscription" },
@@ -251,6 +264,7 @@ function RulesHelp() {
         <li><strong>Catch big one-offs:</strong> if <em>amount between</em> “-100000,-500”, then <em>require review</em>.</li>
         <li><strong>Keep payslips private:</strong> if <em>description contains</em> “SALARY”, then <em>block cloud AI</em>.</li>
         <li><strong>Commute as transport:</strong> if <em>merchant contains</em> “TFL”, then <em>set category</em> Transport (priority 200 so it beats the library).</li>
+        <li><strong>Map a foreign vendor:</strong> if <em>description contains</em> “MERCADONA”, then <em>set country</em> ES — so the spend-by-location map credits Spain, not the EUR currency fallback.</li>
       </ol>
       <p className="muted" style={{ marginBottom: 0 }}>
         Tip: the quickest way to make a rule is “make rule” on a transaction you've just corrected — it
