@@ -67,7 +67,7 @@ jobs:
         run: npm run build
 
   docker:
-    name: Docker image (standalone build)
+    name: Docker image (build + smoke test)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -76,3 +76,28 @@ jobs:
       # so the standalone `docker compose up` path is verified on every change.
       - name: Build image
         run: docker build -f addon/Dockerfile -t ha-finance-intelligence:ci .
+
+      # Boot the REAL artifact and exercise it over HTTP. Unit tests run the app
+      # in-process and never catch image-level bugs (entrypoint line endings,
+      # cwd/data-file resolution, frontend mounting, migrations). This black-box
+      # check does — it's the automated form of the manual smoke test that caught
+      # the run.sh CRLF + run-from-source bugs.
+      - name: Smoke test the image
+        run: |
+          set -e
+          docker run -d --name hafi-ci -p 8099:8099 ha-finance-intelligence:ci
+          ok=0
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8099/api/health | grep -q '"status":"ok"'; then
+              echo "health ok"; ok=1; break
+            fi
+            sleep 2
+          done
+          if [ "$ok" != "1" ]; then echo "::error::health check failed"; docker logs hafi-ci; exit 1; fi
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8099/)
+          if [ "$code" != "200" ]; then echo "::error::frontend not served (HTTP $code)"; docker logs hafi-ci; exit 1; fi
+          echo "frontend served (HTTP 200)"
+
+      - name: Teardown
+        if: always()
+        run: docker rm -f hafi-ci || true

@@ -35,6 +35,27 @@ base currency and other options in [`docker-compose.yml`](docker-compose.yml) (o
 See the [CHANGELOG](CHANGELOG.md) for what's in this beta. _Beta software: no
 warranty, not financial advice — keep your own backups._
 
+## 🏠 Install on Home Assistant (add-on)
+
+The recommended way to run this **on Home Assistant** is as an add-on. It installs
+from a **prebuilt image** (no on-device build — a quick pull, even on a Raspberry
+Pi), shows up as an **ingress sidebar panel**, signs you in automatically with your
+Home Assistant identity (the first user becomes the owner), and can publish finance
+sensors over **MQTT**.
+
+[![Add repository to your Home Assistant.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2FSpiritSLO-UK%2FHomeAssistant-expenses-analytics)
+
+1. Click the badge above (or **Settings → Add-ons → Add-on store → ⋮ →
+   Repositories** and paste `https://github.com/SpiritSLO-UK/HomeAssistant-expenses-analytics`).
+2. Open **HA Finance Intelligence** in the store and click **Install**.
+3. On the **Configuration** tab set your currency (and, optionally, MQTT / AI /
+   energy options), then **Start**.
+4. Click **Open Web UI**.
+
+Full walkthrough — options, MQTT sensors, energy-cost offset and isolation — is in
+**[docs/ha-install.md](docs/ha-install.md)**. _Requires a Home Assistant install
+with the Supervisor (Home Assistant OS or Supervised)._
+
 ## Status
 
 | Stage | What | State |
@@ -422,13 +443,17 @@ Full docs live in [`docs/`](docs/README.md) — start there for the index. Key g
 
 ## Home Assistant add-on
 
-The [`addon/`](addon/) folder contains everything to run this as a local add-on
-(ingress sidebar panel on port 8099, private `/data` storage). Enable **MQTT** in
-the add-on options to publish finance sensors (spend/income/net, review count,
-per-budget progress, per-project totals, monthly subscriptions) to Home Assistant
-via MQTT discovery — off by default, point it at your broker (e.g. the Mosquitto
-add-on). Add-on repository packaging and one-click install docs land in Stage 12
-([spec §29](ha_finance_intelligence_spec.md)).
+Install it from the add-on store — see **[Install on Home Assistant](#-install-on-home-assistant-add-on)**
+above (one-click repository add → Install) and the full
+**[docs/ha-install.md](docs/ha-install.md)** walkthrough. The [`addon/`](addon/)
+folder holds the add-on itself: [`config.yaml`](addon/config.yaml) (ingress panel
+on port 8099, private `/data` storage, the prebuilt-image reference) and
+[`run.sh`](addon/run.sh). Enable **MQTT** in the add-on options to publish finance
+sensors (spend/income/net, review count, per-budget progress, per-project totals,
+monthly subscriptions) to Home Assistant via MQTT discovery — off by default, point
+it at your broker (e.g. the Mosquitto add-on). The add-on is distributed as a
+**prebuilt multi-arch image** on GHCR (built by [`release.yml`](.github/workflows/release.yml)),
+so Supervisor pulls rather than builds.
 
 ## Disclaimer
 

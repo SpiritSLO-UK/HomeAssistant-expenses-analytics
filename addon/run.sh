@@ -61,5 +61,10 @@ cd /app/backend
 alembic upgrade head || echo "[run.sh] alembic upgrade failed; app will create tables on startup"
 
 echo "[run.sh] Starting HA Finance Intelligence on port ${HAFI_PORT}..."
-cd /app
+# Run from the source tree, NOT site-packages: app.main resolves the bundled
+# frontend (../../../frontend/dist) and the category library (../category_library)
+# relative to its own file, which only point at /app/frontend/dist and
+# /app/backend/app/category_library when `app` is imported from /app/backend/app.
+# (pip installed the package only to pull in dependencies.)
+cd /app/backend
 exec python -m app.main

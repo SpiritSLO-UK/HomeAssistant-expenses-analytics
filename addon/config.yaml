@@ -4,6 +4,11 @@ version: "0.9.5-beta"
 slug: ha_finance_intelligence
 description: Local-first personal finance app for Home Assistant
 url: https://github.com/SpiritSLO-UK/HomeAssistant-expenses-analytics
+# Prebuilt multi-arch image on GHCR. Supervisor substitutes {arch} (aarch64 /
+# amd64) and pulls `<image>:<version>`, so Home Assistant never builds on-device
+# — install is a quick image pull. The release workflow publishes these tags;
+# keep `version` above in lockstep with the published image tag.
+image: "ghcr.io/spiritslo-uk/{arch}-ha-finance-intelligence"
 arch:
   - aarch64
   - amd64
