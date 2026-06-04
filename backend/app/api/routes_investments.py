@@ -84,7 +84,9 @@ def list_accounts(request: Request, db: Annotated[Session, Depends(get_db)]) -> 
     return [investment_service.account_to_dict(db, a) for a in investment_service.list_accounts(db, account_ids=scope)]
 
 
-@router.post("/accounts", response_model=InvestmentAccountOut, status_code=201)
+@router.post(
+    "/accounts", response_model=InvestmentAccountOut, status_code=201, responses={400: {"description": "Bad request"}}
+)
 def create_account(payload: InvestmentAccountCreate, db: Annotated[Session, Depends(get_db)]) -> dict:
     try:
         account = investment_service.create_account(
@@ -102,7 +104,9 @@ def create_account(payload: InvestmentAccountCreate, db: Annotated[Session, Depe
 # --- Value snapshots ---
 
 
-@router.get("/accounts/{account_id}/values", response_model=list[ValueOut])
+@router.get(
+    "/accounts/{account_id}/values", response_model=list[ValueOut], responses={404: {"description": "Not found"}}
+)
 def value_history(account_id: int, request: Request, db: Annotated[Session, Depends(get_db)]):
     _require_visible(request, db, account_id)
     try:
@@ -112,7 +116,12 @@ def value_history(account_id: int, request: Request, db: Annotated[Session, Depe
     return investment_service.value_history(db, account_id)
 
 
-@router.post("/accounts/{account_id}/values", response_model=ValueOut, status_code=201)
+@router.post(
+    "/accounts/{account_id}/values",
+    response_model=ValueOut,
+    status_code=201,
+    responses={404: {"description": "Not found"}},
+)
 def record_value(account_id: int, payload: ValueCreate, request: Request, db: Annotated[Session, Depends(get_db)]):
     _require_visible(request, db, account_id)
     try:
@@ -123,7 +132,12 @@ def record_value(account_id: int, payload: ValueCreate, request: Request, db: An
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
-@router.post("/accounts/{account_id}/adjust", response_model=ValueOut, status_code=201)
+@router.post(
+    "/accounts/{account_id}/adjust",
+    response_model=ValueOut,
+    status_code=201,
+    responses={400: {"description": "Bad request"}, 404: {"description": "Not found"}},
+)
 def adjust_value(account_id: int, payload: ValueAdjust, request: Request, db: Annotated[Session, Depends(get_db)]):
     """Record a contribution/withdrawal — a new snapshot at latest ± amount."""
     _require_visible(request, db, account_id)
@@ -139,7 +153,9 @@ def adjust_value(account_id: int, payload: ValueAdjust, request: Request, db: An
 # --- Holdings ---
 
 
-@router.get("/accounts/{account_id}/holdings", response_model=list[HoldingOut])
+@router.get(
+    "/accounts/{account_id}/holdings", response_model=list[HoldingOut], responses={404: {"description": "Not found"}}
+)
 def list_holdings(account_id: int, request: Request, db: Annotated[Session, Depends(get_db)]) -> list[dict]:
     _require_visible(request, db, account_id)
     try:
@@ -149,7 +165,12 @@ def list_holdings(account_id: int, request: Request, db: Annotated[Session, Depe
     return [investment_service.holding_to_dict(db, h) for h in investment_service.list_holdings(db, account_id)]
 
 
-@router.post("/accounts/{account_id}/holdings", response_model=HoldingOut, status_code=201)
+@router.post(
+    "/accounts/{account_id}/holdings",
+    response_model=HoldingOut,
+    status_code=201,
+    responses={404: {"description": "Not found"}},
+)
 def create_holding(
     account_id: int, payload: HoldingCreate, request: Request, db: Annotated[Session, Depends(get_db)]
 ) -> dict:

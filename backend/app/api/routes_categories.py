@@ -57,7 +57,7 @@ def get_privacy_default(
     return {"level": category_service.get_privacy_default(db)}
 
 
-@router.post("/privacy")
+@router.post("/privacy", responses={400: {"description": "Bad request"}})
 def set_all_privacy(
     payload: CategoryPrivacyLevel,
     db: Annotated[Session, Depends(get_db)],
@@ -72,7 +72,7 @@ def set_all_privacy(
     return {"updated": updated, "level": payload.level}
 
 
-@router.get("/{category_id}", response_model=CategoryOut)
+@router.get("/{category_id}", response_model=CategoryOut, responses={404: {"description": "Not found"}})
 def get_category(category_id: int, db: Annotated[Session, Depends(get_db)]) -> Category:
     category = category_service.get_category(db, category_id)
     if category is None:
@@ -80,7 +80,7 @@ def get_category(category_id: int, db: Annotated[Session, Depends(get_db)]) -> C
     return category
 
 
-@router.patch("/{category_id}", response_model=CategoryOut)
+@router.patch("/{category_id}", response_model=CategoryOut, responses={404: {"description": "Not found"}})
 def update_category(category_id: int, payload: CategoryUpdate, db: Annotated[Session, Depends(get_db)]) -> Category:
     _check_privacy(payload.privacy_sensitivity)
     category = category_service.update_category(db, category_id, payload.model_dump(exclude_unset=True))
@@ -89,7 +89,7 @@ def update_category(category_id: int, payload: CategoryUpdate, db: Annotated[Ses
     return category
 
 
-@router.delete("/{category_id}", status_code=204)
+@router.delete("/{category_id}", status_code=204, responses={404: {"description": "Not found"}})
 def delete_category(
     category_id: int,
     db: Annotated[Session, Depends(get_db)],
@@ -100,7 +100,11 @@ def delete_category(
         raise HTTPException(status_code=404, detail=_NOT_FOUND)
 
 
-@router.post("/{category_id}/merge", response_model=CategoryOut)
+@router.post(
+    "/{category_id}/merge",
+    response_model=CategoryOut,
+    responses={400: {"description": "Bad request"}, 404: {"description": "Not found"}},
+)
 def merge_category(
     category_id: int,
     payload: CategoryMerge,

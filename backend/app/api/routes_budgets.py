@@ -56,7 +56,7 @@ def budgets_summary(
     return budget_service.summary(db, month or date.today(), account_ids=scope, annual=annual)
 
 
-@router.get("/{budget_id}/transactions")
+@router.get("/{budget_id}/transactions", responses={404: {"description": "Not found"}})
 def budget_transactions(
     budget_id: int,
     request: Request,
@@ -103,7 +103,7 @@ def create_budget(payload: BudgetIn, db: Annotated[Session, Depends(get_db)]) ->
     return budget
 
 
-@router.patch("/{budget_id}", response_model=BudgetOut)
+@router.patch("/{budget_id}", response_model=BudgetOut, responses={404: {"description": "Not found"}})
 def update_budget(budget_id: int, payload: BudgetUpdate, db: Annotated[Session, Depends(get_db)]) -> Budget:
     budget = db.get(Budget, budget_id)
     if budget is None:
@@ -126,7 +126,7 @@ def update_budget(budget_id: int, payload: BudgetUpdate, db: Annotated[Session, 
     return budget
 
 
-@router.delete("/{budget_id}", status_code=204)
+@router.delete("/{budget_id}", status_code=204, responses={404: {"description": "Not found"}})
 def delete_budget(budget_id: int, db: Annotated[Session, Depends(get_db)]) -> None:
     budget = db.get(Budget, budget_id)
     if budget is None:

@@ -41,7 +41,7 @@ def create_vendor(payload: VendorCreate, db: Annotated[Session, Depends(get_db)]
     return vendor_service.create_vendor(db, payload.model_dump(exclude_unset=True))
 
 
-@router.get("/{vendor_id}", response_model=VendorWithStats)
+@router.get("/{vendor_id}", response_model=VendorWithStats, responses={404: {"description": "Not found"}})
 def get_vendor(vendor_id: int, db: Annotated[Session, Depends(get_db)]) -> dict:
     vendor = vendor_service.get_vendor(db, vendor_id)
     if vendor is None:
@@ -51,7 +51,7 @@ def get_vendor(vendor_id: int, db: Annotated[Session, Depends(get_db)]) -> dict:
     return item
 
 
-@router.patch("/{vendor_id}", response_model=VendorOut)
+@router.patch("/{vendor_id}", response_model=VendorOut, responses={404: {"description": "Not found"}})
 def update_vendor(vendor_id: int, payload: VendorUpdate, db: Annotated[Session, Depends(get_db)]):
     vendor = vendor_service.update_vendor(db, vendor_id, payload.model_dump(exclude_unset=True))
     if vendor is None:
@@ -59,7 +59,9 @@ def update_vendor(vendor_id: int, payload: VendorUpdate, db: Annotated[Session, 
     return vendor
 
 
-@router.post("/{vendor_id}/aliases", response_model=AliasOut, status_code=201)
+@router.post(
+    "/{vendor_id}/aliases", response_model=AliasOut, status_code=201, responses={404: {"description": "Not found"}}
+)
 def add_alias(vendor_id: int, payload: AliasCreate, db: Annotated[Session, Depends(get_db)]):
     alias = vendor_service.add_alias(db, vendor_id, payload.alias, payload.match_type)
     if alias is None:
@@ -67,7 +69,9 @@ def add_alias(vendor_id: int, payload: AliasCreate, db: Annotated[Session, Depen
     return alias
 
 
-@router.post("/{vendor_id}/set-default-category", response_model=VendorOut)
+@router.post(
+    "/{vendor_id}/set-default-category", response_model=VendorOut, responses={404: {"description": "Not found"}}
+)
 def set_default_category(vendor_id: int, payload: SetDefaultCategory, db: Annotated[Session, Depends(get_db)]):
     vendor = vendor_service.set_default_category(db, vendor_id, payload.category_id)
     if vendor is None:
@@ -75,7 +79,7 @@ def set_default_category(vendor_id: int, payload: SetDefaultCategory, db: Annota
     return vendor
 
 
-@router.delete("/{vendor_id}", status_code=204)
+@router.delete("/{vendor_id}", status_code=204, responses={404: {"description": "Not found"}})
 def delete_vendor(vendor_id: int, db: Annotated[Session, Depends(get_db)]) -> None:
     if not vendor_service.delete_vendor(db, vendor_id):
         raise HTTPException(status_code=404, detail=_NOT_FOUND)

@@ -30,7 +30,7 @@ def mqtt_preview(db: Annotated[Session, Depends(get_db)]) -> dict:
     }
 
 
-@router.post("/publish")
+@router.post("/publish", responses={400: {"description": "Bad request"}, 502: {"description": "Upstream error"}})
 def mqtt_publish(db: Annotated[Session, Depends(get_db)]) -> dict:
     """Publish now (spec §27.1 manual trigger)."""
     if not settings.mqtt_enabled:

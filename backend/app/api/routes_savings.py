@@ -55,7 +55,7 @@ def create_account(payload: SavingsAccountCreate, db: Annotated[Session, Depends
     return savings_service.account_to_dict(db, account)
 
 
-@router.patch("/accounts/{account_id}", response_model=SavingsAccountOut)
+@router.patch("/accounts/{account_id}", response_model=SavingsAccountOut, responses={404: {"description": "Not found"}})
 def update_account(
     account_id: int, payload: SavingsAccountUpdate, request: Request, db: Annotated[Session, Depends(get_db)]
 ) -> dict:
@@ -71,7 +71,12 @@ def update_account(
     return savings_service.account_to_dict(db, account)
 
 
-@router.post("/accounts/{account_id}/adjust", response_model=BalanceOut, status_code=201)
+@router.post(
+    "/accounts/{account_id}/adjust",
+    response_model=BalanceOut,
+    status_code=201,
+    responses={400: {"description": "Bad request"}, 404: {"description": "Not found"}},
+)
 def adjust_balance(account_id: int, payload: BalanceAdjust, request: Request, db: Annotated[Session, Depends(get_db)]):
     """Deposit or withdraw via the +/- control — records a new snapshot at
     latest ± amount."""
@@ -85,7 +90,9 @@ def adjust_balance(account_id: int, payload: BalanceAdjust, request: Request, db
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
-@router.get("/accounts/{account_id}/balances", response_model=list[BalanceOut])
+@router.get(
+    "/accounts/{account_id}/balances", response_model=list[BalanceOut], responses={404: {"description": "Not found"}}
+)
 def balance_history(account_id: int, request: Request, db: Annotated[Session, Depends(get_db)]):
     _require_visible(request, db, account_id)
     try:
@@ -95,7 +102,12 @@ def balance_history(account_id: int, request: Request, db: Annotated[Session, De
     return savings_service.balance_history(db, account_id)
 
 
-@router.post("/accounts/{account_id}/balances", response_model=BalanceOut, status_code=201)
+@router.post(
+    "/accounts/{account_id}/balances",
+    response_model=BalanceOut,
+    status_code=201,
+    responses={404: {"description": "Not found"}},
+)
 def record_balance(account_id: int, payload: BalanceCreate, request: Request, db: Annotated[Session, Depends(get_db)]):
     _require_visible(request, db, account_id)
     try:
@@ -114,7 +126,7 @@ def list_goals(db: Annotated[Session, Depends(get_db)]) -> list[dict]:
     return [savings_service.goal_to_dict(db, g) for g in savings_service.list_goals(db)]
 
 
-@router.post("/goals", response_model=GoalOut, status_code=201)
+@router.post("/goals", response_model=GoalOut, status_code=201, responses={400: {"description": "Bad request"}})
 def create_goal(payload: GoalCreate, db: Annotated[Session, Depends(get_db)]) -> dict:
     try:
         goal = savings_service.create_goal(
@@ -138,7 +150,7 @@ def _get_goal(db: Session, goal_id: int) -> SavingsGoal:
     return goal
 
 
-@router.patch("/goals/{goal_id}", response_model=GoalOut)
+@router.patch("/goals/{goal_id}", response_model=GoalOut, responses={400: {"description": "Bad request"}})
 def update_goal(goal_id: int, payload: GoalUpdate, db: Annotated[Session, Depends(get_db)]) -> dict:
     goal = _get_goal(db, goal_id)
     try:

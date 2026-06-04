@@ -30,7 +30,7 @@ def list_parsers() -> list[dict]:
     return available_parsers()
 
 
-@router.post("/upload", response_model=UploadResponse)
+@router.post("/upload", response_model=UploadResponse, responses={400: {"description": "Bad request"}})
 async def upload(
     file: Annotated[UploadFile, File()],
     db: Annotated[Session, Depends(get_db)],
@@ -65,7 +65,7 @@ def list_imports(db: Annotated[Session, Depends(get_db)]) -> list[Statement]:
     return list(db.scalars(select(Statement).order_by(Statement.id.desc())).all())
 
 
-@router.get("/{import_id}", response_model=ImportListItem)
+@router.get("/{import_id}", response_model=ImportListItem, responses={404: {"description": "Not found"}})
 def get_import(import_id: int, db: Annotated[Session, Depends(get_db)]) -> Statement:
     statement = db.get(Statement, import_id)
     if statement is None:
@@ -73,7 +73,7 @@ def get_import(import_id: int, db: Annotated[Session, Depends(get_db)]) -> State
     return statement
 
 
-@router.post("/{import_id}/confirm", response_model=ConfirmResponse)
+@router.post("/{import_id}/confirm", response_model=ConfirmResponse, responses={400: {"description": "Bad request"}})
 def confirm(
     import_id: int, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(get_current_user)]
 ) -> dict:
@@ -94,7 +94,7 @@ def confirm(
     return result
 
 
-@router.delete("/{import_id}", status_code=204)
+@router.delete("/{import_id}", status_code=204, responses={404: {"description": "Not found"}})
 def delete(
     import_id: int, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(get_current_user)]
 ) -> None:

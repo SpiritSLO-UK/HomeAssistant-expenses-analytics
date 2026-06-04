@@ -28,7 +28,7 @@ def create_tag(payload: TagIn, db: Annotated[Session, Depends(get_db)]) -> Tag:
     return tag
 
 
-@router.patch("/{tag_id}", response_model=TagOut)
+@router.patch("/{tag_id}", response_model=TagOut, responses={404: {"description": "Not found"}})
 def update_tag(tag_id: int, payload: TagUpdate, db: Annotated[Session, Depends(get_db)]) -> Tag:
     tag = db.get(Tag, tag_id)
     if tag is None:
@@ -36,7 +36,7 @@ def update_tag(tag_id: int, payload: TagUpdate, db: Annotated[Session, Depends(g
     return tag_service.update_tag(db, tag, name=payload.name, colour=payload.colour)
 
 
-@router.delete("/{tag_id}", status_code=204)
+@router.delete("/{tag_id}", status_code=204, responses={404: {"description": "Not found"}})
 def delete_tag(tag_id: int, db: Annotated[Session, Depends(get_db)]) -> None:
     tag = db.get(Tag, tag_id)
     if tag is None:

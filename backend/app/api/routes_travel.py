@@ -43,7 +43,7 @@ class TripProjectRequest(BaseModel):
     budget_amount: Decimal | None = None
 
 
-@router.post("/trips/project", status_code=201)
+@router.post("/trips/project", status_code=201, responses={400: {"description": "Bad request"}})
 def trip_to_project(payload: TripProjectRequest, request: Request, db: Annotated[Session, Depends(get_db)]) -> dict:
     """Turn a detected trip into a Project (write-gated by the auth middleware)."""
     if not payload.name.strip():

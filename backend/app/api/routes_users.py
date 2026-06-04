@@ -63,7 +63,7 @@ def _get_target(db: Session, user_id: int) -> User:
     return target
 
 
-@router.patch("/{user_id}", response_model=UserOut)
+@router.patch("/{user_id}", response_model=UserOut, responses={400: {"description": "Bad request"}})
 def update_user(
     user_id: int,
     payload: UserUpdate,
@@ -86,7 +86,7 @@ def update_user(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.post("/{user_id}/approve", response_model=UserOut)
+@router.post("/{user_id}/approve", response_model=UserOut, responses={400: {"description": "Bad request"}})
 def approve_user(
     user_id: int, db: Annotated[Session, Depends(get_db)], owner: Annotated[User, Depends(require_owner_step_up)]
 ) -> User:
@@ -97,7 +97,7 @@ def approve_user(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.delete("/{user_id}")
+@router.delete("/{user_id}", responses={400: {"description": "Bad request"}})
 def delete_user(
     user_id: int, db: Annotated[Session, Depends(get_db)], owner: Annotated[User, Depends(require_owner_step_up)]
 ) -> dict:

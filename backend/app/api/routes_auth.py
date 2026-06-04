@@ -30,7 +30,7 @@ def setup(db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends
     return SetupOut(**data)
 
 
-@router.post("/enable")
+@router.post("/enable", responses={400: {"description": "Bad request"}})
 def enable(
     payload: CodeIn, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(get_current_user)]
 ) -> dict:
@@ -41,7 +41,7 @@ def enable(
     return {"status": "enabled"}
 
 
-@router.post("/disable")
+@router.post("/disable", responses={400: {"description": "Bad request"}})
 def disable(
     payload: CodeIn, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(get_current_user)]
 ) -> dict:
@@ -52,7 +52,7 @@ def disable(
     return {"status": "disabled"}
 
 
-@router.post("/verify")
+@router.post("/verify", responses={400: {"description": "Bad request"}})
 def verify(
     payload: CodeIn, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(get_current_user)]
 ) -> VerifyOut:
@@ -62,7 +62,7 @@ def verify(
     return VerifyOut(token=token, expires_in_seconds=int(mfa_service.SESSION_TTL.total_seconds()))
 
 
-@router.post("/step-up")
+@router.post("/step-up", responses={400: {"description": "Bad request"}})
 def step_up(
     payload: CodeIn,
     request: Request,

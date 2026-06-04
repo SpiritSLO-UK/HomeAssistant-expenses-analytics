@@ -27,7 +27,11 @@ def review_count(db: Annotated[Session, Depends(get_db)]) -> dict:
     return {"open": review_service.open_count(db)}
 
 
-@router.patch("/{item_id}", response_model=ReviewItemOut)
+@router.patch(
+    "/{item_id}",
+    response_model=ReviewItemOut,
+    responses={400: {"description": "Bad request"}, 404: {"description": "Not found"}},
+)
 def update_review_item(
     item_id: int, payload: ReviewStatusUpdate, db: Annotated[Session, Depends(get_db)]
 ) -> ReviewItem:

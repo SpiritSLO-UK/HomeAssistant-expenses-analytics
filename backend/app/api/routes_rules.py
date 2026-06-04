@@ -47,7 +47,7 @@ def test_rule(payload: RuleTestRequest, db: Annotated[Session, Depends(get_db)])
     return rule_service.test_rule(db, payload.condition_type, payload.condition_value)
 
 
-@router.get("/{rule_id}", response_model=RuleOut)
+@router.get("/{rule_id}", response_model=RuleOut, responses={404: {"description": "Not found"}})
 def get_rule(rule_id: int, db: Annotated[Session, Depends(get_db)]) -> Rule:
     rule = rule_service.get_rule(db, rule_id)
     if rule is None:
@@ -55,7 +55,7 @@ def get_rule(rule_id: int, db: Annotated[Session, Depends(get_db)]) -> Rule:
     return rule
 
 
-@router.patch("/{rule_id}", response_model=RuleOut)
+@router.patch("/{rule_id}", response_model=RuleOut, responses={404: {"description": "Not found"}})
 def update_rule(rule_id: int, payload: RuleUpdate, db: Annotated[Session, Depends(get_db)]) -> Rule:
     _validate(payload.condition_type, payload.action_type)
     rule = rule_service.update_rule(db, rule_id, payload.model_dump(exclude_unset=True))
@@ -64,7 +64,7 @@ def update_rule(rule_id: int, payload: RuleUpdate, db: Annotated[Session, Depend
     return rule
 
 
-@router.delete("/{rule_id}", status_code=204)
+@router.delete("/{rule_id}", status_code=204, responses={404: {"description": "Not found"}})
 def delete_rule(rule_id: int, db: Annotated[Session, Depends(get_db)]) -> None:
     if not rule_service.delete_rule(db, rule_id):
         raise HTTPException(status_code=404, detail=_NOT_FOUND)

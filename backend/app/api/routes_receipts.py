@@ -38,7 +38,12 @@ def list_receipts(db: Annotated[Session, Depends(get_db)]) -> list[dict]:
     return [receipt_service.to_dict(db, r) for r in receipts]
 
 
-@router.post("/upload", response_model=ReceiptOut, status_code=201)
+@router.post(
+    "/upload",
+    response_model=ReceiptOut,
+    status_code=201,
+    responses={400: {"description": "Bad request"}, 413: {"description": "Payload too large"}},
+)
 async def upload_receipt(file: Annotated[UploadFile, File()], db: Annotated[Session, Depends(get_db)]) -> dict:
     content = await file.read()
     if not content:
@@ -65,7 +70,7 @@ def get_receipt(receipt_id: int, db: Annotated[Session, Depends(get_db)]) -> dic
     return receipt_service.to_dict(db, _get(db, receipt_id))
 
 
-@router.get("/{receipt_id}/file")
+@router.get("/{receipt_id}/file", responses={404: {"description": "Not found"}})
 def get_receipt_file(receipt_id: int, db: Annotated[Session, Depends(get_db)]) -> FileResponse:
     """Serve the stored original (image/PDF) so an attached receipt can be viewed.
     404 if retention has dropped the original (#78/#147)."""
@@ -91,7 +96,7 @@ def update_receipt(receipt_id: int, payload: ReceiptUpdate, db: Annotated[Sessio
     return receipt_service.to_dict(db, receipt)
 
 
-@router.post("/{receipt_id}/match", response_model=MatchResult)
+@router.post("/{receipt_id}/match", response_model=MatchResult, responses={400: {"description": "Bad request"}})
 def match_receipt(receipt_id: int, db: Annotated[Session, Depends(get_db)]) -> dict:
     receipt = _get(db, receipt_id)
     if receipt.total_amount is None:
@@ -99,7 +104,7 @@ def match_receipt(receipt_id: int, db: Annotated[Session, Depends(get_db)]) -> d
     return receipt_service.match(db, receipt)
 
 
-@router.post("/{receipt_id}/confirm-match", response_model=ReceiptOut)
+@router.post("/{receipt_id}/confirm-match", response_model=ReceiptOut, responses={400: {"description": "Bad request"}})
 def confirm_match(receipt_id: int, payload: ConfirmMatchRequest, db: Annotated[Session, Depends(get_db)]) -> dict:
     receipt = _get(db, receipt_id)
     try:

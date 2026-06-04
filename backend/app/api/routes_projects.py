@@ -54,7 +54,7 @@ def create_project(payload: ProjectIn, db: Annotated[Session, Depends(get_db)]) 
     return project
 
 
-@router.get("/{project_id}/summary", response_model=ProjectSummary)
+@router.get("/{project_id}/summary", response_model=ProjectSummary, responses={404: {"description": "Not found"}})
 def project_summary(project_id: int, request: Request, db: Annotated[Session, Depends(get_db)]) -> dict:
     project = db.get(Project, project_id)
     if project is None:
@@ -63,7 +63,7 @@ def project_summary(project_id: int, request: Request, db: Annotated[Session, De
     return project_service.summary(db, project, account_ids=scope)
 
 
-@router.patch("/{project_id}", response_model=ProjectOut)
+@router.patch("/{project_id}", response_model=ProjectOut, responses={404: {"description": "Not found"}})
 def update_project(project_id: int, payload: ProjectUpdate, db: Annotated[Session, Depends(get_db)]) -> Project:
     project = db.get(Project, project_id)
     if project is None:
@@ -77,7 +77,7 @@ def update_project(project_id: int, payload: ProjectUpdate, db: Annotated[Sessio
     return project
 
 
-@router.delete("/{project_id}", status_code=204)
+@router.delete("/{project_id}", status_code=204, responses={404: {"description": "Not found"}})
 def delete_project(project_id: int, db: Annotated[Session, Depends(get_db)]) -> None:
     project = db.get(Project, project_id)
     if project is None:
