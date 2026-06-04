@@ -147,7 +147,7 @@ function UncategorisedTab() {
   // After categorising the last row on a page that isn't the first, step back so
   // we don't strand the user on an empty page.
   useEffect(() => {
-    if (data && data.items.length === 0 && offset > 0) setOffset((o) => Math.max(0, o - PAGE));
+    if (data?.items.length === 0 && offset > 0) setOffset((o) => Math.max(0, o - PAGE));
   }, [data, offset]);
 
   const onDone = () => {
@@ -164,7 +164,7 @@ function UncategorisedTab() {
       </p>
       <div className="card">
         {txns.isLoading && <p className="muted">Loading…</p>}
-        {data && data.items.length === 0 && (
+        {data?.items.length === 0 && (
           <p className="muted">Everything's categorised — nothing here. 🎉</p>
         )}
         {data?.items.map((t) => (
