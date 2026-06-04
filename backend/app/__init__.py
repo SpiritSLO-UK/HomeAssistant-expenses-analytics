@@ -1,3 +1,3 @@
 """HA Finance Intelligence backend package."""
 
-__version__ = "0.9.5-beta"
+__version__ = "1.0.0-rc1"
