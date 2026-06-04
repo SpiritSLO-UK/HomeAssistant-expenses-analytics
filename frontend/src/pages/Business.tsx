@@ -16,12 +16,17 @@ const PERIODS: { key: string; label: string }[] = [
   { key: "year", label: "Year" },
 ];
 
+// Year scope (Budgets-style): the current year down a few, plus "All time".
+const THIS_YEAR = new Date().getFullYear();
+const YEAR_CHOICES = [THIS_YEAR, THIS_YEAR - 1, THIS_YEAR - 2, THIS_YEAR - 3, THIS_YEAR - 4];
+
 export default function Business() {
   const [period, setPeriod] = useState("month");
+  const [year, setYear] = useState<number | null>(THIS_YEAR);
   const [openPeriod, setOpenPeriod] = useState<string | null>(null);
   const summary = useQuery({
-    queryKey: ["business-summary", period],
-    queryFn: () => getBusinessSummary(period),
+    queryKey: ["business-summary", period, year],
+    queryFn: () => getBusinessSummary(period, year),
   });
   const exportCsv = useMutation({
     mutationFn: () => exportTransactionsCsv({ is_business: true }),
@@ -118,16 +123,26 @@ export default function Business() {
           <div className="card">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
               <h2 className="card__title" style={{ margin: 0 }}>By period</h2>
-              <div className="form-row" style={{ gap: 4 }} title="Group business spend by">
-                {PERIODS.map((p) => (
-                  <button
-                    key={p.key}
-                    className={"btn btn--sm" + (period === p.key ? "" : " btn--ghost")}
-                    onClick={() => { setPeriod(p.key); setOpenPeriod(null); }}
-                  >
-                    {p.label}
-                  </button>
-                ))}
+              <div className="form-row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <select
+                  value={year ?? ""}
+                  title="Scope to a calendar year"
+                  onChange={(e) => { setYear(e.target.value ? Number(e.target.value) : null); setOpenPeriod(null); }}
+                >
+                  <option value="">All time</option>
+                  {YEAR_CHOICES.map((y) => <option key={y} value={y}>{y}</option>)}
+                </select>
+                <div className="form-row" style={{ gap: 4 }} title="Group business spend by">
+                  {PERIODS.map((p) => (
+                    <button
+                      key={p.key}
+                      className={"btn btn--sm" + (period === p.key ? "" : " btn--ghost")}
+                      onClick={() => { setPeriod(p.key); setOpenPeriod(null); }}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
             <div className="table-wrap">

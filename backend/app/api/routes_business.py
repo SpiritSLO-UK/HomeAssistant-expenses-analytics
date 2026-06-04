@@ -23,5 +23,8 @@ def summary(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
     period: Annotated[str, Query(description="day | week | month | year")] = "month",
+    year: Annotated[int | None, Query(description="Scope to one calendar year; omit for all-time")] = None,
 ) -> dict:
-    return business_service.summary(db, account_ids=auth_service.visible_account_scope(request, db), period=period)
+    return business_service.summary(
+        db, account_ids=auth_service.visible_account_scope(request, db), period=period, year=year
+    )

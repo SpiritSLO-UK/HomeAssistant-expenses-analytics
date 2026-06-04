@@ -68,15 +68,20 @@ def _business_spend(db: Session, account_ids: set[int] | None) -> list[Transacti
     )
 
 
-def summary(db: Session, *, account_ids: set[int] | None = None, period: str = "month") -> dict:
+def summary(
+    db: Session, *, account_ids: set[int] | None = None, period: str = "month", year: int | None = None
+) -> dict:
     """Totals + reclaimable VAT, by category and by period, for business expenses.
 
     ``period`` is one of ``day|week|month|year`` (default month); each period
     bucket carries its ``start``/``end`` so the UI can expand it straight into the
-    transactions list (date range + ``is_business``)."""
+    transactions list (date range + ``is_business``). ``year`` scopes the view to a
+    single calendar year (a Budgets-style date scope); ``None`` is all-time."""
     if period not in PERIODS:
         period = "month"
     txns = _business_spend(db, account_ids)
+    if year is not None:
+        txns = [t for t in txns if t.transaction_date.year == year]
     total = _ZERO
     vat_total = _ZERO
     by_cat: dict[int | None, Decimal] = defaultdict(lambda: Decimal("0.00"))

@@ -2110,8 +2110,10 @@ export interface BusinessSummary {
   by_period: BusinessPeriodRow[];
 }
 
-export function getBusinessSummary(period = "month"): Promise<BusinessSummary> {
-  return fetchJson<BusinessSummary>(`api/business/summary?period=${encodeURIComponent(period)}`);
+export function getBusinessSummary(period = "month", year?: number | null): Promise<BusinessSummary> {
+  const q = new URLSearchParams({ period });
+  if (year != null) q.set("year", String(year));
+  return fetchJson<BusinessSummary>(`api/business/summary?${q.toString()}`);
 }
 
 // --- Data retention (spec §28; backlog #78, #147) ---

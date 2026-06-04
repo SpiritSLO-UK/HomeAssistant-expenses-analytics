@@ -31,10 +31,11 @@ def _txn(
     category_id=None,
     transfer=False,
     archived=False,
+    txn_date=None,
 ) -> Transaction:
     amt = Decimal(amount)
     t = Transaction(
-        transaction_date=date.today(),
+        transaction_date=txn_date or date.today(),
         description_raw="biz",
         amount=amt,
         currency=currency,
@@ -62,6 +63,18 @@ def test_summary_totals_and_vat(db):
     assert s["total"] == "150.00"
     assert s["vat"] == "30.00"
     assert s["transaction_count"] == 2
+
+
+def test_summary_year_scope(db):
+    """`year` scopes the business summary to one calendar year (Budgets-style date
+    scope); omitting it is all-time."""
+    settings_service.set_value(db, settings_service.BASE_CURRENCY, "GBP")
+    _txn(db, business=True, amount="-100.00", txn_date=date(2024, 6, 1))
+    _txn(db, business=True, amount="-40.00", txn_date=date(2026, 6, 1))
+    assert business_service.summary(db)["total"] == "140.00"          # all-time
+    assert business_service.summary(db, year=2026)["total"] == "40.00"
+    assert business_service.summary(db, year=2024)["total"] == "100.00"
+    assert business_service.summary(db, year=2030)["transaction_count"] == 0
 
 
 def test_summary_groups_by_period_with_bounds(db):
