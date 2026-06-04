@@ -30,6 +30,8 @@ from app.services.household_service import get_or_create_default_household
 CLOUD_MODES = {"cloud_manual", "cloud_auto"}
 OFF_MODES = {"strict_local", "no_ai"}
 
+_NO_AI_PROVIDER = "No AI provider configured"
+
 
 class AIDisabled(RuntimeError):
     """AI is off or not configured for this privacy mode."""
@@ -138,7 +140,7 @@ def classify_transaction(db: Session, txn: Transaction, *, provider=None) -> dic
         raise AIDisabled(f"AI is disabled (privacy mode: {mode})")
     provider = provider or get_provider(db)
     if not provider.available():
-        raise AIDisabled("No AI provider configured")
+        raise AIDisabled(_NO_AI_PROVIDER)
 
     is_cloud = mode in CLOUD_MODES
     # Sensitive-category blocking (spec §28): never send a never-cloud category
@@ -189,7 +191,7 @@ def run_request(db: Session, ai_request: AIRequest, *, provider=None) -> dict:
         raise AIDisabled("This AI request is not awaiting approval.")
     provider = provider or get_provider(db)
     if not provider.available():
-        raise AIDisabled("No AI provider configured")
+        raise AIDisabled(_NO_AI_PROVIDER)
     ai_request.approval_status = "approved"
     payload = json.loads(ai_request.redacted_payload or "{}")
     try:
@@ -227,7 +229,7 @@ def classify_batch(db: Session, *, limit: int = 25, provider=None, account_ids: 
         raise AIDisabled("Batch AI categorisation runs in local_llm mode only (keeps data on-device).")
     provider = provider or get_provider(db)
     if not provider.available():
-        raise AIDisabled("No AI provider configured")
+        raise AIDisabled(_NO_AI_PROVIDER)
 
     txns = _uncategorised_for_batch(db, limit, account_ids=account_ids)
 
@@ -289,7 +291,7 @@ def cloud_batch_prepare(db: Session, *, limit: int = 25, provider=None, account_
         raise AIDisabled("Cloud batch needs a cloud privacy mode (cloud_manual / cloud_auto).")
     provider = provider or get_provider(db)
     if not provider.available():
-        raise AIDisabled("No AI provider configured")
+        raise AIDisabled(_NO_AI_PROVIDER)
 
     cat_names = [c.name for c in _candidate_categories(db)]
     txns = _uncategorised_for_batch(db, limit, account_ids=account_ids)
@@ -367,7 +369,7 @@ def cloud_batch_send(
     applies via :func:`apply_suggestions`."""
     provider = provider or get_provider(db)
     if not provider.available():
-        raise AIDisabled("No AI provider configured")
+        raise AIDisabled(_NO_AI_PROVIDER)
     cats = _candidate_categories(db)
 
     suggestions: list[dict] = []

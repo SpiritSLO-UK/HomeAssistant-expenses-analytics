@@ -14,6 +14,8 @@ from app.services import rule_service
 
 router = APIRouter(prefix="/rules", tags=["rules"])
 
+_NOT_FOUND = "Rule not found"
+
 
 def _validate(condition_type: str | None, action_type: str | None) -> None:
     if condition_type is not None and condition_type not in rule_service.CONDITION_TYPES:
@@ -49,7 +51,7 @@ def test_rule(payload: RuleTestRequest, db: Annotated[Session, Depends(get_db)])
 def get_rule(rule_id: int, db: Annotated[Session, Depends(get_db)]) -> Rule:
     rule = rule_service.get_rule(db, rule_id)
     if rule is None:
-        raise HTTPException(status_code=404, detail="Rule not found")
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
     return rule
 
 
@@ -58,11 +60,11 @@ def update_rule(rule_id: int, payload: RuleUpdate, db: Annotated[Session, Depend
     _validate(payload.condition_type, payload.action_type)
     rule = rule_service.update_rule(db, rule_id, payload.model_dump(exclude_unset=True))
     if rule is None:
-        raise HTTPException(status_code=404, detail="Rule not found")
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
     return rule
 
 
 @router.delete("/{rule_id}", status_code=204)
 def delete_rule(rule_id: int, db: Annotated[Session, Depends(get_db)]) -> None:
     if not rule_service.delete_rule(db, rule_id):
-        raise HTTPException(status_code=404, detail="Rule not found")
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)

@@ -22,6 +22,8 @@ from app.services.household_service import get_or_create_default_household
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
+_NOT_FOUND = "Project not found"
+
 
 def _check_status(status: str | None) -> None:
     if status is not None and status not in STATUSES:
@@ -56,7 +58,7 @@ def create_project(payload: ProjectIn, db: Annotated[Session, Depends(get_db)]) 
 def project_summary(project_id: int, request: Request, db: Annotated[Session, Depends(get_db)]) -> dict:
     project = db.get(Project, project_id)
     if project is None:
-        raise HTTPException(status_code=404, detail="Project not found")
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
     scope = auth_service.visible_account_scope(request, db)
     return project_service.summary(db, project, account_ids=scope)
 
@@ -65,7 +67,7 @@ def project_summary(project_id: int, request: Request, db: Annotated[Session, De
 def update_project(project_id: int, payload: ProjectUpdate, db: Annotated[Session, Depends(get_db)]) -> Project:
     project = db.get(Project, project_id)
     if project is None:
-        raise HTTPException(status_code=404, detail="Project not found")
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
     data = payload.model_dump(exclude_unset=True)
     _check_status(data.get("status"))
     for field, value in data.items():
@@ -79,6 +81,6 @@ def update_project(project_id: int, payload: ProjectUpdate, db: Annotated[Sessio
 def delete_project(project_id: int, db: Annotated[Session, Depends(get_db)]) -> None:
     project = db.get(Project, project_id)
     if project is None:
-        raise HTTPException(status_code=404, detail="Project not found")
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
     db.delete(project)
     db.commit()

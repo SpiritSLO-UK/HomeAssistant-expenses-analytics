@@ -21,6 +21,8 @@ from app.services import vendor_service
 
 router = APIRouter(prefix="/vendors", tags=["vendors"])
 
+_NOT_FOUND = "Vendor not found"
+
 
 @router.get("", response_model=list[VendorWithStats])
 def list_vendors(db: Annotated[Session, Depends(get_db)]) -> list[dict]:
@@ -43,7 +45,7 @@ def create_vendor(payload: VendorCreate, db: Annotated[Session, Depends(get_db)]
 def get_vendor(vendor_id: int, db: Annotated[Session, Depends(get_db)]) -> dict:
     vendor = vendor_service.get_vendor(db, vendor_id)
     if vendor is None:
-        raise HTTPException(status_code=404, detail="Vendor not found")
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
     item = VendorWithStats.model_validate(vendor).model_dump()
     item.update(vendor_service.vendor_stats(db, vendor_id))
     return item
@@ -53,7 +55,7 @@ def get_vendor(vendor_id: int, db: Annotated[Session, Depends(get_db)]) -> dict:
 def update_vendor(vendor_id: int, payload: VendorUpdate, db: Annotated[Session, Depends(get_db)]):
     vendor = vendor_service.update_vendor(db, vendor_id, payload.model_dump(exclude_unset=True))
     if vendor is None:
-        raise HTTPException(status_code=404, detail="Vendor not found")
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
     return vendor
 
 
@@ -61,7 +63,7 @@ def update_vendor(vendor_id: int, payload: VendorUpdate, db: Annotated[Session, 
 def add_alias(vendor_id: int, payload: AliasCreate, db: Annotated[Session, Depends(get_db)]):
     alias = vendor_service.add_alias(db, vendor_id, payload.alias, payload.match_type)
     if alias is None:
-        raise HTTPException(status_code=404, detail="Vendor not found")
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
     return alias
 
 
@@ -69,11 +71,11 @@ def add_alias(vendor_id: int, payload: AliasCreate, db: Annotated[Session, Depen
 def set_default_category(vendor_id: int, payload: SetDefaultCategory, db: Annotated[Session, Depends(get_db)]):
     vendor = vendor_service.set_default_category(db, vendor_id, payload.category_id)
     if vendor is None:
-        raise HTTPException(status_code=404, detail="Vendor not found")
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
     return vendor
 
 
 @router.delete("/{vendor_id}", status_code=204)
 def delete_vendor(vendor_id: int, db: Annotated[Session, Depends(get_db)]) -> None:
     if not vendor_service.delete_vendor(db, vendor_id):
-        raise HTTPException(status_code=404, detail="Vendor not found")
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)

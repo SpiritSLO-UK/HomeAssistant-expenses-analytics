@@ -18,6 +18,8 @@ from app.services.household_service import get_or_create_default_household
 
 router = APIRouter(prefix="/budgets", tags=["budgets"])
 
+_NOT_FOUND = "Budget not found"
+
 
 def _validate(
     db: Session,
@@ -65,7 +67,7 @@ def budget_transactions(
     """The transactions counting toward a budget in its window (drill-down)."""
     budget = db.get(Budget, budget_id)
     if budget is None:
-        raise HTTPException(status_code=404, detail="Budget not found")
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
     scope = auth_service.visible_account_scope(request, db)
     return budget_service.budget_transactions(db, budget, month or date.today(), account_ids=scope, annual=annual)
 
@@ -105,7 +107,7 @@ def create_budget(payload: BudgetIn, db: Annotated[Session, Depends(get_db)]) ->
 def update_budget(budget_id: int, payload: BudgetUpdate, db: Annotated[Session, Depends(get_db)]) -> Budget:
     budget = db.get(Budget, budget_id)
     if budget is None:
-        raise HTTPException(status_code=404, detail="Budget not found")
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
     data = payload.model_dump(exclude_unset=True)
     _validate(
         db,
@@ -128,7 +130,7 @@ def update_budget(budget_id: int, payload: BudgetUpdate, db: Annotated[Session, 
 def delete_budget(budget_id: int, db: Annotated[Session, Depends(get_db)]) -> None:
     budget = db.get(Budget, budget_id)
     if budget is None:
-        raise HTTPException(status_code=404, detail="Budget not found")
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
     db.delete(budget)
     db.commit()
     mqtt_service.publish_safe(db)

@@ -20,6 +20,8 @@ from app.services import auth_service, category_service
 
 router = APIRouter(prefix="/categories", tags=["categories"])
 
+_NOT_FOUND = "Category not found"
+
 
 @router.get("", response_model=list[CategoryOut])
 def list_categories(db: Annotated[Session, Depends(get_db)], include_inactive: bool = False) -> list[Category]:
@@ -74,7 +76,7 @@ def set_all_privacy(
 def get_category(category_id: int, db: Annotated[Session, Depends(get_db)]) -> Category:
     category = category_service.get_category(db, category_id)
     if category is None:
-        raise HTTPException(status_code=404, detail="Category not found")
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
     return category
 
 
@@ -83,7 +85,7 @@ def update_category(category_id: int, payload: CategoryUpdate, db: Annotated[Ses
     _check_privacy(payload.privacy_sensitivity)
     category = category_service.update_category(db, category_id, payload.model_dump(exclude_unset=True))
     if category is None:
-        raise HTTPException(status_code=404, detail="Category not found")
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
     return category
 
 
@@ -95,7 +97,7 @@ def delete_category(
 ) -> None:
     """Deleting a category (built-ins included) is structural — owner only."""
     if not category_service.delete_category(db, category_id):
-        raise HTTPException(status_code=404, detail="Category not found")
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
 
 
 @router.post("/{category_id}/merge", response_model=CategoryOut)
@@ -112,5 +114,5 @@ def merge_category(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if target is None:
-        raise HTTPException(status_code=404, detail="Category not found")
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
     return target
