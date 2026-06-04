@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Sparkline from "../components/Sparkline";
+import OverTimeChart from "../components/OverTimeChart";
 import {
   adjustSavingsBalance,
   createSavingsAccount,
   createSavingsGoal,
   deleteSavingsGoal,
   getBalanceHistory,
+  getSavingsHistory,
   getSavingsSummary,
   recordBalance,
   updateSavingsAccount,
@@ -22,11 +24,14 @@ function today(): string {
 export default function Savings() {
   const qc = useQueryClient();
   const [err, setErr] = useState<string | null>(null);
+  const [months, setMonths] = useState(12);
   const summary = useQuery({ queryKey: ["savings-summary"], queryFn: getSavingsSummary });
+  const history = useQuery({ queryKey: ["savings-history-total", months], queryFn: () => getSavingsHistory(months) });
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["savings-summary"] });
     qc.invalidateQueries({ queryKey: ["savings-history"] });
+    qc.invalidateQueries({ queryKey: ["savings-history-total"] });
   };
   const fail = (e: unknown) => setErr(String(e));
 
@@ -53,6 +58,15 @@ export default function Savings() {
           </p>
         </div>
       )}
+
+      <OverTimeChart
+        title="Total savings over time"
+        series={history.data}
+        months={months}
+        onMonths={setMonths}
+        color="#3aa55a"
+        emptyHint="Record a balance on a couple of months to see your savings trend here."
+      />
 
       <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>

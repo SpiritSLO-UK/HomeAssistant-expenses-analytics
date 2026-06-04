@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Account, SavingsBalance, SavingsGoal
-from app.services import settings_service
+from app.services import analytics_service, settings_service
 from app.services.household_service import get_or_create_default_household
 
 SAVINGS_TYPE = "savings"
@@ -108,6 +108,29 @@ def balance_history(db: Session, account_id: int) -> list[SavingsBalance]:
             .order_by(SavingsBalance.as_of_date, SavingsBalance.id)
         ).all()
     )
+
+
+def history(db: Session, *, account_ids: set[int] | None = None, months: int = 12) -> dict:
+    """Total savings over time: each month's point-in-time total — the latest
+    snapshot of every account as of that month's end — oldest first. Powers the
+    Savings over-time chart + range selector (period epic)."""
+    windows = analytics_service._month_windows(date.today(), max(1, months))
+    accounts = list_accounts(db, account_ids=account_ids)
+    snaps = {a.id: balance_history(db, a.id) for a in accounts}
+    series = []
+    for start, end in windows:
+        total = Decimal("0.00")
+        for a in accounts:
+            as_of_balance = None
+            for snap in snaps[a.id]:  # ordered by date; take the last one before the month end
+                if snap.as_of_date < end:
+                    as_of_balance = Decimal(snap.balance)
+                else:
+                    break
+            if as_of_balance is not None:
+                total += as_of_balance
+        series.append({"month": start.strftime("%Y-%m"), "total": str(total.quantize(TWO_DP))})
+    return {"currency": settings_service.get_base_currency(db), "months": series}
 
 
 def latest_balance(db: Session, account_id: int) -> Decimal | None:

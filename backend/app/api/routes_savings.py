@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -36,6 +36,16 @@ def _require_visible(request: Request, db: Session, account_id: int) -> None:
 @router.get("/summary", response_model=SavingsSummary)
 def summary(request: Request, db: Annotated[Session, Depends(get_db)]) -> dict:
     return savings_service.summary(db, account_ids=auth_service.visible_account_scope(request, db))
+
+
+@router.get("/history")
+def history(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    months: Annotated[int, Query(ge=1, le=60)] = 12,
+) -> dict:
+    """Total savings over time (point-in-time per month) for the Savings chart."""
+    return savings_service.history(db, account_ids=auth_service.visible_account_scope(request, db), months=months)
 
 
 # --- Accounts ---
