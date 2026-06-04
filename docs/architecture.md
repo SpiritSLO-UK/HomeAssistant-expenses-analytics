@@ -21,20 +21,25 @@ flowchart TB
   subgraph addon["HA Finance Intelligence add-on (one container)"]
     fe["React + TS frontend"]
     api["FastAPI backend /api"]
-    svc["Services<br/>import · category · vendor · rule · fx · dashboard · backup"]
+    svc["Services<br/>import · categorise · rules · fx · dashboard · budgets ·<br/>projects · savings · investments · assets · receipts/OCR ·<br/>subscriptions · analytics · AI gateway · retention · backup"]
     db[("SQLite<br/>/data/finance.db (private)")]
     fe --> api --> svc --> db
   end
 
   user --> ingress --> fe
-  svc -. "publish sensors (Stage 6)" .-> mqtt
+  svc -. "publish sensors (opt-in)" .-> mqtt
   mqtt -. triggers .-> autos
   svc -. "FX rates (opt-in)" .-> frank["api.frankfurter.dev"]
-  svc -. "AI (opt-in, Stage 9/10)" .-> ai["local / cloud LLM"]
+  svc -. "AI (opt-in)" .-> ai["local / cloud LLM"]
+  svc -. "prices (opt-in)" .-> px["Stooq / Alpha Vantage"]
+  svc -. "documents (opt-in)" .-> ppl["your Paperless-ngx"]
 
   classDef opt stroke-dasharray:5 5,fill:#f7f7f7,color:#555;
-  class mqtt,autos,frank,ai opt;
+  class mqtt,autos,frank,ai,px,ppl opt;
 ```
+
+> Standalone (no Home Assistant): the same container runs behind an optional
+> TLS reverse proxy instead of HA ingress — see [reverse-proxy.md](reverse-proxy.md).
 
 ## 2. Request flow
 
@@ -86,7 +91,14 @@ sequenceDiagram
 
 ## 4. Data model (core entities)
 
-The full model has ~21 tables (spec §12); this shows the core relationships.
+The full model has ~30 tables (spec §12); this shows the core relationships. Other
+groups hang off the same `ACCOUNT`/`TRANSACTION`/`USER` spine: **savings**
+(`SavingsBalance`, `SavingsGoal`), **investments** (`AccountValue`, `Holding`,
+`HoldingPrice`), **assets** (`Asset`, `AssetLog` for cars/home), **receipts**
+(`Receipt`, `ReceiptMatch`), **AI** (`AIRequest`), **review** (`ReviewItem`),
+**subscriptions**, **rules**, **child allowance** (`ChildAllocation`), **MFA**
+(`UserSession`) and **audit** (`AuditLog`). Retention adds an `archived_at` column
+to transactions / receipts / AI-requests / audit-logs.
 
 ```mermaid
 erDiagram
@@ -98,6 +110,10 @@ erDiagram
   TRANSACTION }o--o| CATEGORY : "categorised as"
   TRANSACTION }o--o| VENDOR : "merchant"
   TRANSACTION }o--o| PROJECT : "tagged to"
+  TRANSACTION ||--o{ RECEIPT_MATCH : "matched by"
+  RECEIPT ||--o{ RECEIPT_MATCH : "matches"
+  ACCOUNT ||--o{ SAVINGS_BALANCE : "savings snapshots"
+  ACCOUNT ||--o{ HOLDING : "investment positions"
   CATEGORY ||--o{ CATEGORY : "parent of"
   VENDOR ||--o{ VENDOR_ALIAS : "known as"
   VENDOR }o--o| CATEGORY : "default category"
@@ -111,7 +127,7 @@ erDiagram
 ```mermaid
 flowchart LR
   subgraph build["docker build"]
-    n["node:20<br/>npm run build"] --> dist["frontend/dist"]
+    n["node:22<br/>npm run build"] --> dist["frontend/dist"]
   end
   subgraph img["python:3.12-slim runtime"]
     be["backend (pip install)"]

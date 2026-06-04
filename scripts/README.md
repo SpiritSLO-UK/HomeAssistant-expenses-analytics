@@ -10,7 +10,7 @@ Windows) and where `npm` lives.
 
 | Script | What it does |
 |--------|--------------|
-| `test.sh` | Backend pytest + frontend TypeScript type-check. Exits non-zero on any failure — safe for a pre-commit hook or CI. |
+| `test.sh` | Backend pytest (runs across all CPU cores via `pytest-xdist`) + frontend TypeScript type-check. Exits non-zero on any failure — safe for a pre-commit hook or CI. |
 | `dev.sh` | Starts the backend (`:8099`) and the Vite dev server (`:5173`) together; Ctrl-C stops both. |
 
 ```bash
@@ -32,5 +32,7 @@ backend/.venv/bin/python -m pip install -e 'backend[dev]'
 (cd frontend && npm install)
 ```
 
-A GitHub Actions workflow that runs `test.sh` is planned for Stage 12
-(open-source polish).
+CI is live: [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs ruff +
+the backend pytest suite and the frontend type-check/build on every push and PR
+(on Linux it installs all optional extras, so the encryption/MQTT/OCR/PDF paths
+run for real), plus a standalone Docker-image build.

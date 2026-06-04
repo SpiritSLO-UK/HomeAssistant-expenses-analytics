@@ -108,6 +108,8 @@ warranty, not financial advice — keep your own backups._
   You can also **attach a receipt directly to a transaction** from its drill-down
   detail and **view the image/PDF** there — attached receipts keep their original
   (so they stay viewable) regardless of the delete-after-processing setting.
+  Re-uploading the same file is detected by content hash and reported as
+  **"already imported"** rather than duplicated.
 - **Paperless import** — pull documents from your own
   [Paperless-ngx](https://github.com/paperless-ngx/paperless-ngx) instance into
   receipts, straight from the Receipts page. **One-directional**: we only ever
@@ -115,7 +117,10 @@ warranty, not financial advice — keep your own backups._
   Off until you set `HAFI_PAPERLESS_URL` + `HAFI_PAPERLESS_TOKEN`. Imports are
   de-duplicated by content, so re-importing the same document is safe.
 - **Review queue** — a safety net listing anything uncertain (unmatched receipt,
-  low-confidence read, …) to resolve or ignore.
+  low-confidence read, …) to resolve or ignore, with a second **Uncategorised**
+  tab to clear category-less transactions inline. The dashboard surfaces both
+  (plus any missing FX rate) in one **"Needs attention"** card that links straight
+  to where you clear each — and hides itself when there's nothing outstanding.
 - **AI assistant (opt-in)** — off by default; when enabled, suggests a category
   for a transaction via any OpenAI-compatible LLM (local Ollama/LM Studio or
   cloud). It only *suggests* — you confirm. You can **batch-categorise**
@@ -126,7 +131,10 @@ warranty, not financial advice — keep your own backups._
   cloud-manual mode you preview and approve (or reject) each request; categories
   you mark *never-cloud* are never sent; and every call is audited. The first
   time you enable a cloud mode, a one-time disclaimer spells out exactly what
-  this means.
+  this means. You can also **re-process** already-categorised transactions (a
+  "re-check" toggle on the batch panels) to find better matches after plugging in
+  or improving a model — suggestions only, and a manual category is never
+  overwritten.
 - **Services panel** — a **Settings → Services** card to see and switch each
   service from one place, **one panel per service** with a consistent header and
   status: the **AI assistant** (a status + "turn off" — it reads *On* only when a
@@ -199,6 +207,10 @@ warranty, not financial advice — keep your own backups._
   reorder** the optional cards (Heads-up, Trends, Spending by category, Top vendors,
   By project, By member, Savings, Budgets, Business, Travel, Allowance, Processing)
   with up/down arrows; the layout and order are remembered on your device.
+- **Customisable navigation** — **✏️ Customise tabs** in the sidebar lets you
+  **hide and reorder** nav tabs (▲/▼), remembered per device (Dashboard and
+  Settings stay put). Plus **dark mode** (Appearance in Settings), persisted
+  Transactions filters, and resizable table columns.
 - **Spending by member** — for multi-person households, a card breaking the
   month's spend down per member (plus a "Shared" row for joint accounts). Each
   person's figure covers the accounts they own, scoped to what you're allowed to
