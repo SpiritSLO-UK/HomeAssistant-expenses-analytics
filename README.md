@@ -53,7 +53,8 @@ warranty, not financial advice — keep your own backups._
 | — | Multi-currency + FX; encrypted backups + optional at-rest encryption | ✅ |
 | 10 | Cloud AI approval: preview + approve/reject each request, never-cloud category blocking, audit log | ✅ |
 | 11 | PDF statement import: best-effort, rows flagged for review | ✅ |
-| 12 | Polish (CI, dashboard trends/outliers, savings, logs, security/multi-user, …) | planned ([spec §29](ha_finance_intelligence_spec.md)) |
+| 12 | Polish: CI, dashboard trends/outliers, savings, investments & pensions, cars & home, geo/world map, data retention, multi-user & roles, global search, performance indexes | ✅ |
+| — | **v0.9.0-beta** released (standalone, no HA) + ongoing refinements; the **Home Assistant add-on** (one-click install) is the remaining step | 🚧 |
 
 ## What it does today
 
@@ -61,9 +62,11 @@ warranty, not financial advice — keep your own backups._
   mapper) with duplicate detection on re-upload. PDF statements import
   best-effort, with each extracted row flagged for review.
 - **Categorise** automatically (priority order: manual > rule > vendor default >
-  keyword); correct one transaction and optionally turn it into a **rule**. The
-  Rules page has a built-in **"How rules work"** guide explaining every condition
-  and action with worked examples.
+  keyword); correct one transaction and optionally turn it into a **rule**. Rule
+  actions can set the category, vendor, project or **country** (to tag a
+  transaction's spend location for the map), flag transfers/income/subscriptions,
+  send to review, or block cloud AI. The Rules page has a built-in **"How rules
+  work"** guide explaining every condition and action with worked examples.
 - **Manage categories** — add your own, recolour or rename any category, set its
   cloud-AI privacy level, **delete** one (its transactions fall back to
   uncategorised) or **merge** one into another. This now includes the built-in
@@ -125,10 +128,11 @@ warranty, not financial advice — keep your own backups._
   time you enable a cloud mode, a one-time disclaimer spells out exactly what
   this means.
 - **Services panel** — a **Settings → Services** card to see and switch each
-  service from one place: the **AI assistant** (a status + "turn off" — it reads
-  *On* only when a real local/cloud mode is configured, *Off* otherwise), receipt
-  **OCR** on/off, and **online exchange rates** on/off. MQTT is shown read-only
-  (it's configured in the add-on options). Owner/settings-manager only.
+  service from one place, **one panel per service** with a consistent header and
+  status: the **AI assistant** (a status + "turn off" — it reads *On* only when a
+  real local/cloud mode is configured, *Off* otherwise), receipt **OCR** on/off,
+  and **online exchange rates** on/off. MQTT is shown read-only (it's configured
+  in the add-on options). Owner/settings-manager only.
 - **Multi-currency** — original amount kept and converted to your base currency;
   manual rates by default, opt-in online ECB rates (Frankfurter).
 - **Multi-user & roles** — identity comes from Home Assistant (the first person
@@ -255,7 +259,7 @@ Home Assistant add-on (single container)
   ├── receipts + optional local OCR (Tesseract/pypdf) · review queue
   ├── MQTT publisher → Home Assistant sensors
   ├── AI gateway (optional, opt-in: local/cloud OpenAI-compatible LLM)
-  └── (later) cloud-approval UI, PDF import
+  └── cloud-approval UI · PDF/scan import · investments · cars/home · retention
 ```
 
 ## Repository layout
@@ -344,12 +348,14 @@ imported and anything you added yourself are left untouched.
 
 ```bash
 ./scripts/test.sh                       # everything
-cd backend && .venv/bin/python -m pytest # backend only
+cd backend && .venv/bin/python -m pytest # backend only (runs in parallel)
 ```
 
-Tests run against a throwaway temporary database and **refuse to start against
-a real one** — they can never read or modify your finance data
-([docs/privacy.md](docs/privacy.md), backlog #30).
+The backend suite runs across all CPU cores via `pytest-xdist` (`-n auto`, in
+`pyproject.toml`); pass `-n0` to run serially under a debugger. Tests run against
+a throwaway temporary database and **refuse to start against a real one** — they
+can never read or modify your finance data, and each parallel worker gets its own
+isolated temp DB ([docs/privacy.md](docs/privacy.md), backlog #30).
 
 **CI:** [GitHub Actions](.github/workflows/ci.yml) runs `ruff` + the backend
 tests and the frontend type-check/build on every push and pull request. On Linux
@@ -390,7 +396,8 @@ you can verify it. Duplicate rows (and re-uploaded files) are detected and skipp
 Full docs live in [`docs/`](docs/README.md) — start there for the index. Key guides:
 
 - **[Configuration reference](docs/configuration.md)** — every setting: `HAFI_*`
-  env vars, add-on options, and the in-app Settings, with defaults.
+  env vars, add-on options, the in-app Settings (with defaults), a **Paperless-ngx
+  setup walkthrough**, and what each **log level** records.
 - **[Troubleshooting](docs/troubleshooting.md)** — fixes for common install /
   import / OCR / MQTT / AI / unlock / FX issues.
 - **[Rules](docs/rules.md)** — auto-categorisation: precedence, every condition

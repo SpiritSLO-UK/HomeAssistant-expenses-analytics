@@ -66,8 +66,26 @@ are set.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `HAFI_PAPERLESS_URL` | — | Base URL of your Paperless-ngx instance. |
-| `HAFI_PAPERLESS_TOKEN` | — | Your Paperless API token (a secret). |
+| `HAFI_PAPERLESS_URL` | — | Base URL of your Paperless-ngx instance. May instead be set in Settings → Integrations (the env var is the fallback). |
+| `HAFI_PAPERLESS_TOKEN` | — | Your Paperless API token (a secret) — **env only**, never stored in the database. |
+
+**Setup walkthrough.** Pulls documents from your own Paperless-ngx into the
+Receipts pipeline; it's outbound-only (we only ever *request* from Paperless — it
+never receives your finance data) and stays off until both the URL and a token
+are present.
+
+1. In Paperless-ngx, create an **API token**: your profile → **My Profile** →
+   *API Auth Token* (or **Settings → Administration → Tokens**). Copy it.
+2. Give this app the token as a **secret** — set `HAFI_PAPERLESS_TOKEN` in your
+   `docker-compose.yml` (or the add-on options) and **restart**. The token is
+   never written to the database.
+3. Point it at your instance: either set `HAFI_PAPERLESS_URL=http(s)://paperless.local:8000`
+   in the same place, **or** enter the URL in **Settings → Integrations ·
+   Paperless-ngx** and **Save URL** (the in-app value wins; the env var is the
+   fallback). Use **Test connection** to confirm.
+4. Once configured, an **Import from Paperless** card appears on the **Receipts**
+   page (it's hidden until then). Search your documents and import one as a
+   receipt; imports are de-duplicated by content, so re-importing is safe.
 
 ### Encryption at rest (optional)
 
@@ -115,3 +133,27 @@ Editable on the **Settings** page (some are owner- or settings-manager-only):
 See [troubleshooting.md](troubleshooting.md) if a setting doesn't behave as
 expected, and [configuration precedence](#configuration-reference) above for which
 layer wins.
+
+---
+
+## Logging — what each level records
+
+Set the level with `HAFI_LOG_LEVEL` (bootstrap) or **Settings → Logging**
+(runtime; takes effect immediately). Each level **includes everything above it**,
+so `DEBUG` shows the most and `ERROR` the least. Logs stream to the container
+output (`docker compose logs -f`) or the add-on **Log** tab.
+
+| Level | What you'll see | When to use |
+|-------|-----------------|-------------|
+| `ERROR` | Only serious failures — an unhandled exception, or a critical misconfiguration (e.g. at-rest encryption is enabled but the SQLCipher driver is missing, so the DB locks). | Quietest; production once you trust it. |
+| `WARNING` | The above **plus** recoverable problems where an optional step failed and was skipped — an FX or price-feed lookup that errored, OCR/subscription-detection falling back, a non-fatal MQTT publish failure. | A sensible quiet-but-watchful setting. |
+| `INFO` *(default)* | The above **plus** normal lifecycle milestones — startup/shutdown, a statement imported (counts), the retention sweep summary. No transaction contents. | The recommended default. |
+| `DEBUG` | The above **plus** verbose per-step detail. Useful when chasing a bug. | Temporary; turn it back down afterwards. |
+
+Notes:
+- The runtime log is **operational**, not an audit trail. Sensitive actions
+  (imports, deletes, role/approval changes, AI calls) are recorded separately in
+  the owner-only **Logs** page (activity log + AI-call log), independent of this
+  level.
+- Logs avoid transaction descriptions and amounts even at `DEBUG`; anything sent
+  to a cloud AI is minimised and redacted first (see [privacy.md](privacy.md)).
