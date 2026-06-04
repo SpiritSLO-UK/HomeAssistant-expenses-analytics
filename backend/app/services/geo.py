@@ -8,6 +8,8 @@ spend went). Everything is local; no geocoding service is called (privacy).
 
 from __future__ import annotations
 
+from app.services._country_names import COUNTRY_NAMES as _ISO_COUNTRY_NAMES
+
 # Currency → ISO-3166 alpha-2 (best-effort default when a vendor has no country).
 # EUR maps to the EU flag/label since it spans many countries.
 CURRENCY_COUNTRY = {
@@ -17,18 +19,10 @@ CURRENCY_COUNTRY = {
     "INR": "IN", "ZAR": "ZA", "AED": "AE", "THB": "TH", "MXN": "MX",
 }
 
-# Display names for the codes we expect to see (vendor countries + the above).
-COUNTRY_NAMES = {
-    "GB": "United Kingdom", "US": "United States", "EU": "Eurozone", "JP": "Japan",
-    "CN": "China", "AU": "Australia", "CA": "Canada", "CH": "Switzerland",
-    "HK": "Hong Kong", "SG": "Singapore", "NZ": "New Zealand", "SE": "Sweden",
-    "NO": "Norway", "DK": "Denmark", "PL": "Poland", "IN": "India",
-    "ZA": "South Africa", "AE": "United Arab Emirates", "TH": "Thailand", "MX": "Mexico",
-    "FR": "France", "DE": "Germany", "ES": "Spain", "IT": "Italy", "NL": "Netherlands",
-    "IE": "Ireland", "PT": "Portugal", "BE": "Belgium", "AT": "Austria", "GR": "Greece",
-    "FI": "Finland", "CZ": "Czechia", "HU": "Hungary", "TR": "Türkiye", "AR": "Argentina",
-    "BR": "Brazil", "KR": "South Korea",
-}
+# Display names for every ISO-3166-1 alpha-2 code (generated — see
+# _country_names.py + scripts/gen_countries.mjs), plus the "EU" pseudo-code the
+# EUR currency fallback above maps to.
+COUNTRY_NAMES = {**_ISO_COUNTRY_NAMES, "EU": "Eurozone"}
 
 
 def country_for(

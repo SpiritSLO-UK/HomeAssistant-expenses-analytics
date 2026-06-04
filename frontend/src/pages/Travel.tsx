@@ -8,6 +8,7 @@ import {
   getTravelTrips,
   type Trip,
 } from "../api/client";
+import CountrySelect from "../components/CountrySelect";
 
 function fmtRange(first: string, last: string): string {
   return first === last ? first : `${first} → ${last}`;
@@ -16,18 +17,16 @@ function fmtRange(first: string, last: string): string {
 // A tiny 2-letter country tagger for a trip (e.g. ES). Tags all the trip's
 // transactions so the spend-by-location map shows the real country.
 function TripCountry({ onSet, pending }: Readonly<{ onSet: (code: string) => void; pending: boolean }>) {
-  const [code, setCode] = useState("");
+  const [code, setCode] = useState<string | null>(null);
   return (
     <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
-      <input
-        placeholder="ES"
+      <CountrySelect
         value={code}
-        maxLength={2}
-        style={{ width: 44, textTransform: "uppercase" }}
-        title="Tag this trip's spend with a country (ISO code, e.g. ES) for the spending-by-location map"
-        onChange={(e) => setCode(e.target.value.replace(/[^A-Za-z]/g, ""))}
+        onChange={setCode}
+        style={{ minWidth: 130 }}
+        title="Tag this trip's spend with a country for the spending-by-location map"
       />
-      <button className="btn btn--sm btn--ghost" disabled={!code || pending} onClick={() => onSet(code.toUpperCase())}>
+      <button className="btn btn--sm btn--ghost" disabled={!code || pending} onClick={() => code && onSet(code)}>
         Set country
       </button>
     </span>

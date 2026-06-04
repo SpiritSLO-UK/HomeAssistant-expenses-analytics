@@ -32,6 +32,19 @@ def test_supported_currencies_listed(client):
     assert gbp["symbol"] == "£" and gbp["name"]
 
 
+def test_supported_countries_listed(client):
+    """The ISO country list powers the vendor / trip country pickers — sorted by
+    name, with common countries present and the 'EU' pseudo-code omitted."""
+    rows = client.get("/api/settings/countries").json()
+    codes = {c["code"] for c in rows}
+    assert len(rows) >= 200  # ~all of ISO-3166-1
+    assert {"GB", "US", "JP", "ES", "BR"} <= codes
+    assert "EU" not in codes  # the EUR-fallback pseudo-code isn't a country
+    names = [c["name"] for c in rows]
+    assert names == sorted(names)  # sorted by display name
+    assert {"code": "GB", "name": "United Kingdom"} in rows
+
+
 def test_base_currency_must_be_supported(client):
     # A curated code is accepted and recomputes conversions for display.
     ok = client.put("/api/settings", json={"base_currency": "USD"})
