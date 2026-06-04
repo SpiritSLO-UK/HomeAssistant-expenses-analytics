@@ -103,6 +103,22 @@ def test_demo_seeds_savings(client):
     assert len(s["goals"]) >= 1
 
 
+def test_demo_seeds_assets_and_investments(client):
+    """The demo seeds a car (with refuels → MPG) + a home (Cars & Assets), and an
+    investment account with holdings + a pension with a value snapshot (Investments)."""
+    client.post("/api/backup/demo")
+
+    assets = client.get("/api/assets").json()
+    assert {"car", "home"} <= {a["kind"] for a in assets}
+    car = next(a for a in assets if a["kind"] == "car")
+    logs = client.get(f"/api/assets/{car['id']}/logs").json()
+    assert sum(1 for lg in logs if lg["kind"] == "refuel") >= 3  # → tank-to-tank MPG
+
+    accounts = client.get("/api/investments/accounts").json()
+    assert {"investment", "pension"} <= {a["account_type"] for a in accounts}
+    assert Decimal(client.get("/api/investments/summary").json()["total_value"]) > 0
+
+
 def test_demo_seeds_household_and_allowance(client):
     """A second member + a child with allowance allocations and a pocket-money budget."""
     client.get("/api/users/me")  # owner row
@@ -135,12 +151,16 @@ def test_demo_examples_are_idempotent(client):
     projects = len(client.get("/api/projects").json())
     users = len(client.get("/api/users").json())
     accounts = len(client.get("/api/savings/summary").json()["accounts"])
+    assets = len(client.get("/api/assets").json())
+    investments = len(client.get("/api/investments/accounts").json())
 
     client.post("/api/backup/demo")
     assert len(client.get("/api/rules").json()) == rules
     assert len(client.get("/api/projects").json()) == projects
     assert len(client.get("/api/users").json()) == users
     assert len(client.get("/api/savings/summary").json()["accounts"]) == accounts
+    assert len(client.get("/api/assets").json()) == assets
+    assert len(client.get("/api/investments/accounts").json()) == investments
 
 
 def test_demo_remove_returns_clean_db(client):
@@ -161,6 +181,8 @@ def test_demo_remove_returns_clean_db(client):
     assert client.get("/api/projects").json() == []
     assert client.get("/api/budgets").json() == []
     assert client.get("/api/savings/summary").json()["accounts"] == []
+    assert client.get("/api/assets").json() == []
+    assert client.get("/api/investments/accounts").json() == []
     assert client.get("/api/vendors").json() == []
     assert client.get("/api/subscriptions").json() == []  # subscriptions cleared too (bug fix)
     assert client.get("/api/review").json() == []

@@ -34,6 +34,7 @@ from sqlalchemy.orm import Session
 
 from app.models import (
     Account,
+    Asset,
     Budget,
     Category,
     ChildAllocation,
@@ -50,8 +51,10 @@ from app.models import (
 )
 from app.services import (
     allowance_service,
+    asset_service,
     fx_service,
     import_service,
+    investment_service,
     review_service,
     savings_service,
     settings_service,
@@ -554,6 +557,73 @@ def _seed_review_queue(db: Session, rows: list[Transaction]) -> None:
         )
 
 
+_DEMO_CAR_NAME = "Family Car"
+_DEMO_HOME_NAME = "Home"
+_DEMO_ISA_NAME = "Stocks & Shares ISA"
+_DEMO_PENSION_NAME = "Workplace Pension"
+
+
+def _seed_assets(db: Session) -> None:
+    """A car with three full fills (→ tank-to-tank MPG) plus a service, and a home
+    with electricity + gas meter readings — so the Cars & Assets page is populated."""
+    if db.scalar(select(Asset.id).where(Asset.name == _DEMO_CAR_NAME)):
+        return
+    today = date.today()
+    car = asset_service.create_asset(
+        db, name=_DEMO_CAR_NAME, kind="car", identifier="AB12 CDE", distance_unit="mi"
+    )
+    # Two tank-to-tank segments (~41 MPG): each leg is 360 mi on a full tank.
+    for days_ago, odo, litres, cost in (
+        (62, "41200", "45.0", "66.00"),
+        (34, "41560", "40.0", "59.00"),
+        (7, "41920", "39.5", "58.50"),
+    ):
+        asset_service.add_log(
+            db, car.id, log_date=today - timedelta(days=days_ago), kind="refuel",
+            odometer=odo, litres=litres, cost=cost, is_full_tank=True, fuel_type="petrol",
+        )
+    asset_service.add_log(
+        db, car.id, log_date=today - timedelta(days=20), kind="service",
+        cost="180.00", note="Annual service + MOT",
+    )
+    home = asset_service.create_asset(db, name=_DEMO_HOME_NAME, kind="home", identifier="12 Demo Street")
+    for meter, unit, r0, r1, cost in (
+        ("electricity", "kWh", "48210", "48560", "98.00"),
+        ("gas", "m3", "12880", "13110", "71.00"),
+    ):
+        asset_service.add_log(db, home.id, log_date=today - timedelta(days=62), kind="reading",
+                              meter=meter, reading=r0, unit=unit)
+        asset_service.add_log(db, home.id, log_date=today - timedelta(days=32), kind="reading",
+                              meter=meter, reading=r1, unit=unit, cost=cost)
+
+
+def _seed_investments(db: Session) -> None:
+    """An investment account with two holdings (→ market value + unrealised gain)
+    and a workplace pension with a growing value series — so the Investments page
+    is populated (both tracking modes)."""
+    if db.scalar(
+        select(Account.id).where(Account.name == _DEMO_ISA_NAME, Account.account_type == "investment")
+    ):
+        return
+    today = date.today()
+    isa = investment_service.create_account(
+        db, name=_DEMO_ISA_NAME, institution="Demo Invest", account_type="investment"
+    )
+    investment_service.create_holding(
+        db, isa.id, symbol="VWRL", name="Vanguard FTSE All-World",
+        units="120", avg_cost="92.50", last_price="108.20",
+    )
+    investment_service.create_holding(
+        db, isa.id, symbol="AAPL", name="Apple Inc.",
+        units="15", avg_cost="145.00", last_price="171.30",
+    )
+    pension = investment_service.create_account(
+        db, name=_DEMO_PENSION_NAME, institution="Demo Pensions", account_type="pension"
+    )
+    investment_service.record_value(db, pension.id, as_of=today - timedelta(days=90), value=Decimal("38400.00"))
+    investment_service.record_value(db, pension.id, as_of=today, value=Decimal("41250.00"))
+
+
 def _seed_examples(db: Session, statement_id: int) -> None:
     """Seed one example of each feature so a fresh demo shows off every page.
     Idempotent — each piece is guarded by a recognizable name/id, and a re-run
@@ -566,6 +636,8 @@ def _seed_examples(db: Session, statement_id: int) -> None:
     _seed_projects(db, rows)
     _seed_budgets(db)
     _seed_savings(db)
+    _seed_assets(db)
+    _seed_investments(db)
     _seed_household(db, rows)
     _claim_main_account(db, rows)
     _seed_review_queue(db, rows)
@@ -579,6 +651,8 @@ def _seed_examples(db: Session, statement_id: int) -> None:
 _MANIFEST_MODELS: dict[str, type] = {
     "statements": Statement,
     "accounts": Account,
+    # Demo cars/home; their refuel/reading logs cascade (FK ON DELETE) on removal.
+    "assets": Asset,
     "vendors": Vendor,
     "rules": Rule,
     "projects": Project,
@@ -743,10 +817,13 @@ def remove_demo(db: Session) -> dict:
     # Subscriptions detected from the demo's recurring transactions (vendor_id is
     # FK SET NULL, so order vs vendors doesn't matter).
     counts["subscriptions"] = _bulk_delete(db, Subscription, manifest.get("subscriptions", []))
+    # Demo cars/home assets — their refuel/reading logs cascade (FK ON DELETE).
+    counts["assets"] = _bulk_delete(db, Asset, manifest.get("assets", []))
 
-    # 3. Accounts (Curve / Sam's Card / Emergency Fund) — only when no transaction
-    #    is left on them, so an account a real import also used is kept. Savings
-    #    balance snapshots cascade (FK ON DELETE).
+    # 3. Accounts (Curve / Sam's Card / Emergency Fund + the investment & pension
+    #    accounts) — only when no transaction is left on them, so an account a real
+    #    import also used is kept. Savings balance snapshots, and investment holdings
+    #    / value snapshots / price history, all cascade (FK ON DELETE).
     counts["accounts"] = _delete_if_unreferenced(
         db, Account, manifest.get("accounts", []), Transaction.account_id
     )
