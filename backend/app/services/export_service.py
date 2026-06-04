@@ -97,20 +97,54 @@ def _equality_conditions(
     return conditions
 
 
+def _country_condition(code: str, default_country: str | None):
+    """Match a transaction's **resolved** country — the same precedence the
+    spend-by-location map uses (geo.country_for): the transaction's own country,
+    else its vendor's, else the household default, else inferred from the currency.
+    Without this, a drill-down from the map (which attributes by the resolved
+    country) would only match the rare rows with a *stored* country and look empty.
+    Uses subqueries on merchant_id so no Vendor join is needed."""
+    from sqlalchemy import and_, or_
+
+    from app.services import geo
+
+    code = code.strip().upper()[:2]
+    no_txn = Transaction.country.is_(None)
+    vendor_is_code = Transaction.merchant_id.in_(select(Vendor.id).where(Vendor.country == code))
+    # "no vendor country" = no vendor, or a vendor that has no country set.
+    has_vendor_country = Transaction.merchant_id.in_(select(Vendor.id).where(Vendor.country.is_not(None)))
+    no_vendor_country = ~has_vendor_country
+
+    clauses = [Transaction.country == code, and_(no_txn, vendor_is_code)]
+    default = (default_country or "").strip().upper()[:2] or None
+    if default is not None:
+        # A default vendor country, when set, beats the currency guess for any row
+        # with no country of its own (txn or vendor).
+        if default == code:
+            clauses.append(and_(no_txn, no_vendor_country))
+    else:
+        # No default → fall back to the currency→country guess for those rows.
+        currencies = [c for c, cc in geo.CURRENCY_COUNTRY.items() if cc == code]
+        if currencies:
+            clauses.append(and_(no_txn, no_vendor_country, Transaction.currency.in_(currencies)))
+    return or_(*clauses)
+
+
 def _search_conditions(
     *,
     country: str | None,
     uncategorised: bool | None,
     search: str | None,
+    default_country: str | None = None,
 ) -> list:
     """The filters that need normalisation/special-casing (country, uncategorised, search)."""
     from sqlalchemy import or_
 
     conditions: list = []
     if country:
-        # Drill-down from the "Spending by location" card. Country is stored as an
-        # ISO alpha-2 upper-case code (see the bulk-update normaliser), so match it.
-        conditions.append(Transaction.country == country.strip().upper()[:2])
+        # Drill-down from the "Spending by location" card — match the *resolved*
+        # country (txn → vendor → default → currency), not just a stored code.
+        conditions.append(_country_condition(country, default_country))
     if uncategorised is not None:
         # "Uncategorised" = no category assigned. This is distinct from
         # needs_review (a flag set on low-confidence/PDF imports): a transaction
@@ -146,6 +180,7 @@ def build_transaction_filters(
     search: str | None = None,
     account_ids: set[int] | None = None,
     include_archived: bool = False,
+    default_country: str | None = None,
 ) -> list:
     """Build the SQLAlchemy filter list shared by the transactions list endpoint
     and the CSV export, so "export" always matches "what you see".
@@ -171,7 +206,9 @@ def build_transaction_filters(
         )
     )
     conditions.extend(
-        _search_conditions(country=country, uncategorised=uncategorised, search=search)
+        _search_conditions(
+            country=country, uncategorised=uncategorised, search=search, default_country=default_country
+        )
     )
     return conditions
 
