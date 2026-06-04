@@ -1,11 +1,23 @@
 import { useState } from "react";
 import { NavLink } from "react-router-dom";
 import { NAV_ITEMS } from "../nav";
-import { getHiddenNavKeys, setHiddenNavKeys } from "../prefs";
+import { getHiddenNavKeys, getNavOrder, setHiddenNavKeys, setNavOrder } from "../prefs";
 
 // Core pages that can never be hidden — you always need a way home and a way
-// back to Settings (and Customise itself lives in the sidebar regardless).
+// back to Settings (and Customise itself lives in the sidebar regardless). They
+// can still be re-ordered; only hiding is locked.
 const ALWAYS_SHOWN = new Set(["/", "/settings"]);
+
+const ALL_PATHS = NAV_ITEMS.map((i) => i.path);
+
+// Saved order may be stale across releases: keep known paths in their saved
+// position, then append any nav items added since (or never ordered) at the end.
+function mergeNavOrder(saved: string[]): string[] {
+  const known = new Set(ALL_PATHS);
+  const kept = saved.filter((p) => known.has(p));
+  const keptSet = new Set(kept);
+  return [...kept, ...ALL_PATHS.filter((p) => !keptSet.has(p))];
+}
 
 export default function Sidebar({
   role = "owner",
@@ -21,6 +33,7 @@ export default function Sidebar({
   const isAdmin = role === "owner";
   const isChild = role === "child";
   const [hidden, setHidden] = useState<Set<string>>(() => getHiddenNavKeys());
+  const [order, setOrder] = useState<string[]>(() => mergeNavOrder(getNavOrder()));
   const [editing, setEditing] = useState(false);
 
   // Role visibility (child → allowance only; ownerOnly → admin). Unchanged.
@@ -28,6 +41,9 @@ export default function Sidebar({
     if (isChild) return item.childVisible;
     return !item.ownerOnly || isAdmin;
   });
+
+  // Apply the per-device order to the role-visible items.
+  const orderedRoleItems = [...roleItems].sort((a, b) => order.indexOf(a.path) - order.indexOf(b.path));
 
   const toggle = (path: string) =>
     setHidden((prev) => {
@@ -38,10 +54,24 @@ export default function Sidebar({
       return next;
     });
 
+  // Move a tab up/down within the visible list, then persist the full order
+  // (role-hidden paths, if any, are preserved at the end).
+  const move = (path: string, dir: -1 | 1) => {
+    const visible = orderedRoleItems.map((i) => i.path);
+    const i = visible.indexOf(path);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= visible.length) return;
+    [visible[i], visible[j]] = [visible[j], visible[i]];
+    const visibleSet = new Set(visible);
+    const next = [...visible, ...order.filter((p) => !visibleSet.has(p))];
+    setOrder(next);
+    setNavOrder(next);
+  };
+
   // Normal mode drops hidden tabs; edit mode shows them all so they can be
-  // re-enabled. The child role never hides anything (its one page).
+  // re-enabled / re-ordered. The child role never customises (its one page).
   const items =
-    isChild || editing ? roleItems : roleItems.filter((i) => !hidden.has(i.path));
+    isChild || editing ? orderedRoleItems : orderedRoleItems.filter((i) => !hidden.has(i.path));
 
   return (
     <aside className={"sidebar" + (open ? " sidebar--open" : "")}>
@@ -50,14 +80,18 @@ export default function Sidebar({
         <span className="sidebar__brand-text">Finance</span>
       </div>
       <nav className="sidebar__nav">
-        {items.map((item) =>
+        {items.map((item, idx) =>
           editing ? (
             <EditRow
               key={item.path}
               item={item}
               shown={!hidden.has(item.path)}
               locked={ALWAYS_SHOWN.has(item.path)}
+              canUp={idx > 0}
+              canDown={idx < items.length - 1}
               onToggle={() => toggle(item.path)}
+              onMoveUp={() => move(item.path, -1)}
+              onMoveDown={() => move(item.path, 1)}
             />
           ) : (
             <NavLink
@@ -81,7 +115,9 @@ export default function Sidebar({
             {editing ? "✓ Done" : "✏️ Customise tabs"}
           </button>
         )}
-        {editing && <p className="sidebar__hint">Hidden tabs stay reachable by their URL.</p>}
+        {editing && (
+          <p className="sidebar__hint">Use ▲ ▼ to reorder; 👁️ shows/hides. Hidden tabs stay reachable by URL.</p>
+        )}
         <div>Local-first · v0.9.0-beta</div>
       </div>
     </aside>
@@ -92,27 +128,37 @@ function EditRow({
   item,
   shown,
   locked,
+  canUp,
+  canDown,
   onToggle,
+  onMoveUp,
+  onMoveDown,
 }: Readonly<{
   item: { path: string; label: string; icon: string };
   shown: boolean;
   locked: boolean;
+  canUp: boolean;
+  canDown: boolean;
   onToggle: () => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
 }>) {
   const stateTitle = shown ? "Hide this tab" : "Show this tab";
-  const title = locked ? "Always shown" : stateTitle;
+  const toggleTitle = locked ? "Always shown" : stateTitle;
   const stateIcon = shown ? "👁️" : "🚫";
   return (
-    <button
-      type="button"
-      className={"sidebar__link sidebar__link--edit" + (shown ? "" : " sidebar__link--off")}
-      disabled={locked}
-      onClick={onToggle}
-      title={title}
-    >
+    <div className={"sidebar__link sidebar__link--edit" + (shown ? "" : " sidebar__link--off")}>
       <span className="sidebar__link-icon">{item.icon}</span>
       <span style={{ flex: 1, textAlign: "left" }}>{item.label}</span>
-      <span aria-hidden="true">{locked ? "🔒" : stateIcon}</span>
-    </button>
+      <button type="button" className="sidebar__navbtn" disabled={!canUp} onClick={onMoveUp} title="Move up" aria-label={`Move ${item.label} up`}>
+        ▲
+      </button>
+      <button type="button" className="sidebar__navbtn" disabled={!canDown} onClick={onMoveDown} title="Move down" aria-label={`Move ${item.label} down`}>
+        ▼
+      </button>
+      <button type="button" className="sidebar__navbtn" disabled={locked} onClick={onToggle} title={toggleTitle} aria-label={toggleTitle}>
+        {locked ? "🔒" : stateIcon}
+      </button>
+    </div>
   );
 }
