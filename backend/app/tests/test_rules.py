@@ -119,6 +119,22 @@ def test_mark_transfer_rule(client):
     assert _by_desc(client)["TRANSFER TO SAVINGS"]["is_transfer"] is True
 
 
+def test_rule_sets_country_on_import(client):
+    # A foreign vendor whose currency would otherwise misattribute the spend:
+    # a set_country rule tags it ES so the spend-by-location map credits Spain.
+    client.post(
+        "/api/rules",
+        json={
+            "condition_type": "description_contains",
+            "condition_value": "MERCADONA",
+            "action_type": "set_country",
+            "action_value": "es",  # lowercase + trailing junk is normalised
+        },
+    )
+    _import(client, _curve([("2026-05-04", "MERCADONA MADRID", "-45.00")]))
+    assert _by_desc(client)["MERCADONA MADRID"]["country"] == "ES"
+
+
 def test_create_rule_from_correction(client):
     # Import an unknown merchant -> uncategorised.
     _import(client, _curve([("2026-05-04", "ZZQ MARKET", "-12.00")]), name="a.csv")

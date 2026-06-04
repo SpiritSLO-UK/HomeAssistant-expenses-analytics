@@ -1797,6 +1797,7 @@ export const RULE_ACTION_TYPES = [
   "set_category",
   "set_vendor",
   "set_project",
+  "set_country",
   "mark_transfer",
   "mark_income",
   "mark_subscription",

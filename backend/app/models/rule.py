@@ -27,8 +27,8 @@ class Rule(Base, TimestampMixin):
     condition_type: Mapped[str] = mapped_column(String(32), nullable=False)
     condition_value: Mapped[str] = mapped_column(String(512), nullable=False)
 
-    # set_vendor | set_category | set_project | mark_transfer | mark_income |
-    # mark_subscription | require_review | block_cloud_ai
+    # set_vendor | set_category | set_project | set_country | mark_transfer |
+    # mark_income | mark_subscription | require_review | block_cloud_ai
     action_type: Mapped[str] = mapped_column(String(32), nullable=False)
     action_value: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
