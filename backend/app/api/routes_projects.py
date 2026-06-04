@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -33,6 +33,17 @@ def _check_status(status: str | None) -> None:
 @router.get("", response_model=list[ProjectOut])
 def list_projects(db: Annotated[Session, Depends(get_db)]) -> list[Project]:
     return list(db.scalars(select(Project).order_by(Project.name)).all())
+
+
+@router.get("/history")
+def history(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    months: Annotated[int, Query(ge=1, le=60)] = 12,
+) -> dict:
+    """Total project spend over time (all projects, split-aware) for the chart.
+    Declared before /{project_id}/… so 'history' isn't read as a project id."""
+    return project_service.history(db, account_ids=auth_service.visible_account_scope(request, db), months=months)
 
 
 @router.post("", response_model=ProjectOut, status_code=201, responses={400: {"description": "Bad request"}})

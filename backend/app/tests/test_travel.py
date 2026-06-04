@@ -129,3 +129,16 @@ def test_travel_api_and_create_project(client):
     assert resp.json()["name"] == "Euro trip"
     # The project now appears in the projects list.
     assert any(p["name"] == "Euro trip" for p in client.get("/api/projects").json())
+
+
+def test_history_monthly_series(db):
+    """Foreign spend bucketed per month (base currency), home-currency excluded."""
+    _gbp(db)
+    _txn(db, currency="EUR", base="-30.00", days_ago=0)
+    _txn(db, currency="USD", base="-20.00", days_ago=0)
+    _txn(db, currency="GBP", base="-99.00", days_ago=0)  # home currency → excluded
+    h = travel_service.history(db, months=3)
+    assert h["currency"] == "GBP"
+    assert len(h["months"]) == 3
+    assert all({"month", "total"} == set(m) for m in h["months"])
+    assert h["months"][-1]["total"] == "50.00"  # current month: 30 + 20

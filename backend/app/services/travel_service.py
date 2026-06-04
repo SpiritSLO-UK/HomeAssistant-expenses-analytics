@@ -12,13 +12,14 @@ via the shared scope helpers, like every other aggregate.
 
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Project, Transaction
-from app.services import settings_service
+from app.services import analytics_service, settings_service
 from app.services.household_service import get_or_create_default_household
 from app.services.scope import account_scope_condition, archived_condition
 
@@ -91,6 +92,21 @@ def by_currency(db: Session, *, account_ids: set[int] | None = None) -> dict:
     ]
     rows.sort(key=lambda r: Decimal(r["base_total"]), reverse=True)
     return {"base_currency": base, "currencies": rows}
+
+
+def history(db: Session, *, account_ids: set[int] | None = None, months: int = 12) -> dict:
+    """Foreign (travel) spend per month over the last ``months``, base currency,
+    oldest first — for the over-time chart + period selector on the Travel page."""
+    windows = analytics_service._month_windows(date.today(), max(1, months))
+    txns = _foreign_spend(db, account_ids)
+    series = []
+    for start, end in windows:
+        total = sum(
+            (-(t.base_amount or Decimal("0")) for t in txns if start <= t.transaction_date < end),
+            Decimal("0"),
+        )
+        series.append({"month": start.strftime("%Y-%m"), "total": str(total.quantize(Decimal("0.01")))})
+    return {"currency": settings_service.get_base_currency(db), "months": series}
 
 
 def _trip_txn(t: Transaction) -> dict:

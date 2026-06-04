@@ -13,13 +13,14 @@ consistent with budgets (`budget_service`) and the dashboard.
 from __future__ import annotations
 
 from collections import defaultdict
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Category, Project, Transaction, TransactionSplit, Vendor
-from app.services import settings_service, split_service
+from app.services import analytics_service, settings_service, split_service
 from app.services.scope import account_scope_condition, archived_condition
 
 
@@ -93,6 +94,30 @@ def _accumulate(db: Session, project_id: int, *, account_ids: set[int] | None = 
             dates.append(txn.transaction_date)
 
     return spent, by_cat, by_vendor, count, (min(dates) if dates else None), (max(dates) if dates else None)
+
+
+def history(db: Session, *, account_ids: set[int] | None = None, months: int = 12) -> dict:
+    """Total project-attributed spend per month across all projects (split-aware,
+    reusing the same accumulation as the project totals), oldest first — for the
+    over-time chart + period selector on the Projects page."""
+    windows = analytics_service._month_windows(date.today(), max(1, months))
+    totals: dict[date, Decimal] = {start: Decimal("0.00") for start, _ in windows}
+    sink_cat: dict[int | None, Decimal] = defaultdict(lambda: Decimal("0.00"))
+    sink_ven: dict[int | None, Decimal] = defaultdict(lambda: Decimal("0.00"))
+    for project in db.scalars(select(Project)).all():
+        for txn in _project_transactions(db, project.id, account_ids=account_ids):
+            amt = _accumulate_txn(txn, project.id, sink_cat, sink_ven)  # split-aware contribution
+            if amt <= 0:
+                continue
+            for start, end in windows:
+                if start <= txn.transaction_date < end:
+                    totals[start] += amt
+                    break
+    series = [
+        {"month": start.strftime("%Y-%m"), "total": str(totals[start].quantize(Decimal("0.01")))}
+        for start, _ in windows
+    ]
+    return {"currency": settings_service.get_base_currency(db), "months": series}
 
 
 def _named_breakdown(rows: dict, names: dict[int | None, str], fallback: str) -> list[dict]:

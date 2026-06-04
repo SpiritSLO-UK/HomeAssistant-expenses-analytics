@@ -7,18 +7,22 @@ import {
   deleteProject,
   getDashboardProjects,
   getProjectSummary,
+  getProjectsHistory,
   getSettings,
   listTransactions,
   type ProjectTotal,
   type TransactionListResponse,
 } from "../api/client";
+import OverTimeChart from "../components/OverTimeChart";
 
 export default function Projects() {
   const qc = useQueryClient();
   const [err, setErr] = useState<string | null>(null);
   const [openId, setOpenId] = useState<number | null>(null);
+  const [months, setMonths] = useState(12);
 
   const projects = useQuery({ queryKey: ["dashboard-projects"], queryFn: () => getDashboardProjects() });
+  const history = useQuery({ queryKey: ["projects-history", months], queryFn: () => getProjectsHistory(months) });
   const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
   const base = settings.data?.base_currency ?? "GBP";
 
@@ -37,6 +41,15 @@ export default function Projects() {
         base={base}
         onError={setErr}
         onCreated={() => qc.invalidateQueries({ queryKey: ["dashboard-projects"] })}
+      />
+
+      <OverTimeChart
+        title="Project spend over time"
+        series={history.data}
+        months={months}
+        onMonths={setMonths}
+        color="#a371f7"
+        emptyHint="No project spend yet — assign transactions to a project to see it build up here."
       />
 
       <div className="card">

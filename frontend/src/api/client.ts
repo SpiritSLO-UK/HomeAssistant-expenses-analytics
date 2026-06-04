@@ -2059,6 +2059,21 @@ export function getTravelByCurrency(): Promise<TravelByCurrency> {
   return fetchJson<TravelByCurrency>("api/travel/by-currency");
 }
 
+// Over-time series (monthly totals, base currency) shared by the Travel + Projects
+// charts (and reused by the Savings/Investments period selectors).
+export interface TimeSeries {
+  currency: string;
+  months: { month: string; total: string }[];
+}
+
+export function getTravelHistory(months = 12): Promise<TimeSeries> {
+  return fetchJson<TimeSeries>(`api/travel/history?months=${months}`);
+}
+
+export function getProjectsHistory(months = 12): Promise<TimeSeries> {
+  return fetchJson<TimeSeries>(`api/projects/history?months=${months}`);
+}
+
 export function getTravelTrips(gapDays?: number): Promise<Trip[]> {
   const qs = gapDays ? `?gap_days=${gapDays}` : "";
   return fetchJson<Trip[]>(`api/travel/trips${qs}`);
