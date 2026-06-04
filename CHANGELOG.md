@@ -3,11 +3,16 @@
 All notable changes to HA Finance Intelligence. This project uses date-stamped,
 human-readable entries; versions follow semantic-ish versioning while pre-1.0.
 
-## Unreleased (post-beta)
+## v0.9.5-beta — 2026-06-04
 
-Everything the beta listed as "not in this release" has since landed, plus a wave
-of depth and polish. Still standalone-first; the Home Assistant add-on packaging
-remains the next milestone.
+The practical **close of beta development**. Everything the first beta listed as
+"not in this release" has since landed, plus a wave of depth and polish. Still
+standalone-first; the **Home Assistant add-on packaging is the next release**
+(and the point at which the branch strategy switches — `main` becomes the HA
+release line).
+
+> Same beta caveat: provided "as is", no warranty, not financial advice — keep
+> your own backups.
 
 ### Added
 - **Investments & pensions** — distinct models: an *investment* account is

@@ -16,9 +16,10 @@ Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md
 
 ## 🧪 Beta — run it standalone (no Home Assistant needed)
 
-This is the **v0.9.0-beta** release: a complete, standalone app you can run today
-with Docker. The Home Assistant add-on (one-click install, ingress SSO, MQTT
-sensors) is scaffolded under [`addon/`](addon/) but ships in a **later** release.
+This is the **v0.9.5-beta** release — the practical close of beta development: a
+complete, standalone app you can run today with Docker. The Home Assistant add-on
+(one-click install, ingress SSO, MQTT sensors) is scaffolded under
+[`addon/`](addon/) and is the focus of the **next** release.
 
 ```bash
 git clone https://github.com/SpiritSLO-UK/HomeAssistant-expenses-analytics.git
@@ -54,7 +55,7 @@ warranty, not financial advice — keep your own backups._
 | 10 | Cloud AI approval: preview + approve/reject each request, never-cloud category blocking, audit log | ✅ |
 | 11 | PDF statement import: best-effort, rows flagged for review | ✅ |
 | 12 | Polish: CI, dashboard trends/outliers, savings, investments & pensions, cars & home, geo/world map, data retention, multi-user & roles, global search, performance indexes | ✅ |
-| — | **v0.9.0-beta** released (standalone, no HA) + ongoing refinements; the **Home Assistant add-on** (one-click install) is the remaining step | 🚧 |
+| — | **v0.9.5-beta** released (standalone, no HA) — practical end of beta development; the **Home Assistant add-on** (one-click install) is the next release | 🚧 |
 
 ## What it does today
 
