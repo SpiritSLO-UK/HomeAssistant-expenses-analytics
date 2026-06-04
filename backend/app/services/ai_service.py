@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.config import settings as env_settings
@@ -26,8 +26,10 @@ from app.models import AIRequest, Category, Transaction
 from app.services import redaction, review_service, settings_service
 from app.services.ai_provider import AIError, AIProvider, NoAIProvider, OpenAICompatibleProvider
 from app.services.household_service import get_or_create_default_household
+from app.services.rule_service import MANUAL_CONFIDENCE
 
 CLOUD_MODES = {"cloud_manual", "cloud_auto"}
+BATCH_SCOPES = {"uncategorised", "recheck"}
 OFF_MODES = {"strict_local", "no_ai"}
 
 _NO_AI_PROVIDER = "No AI provider configured"
@@ -216,13 +218,19 @@ def reject_request(db: Session, ai_request: AIRequest) -> AIRequest:
     return ai_request
 
 
-def classify_batch(db: Session, *, limit: int = 25, provider=None, account_ids: set[int] | None = None) -> dict:
-    """Suggest categories for many uncategorised transactions at once.
+def classify_batch(
+    db: Session, *, limit: int = 25, provider=None, account_ids: set[int] | None = None,
+    scope: str = "uncategorised",
+) -> dict:
+    """Suggest categories for many transactions at once.
 
     **local_llm only** — keeps everything on-device. Auto-batching to a cloud
     provider would bypass the per-call approval cloud modes require, so it's
     refused. Returns suggestions; nothing is applied here (the user approves and
     applies via :func:`apply_suggestions`). Bounded by ``limit`` to cap LLM calls.
+    ``scope="recheck"`` also re-examines already auto-categorised rows (never
+    manual ones) and only surfaces a suggestion when it *differs* from the current
+    category — so re-running finds new stuff instead of repeating what's there.
     """
     mode = settings_service.get_privacy_mode(db)
     if mode != "local_llm":
@@ -231,7 +239,7 @@ def classify_batch(db: Session, *, limit: int = 25, provider=None, account_ids: 
     if not provider.available():
         raise AIDisabled(_NO_AI_PROVIDER)
 
-    txns = _uncategorised_for_batch(db, limit, account_ids=account_ids)
+    txns = _select_for_batch(db, limit, scope=scope, account_ids=account_ids)
 
     suggestions = []
     for txn in txns:
@@ -239,7 +247,8 @@ def classify_batch(db: Session, *, limit: int = 25, provider=None, account_ids: 
             res = classify_transaction(db, txn, provider=provider)
         except AIError:
             continue  # skip a failed item, keep going through the batch
-        if res.get("status") == "ok" and res.get("category_id"):
+        # Surface only a *new* category — re-checking shouldn't repeat the one already set.
+        if res.get("status") == "ok" and res.get("category_id") and res["category_id"] != txn.category_id:
             suggestions.append(
                 {
                     "transaction_id": txn.id,
@@ -254,37 +263,55 @@ def classify_batch(db: Session, *, limit: int = 25, provider=None, account_ids: 
     return {"considered": len(txns), "count": len(suggestions), "suggestions": suggestions}
 
 
-def _uncategorised_for_batch(
-    db: Session, limit: int, *, account_ids: set[int] | None = None
+def _select_for_batch(
+    db: Session, limit: int, *, scope: str = "uncategorised", account_ids: set[int] | None = None
 ) -> list[Transaction]:
+    """Pick transactions for an AI batch.
+
+    ``scope="uncategorised"`` (default) → only rows with no category.
+    ``scope="recheck"`` → re-process candidates: uncategorised **and** anything
+    auto-categorised (rule/vendor/keyword/AI, confidence < 1.0), so the user can
+    re-run AI after plugging in a model to find new/better categories — but
+    **never** a manual choice (confidence 1.0 is left untouched)."""
     from app.services.scope import account_scope_condition, archived_condition
+
+    conditions = [
+        Transaction.is_transfer.is_(False),
+        Transaction.is_duplicate.is_(False),
+        Transaction.is_split.is_(False),
+        *account_scope_condition(account_ids),
+        *archived_condition(),
+    ]
+    if scope == "recheck":
+        conditions.append(
+            or_(Transaction.confidence_score.is_(None), Transaction.confidence_score < MANUAL_CONFIDENCE)
+        )
+    else:
+        conditions.append(Transaction.category_id.is_(None))
 
     return list(
         db.scalars(
             select(Transaction)
-            .where(
-                Transaction.category_id.is_(None),
-                Transaction.is_transfer.is_(False),
-                Transaction.is_duplicate.is_(False),
-                Transaction.is_split.is_(False),
-                *account_scope_condition(account_ids),
-                *archived_condition(),
-            )
+            .where(*conditions)
             .order_by(Transaction.transaction_date.desc())
             .limit(limit)
         ).all()
     )
 
 
-def cloud_batch_prepare(db: Session, *, limit: int = 25, provider=None, account_ids: set[int] | None = None) -> dict:
+def cloud_batch_prepare(
+    db: Session, *, limit: int = 25, provider=None, account_ids: set[int] | None = None,
+    scope: str = "uncategorised",
+) -> dict:
     """Stage 1 of a cloud batch (spec §22.3, §22.5; backlog #154).
 
-    Builds the **redacted** payload that *would* be sent for each uncategorised
+    Builds the **redacted** payload that *would* be sent for each candidate
     transaction and records a pending :class:`AIRequest` per item — but sends
     nothing. The user reviews the whole list (what leaves the device) and approves
     in one go via :func:`cloud_batch_send`. This is the batch sibling of the
     per-call ``cloud_manual`` approval flow; no per-item review-queue entries are
-    created (the batch panel itself is the approval surface).
+    created (the batch panel itself is the approval surface). ``scope="recheck"``
+    also includes already auto-categorised rows (never manual) for re-processing.
     """
     mode = settings_service.get_privacy_mode(db)
     if mode not in CLOUD_MODES:
@@ -294,7 +321,7 @@ def cloud_batch_prepare(db: Session, *, limit: int = 25, provider=None, account_
         raise AIDisabled(_NO_AI_PROVIDER)
 
     cat_names = [c.name for c in _candidate_categories(db)]
-    txns = _uncategorised_for_batch(db, limit, account_ids=account_ids)
+    txns = _select_for_batch(db, limit, scope=scope, account_ids=account_ids)
     items = []
     for txn in txns:
         payload = {
@@ -391,6 +418,9 @@ def apply_suggestions(db: Session, items: list[dict]) -> int:
         txn = db.get(Transaction, item["transaction_id"])
         category = db.get(Category, item["category_id"])
         if txn is None or category is None:
+            continue
+        # Never overwrite a manual choice — even on a re-process (spec §15.1).
+        if txn.confidence_score is not None and txn.confidence_score >= MANUAL_CONFIDENCE:
             continue
         txn.category_id = category.id
         txn.confidence_score = 1.0

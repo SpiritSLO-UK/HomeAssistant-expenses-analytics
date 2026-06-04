@@ -824,8 +824,10 @@ export interface BatchResult {
   suggestions: BatchSuggestion[];
 }
 
-export async function classifyBatch(limit = 25): Promise<BatchResult> {
-  const res = await fetch(apiUrl(`api/ai/classify-batch?limit=${limit}`), { method: "POST" });
+export type BatchScope = "uncategorised" | "recheck";
+
+export async function classifyBatch(limit = 25, scope: BatchScope = "uncategorised"): Promise<BatchResult> {
+  const res = await fetch(apiUrl(`api/ai/classify-batch?limit=${limit}&scope=${scope}`), { method: "POST" });
   if (!res.ok) {
     const detail = await res.json().catch(() => ({}));
     throw new Error(detail.detail || `Batch AI failed: ${res.status}`);
@@ -866,8 +868,8 @@ export interface CloudBatchSendResult {
   rejected: number;
 }
 
-export function cloudBatchPrepare(limit = 25): Promise<CloudBatchPreview> {
-  return fetchJson<CloudBatchPreview>(`api/ai/cloud-batch/prepare?limit=${limit}`, { method: "POST" });
+export function cloudBatchPrepare(limit = 25, scope: BatchScope = "uncategorised"): Promise<CloudBatchPreview> {
+  return fetchJson<CloudBatchPreview>(`api/ai/cloud-batch/prepare?limit=${limit}&scope=${scope}`, { method: "POST" });
 }
 
 export function cloudBatchSend(

@@ -10,17 +10,18 @@ import { applyAiCategories, classifyBatch, type BatchSuggestion } from "../api/c
 export default function AiBatchPanel({ base, onClose }: Readonly<{ base: string; onClose: () => void }>) {
   const qc = useQueryClient();
   const [threshold, setThreshold] = useState(0.8);
+  const [recheck, setRecheck] = useState(false);
   const [suggestions, setSuggestions] = useState<BatchSuggestion[] | null>(null);
   const [picked, setPicked] = useState<Set<number>>(new Set());
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
   const scan = useMutation({
-    mutationFn: () => classifyBatch(50),
+    mutationFn: () => classifyBatch(50, recheck ? "recheck" : "uncategorised"),
     onSuccess: (res) => {
       setSuggestions(res.suggestions);
       setPicked(new Set(res.suggestions.filter((s) => (s.confidence ?? 0) >= threshold).map((s) => s.transaction_id)));
-      setMsg(`Scanned ${res.considered} uncategorised · ${res.count} suggestion(s).`);
+      setMsg(`Scanned ${res.considered} transaction(s) · ${res.count} suggestion(s).`);
       setErr(null);
     },
     onError: (e) => setErr(String(e instanceof Error ? e.message : e)),
@@ -63,14 +64,20 @@ export default function AiBatchPanel({ base, onClose }: Readonly<{ base: string;
         <button className="link-btn" onClick={onClose}>close</button>
       </div>
       <p className="muted">
-        Runs your local LLM over uncategorised transactions and proposes a category for each.
-        Review the list, untick anything you disagree with, then apply — nothing is changed until you do.
+        Runs your local LLM over your transactions and proposes a category for each. Review the list,
+        untick anything you disagree with, then apply — nothing is changed until you do. Tick{" "}
+        <strong>re-check already-categorised</strong> to re-run after plugging in (or improving) a model
+        and find new matches; manual categories are never touched.
       </p>
 
-      <div className="form-row" style={{ gap: 8, alignItems: "center" }}>
+      <div className="form-row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <button className="btn" disabled={scan.isPending} onClick={() => scan.mutate()}>
           {scan.isPending ? "Scanning…" : "Scan now"}
         </button>
+        <label className="checkbox">
+          <input type="checkbox" checked={recheck} onChange={(e) => setRecheck(e.target.checked)} />{" "}
+          Re-check already-categorised
+        </label>
         <label className="muted">
           Auto-tick at ≥{" "}
           <input
@@ -109,7 +116,7 @@ export default function AiBatchPanel({ base, onClose }: Readonly<{ base: string;
           </button>
         </>
       )}
-      {suggestions?.length === 0 && <p className="muted">No suggestions — nothing uncategorised, or the model returned no matches.</p>}
+      {suggestions?.length === 0 && <p className="muted">No new suggestions — nothing to categorise, or the model proposed no changes.</p>}
     </div>
   );
 }
