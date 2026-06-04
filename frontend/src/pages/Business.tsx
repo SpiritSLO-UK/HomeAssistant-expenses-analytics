@@ -25,7 +25,7 @@ export default function Business() {
   });
   const exportCsv = useMutation({
     mutationFn: () => exportTransactionsCsv({ is_business: true }),
-    onError: (e) => window.alert(String(e instanceof Error ? e.message : e)),
+    onError: (e) => globalThis.alert(String(e instanceof Error ? e.message : e)),
   });
 
   const s = summary.data;

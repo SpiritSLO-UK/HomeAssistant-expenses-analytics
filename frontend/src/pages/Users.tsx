@@ -136,7 +136,7 @@ export default function Users() {
               placeholder="123456"
               maxLength={8}
               value={stepCode}
-              onChange={(e) => setStepCode(e.target.value.replace(/[^0-9]/g, ""))}
+              onChange={(e) => setStepCode(e.target.value.replace(/\D/g, ""))}
               style={{ width: 120 }}
             />
             <button className="btn" type="submit" disabled={!stepCode || stepUp.isPending}>
@@ -243,7 +243,7 @@ export default function Users() {
                           <button
                             className="link-btn"
                             onClick={() => {
-                              if (window.confirm(`Remove "${u.display_name}"? They lose all access.`))
+                              if (globalThis.confirm(`Remove "${u.display_name}"? They lose all access.`))
                                 doRemove(u.id);
                             }}
                           >

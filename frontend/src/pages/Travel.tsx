@@ -69,7 +69,7 @@ export default function Travel() {
 
   function createFor(trip: Trip) {
     const suggested = `${trip.label} ${trip.last.slice(0, 4)}`.trim();
-    const name = window.prompt("Name this trip project:", suggested)?.trim();
+    const name = globalThis.prompt("Name this trip project:", suggested)?.trim();
     if (name) makeProject.mutate({ name, ids: trip.transaction_ids });
   }
 

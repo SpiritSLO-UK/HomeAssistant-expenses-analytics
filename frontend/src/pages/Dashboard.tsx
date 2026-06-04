@@ -73,7 +73,7 @@ function mergeCardOrder(saved: string[]): string[] {
 }
 
 function downloadOrAlert(p: Promise<void>): void {
-  p.catch((e) => window.alert(String(e instanceof Error ? e.message : e)));
+  p.catch((e) => globalThis.alert(String(e instanceof Error ? e.message : e)));
 }
 
 function thisMonth(): string {

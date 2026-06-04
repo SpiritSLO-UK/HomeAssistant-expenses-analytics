@@ -133,7 +133,7 @@ function AccountCard({
     const current = Number(account.latest_balance ?? 0);
     const next = direction === "deposit" ? current + amt : current - amt;
     const verb = direction === "deposit" ? "Deposit" : "Withdraw";
-    if (window.confirm(`${verb} ${amt.toFixed(2)} ${base}?\nNew balance: ${next.toFixed(2)} ${base}.`)) {
+    if (globalThis.confirm(`${verb} ${amt.toFixed(2)} ${base}?\nNew balance: ${next.toFixed(2)} ${base}.`)) {
       adjust.mutate(direction);
     }
   }
@@ -344,7 +344,7 @@ function GoalsCard({
                     <button
                       className="link-btn"
                       onClick={() => {
-                        const v = window.prompt(`Update current amount for "${g.name}" (${base})`, g.current_amount);
+                        const v = globalThis.prompt(`Update current amount for "${g.name}" (${base})`, g.current_amount);
                         if (v != null && v.trim()) setCurrent.mutate({ id: g.id, current_amount: v.trim() });
                       }}
                     >
@@ -353,7 +353,7 @@ function GoalsCard({
                   </>
                 )}
                 {" · "}
-                <button className="link-btn" onClick={() => { if (window.confirm(`Delete goal "${g.name}"?`)) remove.mutate(g.id); }}>
+                <button className="link-btn" onClick={() => { if (globalThis.confirm(`Delete goal "${g.name}"?`)) remove.mutate(g.id); }}>
                   delete
                 </button>
               </div>

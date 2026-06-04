@@ -166,7 +166,7 @@ export default function Settings() {
               disabled={removeDemo.isPending}
               onClick={() => {
                 if (
-                  window.confirm(
+                  globalThis.confirm(
                     "Remove all demo data? This deletes only the demo's own rows (its " +
                       "transactions, example projects/budgets/savings, demo members, vendors and " +
                       "review items). Real imports and anything you added are kept.",
@@ -488,7 +488,7 @@ function CurrencyFx({
     if (!code || code === base) return;
     const c = options.find((o) => o.code === code);
     const label = c ? `${c.name} (${c.symbol})` : code;
-    const ok = window.confirm(
+    const ok = globalThis.confirm(
       `Change your base currency to ${code} — ${label}?\n\n` +
         "Every transaction's converted amount is recomputed for display using your " +
         "current FX rates / source. Your stored exchange rates are never rewritten — only " +
@@ -815,7 +815,7 @@ function MfaCard({
               placeholder="123456"
               maxLength={8}
               value={code}
-              onChange={(e) => setCode(e.target.value.replace(/[^0-9]/g, ""))}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
               style={{ width: 120 }}
             />
             <button className="btn" disabled={!code || enable.isPending} onClick={() => enable.mutate()}>
@@ -837,7 +837,7 @@ function MfaCard({
               placeholder="Code to disable"
               maxLength={8}
               value={code}
-              onChange={(e) => setCode(e.target.value.replace(/[^0-9]/g, ""))}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
               style={{ width: 150 }}
             />
             <button className="btn btn--ghost" disabled={!code || disable.isPending} onClick={() => disable.mutate()}>
@@ -1188,8 +1188,8 @@ function RetentionCard({
   const parseDays = (v: string): number | null => {
     const t = v.trim();
     if (t === "") return null;
-    const n = parseInt(t, 10);
-    return isNaN(n) ? null : Math.max(0, n);
+    const n = Number.parseInt(t, 10);
+    return Number.isNaN(n) ? null : Math.max(0, n);
   };
 
   return (
@@ -1278,7 +1278,7 @@ function RetentionCard({
                 inputMode="numeric"
                 value={String(draft.backup_trim.max_age_days)}
                 style={{ width: 80 }}
-                onChange={(e) => setTrim("max_age_days", Math.max(1, parseInt(e.target.value, 10) || 1))}
+                onChange={(e) => setTrim("max_age_days", Math.max(1, Number.parseInt(e.target.value, 10) || 1))}
               />
             </label>
             <label>
@@ -1287,7 +1287,7 @@ function RetentionCard({
                 inputMode="numeric"
                 value={String(draft.backup_trim.max_total_mb)}
                 style={{ width: 80 }}
-                onChange={(e) => setTrim("max_total_mb", Math.max(1, parseInt(e.target.value, 10) || 1))}
+                onChange={(e) => setTrim("max_total_mb", Math.max(1, Number.parseInt(e.target.value, 10) || 1))}
               />
             </label>
             <label>
@@ -1296,7 +1296,7 @@ function RetentionCard({
                 inputMode="numeric"
                 value={String(draft.backup_trim.min_keep)}
                 style={{ width: 80 }}
-                onChange={(e) => setTrim("min_keep", Math.max(1, parseInt(e.target.value, 10) || 1))}
+                onChange={(e) => setTrim("min_keep", Math.max(1, Number.parseInt(e.target.value, 10) || 1))}
               />
             </label>
           </div>
@@ -1337,7 +1337,7 @@ function RetentionCard({
               placeholder="123456"
               maxLength={8}
               value={stepCode}
-              onChange={(e) => setStepCode(e.target.value.replace(/[^0-9]/g, ""))}
+              onChange={(e) => setStepCode(e.target.value.replace(/\D/g, ""))}
               style={{ width: 120 }}
             />
             <button className="btn" type="submit" disabled={!stepCode || stepUp.isPending}>

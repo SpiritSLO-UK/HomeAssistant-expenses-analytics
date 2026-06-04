@@ -205,7 +205,7 @@ export default function Transactions() {
   // Prompt for a VAT amount (blank clears it).
   function editVat(t: Transaction) {
     const current = t.vat_amount ?? "";
-    const input = window.prompt(`VAT amount for this transaction (in ${t.currency}, blank to clear):`, current);
+    const input = globalThis.prompt(`VAT amount for this transaction (in ${t.currency}, blank to clear):`, current);
     if (input === null) return; // cancelled
     const trimmed = input.trim();
     if (trimmed === "") {
@@ -213,7 +213,7 @@ export default function Transactions() {
       return;
     }
     if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) {
-      window.alert("Enter a number like 4.20 (or blank to clear).");
+      globalThis.alert("Enter a number like 4.20 (or blank to clear).");
       return;
     }
     setVat.mutate({ id: t.id, value: trimmed });
@@ -223,7 +223,7 @@ export default function Transactions() {
   // the current page).
   const exportCsv = useMutation({
     mutationFn: () => exportTransactionsCsv(filters),
-    onError: (e) => window.alert(String(e instanceof Error ? e.message : e)),
+    onError: (e) => globalThis.alert(String(e instanceof Error ? e.message : e)),
   });
 
   const setProject = useMutation({
@@ -256,7 +256,7 @@ export default function Transactions() {
       qc.invalidateQueries({ queryKey: ["dashboard-projects"] });
       qc.invalidateQueries({ queryKey: ["tags"] });
     },
-    onError: (e) => window.alert(String(e instanceof Error ? e.message : e)),
+    onError: (e) => globalThis.alert(String(e instanceof Error ? e.message : e)),
   });
 
   function applyBulk(patch: BulkUpdate, clearAfter = false) {
@@ -281,7 +281,7 @@ export default function Transactions() {
 
   // Add a tag via a small prompt, then persist the new full set (spec §18.3).
   function addTag(t: Transaction) {
-    const name = window.prompt("Add a tag (e.g. reimbursable, work, gift):")?.trim();
+    const name = globalThis.prompt("Add a tag (e.g. reimbursable, work, gift):")?.trim();
     if (!name) return;
     const current = (t.tags ?? []).map((x) => x.name);
     if (current.some((c) => c.toLowerCase() === name.toLowerCase())) return;
@@ -298,19 +298,19 @@ export default function Transactions() {
       let res = await classifyWithAi(t.id);
       if (res.status === "approval_required") {
         const preview = JSON.stringify(res.payload ?? {}, null, 2);
-        if (!window.confirm(`Cloud AI needs approval. Only this redacted payload is sent:\n\n${preview}\n\nApprove?`)) return;
+        if (!globalThis.confirm(`Cloud AI needs approval. Only this redacted payload is sent:\n\n${preview}\n\nApprove?`)) return;
         res = await approveAiRequest(res.ai_request_id);
       }
       if (res.status === "ok" && res.category_id) {
         const pct = res.confidence != null ? ` (${Math.round(res.confidence * 100)}%)` : "";
-        if (window.confirm(`AI suggests: ${res.category_name}${pct}\n${res.rationale ?? ""}\n\nApply this category?`)) {
+        if (globalThis.confirm(`AI suggests: ${res.category_name}${pct}\n${res.rationale ?? ""}\n\nApply this category?`)) {
           setCategory.mutate({ id: t.id, categoryId: res.category_id });
         }
       } else {
-        window.alert("AI couldn't suggest a category for this transaction.");
+        globalThis.alert("AI couldn't suggest a category for this transaction.");
       }
     } catch (e) {
-      window.alert(String(e instanceof Error ? e.message : e));
+      globalThis.alert(String(e instanceof Error ? e.message : e));
     }
   }
 
@@ -511,7 +511,7 @@ export default function Transactions() {
                 <button
                   className="btn btn--sm btn--ghost"
                   onClick={() => {
-                    const t = window.prompt("Add a tag to the selected transactions:")?.trim();
+                    const t = globalThis.prompt("Add a tag to the selected transactions:")?.trim();
                     if (t) applyBulk({ add_tag: t });
                   }}
                 >
@@ -526,7 +526,7 @@ export default function Transactions() {
                 <button
                   className="btn btn--sm btn--ghost"
                   onClick={() => {
-                    if (window.confirm(`Archive ${selected.size} transaction(s)? They're hidden from totals (reversible).`))
+                    if (globalThis.confirm(`Archive ${selected.size} transaction(s)? They're hidden from totals (reversible).`))
                       applyBulk({ archive: true }, true);
                   }}
                 >
@@ -535,7 +535,7 @@ export default function Transactions() {
                 <button
                   className="btn btn--sm btn--ghost"
                   onClick={() => {
-                    if (window.confirm(`Permanently delete ${selected.size} transaction(s)? This can't be undone.`))
+                    if (globalThis.confirm(`Permanently delete ${selected.size} transaction(s)? This can't be undone.`))
                       applyBulk({ delete: true }, true);
                   }}
                 >

@@ -30,7 +30,7 @@ export default function AssignToChildButton({ txn, base }: { txn: Transaction; b
       setAmount("");
       qc.invalidateQueries({ queryKey: ["allowance"] });
     },
-    onError: (e) => window.alert(String(e instanceof Error ? e.message : e)),
+    onError: (e) => globalThis.alert(String(e instanceof Error ? e.message : e)),
   });
 
   if (children.length === 0) return null;
