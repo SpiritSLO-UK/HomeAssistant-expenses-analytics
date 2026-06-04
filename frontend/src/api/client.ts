@@ -219,7 +219,7 @@ export function listTransactions(filters: TransactionFilters = {}): Promise<Tran
     }
   }
   const qs = params.toString();
-  return fetchJson<TransactionListResponse>(`api/transactions${qs ? `?${qs}` : ""}`);
+  return fetchJson<TransactionListResponse>(qs ? `api/transactions?${qs}` : "api/transactions");
 }
 
 export function categoriseTransaction(
@@ -383,7 +383,7 @@ export function getBudgetSummary(month?: string, annual = false): Promise<Budget
   if (month) params.set("month", month);
   if (annual) params.set("annual", "true");
   const qs = params.toString();
-  return fetchJson<BudgetSummaryItem[]>(`api/budgets/summary${qs ? `?${qs}` : ""}`);
+  return fetchJson<BudgetSummaryItem[]>(qs ? `api/budgets/summary?${qs}` : "api/budgets/summary");
 }
 
 export interface BudgetTxn {
@@ -401,7 +401,8 @@ export function getBudgetTransactions(
   if (opts.month) params.set("month", opts.month);
   if (opts.annual) params.set("annual", "true");
   const qs = params.toString();
-  return fetchJson<BudgetTxn[]>(`api/budgets/${budgetId}/transactions${qs ? `?${qs}` : ""}`);
+  const path = `api/budgets/${budgetId}/transactions`;
+  return fetchJson<BudgetTxn[]>(qs ? `${path}?${qs}` : path);
 }
 
 export async function createBudget(data: Record<string, unknown>): Promise<Budget> {
@@ -521,7 +522,7 @@ export async function deleteProject(id: number): Promise<void> {
 }
 
 export function getDashboardProjects(memberId?: number): Promise<ProjectTotal[]> {
-  return fetchJson<ProjectTotal[]>(`api/dashboard/projects${memberId ? `?member_id=${memberId}` : ""}`);
+  return fetchJson<ProjectTotal[]>(memberId ? `api/dashboard/projects?member_id=${memberId}` : "api/dashboard/projects");
 }
 
 // --- Tags (spec §18.3) ---
@@ -582,7 +583,7 @@ export async function deleteSubscription(id: number): Promise<void> {
 }
 
 export function getDashboardSubscriptions(memberId?: number): Promise<DashboardSubscriptions> {
-  return fetchJson<DashboardSubscriptions>(`api/dashboard/subscriptions${memberId ? `?member_id=${memberId}` : ""}`);
+  return fetchJson<DashboardSubscriptions>(memberId ? `api/dashboard/subscriptions?member_id=${memberId}` : "api/dashboard/subscriptions");
 }
 
 export interface SubscriptionAlert extends Subscription {
@@ -1094,7 +1095,7 @@ export function getOutliers(month?: string, memberId?: number): Promise<Outliers
   if (month) q.set("month", month);
   if (memberId) q.set("member_id", String(memberId));
   const qs = q.toString();
-  return fetchJson<OutliersResponse>(`api/dashboard/outliers${qs ? `?${qs}` : ""}`);
+  return fetchJson<OutliersResponse>(qs ? `api/dashboard/outliers?${qs}` : "api/dashboard/outliers");
 }
 
 export interface ProcessingStats {
@@ -1493,7 +1494,7 @@ export interface Asset {
 }
 
 export function listAssets(kind?: string): Promise<Asset[]> {
-  return fetchJson<Asset[]>(`api/assets${kind ? `?kind=${encodeURIComponent(kind)}` : ""}`);
+  return fetchJson<Asset[]>(kind ? `api/assets?kind=${encodeURIComponent(kind)}` : "api/assets");
 }
 
 export function getAsset(id: number): Promise<Asset> {
@@ -1992,7 +1993,7 @@ export function listActivityLog(
   if (opts?.action) params.set("action", opts.action);
   if (opts?.includeArchived) params.set("include_archived", "true");
   const qs = params.toString();
-  return fetchJson<AuditLogRow[]>(`api/logs/activity${qs ? `?${qs}` : ""}`);
+  return fetchJson<AuditLogRow[]>(qs ? `api/logs/activity?${qs}` : "api/logs/activity");
 }
 
 export function listAuditActions(): Promise<string[]> {
@@ -2259,7 +2260,7 @@ export interface AllowanceSummary {
 // Pass userId only as a parent (owner/member) to view a child; a child always
 // gets their own regardless.
 export function getAllowanceSummary(userId?: number): Promise<AllowanceSummary> {
-  return fetchJson<AllowanceSummary>(`api/allowance/summary${userId ? `?user_id=${userId}` : ""}`);
+  return fetchJson<AllowanceSummary>(userId ? `api/allowance/summary?user_id=${userId}` : "api/allowance/summary");
 }
 
 export interface AllocationInput {

@@ -231,7 +231,9 @@ function PricesCard({ onSynced, onError }: Readonly<{ onSynced: () => void; onEr
       {result && (
         <p className="muted" style={{ marginTop: 6, fontSize: "0.85rem" }}>
           {result.ran
-            ? `Updated ${result.updated} of ${result.total} holding(s)${result.failed ? ` · ${result.failed} not found` : ""}.`
+            ? `Updated ${result.updated} of ${result.total} holding(s)` +
+              (result.failed ? ` · ${result.failed} not found` : "") +
+              "."
             : "Nothing to sync (source is manual)."}
         </p>
       )}

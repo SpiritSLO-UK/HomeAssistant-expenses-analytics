@@ -102,7 +102,7 @@ function txnLink(params: Record<string, string | number | null | undefined>): st
     if (v !== undefined && v !== null && v !== "") sp.set(k, String(v));
   }
   const qs = sp.toString();
-  return `/transactions${qs ? `?${qs}` : ""}`;
+  return qs ? `/transactions?${qs}` : "/transactions";
 }
 
 export default function Dashboard() {
