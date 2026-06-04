@@ -48,8 +48,45 @@ import {
   type RetentionTypePlan,
   type BackupTrim,
 } from "../api/client";
-import { isCloudAiAcknowledged, setCloudAiAcknowledged } from "../prefs";
+import { getThemePref, isCloudAiAcknowledged, setCloudAiAcknowledged, setThemePref } from "../prefs";
+import { applyTheme, type ThemePref } from "../theme";
 import CloudAiDisclaimerDialog from "../components/CloudAiDisclaimerDialog";
+
+const THEME_OPTIONS: { value: ThemePref; label: string }[] = [
+  { value: "system", label: "🖥️ System" },
+  { value: "light", label: "☀️ Light" },
+  { value: "dark", label: "🌙 Dark" },
+];
+
+// Per-device colour theme. Personal (not a server setting), so it's ungated and
+// applied immediately on click; "System" follows the OS light/dark preference.
+function AppearanceCard() {
+  const [pref, setPref] = useState<ThemePref>(getThemePref());
+  function choose(value: ThemePref) {
+    setPref(value);
+    setThemePref(value);
+    applyTheme(value);
+  }
+  return (
+    <div className="card">
+      <h2 className="card__title">Appearance</h2>
+      <p className="muted" style={{ marginTop: 0, fontSize: "0.85rem" }}>
+        Colour theme for this device. “System” follows your operating system's light/dark setting.
+      </p>
+      <div className="form-row" style={{ flexWrap: "wrap" }}>
+        {THEME_OPTIONS.map((o) => (
+          <button
+            key={o.value}
+            className={"btn btn--sm" + (pref === o.value ? "" : " btn--ghost")}
+            onClick={() => choose(o.value)}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function Settings() {
   const qc = useQueryClient();
@@ -105,6 +142,8 @@ export default function Settings() {
   return (
     <div className="page">
       <h1 className="page__title">Settings</h1>
+
+      <AppearanceCard />
 
       {msg && <p className="status status--ok">{msg}</p>}
       {err && <p className="status status--error">{err}</p>}
