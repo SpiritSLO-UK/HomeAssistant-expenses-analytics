@@ -185,7 +185,7 @@ def _apply_paperless_url(db: Session, payload: SettingsUpdate) -> None:
     if payload.paperless_url is None:
         return
     url = payload.paperless_url.strip()
-    if url and not (url.startswith("http://") or url.startswith("https://")):
+    if url and not url.startswith(("http://", "https://")):
         raise HTTPException(status_code=400, detail="paperless_url must start with http:// or https://")
     settings_service.set_value(db, settings_service.PAPERLESS_URL, url.rstrip("/"))
 

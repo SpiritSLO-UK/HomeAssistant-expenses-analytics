@@ -139,7 +139,7 @@ def value_history(account_id: int, request: Request, db: Annotated[Session, Depe
     "/accounts/{account_id}/values",
     response_model=ValueOut,
     status_code=201,
-    responses={404: {"description": "Not found"}},
+    responses={400: {"description": "Bad request"}, 404: {"description": "Not found"}},
 )
 def record_value(account_id: int, payload: ValueCreate, request: Request, db: Annotated[Session, Depends(get_db)]):
     _value_tracked_account(request, db, account_id)
