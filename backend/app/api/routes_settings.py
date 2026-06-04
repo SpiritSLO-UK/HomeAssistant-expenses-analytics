@@ -28,6 +28,7 @@ class SettingsUpdate(BaseModel):
     ocr_enabled: bool | None = None  # Settings → Services on/off for receipt OCR
     log_level: str | None = None  # DEBUG | INFO | WARNING | ERROR
     investment_price_source: str | None = None  # manual | stooq | alphavantage
+    default_vendor_country: str | None = None  # ISO-3166-1 alpha-2, or "" to clear
 
 
 @router.get("")
@@ -160,6 +161,23 @@ def _apply_ocr_and_price_source(db: Session, payload: SettingsUpdate) -> None:
         settings_service.set_value(db, settings_service.INVESTMENT_PRICE_SOURCE, payload.investment_price_source)
 
 
+def _apply_default_vendor_country(db: Session, payload: SettingsUpdate) -> None:
+    """Validate + persist the default vendor country. ``""`` clears it; any other
+    value must be a valid ISO-3166-1 alpha-2 code (the "EU" pseudo-code is not a
+    country)."""
+    if payload.default_vendor_country is None:
+        return
+    from app.services import geo
+
+    code = payload.default_vendor_country.strip().upper()
+    if code and (code == "EU" or code not in geo.COUNTRY_NAMES):
+        raise HTTPException(
+            status_code=400,
+            detail="default_vendor_country must be a valid ISO-3166-1 alpha-2 country code",
+        )
+    settings_service.set_value(db, settings_service.DEFAULT_VENDOR_COUNTRY, code)
+
+
 def _apply_log_level(db: Session, payload: SettingsUpdate) -> None:
     """Validate + persist the log level and apply it immediately."""
     if payload.log_level is None:
@@ -205,6 +223,7 @@ def update_settings(
     _apply_fx_and_receipt(db, payload)
     _apply_ai_settings(db, payload)
     _apply_ocr_and_price_source(db, payload)
+    _apply_default_vendor_country(db, payload)
     _apply_log_level(db, payload)
     recompute = _apply_base_currency(db, payload)
 

@@ -20,6 +20,16 @@ def test_country_for_precedence():
     assert geo.country_for("ZZZ", None) is None           # unknown currency, no vendor
 
 
+def test_country_for_default_fallback():
+    # The household default vendor country slots in below txn/vendor, above the
+    # currency guess — so it catches no-country spend but never overrides a real one.
+    assert geo.country_for("USD", "FR", None, "GB") == "FR"   # vendor still wins
+    assert geo.country_for("USD", None, "ES", "GB") == "ES"   # txn still wins
+    assert geo.country_for("USD", None, None, "GB") == "GB"   # default beats currency guess
+    assert geo.country_for(None, None, None, "GB") == "GB"    # default with no currency
+    assert geo.country_for("USD", None, None, None) == "US"   # no default → currency guess
+
+
 def test_flag_and_name():
     assert geo.flag("GB") == "\U0001F1EC\U0001F1E7"  # 🇬🇧
     assert geo.name("GB") == "United Kingdom"
@@ -92,6 +102,24 @@ def test_country_breakdown_excludes_other_months_and_income(db):
     rows = dashboard_service.country_breakdown(db, date(2026, 5, 1))
     gb = next(r for r in rows if r["name"] == "United Kingdom")
     assert Decimal(gb["total"]) == Decimal("139.00")  # 40 + 99, income excluded
+
+
+def test_country_breakdown_uses_default_vendor_country(db):
+    from app.services import settings_service
+
+    settings_service.set_value(db, settings_service.DEFAULT_VENDOR_COUNTRY, "GB")
+    fr_vendor = Vendor(canonical_name="Carrefour", country="FR")
+    db.add(fr_vendor)
+    db.commit()
+
+    _txn(db, base="-40", currency="USD")                              # no country → default GB
+    _txn(db, base="-15", currency="GBP", merchant_id=fr_vendor.id)    # vendor FR wins over default
+    db.commit()
+
+    rows = {r["name"]: r for r in dashboard_service.country_breakdown(db, date(2026, 5, 1))}
+    assert Decimal(rows["United Kingdom"]["total"]) == Decimal("40.00")  # default applied
+    assert "United States" not in rows                                   # currency guess overridden
+    assert Decimal(rows["France"]["total"]) == Decimal("15.00")         # explicit vendor country kept
 
 
 # --- API: vendor country setter + endpoint ---

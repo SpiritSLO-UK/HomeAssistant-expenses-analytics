@@ -193,9 +193,10 @@ def country_breakdown(db: Session, ref: date, *, account_ids: set[int] | None = 
         )
     ).all()
 
+    default_country = settings_service.get_default_vendor_country(db)
     buckets: dict[str, dict] = defaultdict(lambda: {"total": Decimal("0"), "count": 0})
     for amount, currency, txn_country, vendor_country in rows:
-        code = geo.country_for(currency, vendor_country, txn_country) or "??"
+        code = geo.country_for(currency, vendor_country, txn_country, default_country) or "??"
         buckets[code]["total"] += Decimal(amount)
         buckets[code]["count"] += 1
 
