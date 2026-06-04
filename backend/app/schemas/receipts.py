@@ -30,6 +30,12 @@ class ReceiptOut(BaseModel):
     matches: list[ReceiptMatchOut]
 
 
+class ReceiptUploadOut(ReceiptOut):
+    # Upload only: True when a byte-identical receipt already existed (deduped by
+    # content hash) so the UI can say "already imported" instead of looking fresh.
+    already_imported: bool = False
+
+
 class ReceiptUpdate(BaseModel):
     """Manual entry / correction of receipt fields (spec §21.3)."""
 

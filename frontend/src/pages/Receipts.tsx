@@ -19,23 +19,31 @@ export default function Receipts() {
   const qc = useQueryClient();
   const fileInput = useRef<HTMLInputElement>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
 
   const ocr = useQuery({ queryKey: ["ocr-status"], queryFn: getOcrStatus });
   const receipts = useQuery({ queryKey: ["receipts"], queryFn: listReceipts });
 
   const upload = useMutation({
     mutationFn: (f: File) => uploadReceipt(f),
-    onSuccess: () => {
+    onSuccess: (r) => {
+      setErr(null);
+      setMsg(
+        r.already_imported
+          ? "That receipt was already imported — showing the existing one (re-uploading an identical file changes nothing)."
+          : "Receipt uploaded.",
+      );
       qc.invalidateQueries({ queryKey: ["receipts"] });
       qc.invalidateQueries({ queryKey: ["review"] });
     },
-    onError: (e) => setErr(String(e)),
+    onError: (e) => { setMsg(null); setErr(String(e)); },
   });
 
   return (
     <div className="page">
       <h1 className="page__title">Receipts</h1>
       {err && <p className="status status--error">{err}</p>}
+      {msg && <p className="status status--ok">{msg}</p>}
 
       <div className="card">
         <h2 className="card__title">Upload a receipt</h2>

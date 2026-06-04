@@ -18,6 +18,7 @@ from app.schemas.receipts import (
     MatchResult,
     ReceiptOut,
     ReceiptUpdate,
+    ReceiptUploadOut,
 )
 from app.services import ocr_service, receipt_service
 
@@ -40,7 +41,7 @@ def list_receipts(db: Annotated[Session, Depends(get_db)]) -> list[dict]:
 
 @router.post(
     "/upload",
-    response_model=ReceiptOut,
+    response_model=ReceiptUploadOut,
     status_code=201,
     responses={400: {"description": "Bad request"}, 413: {"description": "Payload too large"}},
 )
@@ -55,7 +56,12 @@ async def upload_receipt(file: Annotated[UploadFile, File()], db: Annotated[Sess
     if created:
         # Best-effort OCR + auto-match; degrades to 'skipped' if no engine.
         receipt_service.run_ocr(db, receipt, auto_match=True)
-    return receipt_service.to_dict(db, receipt)
+    result = receipt_service.to_dict(db, receipt)
+    # Re-uploading a byte-identical file is deduped by content hash — the existing
+    # receipt is returned. Flag it so the UI can say "already imported" instead of
+    # silently looking like a fresh upload (mirrors statement-import dedup feedback).
+    result["already_imported"] = not created
+    return result
 
 
 def _get(db: Session, receipt_id: int) -> Receipt:
