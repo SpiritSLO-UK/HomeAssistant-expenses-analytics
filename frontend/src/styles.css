@@ -1,6 +1,7 @@
 :root {
   --bg: #f4f6f9;
   --panel: #ffffff;
+  --surface: #eef1f5; /* subtle raised surface: table headers, chips, hover rows */
   --sidebar-bg: #1f2630;
   --sidebar-fg: #c7d0db;
   --sidebar-active: #3b82f6;
@@ -9,6 +10,24 @@
   --muted: #6b7280;
   --ok: #2e7d32;
   --error: #c62828;
+}
+
+/* Dark theme — applied when <html data-theme="dark"> (set with no flash by the
+   inline script in index.html, kept in sync by theme.ts). Only re-points the
+   tokens above; everything that uses var(--…) adapts automatically. */
+:root[data-theme="dark"] {
+  --bg: #11151b;
+  --panel: #1c232e;
+  --surface: #252e3b;
+  --sidebar-bg: #171d26;
+  --sidebar-fg: #c7d0db;
+  --sidebar-active: #4b8bf5;
+  --border: #2c3542;
+  --text: #e6eaf0;
+  --muted: #98a2b0;
+  --ok: #5bbf63;
+  --error: #f06a6a;
+  color-scheme: dark; /* dark native controls + scrollbars */
 }
 
 * {
@@ -442,7 +461,7 @@ button.sidebar__link:disabled {
 }
 
 .report__chip {
-  background: #eef1f5;
+  background: var(--surface);
   border-radius: 20px;
   padding: 4px 12px;
   font-size: 0.82rem;
@@ -498,7 +517,7 @@ button.sidebar__link:disabled {
 }
 
 .table tbody tr:hover {
-  background: #f8fafc;
+  background: var(--surface);
 }
 
 .row--dup {
@@ -516,7 +535,7 @@ button.sidebar__link:disabled {
 /* --- tags --- */
 .tag {
   display: inline-block;
-  background: #eef1f5;
+  background: var(--surface);
   color: var(--muted);
   border-radius: 4px;
   padding: 1px 7px;
@@ -550,7 +569,7 @@ dialog.modal-dialog::backdrop {
 }
 
 code {
-  background: #eef1f5;
+  background: var(--surface);
   padding: 1px 6px;
   border-radius: 4px;
   font-size: 0.85em;
@@ -771,7 +790,7 @@ code {
 }
 
 .bars__track {
-  background: #eef1f5;
+  background: var(--surface);
   border-radius: 4px;
   height: 8px;
   overflow: hidden;
@@ -793,7 +812,7 @@ code {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: #f1f4f8;
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 20px;
   padding: 5px 12px;

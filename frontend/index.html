@@ -4,6 +4,19 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>HA Finance Intelligence</title>
+    <script>
+      // Set the colour theme before first paint to avoid a flash (mirrors theme.ts).
+      (function () {
+        try {
+          var p = localStorage.getItem("hafi_theme") || "system";
+          var dark = p === "dark" || (p === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+          document.documentElement.dataset.theme = dark ? "dark" : "light";
+        } catch (e) {
+          // localStorage/matchMedia unavailable — fall back to the light default.
+          document.documentElement.dataset.theme = "light";
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

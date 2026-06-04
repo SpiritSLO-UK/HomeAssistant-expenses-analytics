@@ -114,6 +114,19 @@ export function setDashboardView(view: string): void {
   writeString(DASH_VIEW_KEY, view);
 }
 
+// --- Light/dark theme (per device) ---
+
+const THEME_KEY = "hafi_theme";
+
+export function getThemePref(): "system" | "light" | "dark" {
+  const v = readString(THEME_KEY);
+  return v === "light" || v === "dark" ? v : "system";
+}
+
+export function setThemePref(pref: "system" | "light" | "dark"): void {
+  writeString(THEME_KEY, pref);
+}
+
 // --- One-time cloud-AI disclaimer (backlog #42) ---
 
 const CLOUD_AI_ACK_KEY = "hafi_cloud_ai_ack";
