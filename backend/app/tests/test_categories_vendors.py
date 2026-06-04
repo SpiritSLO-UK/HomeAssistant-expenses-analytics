@@ -402,3 +402,19 @@ def test_set_transaction_country_via_patch(client, samples_dir):
     tid = client.get("/api/transactions").json()["items"][0]["id"]
     assert client.patch(f"/api/transactions/{tid}", json={"country": "es"}).json()["country"] == "ES"
     assert client.patch(f"/api/transactions/{tid}", json={"country": ""}).json()["country"] is None
+
+
+def test_country_filter_matches_resolved_country(client, samples_dir):
+    """The spend-by-location drill-down matches a transaction's RESOLVED country
+    (here, its vendor's) — not only a stored txn.country. Otherwise clicking a
+    country on the map lands on an empty Transactions list."""
+    _import_curve(client, samples_dir)
+    ids = [t["id"] for t in client.get("/api/transactions").json()["items"][:2]]
+    vid = client.post("/api/vendors", json={"canonical_name": "Carrefour"}).json()["id"]
+    client.patch(f"/api/vendors/{vid}", json={"country": "FR"})
+    client.post("/api/transactions/bulk", json={"transaction_ids": ids, "merchant_id": vid})
+
+    fr = client.get("/api/transactions", params={"country": "FR", "limit": 500}).json()
+    found = {t["id"] for t in fr["items"]}
+    assert set(ids) <= found                                # found via the vendor's country…
+    assert all(t["country"] is None for t in fr["items"])   # …despite no stored txn.country

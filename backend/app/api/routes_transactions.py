@@ -29,6 +29,7 @@ from app.services import (
     import_service,
     receipt_service,
     rule_service,
+    settings_service,
     split_service,
     tag_service,
     vendor_service,
@@ -126,6 +127,9 @@ def list_transactions(
         search=search,
         account_ids=resolved_account_scope(db, get_current_user(request, db), member_id=member_id),
         include_archived=include_archived,
+        # Resolve the spend-by-location drill-down against the *inferred* country
+        # (vendor/currency/default), not just a stored code — see _country_condition.
+        default_country=settings_service.get_default_vendor_country(db) if country else None,
     )
 
     base = select(Transaction)
