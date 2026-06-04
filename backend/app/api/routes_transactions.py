@@ -74,7 +74,7 @@ class BulkUpdateRequest(BaseModel):
     is_business: bool | None = None
     add_tag: str | None = None
     country: str | None = None  # ISO alpha-2 for the spend-by-location map ("" clears)
-    archive: bool | None = None  # True = archive, False = unarchive
+    archive: bool | None = None  # True archives, False unarchives
     delete: bool = False
 
 

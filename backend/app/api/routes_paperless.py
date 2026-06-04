@@ -24,9 +24,9 @@ def status() -> dict:
 
 
 @router.get("/documents", responses={400: {"description": "Bad request"}, 502: {"description": "Upstream error"}})
-def list_documents(db: Annotated[Session, Depends(get_db)], query: str | None = None, limit: int = 25) -> list[dict]:
+def list_documents(query: str | None = None, limit: int = 25) -> list[dict]:
     try:
-        return paperless_service.list_documents(db, query=query, limit=limit)
+        return paperless_service.list_documents(query=query, limit=limit)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except httpx.HTTPError as exc:

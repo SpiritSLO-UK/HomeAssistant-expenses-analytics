@@ -19,6 +19,8 @@ from app.services import retention_service, security_service, settings_service
 
 DISMISSALS_KEY = "security_dismissals"
 
+_ENCRYPTION_TITLE = "At-rest database encryption"
+
 
 def _now() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
@@ -76,17 +78,17 @@ def evaluate(db: Session, user: User) -> dict:
 
     # At-rest encryption
     if not sec["encryption_available"]:
-        _add(checks, dismissals, id="encryption", title="At-rest database encryption",
+        _add(checks, dismissals, id="encryption", title=_ENCRYPTION_TITLE,
              severity="info", actionable=False,
              recommendation="Not available on this platform (needs SQLCipher — e.g. the Home "
              "Assistant add-on). Encrypted backups still work everywhere.")
     elif not sec["encryption_enabled"]:
-        _add(checks, dismissals, id="encryption", title="At-rest database encryption",
+        _add(checks, dismissals, id="encryption", title=_ENCRYPTION_TITLE,
              severity="warn", actionable=True,
              recommendation="Your database isn't encrypted on disk. Enable it in "
              "Settings → Database encryption so a stolen disk can't be read.")
     else:
-        _add(checks, dismissals, id="encryption", title="At-rest database encryption",
+        _add(checks, dismissals, id="encryption", title=_ENCRYPTION_TITLE,
              severity="ok", actionable=False, recommendation="Database is encrypted at rest.")
         if sec.get("unlock_mode") == "stored":
             _add(checks, dismissals, id="stored_key", title="Encryption unlock mode",

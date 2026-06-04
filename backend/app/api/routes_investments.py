@@ -162,7 +162,7 @@ def list_holdings(account_id: int, request: Request, db: Annotated[Session, Depe
         investment_service.get_investment_account(db, account_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return [investment_service.holding_to_dict(db, h) for h in investment_service.list_holdings(db, account_id)]
+    return [investment_service.holding_to_dict(h) for h in investment_service.list_holdings(db, account_id)]
 
 
 @router.post(
@@ -187,7 +187,7 @@ def create_holding(
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return investment_service.holding_to_dict(db, holding)
+    return investment_service.holding_to_dict(holding)
 
 
 @router.patch("/holdings/{holding_id}", response_model=HoldingOut)
@@ -196,7 +196,7 @@ def update_holding(
 ) -> dict:
     holding = _holding_in_scope(request, db, holding_id)
     holding = investment_service.update_holding(db, holding, **payload.model_dump(exclude_unset=True))
-    return investment_service.holding_to_dict(db, holding)
+    return investment_service.holding_to_dict(holding)
 
 
 @router.delete("/holdings/{holding_id}", status_code=204)
