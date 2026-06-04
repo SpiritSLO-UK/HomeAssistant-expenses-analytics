@@ -97,8 +97,9 @@ def restore_database(content: bytes) -> None:
             )
 
         # Release SQLAlchemy's pooled connections before replacing the file.
-        if dbsession.get_engine() is not None:
-            dbsession.get_engine().dispose()
+        engine = dbsession.get_engine()
+        if engine is not None:
+            engine.dispose()
         dest = settings.database_file
         dest.parent.mkdir(parents=True, exist_ok=True)
         if dest.exists():

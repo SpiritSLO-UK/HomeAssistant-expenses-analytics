@@ -39,7 +39,7 @@ def _policy_response(db: Session) -> dict:
 def _validate_backup_trim(raw: dict) -> dict:
     """Validate the backup-trim limits. Each must be a whole number ≥ 1 (a 0 would
     be degenerate — e.g. 'keep zero backups' or 'delete anything ≥ 0 days old')."""
-    current = {"max_age_days": None, "max_total_mb": None, "min_keep": None}
+    current: dict[str, int | None] = {"max_age_days": None, "max_total_mb": None, "min_keep": None}
     for field in current:
         if field not in raw or raw[field] is None:
             continue

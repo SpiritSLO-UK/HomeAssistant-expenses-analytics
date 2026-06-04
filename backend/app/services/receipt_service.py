@@ -14,7 +14,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import ColumnElement, select
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -247,7 +247,7 @@ def score_match(receipt: Receipt, txn: Transaction) -> tuple[int, dict]:
 
 
 def _candidates(db: Session, receipt: Receipt) -> list[Transaction]:
-    conds = [Transaction.is_duplicate.is_(False)]
+    conds: list[ColumnElement[bool]] = [Transaction.is_duplicate.is_(False)]
     if receipt.receipt_date is not None:
         conds.append(Transaction.transaction_date >= receipt.receipt_date - timedelta(days=DATE_WINDOW_DAYS))
         conds.append(Transaction.transaction_date <= receipt.receipt_date + timedelta(days=DATE_WINDOW_DAYS))

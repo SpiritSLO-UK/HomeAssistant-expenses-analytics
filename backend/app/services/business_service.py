@@ -85,7 +85,7 @@ def summary(db: Session, *, account_ids: set[int] | None = None, period: str = "
     dates = []
 
     for t in txns:
-        amt = -t.base_amount
+        amt = -(t.base_amount or Decimal("0"))
         v = _vat_base(t)
         total += amt
         vat_total += v
@@ -103,7 +103,7 @@ def summary(db: Session, *, account_ids: set[int] | None = None, period: str = "
         b["count"] += 1
         dates.append(t.transaction_date)
 
-    cats = {c.id: c.name for c in db.scalars(select(Category)).all()}
+    cats: dict[int | None, str] = {c.id: c.name for c in db.scalars(select(Category)).all()}
     by_category = sorted(
         (
             {

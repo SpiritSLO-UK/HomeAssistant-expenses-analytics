@@ -175,8 +175,8 @@ def _refuel_segment(prev: AssetLog, cur: AssetLog, unit: str, imperial: bool) ->
     as the inline loop did."""
     if not (_is_full(prev.is_full_tank) and _is_full(cur.is_full_tank)):
         return None
-    dist = Decimal(cur.odometer) - Decimal(prev.odometer)
-    litres = Decimal(cur.litres)
+    dist = Decimal(cur.odometer or 0) - Decimal(prev.odometer or 0)
+    litres = Decimal(cur.litres or 0)
     if dist <= 0 or litres <= 0:
         return None
     dist_km = dist if unit == "km" else dist * MI_PER_KM
@@ -259,7 +259,7 @@ def car_stats(db: Session, asset: Asset, logs: list[AssetLog] | None = None) -> 
     imperial = unit == "mi"
     refuels = sorted(
         [lg for lg in logs if lg.kind == "refuel" and lg.odometer is not None and lg.litres is not None],
-        key=lambda lg: (Decimal(lg.odometer), lg.id),
+        key=lambda lg: (Decimal(lg.odometer or 0), lg.id),
     )
 
     segments: list[dict] = []
@@ -293,7 +293,7 @@ def car_stats(db: Session, asset: Asset, logs: list[AssetLog] | None = None) -> 
 def _reading_segment(prev: AssetLog, cur: AssetLog) -> dict | None:
     """One usage segment between consecutive readings of a meter, or None for a
     meter reset/rollover (usage < 0), which must not be counted."""
-    usage = Decimal(cur.reading) - Decimal(prev.reading)
+    usage = Decimal(cur.reading or 0) - Decimal(prev.reading or 0)
     if usage < 0:  # meter reset / new meter — don't count
         return None
     days = (cur.log_date - prev.log_date).days
@@ -342,6 +342,8 @@ def home_stats(db: Session, asset: Asset, logs: list[AssetLog] | None = None) ->
     ]
     by_meter: dict[str, list[AssetLog]] = {}
     for lg in sorted(readings, key=lambda lg: (lg.log_date, lg.id)):
+        if not lg.meter:  # filtered above; guard narrows str | None -> str
+            continue
         by_meter.setdefault(lg.meter, []).append(lg)
 
     meters = [_meter_stats(meter, rs) for meter, rs in by_meter.items()]

@@ -32,6 +32,7 @@ from decimal import Decimal
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
+from app.db.session import dml_rowcount
 from app.models import (
     Account,
     Asset,
@@ -736,7 +737,7 @@ def _bulk_delete(db: Session, model: type, ids: list[int]) -> int:
     if not ids:
         return 0
     stmt = delete(model).where(model.id.in_(ids)).execution_options(synchronize_session=False)
-    return db.execute(stmt).rowcount or 0
+    return dml_rowcount(db.execute(stmt)) or 0
 
 
 def _remove_demo_transactions(db: Session, manifest: dict[str, list[int]], counts: dict[str, int]) -> None:
@@ -750,11 +751,11 @@ def _remove_demo_transactions(db: Session, manifest: dict[str, list[int]], count
     )
     if txn_ids:
         # Review items reference transactions by plain id (no FK) — drop them first.
-        counts["review_items"] = db.execute(
+        counts["review_items"] = dml_rowcount(db.execute(
             delete(ReviewItem)
             .where(ReviewItem.item_type == "transaction", ReviewItem.item_id.in_(txn_ids))
             .execution_options(synchronize_session=False)
-        ).rowcount or 0
+        )) or 0
         # Allowance allocations drawn from these transactions (also cascade when the
         # demo child is deleted; cleared here so no non-demo child can dangle).
         db.execute(

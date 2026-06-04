@@ -155,9 +155,9 @@ def _record_holding_price(db: Session, holding_id: int, price: Decimal) -> None:
     db.commit()
 
 
-def create_holding(db: Session, account_id: int, *, symbol: str, units: Decimal,
-                   name: str | None = None, avg_cost: Decimal | None = None,
-                   last_price: Decimal | None = None) -> Holding:
+def create_holding(db: Session, account_id: int, *, symbol: str, units: Decimal | str | int,
+                   name: str | None = None, avg_cost: Decimal | str | int | None = None,
+                   last_price: Decimal | str | int | None = None) -> Holding:
     account = get_investment_account(db, account_id)
     holding = Holding(
         account_id=account.id,
@@ -252,13 +252,13 @@ def account_to_dict(db: Session, account: Account) -> dict:
     if has_holdings:
         priced = [h for h in holdings if h.last_price is not None]
         current_value = (
-            sum((Decimal(h.units) * Decimal(h.last_price) for h in priced), Decimal("0")).quantize(TWO_DP)
+            sum((Decimal(h.units) * Decimal(h.last_price or 0) for h in priced), Decimal("0")).quantize(TWO_DP)
             if priced
             else None
         )
         with_cost = [h for h in holdings if h.avg_cost is not None]
         cost_basis = (
-            sum((Decimal(h.units) * Decimal(h.avg_cost) for h in with_cost), Decimal("0")).quantize(TWO_DP)
+            sum((Decimal(h.units) * Decimal(h.avg_cost or 0) for h in with_cost), Decimal("0")).quantize(TWO_DP)
             if with_cost
             else None
         )

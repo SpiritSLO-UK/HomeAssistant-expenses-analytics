@@ -83,3 +83,16 @@ extend-immutable-calls = [
 
 [tool.pytest.ini_options]
 testpaths = ["app/tests"]
+
+[tool.pyright]
+# Baseline type-checking config so the IDE (Pylance) and any future CI agree.
+# Basic mode catches real None-safety / argument-type bugs without the heavy
+# false-positive load of strict mode. Pylance uses the interpreter you select in
+# the editor; CLI runs pass --pythonpath.
+include = ["app"]
+# Tests are dev-only (stripped from the trimmed HA build) and lean on fixtures
+# whose values are non-None by construction; strict typing there adds asserts for
+# no runtime benefit. Type-check shipped code strictly, tests loosely.
+ignore = ["app/tests"]
+pythonVersion = "3.12"
+typeCheckingMode = "basic"

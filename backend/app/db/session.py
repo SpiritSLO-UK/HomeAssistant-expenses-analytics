@@ -17,9 +17,10 @@ unaffected.
 from __future__ import annotations
 
 from collections.abc import Generator
+from typing import Any, cast
 
 from sqlalchemy import create_engine, event
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import CursorResult, Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import settings
@@ -49,6 +50,21 @@ def get_engine() -> Engine | None:
     return _engine
 
 
+def require_engine() -> Engine:
+    """The active engine, or raise when the database is locked/unconfigured. Use
+    where a non-None engine is required (schema create, dispose)."""
+    if _engine is None:
+        raise DatabaseLocked("Database engine is not configured.")
+    return _engine
+
+
+def dml_rowcount(result: Any) -> int:
+    """Affected-row count from an UPDATE/DELETE result. ``Session.execute`` is
+    typed to return the read ``Result`` (which has no ``.rowcount``), but DML
+    yields a ``CursorResult`` at runtime — this keeps that typed in one place."""
+    return cast(CursorResult, result).rowcount
+
+
 def is_locked() -> bool:
     return _locked
 
@@ -73,7 +89,7 @@ def _build_plaintext_engine() -> Engine:
 def _build_encrypted_engine(passphrase: str) -> Engine:
     """Engine backed by SQLCipher. Requires the optional ``sqlcipher3`` driver
     (present on Linux/the add-on; not available as a Windows wheel)."""
-    import sqlcipher3  # optional; only imported when encryption is in use
+    import sqlcipher3  # pyright: ignore[reportMissingImports]  -- optional 'encryption' extra (no Windows wheel)
 
     db_path = str(settings.database_file)
     safe = passphrase.replace("'", "''")  # escape for the PRAGMA literal

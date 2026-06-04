@@ -120,7 +120,7 @@ def ocr_pdf_pages(path: Path, *, scale: float = 2.0, max_pages: int = 20) -> str
         pdf = pdfium.PdfDocument(str(path))
         try:
             for i in range(min(len(pdf), max_pages)):
-                bitmap = pdf[i].render(scale=scale)
+                bitmap = pdf[i].render(scale=scale)  # pyright: ignore[reportArgumentType]  -- pypdfium2 render() takes a float scale
                 parts.append(pytesseract.image_to_string(bitmap.to_pil()))
         finally:
             pdf.close()

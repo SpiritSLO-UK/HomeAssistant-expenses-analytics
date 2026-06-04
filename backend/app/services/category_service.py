@@ -14,6 +14,7 @@ from pathlib import Path
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
+from app.db.session import dml_rowcount
 from app.logging import get_logger
 from app.models import (
     Budget,
@@ -149,7 +150,7 @@ def set_all_privacy(db: Session, level: str) -> int:
     )
     settings_service.set_value(db, settings_service.CLOUD_AI_PRIVACY_DEFAULT, level)
     db.commit()
-    return result.rowcount or 0
+    return dml_rowcount(result) or 0
 
 
 def update_category(db: Session, category_id: int, data: dict) -> Category | None:

@@ -57,11 +57,9 @@ def _delete_marker() -> None:
 
 
 def sqlcipher_available() -> bool:
-    try:
-        import sqlcipher3  # noqa: F401
-        return True
-    except Exception:
-        return False
+    import importlib.util
+
+    return importlib.util.find_spec("sqlcipher3") is not None
 
 
 def _escape(passphrase: str) -> str:
@@ -76,7 +74,7 @@ def _remove_wal_shm() -> None:
 
 def verify_passphrase(passphrase: str) -> bool:
     """True if the passphrase opens the encrypted database."""
-    import sqlcipher3
+    import sqlcipher3  # pyright: ignore[reportMissingImports]  -- optional 'encryption' extra
 
     con = sqlcipher3.connect(str(settings.database_file))
     try:
@@ -100,15 +98,16 @@ def enable_encryption(passphrase: str, unlock_mode: str = "prompt") -> None:
     if unlock_mode not in {"prompt", "stored"}:
         raise ValueError("unlock_mode must be 'prompt' or 'stored'.")
 
-    import sqlcipher3
+    import sqlcipher3  # pyright: ignore[reportMissingImports]  -- optional 'encryption' extra
 
     db_path = str(settings.database_file)
     enc_tmp = db_path + ".enctmp"
     Path(enc_tmp).unlink(missing_ok=True)
 
     # Release pooled connections so the file isn't locked.
-    if dbsession.get_engine() is not None:
-        dbsession.get_engine().dispose()
+    engine = dbsession.get_engine()
+    if engine is not None:
+        engine.dispose()
 
     con = sqlcipher3.connect(db_path)  # opened as plaintext
     try:
@@ -135,14 +134,15 @@ def disable_encryption(passphrase: str) -> None:
     if not verify_passphrase(passphrase):
         raise ValueError("Wrong passphrase.")
 
-    import sqlcipher3
+    import sqlcipher3  # pyright: ignore[reportMissingImports]  -- optional 'encryption' extra
 
     db_path = str(settings.database_file)
     plain_tmp = db_path + ".plaintmp"
     Path(plain_tmp).unlink(missing_ok=True)
 
-    if dbsession.get_engine() is not None:
-        dbsession.get_engine().dispose()
+    engine = dbsession.get_engine()
+    if engine is not None:
+        engine.dispose()
 
     con = sqlcipher3.connect(db_path)
     try:
@@ -174,7 +174,7 @@ def _ensure_schema_and_seed() -> None:
     from app.db.base import Base
     from app.services.category_service import ensure_default_categories
 
-    Base.metadata.create_all(bind=dbsession.get_engine())
+    Base.metadata.create_all(bind=dbsession.require_engine())
     with dbsession.SessionLocal() as db:
         ensure_default_categories(db)
 

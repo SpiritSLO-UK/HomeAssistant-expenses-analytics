@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import ColumnElement, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models import Category, Project, Transaction, Vendor
@@ -32,7 +32,10 @@ def search(db: Session, query: str, *, account_ids: set[int] | None, limit: int 
         return result
 
     like = f"%{q}%"
-    txn_match = [Transaction.description_raw.ilike(like), Transaction.merchant_raw.ilike(like)]
+    txn_match: list[ColumnElement[bool]] = [
+        Transaction.description_raw.ilike(like),
+        Transaction.merchant_raw.ilike(like),
+    ]
     amount = _amount(q)
     if amount is not None:
         txn_match.append(func.abs(Transaction.amount) == amount)

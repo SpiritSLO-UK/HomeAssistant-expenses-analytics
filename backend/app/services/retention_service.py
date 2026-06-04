@@ -24,6 +24,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
+from app.db.session import dml_rowcount
 from app.logging import get_logger
 from app.models import AIRequest, AuditLog, Receipt, Transaction
 from app.services import (
@@ -202,7 +203,7 @@ def _archive(db: Session, dtype: str, days: int) -> int:
             .values(archived_at=_now())
         )
         db.commit()
-        return res.rowcount or 0
+        return dml_rowcount(res) or 0
     if dtype == "ai_requests":
         res = db.execute(
             update(AIRequest)
@@ -210,7 +211,7 @@ def _archive(db: Session, dtype: str, days: int) -> int:
             .values(archived_at=_now())
         )
         db.commit()
-        return res.rowcount or 0
+        return dml_rowcount(res) or 0
     if dtype == "audit_logs":
         res = db.execute(
             update(AuditLog)
@@ -218,7 +219,7 @@ def _archive(db: Session, dtype: str, days: int) -> int:
             .values(archived_at=_now())
         )
         db.commit()
-        return res.rowcount or 0
+        return dml_rowcount(res) or 0
     if dtype == "receipts":
         rows = db.scalars(select(Receipt).where(Receipt.archived_at.is_(None))).all()
         n = 0
@@ -237,15 +238,15 @@ def _purge(db: Session, dtype: str, days: int) -> int:
         # null child_allocations / ai_requests references.
         res = db.execute(delete(Transaction).where(Transaction.transaction_date < cutoff.date()))
         db.commit()
-        return res.rowcount or 0
+        return dml_rowcount(res) or 0
     if dtype == "ai_requests":
         res = db.execute(delete(AIRequest).where(AIRequest.created_at < cutoff))
         db.commit()
-        return res.rowcount or 0
+        return dml_rowcount(res) or 0
     if dtype == "audit_logs":
         res = db.execute(delete(AuditLog).where(AuditLog.created_at < cutoff))
         db.commit()
-        return res.rowcount or 0
+        return dml_rowcount(res) or 0
     if dtype == "receipts":
         rows = db.scalars(select(Receipt)).all()
         n = 0

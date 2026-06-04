@@ -161,7 +161,7 @@ def delete_allocation(db: Session, allocation_id: int) -> bool:
     return True
 
 
-def _allocation_spend(db: Session, child_id: int, category_id: int | None, start: date, end: date) -> Decimal:
+def _allocation_spend(db: Session, child_id: int | None, category_id: int | None, start: date, end: date) -> Decimal:
     stmt = select(ChildAllocation).where(
         ChildAllocation.user_id == child_id,
         ChildAllocation.as_of_date >= start,

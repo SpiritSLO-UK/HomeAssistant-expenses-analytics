@@ -159,18 +159,20 @@ def build_discovery(db: Session, ref: date | None = None) -> list[dict]:
 
 
 def _paho_available() -> bool:
-    try:
-        import paho.mqtt.client  # noqa: F401
+    import importlib.util
 
-        return True
-    except ImportError:
+    try:
+        # find_spec on a dotted name imports the ancestor packages, so it raises
+        # (not returns None) when 'paho' itself is absent — treat that as "no".
+        return importlib.util.find_spec("paho.mqtt.client") is not None
+    except ModuleNotFoundError:
         return False
 
 
 def _default_connect():
     """Connect to the broker with paho-mqtt (lazy import)."""
     try:
-        import paho.mqtt.client as mqtt
+        import paho.mqtt.client as mqtt  # pyright: ignore[reportMissingImports]  -- optional 'mqtt' extra
     except ImportError as exc:  # pragma: no cover - exercised only without the extra
         raise RuntimeError("paho-mqtt is not installed; install the 'mqtt' extra") from exc
 

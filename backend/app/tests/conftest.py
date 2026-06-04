@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+from collections.abc import Generator
 from pathlib import Path
 
 # Must be set before importing app.config / app.db.session.
@@ -41,17 +42,17 @@ dbsession.configure(None)
 
 
 @pytest.fixture()
-def client() -> TestClient:
-    Base.metadata.drop_all(dbsession.get_engine())
-    Base.metadata.create_all(dbsession.get_engine())
+def client() -> Generator[TestClient, None, None]:
+    Base.metadata.drop_all(dbsession.require_engine())
+    Base.metadata.create_all(dbsession.require_engine())
     with TestClient(app) as test_client:
         yield test_client
 
 
 @pytest.fixture()
 def db():
-    Base.metadata.drop_all(dbsession.get_engine())
-    Base.metadata.create_all(dbsession.get_engine())
+    Base.metadata.drop_all(dbsession.require_engine())
+    Base.metadata.create_all(dbsession.require_engine())
     session = SessionLocal()
     try:
         yield session

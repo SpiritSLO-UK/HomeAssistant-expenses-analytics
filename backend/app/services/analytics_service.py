@@ -89,16 +89,24 @@ def _spendable(
     return list(db.scalars(select(Transaction).where(*conditions)).all())
 
 
+def _amt(txn: Transaction) -> Decimal:
+    """A transaction's base amount as a non-optional Decimal. ``_spendable`` filters
+    ``base_amount IS NOT NULL``, so this is always set; the ``or`` keeps the type
+    checker happy (and is a harmless guard)."""
+    return txn.base_amount or Decimal("0")
+
+
 def _month_totals(
     db: Session, start: date, end: date, *, account_ids: set[int] | None = None
 ) -> tuple[Decimal, Decimal]:
     spend = Decimal("0.00")
     income = Decimal("0.00")
     for txn in _spendable(db, start, end, account_ids=account_ids):
-        if txn.base_amount < 0:
-            spend += -txn.base_amount
+        amount = _amt(txn)
+        if amount < 0:
+            spend += -amount
         else:
-            income += txn.base_amount
+            income += amount
     return spend, income
 
 
@@ -177,15 +185,15 @@ def _large_charges(
     debits = _spendable(db, lb_start, cur_end, debits_only=True, account_ids=account_ids)
     if len(debits) < MIN_DEBITS_FOR_BASELINE:
         return []
-    med = median(float(-t.base_amount) for t in debits)
+    med = median(float(-_amt(t)) for t in debits)
     if med <= 0:
         return []
     threshold = max(float(LARGE_CHARGE_FLOOR), med * LARGE_CHARGE_MULTIPLE)
 
     flagged = [
-        (-t.base_amount, t)
+        (-_amt(t), t)
         for t in debits
-        if cur_start <= t.transaction_date < cur_end and float(-t.base_amount) >= threshold
+        if cur_start <= t.transaction_date < cur_end and float(-_amt(t)) >= threshold
     ]
     flagged.sort(key=lambda pair: pair[0], reverse=True)
 
@@ -285,7 +293,7 @@ def _new_merchants(
         key = _merchant_key(txn)
         if key is None:
             continue
-        spend[key][0] += -txn.base_amount
+        spend[key][0] += -_amt(txn)
         if spend[key][1] is None:
             spend[key][1] = _txn_label(txn)
 
