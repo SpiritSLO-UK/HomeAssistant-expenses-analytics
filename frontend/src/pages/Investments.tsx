@@ -78,9 +78,9 @@ export default function Investments() {
       </div>
       <p className="muted">
         Track investment platforms and pensions. Record a <strong>value</strong> from a statement
-        (best for pensions), or add <strong>holdings</strong> — units of a ticker with a cost and a
-        last price — to see market value, gain, and value over time with day/month/year change.
-        Prices can be entered by hand or kept current with the optional price feed (below).
+        (best for pensions), or add <strong>holdings</strong> — a ticker with a number of shares and a
+        cost per share — to see market value, gain, and value over time with day/month/year change.
+        Prices are kept current by the optional price feed (Settings → price source, below).
       </p>
       {err && <p className="status status--error">{err}</p>}
 
@@ -303,7 +303,6 @@ function HoldingsSection({
   const [symbol, setSymbol] = useState("");
   const [units, setUnits] = useState("");
   const [avgCost, setAvgCost] = useState("");
-  const [lastPrice, setLastPrice] = useState("");
 
   const add = useMutation({
     mutationFn: () =>
@@ -311,9 +310,10 @@ function HoldingsSection({
         symbol,
         units,
         avg_cost: avgCost || undefined,
-        last_price: lastPrice || undefined,
+        // No last price here — it's set by the price feed (Settings → price source),
+        // so it stays current instead of being hand-entered once and going stale.
       }),
-    onSuccess: () => { setSymbol(""); setUnits(""); setAvgCost(""); setLastPrice(""); refresh(); },
+    onSuccess: () => { setSymbol(""); setUnits(""); setAvgCost(""); refresh(); },
     onError,
   });
 
@@ -330,7 +330,7 @@ function HoldingsSection({
           <table className="table">
             <thead>
               <tr>
-                <th>Ticker</th><th>Units</th><th>Avg cost</th><th>Last price</th><th>Value</th><th>Gain</th><th></th>
+                <th>Ticker</th><th># of shares</th><th>Cost per share</th><th>Last price</th><th>Value</th><th>Gain</th><th></th>
               </tr>
             </thead>
             <tbody>
@@ -347,9 +347,8 @@ function HoldingsSection({
         onSubmit={(e) => { e.preventDefault(); if (symbol && units) add.mutate(); }}
       >
         <input placeholder="Ticker (AAPL)" value={symbol} style={{ width: 110 }} onChange={(e) => setSymbol(e.target.value)} />
-        <input placeholder="Units" value={units} style={{ width: 90 }} onChange={(e) => setUnits(e.target.value)} />
-        <input placeholder="Avg cost" value={avgCost} style={{ width: 90 }} onChange={(e) => setAvgCost(e.target.value)} />
-        <input placeholder="Last price" value={lastPrice} style={{ width: 90 }} onChange={(e) => setLastPrice(e.target.value)} />
+        <input placeholder="# of shares" value={units} style={{ width: 100 }} onChange={(e) => setUnits(e.target.value)} />
+        <input placeholder="Cost per share" value={avgCost} style={{ width: 120 }} onChange={(e) => setAvgCost(e.target.value)} />
         <button className="btn btn--sm" type="submit" disabled={!symbol || !units || add.isPending}>
           {add.isPending ? "Adding…" : "＋ Add holding"}
         </button>
@@ -369,14 +368,12 @@ function HoldingRow({
 }>) {
   const [units, setUnits] = useState(holding.units);
   const [avgCost, setAvgCost] = useState(holding.avg_cost ?? "");
-  const [lastPrice, setLastPrice] = useState(holding.last_price ?? "");
 
   const save = useMutation({
     mutationFn: () =>
       updateHolding(holding.id, {
         units,
         avg_cost: avgCost.trim() === "" ? null : avgCost.trim(),
-        last_price: lastPrice.trim() === "" ? null : lastPrice.trim(),
       }),
     onSuccess: () => onChange(),
     onError,
@@ -389,8 +386,7 @@ function HoldingRow({
 
   const dirty =
     units !== holding.units ||
-    avgCost !== (holding.avg_cost ?? "") ||
-    lastPrice !== (holding.last_price ?? "");
+    avgCost !== (holding.avg_cost ?? "");
 
   return (
     <tr>
@@ -400,7 +396,9 @@ function HoldingRow({
       </td>
       <td><input value={units} style={{ width: 70 }} onChange={(e) => setUnits(e.target.value)} /></td>
       <td><input value={avgCost} placeholder="—" style={{ width: 70 }} onChange={(e) => setAvgCost(e.target.value)} /></td>
-      <td><input value={lastPrice} placeholder="—" style={{ width: 70 }} onChange={(e) => setLastPrice(e.target.value)} /></td>
+      <td style={{ whiteSpace: "nowrap" }} title="Set automatically by the price feed (Settings → price source)">
+        {holding.last_price ?? "—"}
+      </td>
       <td style={{ whiteSpace: "nowrap" }}>{holding.market_value ?? "—"}</td>
       <td style={{ whiteSpace: "nowrap" }}>
         {holding.gain == null

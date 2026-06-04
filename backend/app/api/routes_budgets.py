@@ -39,6 +39,17 @@ def _validate(
         raise HTTPException(status_code=400, detail="Unknown user")
 
 
+def _guard_child_budget(db: Session, user: User, owner_user_id: int | None) -> None:
+    """A budget that targets a child (an allowance budget) may only be created,
+    edited or removed by an owner/admin (the parent). Members manage their own and
+    shared budgets as before."""
+    if owner_user_id is None:
+        return
+    target = db.get(User, owner_user_id)
+    if target is not None and target.role == "child" and not auth_service.is_admin(user.role):
+        raise HTTPException(status_code=403, detail="Only an owner/admin can manage a child's allowance budget.")
+
+
 @router.get("", response_model=list[BudgetOut])
 def list_budgets(db: Annotated[Session, Depends(get_db)]) -> list[Budget]:
     return list(db.scalars(select(Budget).order_by(Budget.name)).all())
@@ -73,7 +84,11 @@ def budget_transactions(
 
 
 @router.post("", response_model=BudgetOut, status_code=201, responses={400: {"description": "Bad request"}})
-def create_budget(payload: BudgetIn, db: Annotated[Session, Depends(get_db)]) -> Budget:
+def create_budget(
+    payload: BudgetIn,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(auth_service.get_current_user)],
+) -> Budget:
     _validate(
         db,
         period=payload.period,
@@ -81,6 +96,7 @@ def create_budget(payload: BudgetIn, db: Annotated[Session, Depends(get_db)]) ->
         project_id=payload.project_id,
         owner_user_id=payload.owner_user_id,
     )
+    _guard_child_budget(db, user, payload.owner_user_id)
     household = get_or_create_default_household(db)
     budget = Budget(
         household_id=household.id,
@@ -108,7 +124,12 @@ def create_budget(payload: BudgetIn, db: Annotated[Session, Depends(get_db)]) ->
     response_model=BudgetOut,
     responses={400: {"description": "Bad request"}, 404: {"description": "Not found"}},
 )
-def update_budget(budget_id: int, payload: BudgetUpdate, db: Annotated[Session, Depends(get_db)]) -> Budget:
+def update_budget(
+    budget_id: int,
+    payload: BudgetUpdate,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(auth_service.get_current_user)],
+) -> Budget:
     budget = db.get(Budget, budget_id)
     if budget is None:
         raise HTTPException(status_code=404, detail=_NOT_FOUND)
@@ -120,6 +141,9 @@ def update_budget(budget_id: int, payload: BudgetUpdate, db: Annotated[Session, 
         project_id=data.get("project_id"),
         owner_user_id=data.get("owner_user_id"),
     )
+    _guard_child_budget(db, user, budget.owner_user_id)  # the budget being edited
+    if "owner_user_id" in data:  # …and if it's being re-pointed at a child
+        _guard_child_budget(db, user, data["owner_user_id"])
     if "currency" in data and data["currency"]:
         data["currency"] = data["currency"].upper()
     for field, value in data.items():
@@ -131,10 +155,15 @@ def update_budget(budget_id: int, payload: BudgetUpdate, db: Annotated[Session, 
 
 
 @router.delete("/{budget_id}", status_code=204, responses={404: {"description": "Not found"}})
-def delete_budget(budget_id: int, db: Annotated[Session, Depends(get_db)]) -> None:
+def delete_budget(
+    budget_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(auth_service.get_current_user)],
+) -> None:
     budget = db.get(Budget, budget_id)
     if budget is None:
         raise HTTPException(status_code=404, detail=_NOT_FOUND)
+    _guard_child_budget(db, user, budget.owner_user_id)
     db.delete(budget)
     db.commit()
     mqtt_service.publish_safe(db)

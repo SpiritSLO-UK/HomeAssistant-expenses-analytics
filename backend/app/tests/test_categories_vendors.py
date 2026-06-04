@@ -393,3 +393,12 @@ def test_list_filters_drill_down(client):
     client.post("/api/transactions/bulk", json={"transaction_ids": ids, "merchant_id": vid})
     by_vendor = client.get("/api/transactions", params={"vendor_id": vid, "limit": 500}).json()
     assert {t["id"] for t in by_vendor["items"]} == set(ids)
+
+
+def test_set_transaction_country_via_patch(client, samples_dir):
+    """A single transaction's country can be set (and cleared) via PATCH — beats
+    the vendor's country for the map. Normalised to upper-case ISO-2; "" clears."""
+    _import_curve(client, samples_dir)
+    tid = client.get("/api/transactions").json()["items"][0]["id"]
+    assert client.patch(f"/api/transactions/{tid}", json={"country": "es"}).json()["country"] == "ES"
+    assert client.patch(f"/api/transactions/{tid}", json={"country": ""}).json()["country"] is None

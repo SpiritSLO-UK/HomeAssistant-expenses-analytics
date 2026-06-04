@@ -54,6 +54,7 @@ import { getThemePref, isCloudAiAcknowledged, setCloudAiAcknowledged, setThemePr
 import { applyTheme, type ThemePref } from "../theme";
 import CloudAiDisclaimerDialog from "../components/CloudAiDisclaimerDialog";
 import CountrySelect from "../components/CountrySelect";
+import PaperlessSetupNote from "../components/PaperlessSetupNote";
 
 const THEME_OPTIONS: { value: ThemePref; label: string }[] = [
   { value: "system", label: "🖥️ System" },
@@ -763,12 +764,7 @@ function IntegrationsCard({
         </ul>
       )}
 
-      <p className="muted" style={{ fontSize: "0.8rem" }}>
-        The URL is saved here. The <strong>API token</strong> is a secret, so it stays an environment
-        variable: set <code>HAFI_PAPERLESS_TOKEN</code> (and optionally <code>HAFI_PAPERLESS_URL</code>)
-        in your <code>docker-compose.yml</code> or the add-on options, then restart. Leaving the URL blank
-        here falls back to <code>HAFI_PAPERLESS_URL</code>.
-      </p>
+      <PaperlessSetupNote />
     </div>
   );
 }

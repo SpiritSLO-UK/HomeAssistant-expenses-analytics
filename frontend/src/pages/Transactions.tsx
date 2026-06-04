@@ -26,6 +26,7 @@ import {
   type TransactionFilters,
 } from "../api/client";
 import SplitEditor from "../components/SplitEditor";
+import CountrySelect from "../components/CountrySelect";
 import AiBatchPanel from "../components/AiBatchPanel";
 import CloudAiBatchPanel from "../components/CloudAiBatchPanel";
 import AssignToChildButton from "../components/AssignToChildButton";
@@ -274,6 +275,16 @@ export default function Transactions() {
       qc.invalidateQueries({ queryKey: ["transactions"] });
       qc.invalidateQueries({ queryKey: ["vendors"] });
       qc.invalidateQueries({ queryKey: ["dash-vendors"] });
+    },
+  });
+
+  // Set (or clear) a transaction's own country — beats the vendor's country for the
+  // spend-by-location map (a vendor like Tesco spans many countries). "" clears.
+  const setCountry = useMutation({
+    mutationFn: (v: { id: number; country: string }) => updateTransaction(v.id, { country: v.country }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["transactions"] });
+      qc.invalidateQueries({ queryKey: ["dash-geo"] });
     },
   });
 
@@ -539,6 +550,12 @@ export default function Transactions() {
                   <option value="__none">— clear —</option>
                   {projects.data?.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
+                <CountrySelect
+                  value={null}
+                  onChange={(code) => { if (code) applyBulk({ country: code }); }}
+                  title="Set the country of the selected transactions (spend-by-location map)"
+                  style={{ minWidth: 150 }}
+                />
                 <button
                   className="btn btn--sm btn--ghost"
                   onClick={() => {
@@ -747,6 +764,14 @@ export default function Transactions() {
                                   <option key={v.id} value={v.id}>{v.display_name || v.canonical_name}</option>
                                 ))}
                               </select>
+                            </div>
+                            <div className="txn-detail__field">
+                              <span>Country</span>
+                              <CountrySelect
+                                value={t.country ?? null}
+                                onChange={(code) => setCountry.mutate({ id: t.id, country: code ?? "" })}
+                                title="This transaction's country for the spend-by-location map (overrides the vendor's)"
+                              />
                             </div>
                             <div className="txn-detail__field">
                               <span>Project</span>

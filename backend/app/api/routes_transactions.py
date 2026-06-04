@@ -261,6 +261,9 @@ def update_transaction(
         raise HTTPException(status_code=400, detail="Unknown project")
     if data.get("merchant_id") is not None and db.get(Vendor, data["merchant_id"]) is None:
         raise HTTPException(status_code=400, detail="Unknown vendor")
+    if "country" in data:  # normalise like the bulk path: ISO-2 upper, "" clears
+        code = (data["country"] or "").strip().upper()[:2]
+        data["country"] = code or None
     for field, value in data.items():
         setattr(txn, field, value)
     db.commit()

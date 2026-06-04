@@ -179,6 +179,7 @@ export interface Transaction {
   needs_review: boolean;
   is_business: boolean;
   vat_amount: string | null;
+  country?: string | null;  // per-transaction country for the spend-by-location map
   archived_at?: string | null;
   tags?: Tag[];
 }

@@ -4,10 +4,12 @@ import {
   createAllocation,
   createBudget,
   deleteAllocation,
+  deleteBudget,
   getAllowanceSummary,
   getMe,
   listCategories,
   listUsers,
+  updateBudget,
   type AllowanceSummary,
   type ChildBudgetStatus,
 } from "../api/client";
@@ -16,36 +18,78 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function BudgetBars({ budgets, base }: Readonly<{ budgets: ChildBudgetStatus[]; base: string }>) {
+// When provided (parent/admin view), each budget gets an editable amount + remove.
+interface BudgetManage {
+  onSave: (id: number, amount: string) => void;
+  onDelete: (id: number) => void;
+  busy: boolean;
+}
+
+const budgetColour = (s: string) => {
+  if (s === "over") return "#e05555";
+  if (s === "warn") return "#e0a800";
+  return "#3aa55a";
+};
+
+function BudgetBar({ b, base, manage }: Readonly<{ b: ChildBudgetStatus; base: string; manage?: BudgetManage }>) {
+  const [amount, setAmount] = useState(b.amount);
+  return (
+    <li>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+        <strong>{b.name}</strong>
+        {manage ? (
+          <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+            <input
+              value={amount}
+              style={{ width: 90 }}
+              aria-label={`${b.name} budget amount`}
+              onChange={(e) => setAmount(e.target.value)}
+            />
+            <span className="muted">{base}/mo</span>
+            <button
+              className="btn btn--sm btn--ghost"
+              disabled={manage.busy || amount === b.amount}
+              onClick={() => manage.onSave(b.budget_id, amount)}
+            >
+              Save
+            </button>
+            <button
+              className="link-btn"
+              title="Remove this budget"
+              onClick={() => { if (globalThis.confirm(`Remove the "${b.name}" budget?`)) manage.onDelete(b.budget_id); }}
+            >
+              ✕
+            </button>
+          </span>
+        ) : (
+          <span className="muted">{b.spent} / {b.amount} {base}</span>
+        )}
+      </div>
+      <div style={{ background: "#2a2a2a", borderRadius: 4, height: 8, marginTop: 4, overflow: "hidden" }}>
+        <div style={{ width: `${Math.min(100, b.percent)}%`, height: "100%", background: budgetColour(b.status) }} />
+      </div>
+      {manage && <div className="muted" style={{ fontSize: "0.78rem", marginTop: 2 }}>Spent {b.spent} of {b.amount} {base}</div>}
+    </li>
+  );
+}
+
+function BudgetBars({ budgets, base, manage }: Readonly<{ budgets: ChildBudgetStatus[]; base: string; manage?: BudgetManage }>) {
   if (budgets.length === 0) return <p className="muted">No budgets set yet.</p>;
-  const colour = (s: string) => {
-    if (s === "over") return "#e05555";
-    if (s === "warn") return "#e0a800";
-    return "#3aa55a";
-  };
   return (
     <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 12 }}>
       {budgets.map((b) => (
-        <li key={b.budget_id}>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <strong>{b.name}</strong>
-            <span className="muted">{b.spent} / {b.amount} {base}</span>
-          </div>
-          <div style={{ background: "#2a2a2a", borderRadius: 4, height: 8, marginTop: 4, overflow: "hidden" }}>
-            <div style={{ width: `${Math.min(100, b.percent)}%`, height: "100%", background: colour(b.status) }} />
-          </div>
-        </li>
+        <BudgetBar key={b.budget_id} b={b} base={base} manage={manage} />
       ))}
     </ul>
   );
 }
 
-function AllowanceView({ data, base }: Readonly<{ data: AllowanceSummary; base: string }>) {
+function AllowanceView({ data, base, manage }: Readonly<{ data: AllowanceSummary; base: string; manage?: BudgetManage }>) {
   return (
     <>
       <div className="card">
         <h2 className="card__title">Budgets</h2>
-        <BudgetBars budgets={data.budgets} base={base} />
+        <BudgetBars budgets={data.budgets} base={base} manage={manage} />
       </div>
 
       <div className="card">
@@ -96,8 +140,10 @@ function ChildHome() {
   );
 }
 
-/** Parent management: pick a child, review/manage their allowance. */
-function ParentManager() {
+/** Parent management: pick a child, review/manage their allowance.
+ *  `canManage` (owner/admin) gates the budget + manual-item editing — non-admin
+ *  adults see the allowance read-only. The backend enforces the same. */
+function ParentManager({ canManage }: Readonly<{ canManage: boolean }>) {
   const qc = useQueryClient();
   const users = useQuery({ queryKey: ["users"], queryFn: listUsers });
   const categories = useQuery({ queryKey: ["categories"], queryFn: listCategories });
@@ -156,6 +202,25 @@ function ParentManager() {
     onError: fail,
   });
 
+  // Edit / remove an existing budget (owner/admin only — see canManage).
+  const editBudget = useMutation({
+    mutationFn: (v: { id: number; amount: string }) => updateBudget(v.id, { amount: v.amount }),
+    onSuccess: invalidate,
+    onError: fail,
+  });
+  const removeBudget = useMutation({
+    mutationFn: (id: number) => deleteBudget(id),
+    onSuccess: invalidate,
+    onError: fail,
+  });
+  const manage: BudgetManage | undefined = canManage
+    ? {
+        onSave: (id, amount) => editBudget.mutate({ id, amount }),
+        onDelete: (id) => removeBudget.mutate(id),
+        busy: editBudget.isPending || removeBudget.isPending,
+      }
+    : undefined;
+
   if (children.length === 0) {
     return (
       <div className="card">
@@ -187,8 +252,14 @@ function ParentManager() {
 
       {err && <p className="status status--error">{err}</p>}
 
-      {summary.data && <AllowanceView data={summary.data} base={base} />}
+      {!canManage && (
+        <p className="muted">Allowance budgets and pocket money are managed by an owner/admin. You're seeing it read-only.</p>
+      )}
 
+      {summary.data && <AllowanceView data={summary.data} base={base} manage={manage} />}
+
+      {canManage && (
+      <>
       <div className="card">
         <h2 className="card__title">Add a budget</h2>
         <form
@@ -239,6 +310,8 @@ function ParentManager() {
           </ul>
         )}
       </div>
+      </>
+      )}
     </>
   );
 }
@@ -246,7 +319,7 @@ function ParentManager() {
 export default function Allowance() {
   const me = useQuery({ queryKey: ["me"], queryFn: getMe });
   const isChild = me.data?.role === "child";
-  const childOrParent = isChild ? <ChildHome /> : <ParentManager />;
+  const childOrParent = isChild ? <ChildHome /> : <ParentManager canManage={!!me.data?.is_admin} />;
   return (
     <div className="page">
       <div className="page__head">
