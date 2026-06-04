@@ -2,7 +2,9 @@ import { Fragment, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import Sparkline from "../components/Sparkline";
+import WorldMap, { colorForIndex, type MapPlot } from "../components/WorldMap";
 import {
+  type CountryBreakdownItem,
   exportCategoriesCsv,
   exportMonthlyCsv,
   getAllowanceSummary,
@@ -446,32 +448,52 @@ function GeoCard({ monthDate, view, memberId }: Readonly<{ monthDate: string; vi
   if (data.length === 0) return null; // non-nagging: nothing to map yet
   const max = Math.max(1, ...data.map((c) => Number(c.total)));
   const { date_from, date_to } = monthRange(monthDate);
+  // Top-N by spend, each given a stable colour so its map point matches its legend
+  // row. The "Unknown" bucket (no country) gets a neutral swatch and no map point.
+  const top: { item: CountryBreakdownItem; color: string }[] = data
+    .slice(0, 12)
+    .map((item, i) => ({ item, color: item.country_code ? colorForIndex(i) : "var(--muted)" }));
+  const plots: MapPlot[] = top
+    .filter(({ item }) => item.country_code)
+    .map(({ item, color }) => ({
+      code: item.country_code as string,
+      name: item.name,
+      total: Number(item.total),
+      count: item.count,
+      color,
+      href: "#" + txnLink({ country: item.country_code, date_from, date_to, member_id: memberId }),
+    }));
   return (
     <div className="card">
       <h2 className="card__title">Spending by location</h2>
       <p className="muted" style={{ marginTop: 0, fontSize: "0.82rem" }}>
         By country — a transaction's own country (tag a trip on Travel), else its vendor's country
-        (Vendors page), else inferred from the currency.
+        (Vendors page), else inferred from the currency. Bubble size is the amount; click a point or
+        a row to see the transactions behind it.
       </p>
+      {plots.length > 0 && <WorldMap plots={plots} maxTotal={max} money={(n) => gbp(String(n))} />}
       <ul className="bars">
-        {data.slice(0, 12).map((c) => (
+        {top.map(({ item: c, color }) => (
           <li key={c.country_code ?? "unknown"}>
             <div className="bars__row">
-              {c.country_code ? (
-                <Link
-                  className="bars__label"
-                  title={`See ${c.name} transactions this month`}
-                  to={txnLink({ country: c.country_code, date_from, date_to, member_id: memberId })}
-                >
-                  {c.flag} {c.name}
-                </Link>
-              ) : (
-                <span className="bars__label">{c.flag} {c.name}</span>
-              )}
+              <span className="bars__legend">
+                <span className="worldmap__swatch" style={{ background: color }} aria-hidden="true" />
+                {c.country_code ? (
+                  <Link
+                    className="bars__label"
+                    title={`See ${c.name} transactions this month`}
+                    to={txnLink({ country: c.country_code, date_from, date_to, member_id: memberId })}
+                  >
+                    {c.flag} {c.name}
+                  </Link>
+                ) : (
+                  <span className="bars__label">{c.flag} {c.name}</span>
+                )}
+              </span>
               <span className="bars__value">{gbp(c.total)} <span className="muted">· {c.count}</span></span>
             </div>
             <div className="bars__track">
-              <div className="bars__fill" style={{ width: `${(Number(c.total) / max) * 100}%` }} />
+              <div className="bars__fill" style={{ width: `${(Number(c.total) / max) * 100}%`, background: color }} />
             </div>
           </li>
         ))}
