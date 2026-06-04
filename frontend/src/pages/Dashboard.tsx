@@ -391,23 +391,20 @@ function CategoriesCard({ monthDate, view, memberId }: Readonly<{ monthDate: str
     queryKey: ["dash-categories", monthDate, view, memberId ?? ""],
     queryFn: () => getCategoryBreakdown(monthDate, view, memberId),
   });
-  const data = q.data;
-  const max = Math.max(1, ...(data ?? []).map((c) => Number(c.total)));
+  const data = q.data ?? [];
+  if (data.length === 0) return null; // non-nagging: hide until there's spending (matches the other cards)
+  const max = Math.max(1, ...data.map((c) => Number(c.total)));
   const { date_from, date_to } = monthRange(monthDate);
   return (
     <div className="card">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
         <h2 className="card__title" style={{ margin: 0 }}>Spending by category</h2>
-        {data && data.length > 0 && (
-          <button className="link-btn" onClick={() => downloadOrAlert(exportCategoriesCsv(monthDate))}>
-            ⬇ CSV
-          </button>
-        )}
+        <button className="link-btn" onClick={() => downloadOrAlert(exportCategoriesCsv(monthDate))}>
+          ⬇ CSV
+        </button>
       </div>
-      {q.isLoading && <p className="muted">Loading…</p>}
-      {data?.length === 0 && <p className="muted">No spending this month.</p>}
       <ul className="bars">
-        {data?.map((c) => (
+        {data.map((c) => (
           <li key={c.category_id ?? "none"}>
             <div className="bars__row">
               <span className="bars__dot" style={{ background: c.colour ?? "#bbb" }} />
@@ -442,18 +439,14 @@ function VendorsCard({ monthDate, view, memberId }: Readonly<{ monthDate: string
     queryKey: ["dash-vendors", monthDate, view, memberId ?? ""],
     queryFn: () => getVendorBreakdown(monthDate, view, memberId),
   });
-  const data = q.data;
+  const data = q.data ?? [];
+  if (data.length === 0) return null; // non-nagging: hide until there are vendors (matches the other cards)
   const { date_from, date_to } = monthRange(monthDate);
   return (
     <div className="card">
       <h2 className="card__title">Top vendors</h2>
-      {data?.length === 0 && (
-        <p className="muted">
-          No vendors yet — set up vendor aliases on the <Link to="/vendors">Vendors</Link> page.
-        </p>
-      )}
       <ul className="kv">
-        {data?.map((v) => (
+        {data.map((v) => (
           <li key={v.vendor_id}>
             <Link
               title={`See ${v.name} transactions this month`}
