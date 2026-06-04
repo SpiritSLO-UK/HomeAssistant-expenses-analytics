@@ -26,6 +26,25 @@ def test_create_account_type_validated(client):
     assert bad.status_code == 400
 
 
+def test_investment_account_rejects_cash_value(client):
+    # Investments (shares/ISA) are valued by holdings × price — the cash-value and
+    # contribution/withdrawal controls are a pension/cash model and must 400 here.
+    iid = _account(client, name="ISA", account_type="investment")
+    assert client.post(
+        f"/api/investments/accounts/{iid}/values", json={"as_of_date": "2026-01-01", "value": "100"}
+    ).status_code == 400
+    assert client.post(
+        f"/api/investments/accounts/{iid}/adjust", json={"amount": "100", "direction": "contribution"}
+    ).status_code == 400
+    # Holdings remain the way to value an investment account.
+    assert _holding(client, iid, symbol="VWRL", units="5").status_code == 201
+    # A pension still accepts a statement value (the other model).
+    pid = _account(client, name="SIPP", account_type="pension")
+    assert client.post(
+        f"/api/investments/accounts/{pid}/values", json={"as_of_date": "2026-01-01", "value": "100"}
+    ).status_code == 201
+
+
 def test_value_snapshots_latest_and_history(client):
     aid = _account(client, name="SIPP", account_type="pension")
     # Insert out of date order — "latest" must be by date, not insertion.
