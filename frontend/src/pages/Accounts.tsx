@@ -34,7 +34,7 @@ export default function Accounts() {
       </p>
 
       {accounts.isLoading && <p className="muted">Loading…</p>}
-      {accounts.data && accounts.data.length === 0 && (
+      {accounts.data?.length === 0 && (
         <div className="card"><p className="muted">No accounts yet — they're created when you import a statement.</p></div>
       )}
       {accounts.data && accounts.data.length > 0 && (

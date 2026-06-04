@@ -127,7 +127,7 @@ export default function Investments() {
         {showNew && (
           <NewAccountForm onCreated={() => { invalidate(); setShowNew(false); }} onError={fail} />
         )}
-        {summary.data && summary.data.accounts.length === 0 && !showNew && (
+        {summary.data?.accounts.length === 0 && !showNew && (
           <p className="muted">No investment or pension accounts yet — add one with ＋ New account.</p>
         )}
         {summary.data?.accounts.map((a) => (
@@ -261,9 +261,9 @@ function AccountCard({
           <span className="tag">{account.account_type}</span>
           {account.institution && <span className="muted"> · {account.institution}</span>}
           <div style={{ fontSize: "1.2rem" }}>
-            {account.current_value != null
-              ? `${account.current_value} ${account.currency}`
-              : <span className="muted">no value yet</span>}
+            {account.current_value == null
+              ? <span className="muted">no value yet</span>
+              : `${account.current_value} ${account.currency}`}
             {account.gain != null && (
               <span style={{ marginLeft: 8, fontSize: "0.9rem" }}>
                 <Gain value={account.gain} pct={account.gain_pct} currency={account.currency} />
@@ -401,9 +401,9 @@ function HoldingRow({
       <td><input value={lastPrice} placeholder="—" style={{ width: 70 }} onChange={(e) => setLastPrice(e.target.value)} /></td>
       <td style={{ whiteSpace: "nowrap" }}>{holding.market_value ?? "—"}</td>
       <td style={{ whiteSpace: "nowrap" }}>
-        {holding.gain != null
-          ? <Gain value={holding.gain} pct={holding.gain_pct} currency={holding.currency} />
-          : "—"}
+        {holding.gain == null
+          ? "—"
+          : <Gain value={holding.gain} pct={holding.gain_pct} currency={holding.currency} />}
       </td>
       <td style={{ whiteSpace: "nowrap" }}>
         <button className="btn btn--sm btn--ghost" disabled={!dirty || save.isPending} onClick={() => save.mutate()}>

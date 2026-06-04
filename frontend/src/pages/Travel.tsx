@@ -136,7 +136,7 @@ export default function Travel() {
           </label>
         </div>
         {trips.isLoading && <p className="muted">Loading…</p>}
-        {trips.data && trips.data.length === 0 && (
+        {trips.data?.length === 0 && (
           <p className="muted">No trips detected yet. They appear once you have foreign-currency spend.</p>
         )}
         {trips.data && trips.data.length > 0 && (

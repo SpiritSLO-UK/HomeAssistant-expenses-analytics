@@ -640,7 +640,7 @@ function AiCard({
       <h2 className="card__title">AI assistant</h2>
       <p className="muted">
         <strong>Off by default.</strong> AI only ever <em>suggests</em> — it never changes a category on
-        its own. Local mode keeps data on your device; cloud modes send a <strong>minimal, redacted</strong>
+        its own. Local mode keeps data on your device; cloud modes send a <strong>minimal, redacted</strong>{" "}
         payload (description/amount/currency/candidate categories only). Works with any OpenAI-compatible
         endpoint (Ollama, LM Studio, Home Assistant LLM, or a cloud API).
       </p>
@@ -923,7 +923,7 @@ function SecurityHealthCard({ onError }: Readonly<{ onError: (e: unknown) => voi
         dismiss or snooze anything you don't want to be reminded about.
       </p>
       {health.isLoading && <p className="muted">Loading…</p>}
-      {health.data && health.data.active_count === 0 && (
+      {health.data?.active_count === 0 && (
         <p className="status status--ok">✅ No outstanding security recommendations.</p>
       )}
       {checks.length > 0 && (
@@ -1015,11 +1015,11 @@ function SecurityCard({
         </p>
       )}
 
-      {s && s.encryption_available && !s.encryption_enabled && (
+      {s?.encryption_available && !s.encryption_enabled && (
         <>
           <p className="muted">
-            Encrypt the database on disk so nothing but this app (with your passphrase) can read it.
-            <strong> If you lose the passphrase, the data is unrecoverable.</strong>
+            Encrypt the database on disk so nothing but this app (with your passphrase) can read it.{" "}
+            <strong>If you lose the passphrase, the data is unrecoverable.</strong>
           </p>
           <div className="form-row">
             <input
@@ -1049,7 +1049,7 @@ function SecurityCard({
         </>
       )}
 
-      {s && s.encryption_enabled && (
+      {s?.encryption_enabled && (
         <>
           <p className="status status--ok">
             🔒 Encrypted · unlock mode: {s.unlock_mode}
@@ -1199,8 +1199,8 @@ function RetentionCard({
         Age out old data on your own schedule. For each type you can <strong>archive after</strong> a
         number of days (reversible — hidden from view, kept) and/or <strong>purge after</strong> a
         number of days (permanent delete). Leave a box blank to turn that stage off. Everything is
-        off by default. Archiving runs automatically on startup; purging only runs when you click
-        <em> Run cleanup now</em> below — unless you tick <strong>auto-purge</strong> for a type.
+        off by default. Archiving runs automatically on startup; purging only runs when you click{" "}
+        <em>Run cleanup now</em> below — unless you tick <strong>auto-purge</strong> for a type.
       </p>
 
       {!draft && <p className="muted">Loading…</p>}
@@ -1262,7 +1262,7 @@ function RetentionCard({
               type="checkbox"
               checked={draft.receipt_delete_after_processing}
               onChange={(e) => setDraft((d) => (d ? { ...d, receipt_delete_after_processing: e.target.checked } : d))}
-            />
+            />{" "}
             Delete a receipt's original file once it's processed &amp; matched (keeps the extracted fields)
           </label>
 

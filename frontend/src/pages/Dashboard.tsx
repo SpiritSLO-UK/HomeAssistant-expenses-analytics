@@ -260,7 +260,7 @@ export default function Dashboard() {
         <StatCard label="Transactions" value={summary.data ? String(summary.data.total_transactions) : "—"} />
       </div>
 
-      {summary.data && summary.data.total_transactions === 0 && (
+      {summary.data?.total_transactions === 0 && (
         <div className="card">
           <p className="muted">
             No transactions yet. Head to <Link to="/import">Import</Link> to upload a CSV.
@@ -307,7 +307,7 @@ function ProjectsCard({ memberId }: Readonly<{ memberId?: number }>) {
               </span>
               <span>
                 {gbp(p.spent)}
-                {p.budget ? <span className="muted"> / {gbp(p.budget)}{pct != null ? ` · ${pct}%` : ""}</span> : ""}
+                {p.budget ? <span className="muted"> / {gbp(p.budget)}{pct == null ? "" : ` · ${pct}%`}</span> : ""}
               </span>
             </li>
           );
@@ -336,7 +336,7 @@ function CategoriesCard({ monthDate, view, memberId }: Readonly<{ monthDate: str
         )}
       </div>
       {q.isLoading && <p className="muted">Loading…</p>}
-      {data && data.length === 0 && <p className="muted">No spending this month.</p>}
+      {data?.length === 0 && <p className="muted">No spending this month.</p>}
       <ul className="bars">
         {data?.map((c) => (
           <li key={c.category_id ?? "none"}>
@@ -346,9 +346,9 @@ function CategoriesCard({ monthDate, view, memberId }: Readonly<{ monthDate: str
                 className="bars__label"
                 title={`See ${c.name} transactions this month`}
                 to={txnLink(
-                  c.category_id != null
-                    ? { category_id: c.category_id, date_from, date_to, member_id: memberId }
-                    : { uncategorised: "true", date_from, date_to, member_id: memberId },
+                  c.category_id == null
+                    ? { uncategorised: "true", date_from, date_to, member_id: memberId }
+                    : { category_id: c.category_id, date_from, date_to, member_id: memberId },
                 )}
               >
                 {c.name}
@@ -378,7 +378,7 @@ function VendorsCard({ monthDate, view, memberId }: Readonly<{ monthDate: string
   return (
     <div className="card">
       <h2 className="card__title">Top vendors</h2>
-      {data && data.length === 0 && (
+      {data?.length === 0 && (
         <p className="muted">
           No vendors yet — set up vendor aliases on the <Link to="/vendors">Vendors</Link> page.
         </p>
@@ -457,7 +457,12 @@ function MemberBreakdownCard({ monthDate }: Readonly<{ monthDate: string }>) {
         {rows.map((r) => (
           <li key={r.member_id ?? "shared"}>
             <div className="bars__row">
-              {r.member_id != null ? (
+              {r.member_id == null ? (
+                <span className="bars__label">
+                  {r.display_name}
+                  {r.role && <span className="muted"> · {r.role}</span>}
+                </span>
+              ) : (
                 <Link
                   className="bars__label"
                   title={`See ${r.display_name}'s transactions this month`}
@@ -466,11 +471,6 @@ function MemberBreakdownCard({ monthDate }: Readonly<{ monthDate: string }>) {
                   {r.display_name}
                   {r.role && <span className="muted"> · {r.role}</span>}
                 </Link>
-              ) : (
-                <span className="bars__label">
-                  {r.display_name}
-                  {r.role && <span className="muted"> · {r.role}</span>}
-                </span>
               )}
               <span className="bars__value">{gbp(r.spend)}</span>
             </div>
@@ -525,7 +525,7 @@ function InvestmentsCard() {
   const q = useQuery({ queryKey: ["dash-investments"], queryFn: getInvestmentSummary });
   const s = q.data;
   if (!s || s.accounts.length === 0) return null; // non-nagging: no card until there's an account
-  const gain = s.total_gain != null ? Number(s.total_gain) : null;
+  const gain = s.total_gain == null ? null : Number(s.total_gain);
   return (
     <div className="card">
       <CardHead title="Investments" to="/investments" />
@@ -559,7 +559,7 @@ function AssetsCard() {
           <li key={a.id}>
             <span>{icon[a.kind] ?? "📦"} {a.name}</span>
             <span>
-              {a.car && a.car.avg_economy != null ? (
+              {a.car?.avg_economy != null ? (
                 <>{a.car.avg_economy} {a.car.economy_unit} <span className="muted">· {gbp(a.total_cost)}</span></>
               ) : (
                 gbp(a.total_cost)

@@ -53,8 +53,8 @@ export default function Import() {
         <h2 className="card__title">Upload a bank statement (CSV, PDF, or a photo/scan)</h2>
         <p className="muted">
           CSV is most reliable. PDF, and now <strong>photos or scans</strong> (JPG/PNG, or a
-          scanned PDF), are read best-effort with OCR — extracted rows are
-          <strong> flagged for review</strong> so you can verify them on the Transactions page.
+          scanned PDF), are read best-effort with OCR — extracted rows are{" "}
+          <strong>flagged for review</strong> so you can verify them on the Transactions page.
         </p>
         <div className="form-row">
           <input

@@ -156,8 +156,8 @@ function ParentManager() {
     return (
       <div className="card">
         <p className="muted">
-          No child accounts yet. On the <strong>Users</strong> page, set a household member's role to
-          <strong> child</strong> — then come back here to set up their allowance.
+          No child accounts yet. On the <strong>Users</strong> page, set a household member's role to{" "}
+          <strong>child</strong> — then come back here to set up their allowance.
         </p>
       </div>
     );
@@ -175,8 +175,8 @@ function ParentManager() {
           </select>
         </label>
         <p className="muted" style={{ fontSize: "0.82rem", marginBottom: 0 }}>
-          Assigning a purchase to a child shows it here without changing your own expenses. Use the
-          <strong> "Assign to child"</strong> link on the Transactions page to draw from a real purchase
+          Assigning a purchase to a child shows it here without changing your own expenses. Use the{" "}
+          <strong>"Assign to child"</strong> link on the Transactions page to draw from a real purchase
           (whole or part), or add a manual item below.
         </p>
       </div>

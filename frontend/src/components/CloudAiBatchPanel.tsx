@@ -97,8 +97,8 @@ export default function CloudAiBatchPanel({ base, onClose }: Readonly<{ base: st
       </div>
       <p className="muted">
         Sends a <strong>redacted</strong>, minimal payload per transaction to your configured cloud AI —
-        only after you review the list and approve. Nothing leaves the device until you click
-        <strong> Send to cloud</strong>, and no category is written until you click <strong>Apply</strong>.
+        only after you review the list and approve. Nothing leaves the device until you click{" "}
+        <strong>Send to cloud</strong>, and no category is written until you click <strong>Apply</strong>.
         Every call is logged.
       </p>
 
@@ -161,7 +161,7 @@ export default function CloudAiBatchPanel({ base, onClose }: Readonly<{ base: st
           </button>
         </>
       )}
-      {items && items.length === 0 && <p className="muted">Nothing uncategorised to send.</p>}
+      {items?.length === 0 && <p className="muted">Nothing uncategorised to send.</p>}
 
       {/* Stage 2: review the suggestions the cloud returned */}
       {suggestions && suggestions.length > 0 && (
@@ -188,7 +188,7 @@ export default function CloudAiBatchPanel({ base, onClose }: Readonly<{ base: st
                     <td title={s.rationale ?? ""}>{s.description}</td>
                     <td className="num">{s.amount} {base}</td>
                     <td>{s.category_name}</td>
-                    <td className="num">{s.confidence != null ? `${Math.round(s.confidence * 100)}%` : "—"}</td>
+                    <td className="num">{s.confidence == null ? "—" : `${Math.round(s.confidence * 100)}%`}</td>
                   </tr>
                 ))}
               </tbody>
@@ -199,7 +199,7 @@ export default function CloudAiBatchPanel({ base, onClose }: Readonly<{ base: st
           </button>
         </>
       )}
-      {suggestions && suggestions.length === 0 && <p className="muted">The cloud returned no usable suggestions.</p>}
+      {suggestions?.length === 0 && <p className="muted">The cloud returned no usable suggestions.</p>}
     </div>
   );
 }

@@ -98,7 +98,7 @@ export default function AiBatchPanel({ base, onClose }: Readonly<{ base: string;
                     <td title={s.rationale ?? ""}>{s.description}</td>
                     <td className="num">{s.amount} {base}</td>
                     <td>{s.category_name}</td>
-                    <td className="num">{s.confidence != null ? `${Math.round(s.confidence * 100)}%` : "—"}</td>
+                    <td className="num">{s.confidence == null ? "—" : `${Math.round(s.confidence * 100)}%`}</td>
                   </tr>
                 ))}
               </tbody>
@@ -109,7 +109,7 @@ export default function AiBatchPanel({ base, onClose }: Readonly<{ base: string;
           </button>
         </>
       )}
-      {suggestions && suggestions.length === 0 && <p className="muted">No suggestions — nothing uncategorised, or the model returned no matches.</p>}
+      {suggestions?.length === 0 && <p className="muted">No suggestions — nothing uncategorised, or the model returned no matches.</p>}
     </div>
   );
 }
