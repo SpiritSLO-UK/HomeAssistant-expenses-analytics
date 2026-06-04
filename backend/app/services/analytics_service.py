@@ -59,6 +59,10 @@ def _money(value: Decimal | str | float, currency: str) -> str:
 
 def _month_windows(ref: date, n: int) -> list[tuple[date, date]]:
     """The [start, end) windows for the n months ending with ref's month, oldest first."""
+    # Defensive clamp: never build an unbounded series from a caller-supplied
+    # count (5 years is well beyond any view). Routes already cap their inputs;
+    # this guards the function regardless of caller.
+    n = max(0, min(n, 60))
     windows: list[tuple[date, date]] = []
     year, month = ref.year, ref.month
     for _ in range(n):
