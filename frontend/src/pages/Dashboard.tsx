@@ -1,4 +1,4 @@
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import Sparkline from "../components/Sparkline";
@@ -35,6 +35,10 @@ import {
   getHiddenDashboardCards,
   setDashboardCardOrder,
   setDashboardView,
+  getDashboardMonth,
+  setDashboardMonth,
+  getDashboardMember,
+  setDashboardMember,
   setHiddenDashboardCards,
 } from "../prefs";
 
@@ -151,7 +155,7 @@ function DashboardCard({
 }
 
 export default function Dashboard() {
-  const [month, setMonth] = useState(thisMonth());
+  const [month, setMonth] = useState(() => getDashboardMonth() || thisMonth());
   const monthDate = `${month}-01`;
 
   // Per-device card show/hide (#86) + order (#84).
@@ -191,9 +195,18 @@ export default function Dashboard() {
   // Per-member filter (#66/#82): show one household member's spending. Picking a
   // member overrides the Mine/Shared/All toggle, so that toggle is hidden then.
   const members = useQuery({ queryKey: ["members"], queryFn: listMembers });
-  const [memberId, setMemberId] = useState<string>("");
+  const [memberId, setMemberId] = useState<string>(() => getDashboardMember());
   const mid = memberId ? Number(memberId) : undefined;
   const hasMembers = (members.data?.length ?? 0) > 1;
+
+  // Remember the chosen month + member across reloads (view already persists via
+  // chooseView), so a refresh doesn't snap back to the current month.
+  useEffect(() => {
+    setDashboardMonth(month);
+  }, [month]);
+  useEffect(() => {
+    setDashboardMember(memberId);
+  }, [memberId]);
 
   const summary = useQuery({
     queryKey: ["summary", monthDate, view, memberId],
