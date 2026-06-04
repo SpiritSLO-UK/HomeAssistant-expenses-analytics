@@ -319,8 +319,10 @@ export default function Settings() {
       <div className="card">
         <h2 className="card__title">Coming later</h2>
         <p className="muted">
-          Setup mode, accounts, import profiles, AI providers and OCR arrive in later stages
-          (spec §25.12). Cloud backup destinations are on the backlog (#15).
+          The big remaining piece is the <strong>Home Assistant add-on</strong> — one-click install
+          from an add-on repository, ingress sign-on and MQTT sensors. Also on the backlog:
+          cloud backup <em>destinations</em> (Google&nbsp;Drive / S3 / Backblaze, #15) and
+          entering the Paperless token in the UI (needs at-rest secret encryption first).
         </p>
       </div>
     </div>

@@ -43,6 +43,7 @@ catch-alls, so the specific one wins.
 | `set_vendor` | assign a vendor | vendor id |
 | `set_category` | assign a category | category id |
 | `set_project` | assign a project | project id |
+| `set_country` | tag the spend location (for the spend-by-location map) | ISO alpha-2, e.g. `ES` |
 | `mark_transfer` | flag as a transfer (excluded from spend/income) | — |
 | `mark_income` | flag as income | — |
 | `mark_subscription` | flag as a subscription | — |
@@ -78,6 +79,14 @@ catch-alls, so the specific one wins.
 - That transaction is never included in any cloud AI payload, regardless of the
   global AI mode. (Category-level privacy does the same per category — see
   [privacy.md](privacy.md).)
+
+**6 — Tag a foreign vendor's country.**
+- Condition: `description_contains` = `mercadona`
+- Action: `set_country` = `ES`
+- The spend-by-location map then credits **Spain** instead of falling back to the
+  coarse currency guess (EUR → "Eurozone"). The code is normalised to two
+  upper-case letters. Per-transaction and per-vendor country overrides do the same
+  thing by hand; this automates it on import.
 
 ## Tips
 

@@ -137,13 +137,17 @@ logs, then open an issue with the relevant lines (redact any account details).
 
 ## Paperless import
 
-**The Paperless card says "not configured".**
-- Set `HAFI_PAPERLESS_URL` and `HAFI_PAPERLESS_TOKEN` and restart. The flow is
-  one-directional — we only request from Paperless.
+**The "Import from Paperless" card isn't on the Receipts page.**
+- By design — it only appears once Paperless is configured. Set the **token**
+  (`HAFI_PAPERLESS_TOKEN`, a secret) and a **URL** (env `HAFI_PAPERLESS_URL` or
+  Settings → Integrations), then restart if you changed env. Settings →
+  Integrations shows the live status and a **Test connection** button. Full
+  steps: [configuration.md → Paperless-ngx setup walkthrough](configuration.md).
 
-**"Could not reach Paperless" (502).**
+**"Could not reach Paperless" (502) / Test connection fails.**
 - Check the URL is reachable from the app's container/network and the token is
-  valid. Imports de-duplicate by content, so retrying is safe.
+  valid. The flow is one-directional (we only request from Paperless), and imports
+  de-duplicate by content, so retrying is safe.
 
 ---
 
