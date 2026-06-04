@@ -282,6 +282,30 @@ export default function Settings() {
 
 // Unified on/off + status for every service (backlog §38). AI/OCR/online-FX are
 // runtime-toggleable here; MQTT is add-on-configured, so it's shown read-only.
+// One service row: a labelled on/off toggle. Module-level so it isn't recreated
+// (and remounted) on every ServicesCard render.
+function Toggle({
+  on,
+  label,
+  detail,
+  onChange,
+  busy,
+}: Readonly<{ on: boolean; label: string; detail: string; onChange: (v: boolean) => void; busy?: boolean }>) {
+  return (
+    <li style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "6px 0" }}>
+      <span>
+        <strong>{label}</strong>
+        <br />
+        <span className="muted" style={{ fontSize: "0.82rem" }}>{detail}</span>
+      </span>
+      <label className="checkbox" style={{ whiteSpace: "nowrap" }}>
+        <input type="checkbox" checked={on} disabled={busy} onChange={(e) => onChange(e.target.checked)} />{" "}
+        {on ? "On" : "Off"}
+      </label>
+    </li>
+  );
+}
+
 function ServicesCard({
   onMessage,
   onError,
@@ -300,21 +324,6 @@ function ServicesCard({
     onError,
   });
   const s = services.data;
-  const Toggle = ({ on, label, detail, onChange, busy }: {
-    on: boolean; label: string; detail: string; onChange: (v: boolean) => void; busy?: boolean;
-  }) => (
-    <li style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "6px 0" }}>
-      <span>
-        <strong>{label}</strong>
-        <br />
-        <span className="muted" style={{ fontSize: "0.82rem" }}>{detail}</span>
-      </span>
-      <label className="checkbox" style={{ whiteSpace: "nowrap" }}>
-        <input type="checkbox" checked={on} disabled={busy} onChange={(e) => onChange(e.target.checked)} />{" "}
-        {on ? "On" : "Off"}
-      </label>
-    </li>
-  );
   return (
     <div className="card">
       <h2 className="card__title">Services</h2>
