@@ -317,12 +317,21 @@ export default function Settings() {
       </div>
 
       <div className="card">
-        <h2 className="card__title">Coming later</h2>
+        <h2 className="card__title">About &amp; source</h2>
         <p className="muted">
-          The big remaining piece is the <strong>Home Assistant add-on</strong> — one-click install
-          from an add-on repository, ingress sign-on and MQTT sensors. Also on the backlog:
-          cloud backup <em>destinations</em> (Google&nbsp;Drive / S3 / Backblaze, #15) and
-          entering the Paperless token in the UI (needs at-rest secret encryption first).
+          HA Finance Intelligence — a local-first, Home Assistant-first personal finance app.
+          Source code, issues and documentation:{" "}
+          <a
+            href="https://github.com/SpiritSLO-UK/HomeAssistant-expenses-analytics"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            github.com/SpiritSLO-UK/HomeAssistant-expenses-analytics
+          </a>.
+        </p>
+        <p className="muted" style={{ fontSize: "0.78rem" }}>
+          Licensed under Apache-2.0. Provided “as is”, without warranty, and not financial advice —
+          see the disclaimer above and the privacy / security docs. Built with the help of an AI assistant.
         </p>
       </div>
     </div>
