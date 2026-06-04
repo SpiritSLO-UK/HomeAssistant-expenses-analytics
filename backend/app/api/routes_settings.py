@@ -41,6 +41,18 @@ def supported_currencies() -> list[dict]:
     return settings_service.SUPPORTED_CURRENCIES
 
 
+@router.get("/countries")
+def supported_countries() -> list[dict]:
+    """ISO-3166-1 alpha-2 countries (code + name) for the vendor / trip country
+    pickers. Sorted by name; the "EU" pseudo-code is not a country, so it's omitted."""
+    from app.services import geo
+
+    return sorted(
+        ({"code": c, "name": n} for c, n in geo.COUNTRY_NAMES.items() if c != "EU"),
+        key=lambda x: x["name"],
+    )
+
+
 @router.get("/services")
 def services_status(db: Annotated[Session, Depends(get_db)]) -> dict:
     """Unified on/off + status for every service, for the Settings → Services panel

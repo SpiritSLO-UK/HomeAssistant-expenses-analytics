@@ -1668,6 +1668,16 @@ export function getSupportedCurrencies(): Promise<Currency[]> {
   return fetchJson<Currency[]>("api/settings/currencies");
 }
 
+export interface Country {
+  code: string; // ISO-3166-1 alpha-2
+  name: string;
+}
+
+// ISO countries (code + name) for the vendor / trip country pickers.
+export function getCountries(): Promise<Country[]> {
+  return fetchJson<Country[]>("api/settings/countries");
+}
+
 export function updateSettings(patch: Partial<AppSettings>): Promise<AppSettings & { recompute?: unknown }> {
   return fetchJson("api/settings", { method: "PUT", body: JSON.stringify(patch) });
 }
