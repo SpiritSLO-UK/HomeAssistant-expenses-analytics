@@ -78,7 +78,7 @@ class _Spec:
     cycle: int  # 0 is this month, 1 is last month, 2 is two months ago
     day: int  # day offset within the cycle (0..28)
     description: str
-    amount: Decimal  # signed; negative is spend
+    amount: Decimal  # signed amount (negative means money spent)
     currency: str = "GBP"
     vary: bool = False  # nudge spend a little per cycle so trends aren't flat
     business: bool = False
