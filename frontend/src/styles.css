@@ -985,3 +985,59 @@ code {
   border-radius: 6px;
   font-size: 0.95rem;
 }
+
+/* Spend-by-location world map (Dashboard GeoCard) */
+.worldmap {
+  width: 100%;
+  margin: 4px 0 14px;
+}
+.worldmap svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+/* var()/color-mix() only resolve in CSS, not in SVG presentation attributes,
+   so the theme-driven map fills live here. */
+.worldmap__ocean {
+  fill: var(--surface);
+}
+.worldmap__land {
+  fill: color-mix(in srgb, var(--muted) 20%, var(--surface));
+  stroke: var(--border);
+  stroke-width: 0.5px;
+}
+.worldmap circle {
+  stroke: var(--panel);
+  stroke-width: 1.5px;
+}
+.worldmap__point {
+  cursor: pointer;
+}
+.worldmap__point circle {
+  transition: fill-opacity 0.12s ease;
+}
+.worldmap__point:hover circle {
+  fill-opacity: 1;
+}
+.worldmap__point:focus {
+  outline: none;
+}
+.worldmap__point:focus-visible circle {
+  stroke: var(--text);
+  stroke-width: 2.5;
+}
+/* Legend row: a colour swatch matching the country's map point, then its label */
+.bars__legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.worldmap__swatch {
+  flex: 0 0 auto;
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+}
