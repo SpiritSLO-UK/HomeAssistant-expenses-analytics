@@ -37,7 +37,7 @@ def _unconfigure(monkeypatch):
 def test_status_not_configured(client, monkeypatch):
     _unconfigure(monkeypatch)
     assert client.get("/api/paperless/status").json() == {
-        "configured": False, "url": None, "token_present": False
+        "configured": False, "url": None, "url_source": None, "token_present": False
     }
 
 
@@ -47,6 +47,40 @@ def test_status_configured(client, monkeypatch):
     assert s["configured"] is True
     assert s["token_present"] is True
     assert s["url"] == "http://paperless.test"
+    assert s["url_source"] == "env"
+
+
+def test_url_from_settings_overrides_env(client, monkeypatch):
+    # Token from env, URL entered in Settings → configured, url_source "settings".
+    monkeypatch.setattr(env_settings, "paperless_url", None)
+    monkeypatch.setattr(env_settings, "paperless_token", "tok-123")
+    assert client.put("/api/settings", json={"paperless_url": "http://docs.local/"}).status_code == 200
+    s = client.get("/api/paperless/status").json()
+    assert s["configured"] is True
+    assert s["url"] == "http://docs.local"  # trailing slash trimmed
+    assert s["url_source"] == "settings"
+    # A non-http(s) value is rejected.
+    assert client.put("/api/settings", json={"paperless_url": "ftp://nope"}).status_code == 400
+    # "" clears it → back to the (absent) env fallback → not configured.
+    assert client.put("/api/settings", json={"paperless_url": ""}).status_code == 200
+    assert client.get("/api/paperless/status").json()["configured"] is False
+
+
+def test_test_connection(client, monkeypatch):
+    _configure(monkeypatch)
+
+    def fake_get(url, **kw):
+        assert url == "http://paperless.test/api/documents/"
+        assert kw["params"] == {"page_size": 1}
+        return _Resp(json_data={"results": []})
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    assert client.post("/api/paperless/test").json() == {"ok": True, "url": "http://paperless.test"}
+
+
+def test_test_connection_requires_config(client, monkeypatch):
+    _unconfigure(monkeypatch)
+    assert client.post("/api/paperless/test").status_code == 400
 
 
 def test_list_requires_config(client, monkeypatch):

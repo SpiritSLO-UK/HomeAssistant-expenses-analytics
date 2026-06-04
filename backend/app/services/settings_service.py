@@ -52,6 +52,10 @@ INVESTMENT_PRICE_SOURCE = "investment_price_source"
 # currency guess. Empty = no default (geo behaviour unchanged). Never overwrites a
 # manually-set country.
 DEFAULT_VENDOR_COUNTRY = "default_vendor_country"
+# Paperless-ngx base URL — editable in Settings → Integrations (non-secret), with
+# the HAFI_PAPERLESS_URL env var as fallback. The token stays env-only (a secret;
+# storing it in the DB needs at-rest encryption = deferred #15).
+PAPERLESS_URL = "paperless_url"
 
 FX_MODES = {"manual", "frankfurter"}
 INVESTMENT_PRICE_SOURCES = {"manual", "stooq", "alphavantage"}
@@ -96,6 +100,7 @@ def _defaults() -> dict[str, str]:
         CLOUD_AI_PRIVACY_DEFAULT: "normal",
         INVESTMENT_PRICE_SOURCE: "manual",
         DEFAULT_VENDOR_COUNTRY: "",
+        PAPERLESS_URL: "",
     }
 
 
@@ -159,6 +164,14 @@ def get_ocr_enabled(db: Session) -> bool:
     """Whether receipt OCR is allowed to run (Settings → Services). On by default;
     only an explicit ``"false"`` disables it (then receipts are entered manually)."""
     return get(db, OCR_ENABLED) != "false"
+
+
+def get_paperless_url(db: Session) -> str:
+    """The Paperless-ngx base URL: the Settings value if set, else the
+    HAFI_PAPERLESS_URL env var (fallback), else "". The token is never stored
+    here — it stays env-only (a secret)."""
+    stored = (get(db, PAPERLESS_URL) or "").strip()
+    return stored or (env_settings.paperless_url or "").strip()
 
 
 def get_default_vendor_country(db: Session) -> str | None:

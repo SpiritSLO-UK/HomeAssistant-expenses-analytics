@@ -1531,6 +1531,7 @@ export function deleteAssetLog(logId: number): Promise<void> {
 export interface PaperlessStatus {
   configured: boolean;
   url: string | null;
+  url_source: "settings" | "env" | null;
   token_present: boolean;
 }
 
@@ -1549,6 +1550,10 @@ export interface PaperlessImportResult {
 
 export function getPaperlessStatus(): Promise<PaperlessStatus> {
   return fetchJson<PaperlessStatus>("api/paperless/status");
+}
+
+export function testPaperlessConnection(): Promise<{ ok: boolean; url: string }> {
+  return fetchJson("api/paperless/test", { method: "POST" });
 }
 
 export function listPaperlessDocuments(query?: string, limit = 25): Promise<PaperlessDoc[]> {

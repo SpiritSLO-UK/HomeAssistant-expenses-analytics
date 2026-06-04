@@ -17,6 +17,8 @@ import {
   getDemoStatus,
   getMissingFx,
   getMqttStatus,
+  getPaperlessStatus,
+  testPaperlessConnection,
   getSecurityHealth,
   getSecurityStatus,
   getServices,
@@ -182,6 +184,8 @@ export default function Settings() {
       {me.data?.can_manage_settings && <LocationDefaultsCard onMessage={ok} onError={fail} />}
 
       {me.data?.can_manage_settings && <MqttCard onMessage={ok} onError={fail} />}
+
+      {me.data?.can_manage_settings && <IntegrationsCard onMessage={ok} onError={fail} />}
 
       {me.data?.can_manage_settings && <AiCard onMessage={ok} onError={fail} />}
 
@@ -687,6 +691,84 @@ function CurrencyFx({
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+function IntegrationsCard({
+  onMessage,
+  onError,
+}: Readonly<{
+  onMessage: (m: string) => void;
+  onError: (e: unknown) => void;
+}>) {
+  const qc = useQueryClient();
+  const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
+  const status = useQuery({ queryKey: ["paperless-status"], queryFn: getPaperlessStatus });
+  const [edited, setEdited] = useState<string | null>(null);
+  // The stored Settings URL ("" when relying on the env fallback); local edits override.
+  const stored = settings.data?.paperless_url ?? "";
+  const value = edited ?? stored;
+
+  const save = useMutation({
+    mutationFn: (u: string) => updateSettings({ paperless_url: u }),
+    onSuccess: () => {
+      onMessage("Paperless URL saved.");
+      setEdited(null);
+      qc.invalidateQueries({ queryKey: ["settings"] });
+      qc.invalidateQueries({ queryKey: ["paperless-status"] });
+    },
+    onError,
+  });
+
+  const test = useMutation({
+    mutationFn: testPaperlessConnection,
+    onSuccess: (r) => onMessage(`Connected to Paperless at ${r.url}.`),
+    onError,
+  });
+
+  const s = status.data;
+  return (
+    <div className="card">
+      <h2 className="card__title">Integrations · Paperless-ngx</h2>
+      <p className="muted" style={{ marginTop: 0 }}>
+        Pull documents from your own Paperless-ngx into the Receipts pipeline. One-directional and
+        outbound only — Paperless never receives your finance data.
+      </p>
+
+      <div className="form-row" style={{ alignItems: "flex-end", gap: 10, flexWrap: "wrap" }}>
+        <label style={{ flex: "1 1 320px" }}>
+          Paperless URL{" "}
+          <input
+            type="url"
+            placeholder="http(s)://paperless.local:8000"
+            value={value}
+            onChange={(e) => setEdited(e.target.value)}
+            style={{ width: "100%" }}
+          />
+        </label>
+        <button className="btn" disabled={save.isPending || value.trim() === stored} onClick={() => save.mutate(value.trim())}>
+          Save URL
+        </button>
+        <button className="btn btn--ghost" disabled={test.isPending || !s?.configured} onClick={() => test.mutate()}>
+          {test.isPending ? "Testing…" : "Test connection"}
+        </button>
+      </div>
+
+      {s && (
+        <ul className="kv" style={{ marginTop: 10 }}>
+          <li><span>Status</span><span>{s.configured ? "✅ Configured" : "⚠️ Not configured"}</span></li>
+          <li><span>URL in use</span><span>{s.url ? `${s.url} (${s.url_source})` : "—"}</span></li>
+          <li><span>API token</span><span>{s.token_present ? "✅ Set (via env)" : "❌ Missing"}</span></li>
+        </ul>
+      )}
+
+      <p className="muted" style={{ fontSize: "0.8rem" }}>
+        The URL is saved here. The <strong>API token</strong> is a secret, so it stays an environment
+        variable: set <code>HAFI_PAPERLESS_TOKEN</code> (and optionally <code>HAFI_PAPERLESS_URL</code>)
+        in your <code>docker-compose.yml</code> or the add-on options, then restart. Leaving the URL blank
+        here falls back to <code>HAFI_PAPERLESS_URL</code>.
+      </p>
     </div>
   );
 }
