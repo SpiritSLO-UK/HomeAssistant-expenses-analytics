@@ -299,19 +299,16 @@ def _is_last_owner(db: Session, target: User) -> bool:
     )
 
 
-def update_user(
+def _validate_user_update(
     db: Session,
     *,
     actor: User,
     target: User,
-    role: str | None = None,
-    new_status: str | None = None,
-    display_name: str | None = None,
-    email: str | None = None,
-    can_manage_settings: bool | None = None,
-) -> User:
-    """Apply an owner-initiated change to ``target``. Raises ``ValueError`` on a
-    bad value or if the change would strip the household's last active owner."""
+    role: str | None,
+    new_status: str | None,
+) -> None:
+    """Guard an owner-initiated update: bad enum value, self-disable, or stripping
+    the household's last active owner. Raises ``ValueError``; never mutates."""
     if role is not None and role not in ROLES:
         raise ValueError(f"role must be one of {list(ROLES)}")
     if new_status is not None and new_status not in STATUSES:
@@ -330,6 +327,18 @@ def update_user(
     if _is_last_owner(db, target) and not remains_active_owner:
         raise ValueError("Cannot demote, disable, or remove the last active owner.")
 
+
+def _apply_user_changes(
+    target: User,
+    *,
+    role: str | None,
+    new_status: str | None,
+    display_name: str | None,
+    email: str | None,
+    can_manage_settings: bool | None,
+) -> dict:
+    """Apply the supplied fields to ``target`` and return the audited before/after
+    changes (only role/status/can_manage_settings are audited, matching the original)."""
     changes: dict = {}
     if role is not None and role != target.role:
         changes["role"] = [target.role, role]
@@ -345,6 +354,34 @@ def update_user(
     if can_manage_settings is not None and can_manage_settings != target.can_manage_settings:
         changes["can_manage_settings"] = [target.can_manage_settings, can_manage_settings]
         target.can_manage_settings = can_manage_settings
+    return changes
+
+
+def update_user(
+    db: Session,
+    *,
+    actor: User,
+    target: User,
+    role: str | None = None,
+    new_status: str | None = None,
+    display_name: str | None = None,
+    email: str | None = None,
+    can_manage_settings: bool | None = None,
+) -> User:
+    """Apply an owner-initiated change to ``target``. Raises ``ValueError`` on a
+    bad value or if the change would strip the household's last active owner."""
+    _validate_user_update(
+        db, actor=actor, target=target, role=role, new_status=new_status
+    )
+
+    changes = _apply_user_changes(
+        target,
+        role=role,
+        new_status=new_status,
+        display_name=display_name,
+        email=email,
+        can_manage_settings=can_manage_settings,
+    )
 
     audit_service.record(
         db,

@@ -96,13 +96,8 @@ def services_status(db: Annotated[Session, Depends(get_db)]) -> dict:
     }
 
 
-@router.put("", responses={400: {"description": "Bad request"}})
-def update_settings(
-    payload: SettingsUpdate,
-    db: Annotated[Session, Depends(get_db)],
-    _user: Annotated[User, Depends(auth_service.require_settings_manager)],
-) -> dict:
-    recompute = None
+def _apply_fx_and_receipt(db: Session, payload: SettingsUpdate) -> None:
+    """Validate + persist the FX mode and receipt-match mode fields."""
     if payload.fx_mode is not None:
         if payload.fx_mode not in settings_service.FX_MODES:
             raise HTTPException(status_code=400, detail="fx_mode must be 'manual' or 'frankfurter'")
@@ -113,6 +108,9 @@ def update_settings(
             raise HTTPException(status_code=400, detail="receipt_match_mode must be 'suggest' or 'auto'")
         settings_service.set_value(db, settings_service.RECEIPT_MATCH_MODE, payload.receipt_match_mode)
 
+
+def _apply_ai_settings(db: Session, payload: SettingsUpdate) -> None:
+    """Validate + persist the AI fields (privacy mode, provider, base URL, model)."""
     if payload.privacy_mode is not None:
         if payload.privacy_mode not in settings_service.PRIVACY_MODES:
             raise HTTPException(
@@ -135,6 +133,9 @@ def update_settings(
     if payload.ai_model is not None:
         settings_service.set_value(db, settings_service.AI_MODEL, payload.ai_model.strip())
 
+
+def _apply_ocr_and_price_source(db: Session, payload: SettingsUpdate) -> None:
+    """Validate + persist the OCR toggle and investment price-source fields."""
     if payload.ocr_enabled is not None:
         settings_service.set_value(db, settings_service.OCR_ENABLED, "true" if payload.ocr_enabled else "false")
 
@@ -146,30 +147,54 @@ def update_settings(
             )
         settings_service.set_value(db, settings_service.INVESTMENT_PRICE_SOURCE, payload.investment_price_source)
 
-    if payload.log_level is not None:
-        level = payload.log_level.strip().upper()
-        if level not in settings_service.LOG_LEVELS:
-            raise HTTPException(
-                status_code=400,
-                detail=f"log_level must be one of {sorted(settings_service.LOG_LEVELS)}",
-            )
-        settings_service.set_value(db, settings_service.LOG_LEVEL, level)
-        set_log_level(level)  # take effect immediately
 
-    if payload.base_currency is not None:
-        new_base = payload.base_currency.strip().upper()
-        old_base = settings_service.get_base_currency(db)
-        # Must be one of the curated choices (the Settings dropdown). The current
-        # base is always allowed so an unusual legacy value can never lock you out.
-        if new_base not in settings_service.SUPPORTED_CURRENCY_CODES and new_base != old_base:
-            raise HTTPException(
-                status_code=400,
-                detail=f"base_currency must be one of {sorted(settings_service.SUPPORTED_CURRENCY_CODES)}",
-            )
-        settings_service.set_value(db, settings_service.BASE_CURRENCY, new_base)
-        if new_base != old_base:
-            # Re-convert everything against the new base (backlog #29).
-            recompute = fx_service.recompute_all(db, new_base, settings_service.get_fx_mode(db))
+def _apply_log_level(db: Session, payload: SettingsUpdate) -> None:
+    """Validate + persist the log level and apply it immediately."""
+    if payload.log_level is None:
+        return
+    level = payload.log_level.strip().upper()
+    if level not in settings_service.LOG_LEVELS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"log_level must be one of {sorted(settings_service.LOG_LEVELS)}",
+        )
+    settings_service.set_value(db, settings_service.LOG_LEVEL, level)
+    set_log_level(level)  # take effect immediately
+
+
+def _apply_base_currency(db: Session, payload: SettingsUpdate) -> dict | None:
+    """Validate + persist the base currency; recompute conversions when it changes.
+
+    Returns the recompute result when the base actually changed, else None."""
+    if payload.base_currency is None:
+        return None
+    new_base = payload.base_currency.strip().upper()
+    old_base = settings_service.get_base_currency(db)
+    # Must be one of the curated choices (the Settings dropdown). The current
+    # base is always allowed so an unusual legacy value can never lock you out.
+    if new_base not in settings_service.SUPPORTED_CURRENCY_CODES and new_base != old_base:
+        raise HTTPException(
+            status_code=400,
+            detail=f"base_currency must be one of {sorted(settings_service.SUPPORTED_CURRENCY_CODES)}",
+        )
+    settings_service.set_value(db, settings_service.BASE_CURRENCY, new_base)
+    if new_base != old_base:
+        # Re-convert everything against the new base (backlog #29).
+        return fx_service.recompute_all(db, new_base, settings_service.get_fx_mode(db))
+    return None
+
+
+@router.put("", responses={400: {"description": "Bad request"}})
+def update_settings(
+    payload: SettingsUpdate,
+    db: Annotated[Session, Depends(get_db)],
+    _user: Annotated[User, Depends(auth_service.require_settings_manager)],
+) -> dict:
+    _apply_fx_and_receipt(db, payload)
+    _apply_ai_settings(db, payload)
+    _apply_ocr_and_price_source(db, payload)
+    _apply_log_level(db, payload)
+    recompute = _apply_base_currency(db, payload)
 
     result = settings_service.get_all(db)
     if recompute is not None:

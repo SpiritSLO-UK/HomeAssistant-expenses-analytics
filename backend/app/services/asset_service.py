@@ -168,57 +168,61 @@ def _is_full(value: bool | None) -> bool:
     return value is None or bool(value)
 
 
-def car_stats(db: Session, asset: Asset, logs: list[AssetLog] | None = None) -> dict:
-    """Consumption + cost stats for a car, computed tank-to-tank between full fills."""
-    logs = logs if logs is not None else list_logs(db, asset.id)
-    unit = asset.distance_unit or "mi"
-    # One consistent system, never a mix: imperial = miles + gallons + MPG;
-    # metric = km + litres + L/100km. Driven by the asset's distance unit.
-    imperial = unit == "mi"
-    refuels = sorted(
-        [lg for lg in logs if lg.kind == "refuel" and lg.odometer is not None and lg.litres is not None],
-        key=lambda lg: (Decimal(lg.odometer), lg.id),
-    )
+def _refuel_segment(prev: AssetLog, cur: AssetLog, unit: str, imperial: bool) -> dict | None:
+    """One tank-to-tank segment between two *full* fills, or None to skip it.
 
-    segments: list[dict] = []
-    tot_km = Decimal("0")
-    tot_litres = Decimal("0")
-    for prev, cur in zip(refuels, refuels[1:], strict=False):
-        if not (_is_full(prev.is_full_tank) and _is_full(cur.is_full_tank)):
-            continue
-        dist = Decimal(cur.odometer) - Decimal(prev.odometer)
-        litres = Decimal(cur.litres)
-        if dist <= 0 or litres <= 0:
-            continue
-        dist_km = dist if unit == "km" else dist * MI_PER_KM
-        dist_mi = dist if unit == "mi" else dist / MI_PER_KM
-        tot_km += dist_km
-        tot_litres += litres
-        seg_l_per_100km = round(float(litres / dist_km * 100), 2)
-        seg_mpg = round(float(dist_mi / (litres / IMPERIAL_GALLON_L)), 1)
-        segments.append({
-            "date": cur.log_date.isoformat(),
-            "from_odometer": str(prev.odometer),
-            "to_odometer": str(cur.odometer),
-            "distance": str(dist),
-            "litres": str(litres),
-            "l_per_100km": seg_l_per_100km,
-            "mpg": seg_mpg,
-            # Single-system fields the UI displays (no mix):
-            "economy": seg_mpg if imperial else seg_l_per_100km,
-            "fuel": str((litres / IMPERIAL_GALLON_L).quantize(TWO_DP)) if imperial else str(litres),
-            "cost": str(cur.cost) if cur.cost is not None else None,
-        })
+    Skips partial tanks at either end and non-positive distance/litres, exactly
+    as the inline loop did."""
+    if not (_is_full(prev.is_full_tank) and _is_full(cur.is_full_tank)):
+        return None
+    dist = Decimal(cur.odometer) - Decimal(prev.odometer)
+    litres = Decimal(cur.litres)
+    if dist <= 0 or litres <= 0:
+        return None
+    dist_km = dist if unit == "km" else dist * MI_PER_KM
+    dist_mi = dist if unit == "mi" else dist / MI_PER_KM
+    seg_l_per_100km = round(float(litres / dist_km * 100), 2)
+    seg_mpg = round(float(dist_mi / (litres / IMPERIAL_GALLON_L)), 1)
+    return {
+        "_dist_km": dist_km,  # accumulator inputs, stripped before the result
+        "_litres": litres,
+        "date": cur.log_date.isoformat(),
+        "from_odometer": str(prev.odometer),
+        "to_odometer": str(cur.odometer),
+        "distance": str(dist),
+        "litres": str(litres),
+        "l_per_100km": seg_l_per_100km,
+        "mpg": seg_mpg,
+        # Single-system fields the UI displays (no mix):
+        "economy": seg_mpg if imperial else seg_l_per_100km,
+        "fuel": str((litres / IMPERIAL_GALLON_L).quantize(TWO_DP)) if imperial else str(litres),
+        "cost": str(cur.cost) if cur.cost is not None else None,
+    }
 
+
+def _car_averages(tot_km: Decimal, tot_litres: Decimal) -> tuple[float | None, float | None]:
+    """Average L/100km and MPG over all counted segments, or None when no distance."""
     avg_l_per_100km = round(float(tot_litres / tot_km * 100), 2) if tot_km > 0 else None
     avg_mpg = (
         round(float((tot_km / MI_PER_KM) / (tot_litres / IMPERIAL_GALLON_L)), 1)
         if tot_km > 0 and tot_litres > 0
         else None
     )
-    fuel_cost = sum(
-        (Decimal(lg.cost) for lg in logs if lg.kind == "refuel" and lg.cost is not None), Decimal("0")
-    ).quantize(TWO_DP)
+    return avg_l_per_100km, avg_mpg
+
+
+def _car_result(
+    *,
+    unit: str,
+    imperial: bool,
+    refuels: list[AssetLog],
+    segments: list[dict],
+    tot_km: Decimal,
+    tot_litres: Decimal,
+    fuel_cost: Decimal,
+) -> dict:
+    """Assemble the car-stats response dict from the accumulated totals/segments."""
+    avg_l_per_100km, avg_mpg = _car_averages(tot_km, tot_litres)
     last = segments[-1] if segments else None
     litres_str = str(tot_litres) if tot_litres > 0 else "0"
     last_economy = None
@@ -246,7 +250,86 @@ def car_stats(db: Session, asset: Asset, logs: list[AssetLog] | None = None) -> 
     }
 
 
+def car_stats(db: Session, asset: Asset, logs: list[AssetLog] | None = None) -> dict:
+    """Consumption + cost stats for a car, computed tank-to-tank between full fills."""
+    logs = logs if logs is not None else list_logs(db, asset.id)
+    unit = asset.distance_unit or "mi"
+    # One consistent system, never a mix: imperial = miles + gallons + MPG;
+    # metric = km + litres + L/100km. Driven by the asset's distance unit.
+    imperial = unit == "mi"
+    refuels = sorted(
+        [lg for lg in logs if lg.kind == "refuel" and lg.odometer is not None and lg.litres is not None],
+        key=lambda lg: (Decimal(lg.odometer), lg.id),
+    )
+
+    segments: list[dict] = []
+    tot_km = Decimal("0")
+    tot_litres = Decimal("0")
+    for prev, cur in zip(refuels, refuels[1:], strict=False):
+        seg = _refuel_segment(prev, cur, unit, imperial)
+        if seg is None:
+            continue
+        tot_km += seg.pop("_dist_km")
+        tot_litres += seg.pop("_litres")
+        segments.append(seg)
+
+    fuel_cost = sum(
+        (Decimal(lg.cost) for lg in logs if lg.kind == "refuel" and lg.cost is not None), Decimal("0")
+    ).quantize(TWO_DP)
+    return _car_result(
+        unit=unit,
+        imperial=imperial,
+        refuels=refuels,
+        segments=segments,
+        tot_km=tot_km,
+        tot_litres=tot_litres,
+        fuel_cost=fuel_cost,
+    )
+
+
 # --- Home utility readings ---------------------------------------------------
+
+
+def _reading_segment(prev: AssetLog, cur: AssetLog) -> dict | None:
+    """One usage segment between consecutive readings of a meter, or None for a
+    meter reset/rollover (usage < 0), which must not be counted."""
+    usage = Decimal(cur.reading) - Decimal(prev.reading)
+    if usage < 0:  # meter reset / new meter — don't count
+        return None
+    days = (cur.log_date - prev.log_date).days
+    return {
+        "_usage": usage,  # accumulator inputs, stripped before the result
+        "date": cur.log_date.isoformat(),
+        "usage": str(usage),
+        "days": days,
+        "avg_per_day": round(float(usage / days), 3) if days > 0 else None,
+        "cost": str(cur.cost) if cur.cost is not None else None,
+    }
+
+
+def _meter_stats(meter: str, rs: list[AssetLog]) -> dict:
+    """Aggregate one meter's consecutive readings into a usage/cost summary."""
+    unit = next((r.unit for r in rs if r.unit), None)
+    segments = []
+    total_usage = Decimal("0")
+    total_cost = Decimal("0")
+    for prev, cur in zip(rs, rs[1:], strict=False):
+        seg = _reading_segment(prev, cur)
+        if seg is None:
+            continue
+        total_usage += seg.pop("_usage")
+        if cur.cost is not None:
+            total_cost += Decimal(cur.cost)
+        segments.append(seg)
+    return {
+        "meter": meter,
+        "unit": unit,
+        "latest_reading": str(rs[-1].reading),
+        "reading_count": len(rs),
+        "total_usage": str(total_usage),
+        "total_cost": str(total_cost.quantize(TWO_DP)),
+        "segments": segments,
+    }
 
 
 def home_stats(db: Session, asset: Asset, logs: list[AssetLog] | None = None) -> dict:
@@ -261,36 +344,7 @@ def home_stats(db: Session, asset: Asset, logs: list[AssetLog] | None = None) ->
     for lg in sorted(readings, key=lambda lg: (lg.log_date, lg.id)):
         by_meter.setdefault(lg.meter, []).append(lg)
 
-    meters = []
-    for meter, rs in by_meter.items():
-        unit = next((r.unit for r in rs if r.unit), None)
-        segments = []
-        total_usage = Decimal("0")
-        total_cost = Decimal("0")
-        for prev, cur in zip(rs, rs[1:], strict=False):
-            usage = Decimal(cur.reading) - Decimal(prev.reading)
-            if usage < 0:  # meter reset / new meter — don't count
-                continue
-            days = (cur.log_date - prev.log_date).days
-            total_usage += usage
-            if cur.cost is not None:
-                total_cost += Decimal(cur.cost)
-            segments.append({
-                "date": cur.log_date.isoformat(),
-                "usage": str(usage),
-                "days": days,
-                "avg_per_day": round(float(usage / days), 3) if days > 0 else None,
-                "cost": str(cur.cost) if cur.cost is not None else None,
-            })
-        meters.append({
-            "meter": meter,
-            "unit": unit,
-            "latest_reading": str(rs[-1].reading),
-            "reading_count": len(rs),
-            "total_usage": str(total_usage),
-            "total_cost": str(total_cost.quantize(TWO_DP)),
-            "segments": segments,
-        })
+    meters = [_meter_stats(meter, rs) for meter, rs in by_meter.items()]
     return {"meters": meters}
 
 
