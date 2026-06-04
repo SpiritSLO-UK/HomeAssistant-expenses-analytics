@@ -106,8 +106,8 @@ def _detect_group(db: Session, items: list[Transaction], min_occurrences: int) -
     if freq is None:
         return None
 
-    amounts = [abs(Decimal(t.base_amount)) for t in items]
-    mean_amt = sum(amounts) / len(amounts)
+    amounts = [abs(Decimal(t.base_amount or 0)) for t in items]
+    mean_amt = sum(amounts, Decimal("0")) / len(amounts)
     if mean_amt == 0:
         return None
     max_dev = max(abs(a - mean_amt) for a in amounts) / mean_amt

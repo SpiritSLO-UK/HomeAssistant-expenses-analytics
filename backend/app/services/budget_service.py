@@ -79,11 +79,11 @@ def _txn_contribution(txn: Transaction, budget: Budget) -> Decimal | None:
     doesn't count (mirrors total/category/project, split-aware)."""
     if budget.category_id is None and budget.project_id is None:
         # Total budget: the whole transaction counts.
-        return -txn.base_amount
+        return -(txn.base_amount or Decimal("0"))
     if txn.is_split and txn.splits:
         return _split_contribution(txn, budget)
     if _txn_matches(txn, budget):
-        return -txn.base_amount
+        return -(txn.base_amount or Decimal("0"))
     return None
 
 

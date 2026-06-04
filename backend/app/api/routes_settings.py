@@ -240,7 +240,7 @@ def update_settings(
     _apply_log_level(db, payload)
     recompute = _apply_base_currency(db, payload)
 
-    result = settings_service.get_all(db)
+    result: dict[str, object] = {**settings_service.get_all(db)}
     if recompute is not None:
         result["recompute"] = recompute
     return result

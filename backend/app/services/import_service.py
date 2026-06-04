@@ -135,11 +135,13 @@ def create_import(
         warnings.append(f"This file was already imported (statement #{already.id}).")
 
     # Existing per-transaction hashes for this account.
-    existing_hashes = set(
-        db.scalars(
+    existing_hashes = {
+        h
+        for h in db.scalars(
             select(Transaction.source_hash).where(Transaction.account_id == account.id)
         ).all()
-    )
+        if h is not None
+    }
 
     new_count = 0
     dup_count = 0
@@ -249,17 +251,21 @@ def confirm_import(db: Session, import_id: int) -> dict:
         raise ImportFailed(f"Parse failed on confirm: {exc}") from exc
 
     account = db.get(Account, statement.account_id)
+    if account is None:
+        raise ImportFailed(f"Account {statement.account_id} for import {import_id} no longer exists")
     household = get_or_create_default_household(db)
     # Categories must exist for keyword/vendor categorisation (spec §15.1).
     category_service.ensure_default_categories(db)
     base_currency = settings_service.get_base_currency(db)
     fx_mode = settings_service.get_fx_mode(db)
 
-    existing_hashes = set(
-        db.scalars(
+    existing_hashes = {
+        h
+        for h in db.scalars(
             select(Transaction.source_hash).where(Transaction.account_id == account.id)
         ).all()
-    )
+        if h is not None
+    }
 
     new_count = 0
     dup_count = 0

@@ -73,7 +73,7 @@ def by_currency(db: Session, *, account_ids: set[int] | None = None) -> dict:
             {"original": Decimal("0.00"), "base": Decimal("0.00"), "count": 0, "dates": []},
         )
         g["original"] += -t.amount       # signed; negative = debit → positive spend
-        g["base"] += -t.base_amount
+        g["base"] += -(t.base_amount or Decimal("0"))
         g["count"] += 1
         g["dates"].append(t.transaction_date)
 
@@ -102,7 +102,7 @@ def _trip_txn(t: Transaction) -> dict:
         "description": t.merchant_raw or t.description_raw,
         "amount": str(-t.amount),
         "currency": t.currency,
-        "base_amount": str(-t.base_amount),
+        "base_amount": str(-(t.base_amount or Decimal("0"))),
     }
 
 
@@ -116,7 +116,7 @@ def detect_trips(
     current: dict | None = None
     prev_date = None
     for t in _foreign_spend(db, account_ids):
-        if current is None or (t.transaction_date - prev_date).days > gap_days:
+        if current is None or prev_date is None or (t.transaction_date - prev_date).days > gap_days:
             current = {
                 "transaction_ids": [],
                 "transactions": [],
@@ -129,7 +129,7 @@ def detect_trips(
         current["transaction_ids"].append(t.id)
         current["transactions"].append(_trip_txn(t))
         current["currencies"].add(t.currency)
-        current["base_total"] += -t.base_amount
+        current["base_total"] += -(t.base_amount or Decimal("0"))
         current["last"] = t.transaction_date
         prev_date = t.transaction_date
 

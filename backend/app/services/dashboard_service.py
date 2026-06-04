@@ -121,7 +121,7 @@ def category_breakdown(db: Session, ref: date, *, account_ids: set[int] | None =
                 totals[split.category_id] += -base
                 counts[split.category_id] += 1
         else:
-            totals[txn.category_id] += -txn.base_amount
+            totals[txn.category_id] += -(txn.base_amount or Decimal("0"))
             counts[txn.category_id] += 1
 
     cats = {c.id: c for c in db.scalars(select(Category)).all()}
@@ -147,7 +147,7 @@ def vendor_breakdown(db: Session, ref: date, limit: int = 10, *, account_ids: se
             Transaction.merchant_id,
             Vendor.canonical_name,
             func.sum(-Transaction.base_amount).label("total"),
-            func.count().label("count"),
+            func.count().label("txn_count"),
         )
         .join(Vendor, Vendor.id == Transaction.merchant_id, isouter=True)
         .where(
@@ -169,7 +169,7 @@ def vendor_breakdown(db: Session, ref: date, limit: int = 10, *, account_ids: se
             "vendor_id": r.merchant_id,
             "name": r.canonical_name or "Unknown",
             "total": str(r.total),
-            "count": int(r.count),
+            "count": int(r.txn_count),
         }
         for r in rows
     ]

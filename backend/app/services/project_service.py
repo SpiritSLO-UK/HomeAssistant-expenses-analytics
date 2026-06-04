@@ -121,8 +121,8 @@ def summary(db: Session, project: Project, *, account_ids: set[int] | None = Non
     timeline, and budget progress when the project has a budget."""
     spent, by_cat, by_vendor, count, first, last = _accumulate(db, project.id, account_ids=account_ids)
 
-    cats = {c.id: c.name for c in db.scalars(select(Category)).all()}
-    vendors = {v.id: v.canonical_name for v in db.scalars(select(Vendor)).all()}
+    cats: dict[int | None, str] = {c.id: c.name for c in db.scalars(select(Category)).all()}
+    vendors: dict[int | None, str] = {v.id: v.canonical_name for v in db.scalars(select(Vendor)).all()}
 
     return {
         "project_id": project.id,
