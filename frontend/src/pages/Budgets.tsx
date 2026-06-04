@@ -127,10 +127,10 @@ function BudgetRow({
 }>) {
   const [open, setOpen] = useState(false);
   const colour = STATUS_COLOUR[b.status] ?? "#3a9b5c";
-  const scope =
-    b.category_id == null
-    ? (b.project_id == null ? "All spending" : "Project")
-    : (categoryName ?? "Category");
+  const noCategoryScope = b.project_id == null ? "All spending" : "Project";
+  const scope = b.category_id == null ? noCategoryScope : (categoryName ?? "Category");
+  const warnOrOnTrack = b.status === "warn" ? "near limit" : "on track";
+  const statusLabel = b.status === "over" ? "over budget" : warnOrOnTrack;
   const txns = useQuery({
     queryKey: ["budget-txns", b.budget_id, month, annual],
     queryFn: () => getBudgetTransactions(b.budget_id, { month, annual }),
@@ -147,7 +147,7 @@ function BudgetRow({
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span className="tag" style={{ background: colour, color: "#fff" }}>
-            {b.status === "over" ? "over budget" : b.status === "warn" ? "near limit" : "on track"}
+            {statusLabel}
           </span>
           <button className="link-btn" onClick={onDelete}>delete</button>
         </div>
@@ -167,11 +167,13 @@ function BudgetRow({
       </div>
       {open && (
         <div style={{ marginTop: 8, paddingLeft: 12 }}>
-          {txns.isLoading || !txns.data ? (
+          {(txns.isLoading || !txns.data) && (
             <p className="muted" style={{ margin: 0 }}>Loading…</p>
-          ) : txns.data.length === 0 ? (
+          )}
+          {txns.data && txns.data.length === 0 && (
             <p className="muted" style={{ margin: 0 }}>No transactions counted toward this budget {annual ? "this year" : "this period"}.</p>
-          ) : (
+          )}
+          {txns.data && txns.data.length > 0 && (
             <ul className="kv" style={{ margin: 0, maxWidth: 560 }}>
               {txns.data.map((t) => (
                 <li key={t.id}>

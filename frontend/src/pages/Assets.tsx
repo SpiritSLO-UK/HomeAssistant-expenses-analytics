@@ -362,6 +362,15 @@ function LogHistory({ asset, logs, onChange, onError }: Readonly<{
         <tbody>
           {rows.map((lg) => {
             const econ = lg.odometer == null ? undefined : econByOdo.get(lg.odometer);
+            const detail =
+              lg.kind === "reading" ? (
+                <>
+                  <span style={{ textTransform: "capitalize" }}>{lg.meter}</span>: {lg.reading}
+                  {lg.unit ? ` ${lg.unit}` : ""}
+                </>
+              ) : (
+                lg.note ?? <span className="muted">—</span>
+              );
             return (
               <tr key={lg.id}>
                 <td style={{ whiteSpace: "nowrap" }}>{lg.log_date}</td>
@@ -373,13 +382,8 @@ function LogHistory({ asset, logs, onChange, onError }: Readonly<{
                       {lg.is_full_tank === false && <span className="muted"> · partial</span>}
                       {econ != null && <span className="amt--pos"> · {econ} {economyUnit}</span>}
                     </>
-                  ) : lg.kind === "reading" ? (
-                    <>
-                      <span style={{ textTransform: "capitalize" }}>{lg.meter}</span>: {lg.reading}
-                      {lg.unit ? ` ${lg.unit}` : ""}
-                    </>
                   ) : (
-                    lg.note ?? <span className="muted">—</span>
+                    detail
                   )}
                 </td>
                 <td style={{ whiteSpace: "nowrap" }}>{lg.cost == null ? "—" : gbp(lg.cost)}</td>

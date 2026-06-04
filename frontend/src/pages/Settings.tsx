@@ -537,11 +537,10 @@ function CurrencyFx({
             </span>
           </span>
           <button className="btn btn--sm" disabled={backfill.isPending} onClick={() => backfill.mutate()}>
-            {backfill.isPending
-              ? "Syncing…"
-              : mode === "frankfurter"
-                ? "Sync from Frankfurter"
-                : "Fill from manual rates"}
+            {(() => {
+              if (backfill.isPending) return "Syncing…";
+              return mode === "frankfurter" ? "Sync from Frankfurter" : "Fill from manual rates";
+            })()}
           </button>
         </div>
       </div>
@@ -912,8 +911,16 @@ function SecurityHealthCard({ onError }: Readonly<{ onError: (e: unknown) => voi
   if (me.data && !isAdmin) return null; // owner-only panel
 
   const checks = health.data?.checks ?? [];
-  const icon = (s: string) => (s === "warn" ? "⚠️" : s === "info" ? "ℹ️" : "✅");
-  const colour = (s: string) => (s === "warn" ? "#e05555" : s === "info" ? "#e0a800" : "#3aa55a");
+  const icon = (s: string) => {
+    if (s === "warn") return "⚠️";
+    if (s === "info") return "ℹ️";
+    return "✅";
+  };
+  const colour = (s: string) => {
+    if (s === "warn") return "#e05555";
+    if (s === "info") return "#e0a800";
+    return "#3aa55a";
+  };
 
   return (
     <div className="card">
@@ -1376,7 +1383,8 @@ function RetentionPlanView({ plan, types }: Readonly<{ plan: RetentionPlan; type
               <span>
                 {p.archive_due > 0 ? `${p.archive_due} to archive` : ""}
                 {p.archive_due > 0 && p.purge_due > 0 ? " · " : ""}
-                {p.purge_due > 0 ? `${p.purge_due} to purge${p.auto_purge ? " (auto)" : ""}` : ""}
+                {p.purge_due > 0 ? `${p.purge_due} to purge` : ""}
+                {p.purge_due > 0 && p.auto_purge ? " (auto)" : ""}
               </span>
             </li>
           ))}

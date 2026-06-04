@@ -18,7 +18,11 @@ function today(): string {
 
 function BudgetBars({ budgets, base }: Readonly<{ budgets: ChildBudgetStatus[]; base: string }>) {
   if (budgets.length === 0) return <p className="muted">No budgets set yet.</p>;
-  const colour = (s: string) => (s === "over" ? "#e05555" : s === "warn" ? "#e0a800" : "#3aa55a");
+  const colour = (s: string) => {
+    if (s === "over") return "#e05555";
+    if (s === "warn") return "#e0a800";
+    return "#3aa55a";
+  };
   return (
     <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 12 }}>
       {budgets.map((b) => (
@@ -242,12 +246,13 @@ function ParentManager() {
 export default function Allowance() {
   const me = useQuery({ queryKey: ["me"], queryFn: getMe });
   const isChild = me.data?.role === "child";
+  const childOrParent = isChild ? <ChildHome /> : <ParentManager />;
   return (
     <div className="page">
       <div className="page__head">
         <h1 className="page__title">{isChild ? "My money" : "Allowance"}</h1>
       </div>
-      {me.isLoading ? <p className="muted">Loading…</p> : isChild ? <ChildHome /> : <ParentManager />}
+      {me.isLoading ? <p className="muted">Loading…</p> : childOrParent}
     </div>
   );
 }

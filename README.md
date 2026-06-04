@@ -1,7 +1,8 @@
 # HA Finance Intelligence
 
 [![CI](https://github.com/SpiritSLO-UK/HomeAssistant-expenses-analytics/actions/workflows/ci.yml/badge.svg)](https://github.com/SpiritSLO-UK/HomeAssistant-expenses-analytics/actions/workflows/ci.yml)
-[![Quality gate](https://sonarcloud.io/api/project_badges/quality_gate?project=SpiritSLO-UK_HomeAssistant-expenses-analytics&token=e5e0074c931f15bd6f1a4e8d4a52c336aa817daa)](https://sonarcloud.io/summary/new_code?id=SpiritSLO-UK_HomeAssistant-expenses-analytics)
+
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=SpiritSLO-UK_HomeAssistant-expenses-analytics&metric=alert_status&token=e5e0074c931f15bd6f1a4e8d4a52c336aa817daa)](https://sonarcloud.io/summary/new_code?id=SpiritSLO-UK_HomeAssistant-expenses-analytics)
 
 A **local-first, Home Assistant-first personal finance app**. Import bank
 statements, categorise transactions (rules + a vendor/category library), split
