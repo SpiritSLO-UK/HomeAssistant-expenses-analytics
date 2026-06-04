@@ -35,13 +35,13 @@ def list_rules(db: Annotated[Session, Depends(get_db)]) -> list[Rule]:
     return rule_service.list_rules(db)
 
 
-@router.post("", response_model=RuleOut, status_code=201)
+@router.post("", response_model=RuleOut, status_code=201, responses={400: {"description": "Bad request"}})
 def create_rule(payload: RuleCreate, db: Annotated[Session, Depends(get_db)]) -> Rule:
     _validate(payload.condition_type, payload.action_type)
     return rule_service.create_rule(db, payload.model_dump(exclude_unset=True))
 
 
-@router.post("/test")
+@router.post("/test", responses={400: {"description": "Bad request"}})
 def test_rule(payload: RuleTestRequest, db: Annotated[Session, Depends(get_db)]) -> dict:
     _validate(payload.condition_type, None)
     return rule_service.test_rule(db, payload.condition_type, payload.condition_value)
@@ -55,7 +55,11 @@ def get_rule(rule_id: int, db: Annotated[Session, Depends(get_db)]) -> Rule:
     return rule
 
 
-@router.patch("/{rule_id}", response_model=RuleOut, responses={404: {"description": "Not found"}})
+@router.patch(
+    "/{rule_id}",
+    response_model=RuleOut,
+    responses={400: {"description": "Bad request"}, 404: {"description": "Not found"}},
+)
 def update_rule(rule_id: int, payload: RuleUpdate, db: Annotated[Session, Depends(get_db)]) -> Rule:
     _validate(payload.condition_type, payload.action_type)
     rule = rule_service.update_rule(db, rule_id, payload.model_dump(exclude_unset=True))

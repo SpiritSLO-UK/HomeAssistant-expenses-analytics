@@ -242,12 +242,16 @@ def bulk_update(
     return {"updated": len(visible)}
 
 
-@router.get("/{transaction_id}", response_model=TransactionDetailOut)
+@router.get("/{transaction_id}", response_model=TransactionDetailOut, responses={404: {"description": "Not found"}})
 def get_transaction(transaction_id: int, request: Request, db: Annotated[Session, Depends(get_db)]) -> Transaction:
     return _get_visible_txn(request, db, transaction_id)
 
 
-@router.patch("/{transaction_id}", response_model=TransactionOut, responses={400: {"description": "Bad request"}})
+@router.patch(
+    "/{transaction_id}",
+    response_model=TransactionOut,
+    responses={400: {"description": "Bad request"}, 404: {"description": "Not found"}},
+)
 def update_transaction(
     transaction_id: int, payload: TransactionUpdate, request: Request, db: Annotated[Session, Depends(get_db)]
 ) -> Transaction:
@@ -264,7 +268,11 @@ def update_transaction(
     return txn
 
 
-@router.post("/{transaction_id}/unarchive", response_model=TransactionOut)
+@router.post(
+    "/{transaction_id}/unarchive",
+    response_model=TransactionOut,
+    responses={404: {"description": "Not found"}},
+)
 def unarchive_transaction(
     transaction_id: int, request: Request, db: Annotated[Session, Depends(get_db)]
 ) -> Transaction:
@@ -277,7 +285,11 @@ def unarchive_transaction(
     return txn
 
 
-@router.post("/{transaction_id}/categorise", response_model=TransactionOut)
+@router.post(
+    "/{transaction_id}/categorise",
+    response_model=TransactionOut,
+    responses={404: {"description": "Not found"}},
+)
 def categorise(
     transaction_id: int, payload: CategoriseRequest, request: Request, db: Annotated[Session, Depends(get_db)]
 ) -> Transaction:
@@ -304,12 +316,20 @@ def _splits_response(txn: Transaction) -> dict:
     }
 
 
-@router.get("/{transaction_id}/splits", response_model=SplitsResponse)
+@router.get(
+    "/{transaction_id}/splits",
+    response_model=SplitsResponse,
+    responses={404: {"description": "Not found"}},
+)
 def get_splits(transaction_id: int, request: Request, db: Annotated[Session, Depends(get_db)]) -> dict:
     return _splits_response(_get_visible_txn(request, db, transaction_id))
 
 
-@router.post("/{transaction_id}/split", response_model=SplitsResponse, responses={400: {"description": "Bad request"}})
+@router.post(
+    "/{transaction_id}/split",
+    response_model=SplitsResponse,
+    responses={400: {"description": "Bad request"}, 404: {"description": "Not found"}},
+)
 def set_splits(
     transaction_id: int, payload: SetSplitsRequest, request: Request, db: Annotated[Session, Depends(get_db)]
 ) -> dict:
@@ -332,7 +352,11 @@ def set_splits(
     return _splits_response(txn)
 
 
-@router.delete("/{transaction_id}/split", response_model=SplitsResponse)
+@router.delete(
+    "/{transaction_id}/split",
+    response_model=SplitsResponse,
+    responses={404: {"description": "Not found"}},
+)
 def clear_splits(transaction_id: int, request: Request, db: Annotated[Session, Depends(get_db)]) -> dict:
     """Remove a transaction's splits (spec §17.3); its own category applies again."""
     txn = _get_visible_txn(request, db, transaction_id)
@@ -340,7 +364,11 @@ def clear_splits(transaction_id: int, request: Request, db: Annotated[Session, D
     return _splits_response(txn)
 
 
-@router.post("/{transaction_id}/tags", response_model=TransactionDetailOut)
+@router.post(
+    "/{transaction_id}/tags",
+    response_model=TransactionDetailOut,
+    responses={404: {"description": "Not found"}},
+)
 def set_tags(
     transaction_id: int, payload: SetTagsRequest, request: Request, db: Annotated[Session, Depends(get_db)]
 ) -> Transaction:
@@ -350,7 +378,11 @@ def set_tags(
     return txn
 
 
-@router.get("/{transaction_id}/receipts", response_model=list[ReceiptOut])
+@router.get(
+    "/{transaction_id}/receipts",
+    response_model=list[ReceiptOut],
+    responses={404: {"description": "Not found"}},
+)
 def list_transaction_receipts(
     transaction_id: int, request: Request, db: Annotated[Session, Depends(get_db)]
 ) -> list[dict]:
@@ -363,7 +395,11 @@ def list_transaction_receipts(
     "/{transaction_id}/receipts",
     response_model=ReceiptOut,
     status_code=201,
-    responses={400: {"description": "Bad request"}, 413: {"description": "Payload too large"}},
+    responses={
+        400: {"description": "Bad request"},
+        404: {"description": "Not found"},
+        413: {"description": "Payload too large"},
+    },
 )
 async def attach_transaction_receipt(
     transaction_id: int, request: Request, file: Annotated[UploadFile, File()], db: Annotated[Session, Depends(get_db)]
@@ -385,7 +421,7 @@ async def attach_transaction_receipt(
     return receipt_service.to_dict(db, receipt)
 
 
-@router.delete("/{transaction_id}", status_code=204)
+@router.delete("/{transaction_id}", status_code=204, responses={404: {"description": "Not found"}})
 def delete_transaction(
     transaction_id: int,
     request: Request,

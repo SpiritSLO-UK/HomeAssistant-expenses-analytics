@@ -94,14 +94,15 @@ if settings.cors_origins:
 
 # Common prefix for all data API routes.
 _API_PREFIX = "/api/"
+_HEALTH = "/api/health"
 
 # When the database is locked (encrypted, awaiting unlock), block data APIs with
 # 423 — but allow health and the security/unlock endpoints through (#15b).
-_LOCK_EXEMPT = ("/api/health", "/api/security")
+_LOCK_EXEMPT = (_HEALTH, "/api/security")
 
 # Endpoints reachable regardless of approval status: health, the lock/unlock
 # routes, and ``/api/users/me`` (so a pending user can learn they're pending).
-_GATE_EXEMPT = ("/api/health", "/api/security", "/api/users/me")
+_GATE_EXEMPT = (_HEALTH, "/api/security", "/api/users/me")
 
 # Self-service account endpoints (MFA enrol/verify/disable): a user must reach
 # these to satisfy the MFA gate or manage their own factor, so they bypass the
@@ -266,7 +267,7 @@ else:  # pragma: no cover - dev convenience when frontend isn't built
         return {
             "message": f"{settings.app_name} backend is running.",
             "frontend": "not built — run `npm run build` in frontend/",
-            "health": "/api/health",
+            "health": _HEALTH,
         }
 
 
