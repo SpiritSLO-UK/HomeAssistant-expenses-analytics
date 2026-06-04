@@ -1,0 +1,61 @@
+# HA Finance Intelligence — standalone with HTTPS via a Caddy reverse proxy.
+#
+# Use this instead of docker-compose.yml when you reach the app from other devices
+# on your network (a phone, another laptop) and want the traffic encrypted. Caddy
+# terminates TLS and forwards plain HTTP to the app on the internal Docker network;
+# the app itself is NOT published to the host, so it's only reachable through Caddy.
+#
+#   # 1. point a name at this host (a real domain, or a /etc/hosts entry on your LAN)
+#   # 2. set the site address (default: localhost) and bring it up:
+#   SITE_ADDRESS=finance.example.com docker compose -f docker-compose.tls.yml up -d --build
+#   open https://finance.example.com
+#
+#   - A public domain  → Caddy gets a real certificate automatically (Let's Encrypt).
+#   - localhost / a LAN name → Caddy issues its own local certificate (you'll trust it
+#     once, or install Caddy's local CA). See the Caddyfile + docs/reverse-proxy.md.
+#
+# Home Assistant users need none of this — HA ingress / your reverse proxy / Nabu
+# Casa already terminates TLS, and the add-on serves plain HTTP internally by design.
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: addon/Dockerfile
+    image: ha-finance-intelligence:0.9.0-beta
+    container_name: ha-finance
+    restart: unless-stopped
+    environment:
+      HAFI_DATABASE_PATH: /data/finance.db
+      HAFI_CURRENCY: GBP
+      HAFI_PRIVACY_MODE: strict_local
+      HAFI_MQTT_ENABLED: "false"
+      HAFI_LOG_LEVEL: INFO
+    volumes:
+      - finance_data:/data
+    # No host `ports:` — the app is reachable only via Caddy on the internal network.
+    expose:
+      - "8099"
+
+  caddy:
+    image: caddy:2
+    container_name: ha-finance-caddy
+    restart: unless-stopped
+    depends_on:
+      - app
+    environment:
+      # The public site address. A real domain → automatic Let's Encrypt; the
+      # default `localhost` (or any LAN name) → Caddy's own local CA.
+      SITE_ADDRESS: ${SITE_ADDRESS:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data      # certificates + ACME account (persist across restarts)
+      - caddy_config:/config
+
+volumes:
+  finance_data:
+  caddy_data:
+  caddy_config:
