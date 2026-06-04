@@ -82,10 +82,11 @@ export default function Investments() {
         <h1 className="page__title">Investments &amp; pensions</h1>
       </div>
       <p className="muted">
-        Track investment platforms and pensions. Record a <strong>value</strong> from a statement
-        (best for pensions), or add <strong>holdings</strong> — a ticker with a number of shares and a
-        cost per share — to see market value, gain, and value over time with day/month/year change.
-        Prices are kept current by the optional price feed (Settings → price source, below).
+        Two tracking models, by account type. <strong>Investments</strong> (shares / ISA) hold{" "}
+        <strong>holdings</strong> — a ticker with a number of shares and a cost per share — for market
+        value, gain, and value over time with day/month/year change; prices are kept current by the
+        optional price feed (Settings → price source, below). <strong>Pensions</strong> track a{" "}
+        <strong>value</strong> from a statement, with contributions and withdrawals.
       </p>
       {err && <p className="status status--error">{err}</p>}
 
@@ -165,8 +166,8 @@ function NewAccountForm({ onCreated, onError }: Readonly<{ onCreated: () => void
     >
       <input placeholder="Account name (e.g. Trading 212, Aviva pension)" value={name} onChange={(e) => setName(e.target.value)} />
       <select value={type} onChange={(e) => setType(e.target.value as "investment" | "pension")}>
-        <option value="investment">Investment</option>
-        <option value="pension">Pension</option>
+        <option value="investment">Investment (shares / ISA — track holdings)</option>
+        <option value="pension">Pension (track a statement value)</option>
       </select>
       <input placeholder="Provider (optional)" value={institution} onChange={(e) => setInstitution(e.target.value)} />
       <button className="btn" type="submit" disabled={!name || create.isPending}>
@@ -285,8 +286,13 @@ function AccountCard({
 
       {open && (
         <div style={{ marginTop: 8 }}>
-          <HoldingsSection account={account} onChange={onChange} onError={onError} />
-          <ValueSection account={account} base={base} onChange={onChange} onError={onError} />
+          {account.account_type === "pension" ? (
+            // Pensions are statement-valued: record a value / log contributions.
+            <ValueSection account={account} base={base} onChange={onChange} onError={onError} />
+          ) : (
+            // Investments (shares/ISA) are valued by holdings × price — no cash controls.
+            <HoldingsSection account={account} onChange={onChange} onError={onError} />
+          )}
         </div>
       )}
     </div>
@@ -332,7 +338,7 @@ function HoldingsSection({
         Holdings
       </div>
       {rows.length === 0 ? (
-        <p className="muted" style={{ margin: "0 0 6px" }}>No holdings — add a ticker below, or just record a value.</p>
+        <p className="muted" style={{ margin: "0 0 6px" }}>No holdings yet — add a ticker below to track market value and gain.</p>
       ) : (
         <div className="table-wrap">
           <table className="table">

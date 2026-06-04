@@ -47,6 +47,25 @@ def _holding_in_scope(request: Request, db: Session, holding_id: int) -> Holding
     return holding
 
 
+def _value_tracked_account(request: Request, db: Session, account_id: int):
+    """Fetch a visible investment/pension account for the cash-value endpoints.
+
+    Investment accounts (stocks/shares/ISA) are valued by their holdings × price —
+    a typed-in cash value or +/- contribution is a pension/cash model, so we reject
+    it with 400 here. Pensions keep the statement-value flow."""
+    _require_visible(request, db, account_id)
+    try:
+        account = investment_service.get_investment_account(db, account_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if account.account_type == "investment":
+        raise HTTPException(
+            status_code=400,
+            detail="Investment accounts are valued by their holdings — add holdings instead of a cash value.",
+        )
+    return account
+
+
 @router.get("/summary", response_model=InvestmentSummary)
 def summary(request: Request, db: Annotated[Session, Depends(get_db)]) -> dict:
     return investment_service.summary(db, account_ids=auth_service.visible_account_scope(request, db))
@@ -123,13 +142,10 @@ def value_history(account_id: int, request: Request, db: Annotated[Session, Depe
     responses={404: {"description": "Not found"}},
 )
 def record_value(account_id: int, payload: ValueCreate, request: Request, db: Annotated[Session, Depends(get_db)]):
-    _require_visible(request, db, account_id)
-    try:
-        return investment_service.record_value(
-            db, account_id, as_of=payload.as_of_date, value=payload.value, note=payload.note
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    _value_tracked_account(request, db, account_id)
+    return investment_service.record_value(
+        db, account_id, as_of=payload.as_of_date, value=payload.value, note=payload.note
+    )
 
 
 @router.post(
@@ -140,14 +156,11 @@ def record_value(account_id: int, payload: ValueCreate, request: Request, db: An
 )
 def adjust_value(account_id: int, payload: ValueAdjust, request: Request, db: Annotated[Session, Depends(get_db)]):
     """Record a contribution/withdrawal — a new snapshot at latest ± amount."""
-    _require_visible(request, db, account_id)
+    _value_tracked_account(request, db, account_id)
     if payload.direction not in ("contribution", "withdrawal"):
         raise HTTPException(status_code=400, detail="direction must be 'contribution' or 'withdrawal'")
     delta = payload.amount if payload.direction == "contribution" else -payload.amount
-    try:
-        return investment_service.adjust_value(db, account_id, delta=delta, note=payload.note)
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return investment_service.adjust_value(db, account_id, delta=delta, note=payload.note)
 
 
 # --- Holdings ---
