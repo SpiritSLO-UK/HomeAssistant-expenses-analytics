@@ -105,6 +105,51 @@ function txnLink(params: Record<string, string | number | null | undefined>): st
   return qs ? `/transactions?${qs}` : "/transactions";
 }
 
+// Each optional dashboard card maps to a module-level card component; the page
+// renders them in the user's saved order (#84), filtered by show/hide (#86).
+// Cards with no data render null, so the layout stays clean.
+function DashboardCard({
+  cardKey,
+  monthDate,
+  view,
+  mid,
+}: Readonly<{ cardKey: string; monthDate: string; view: string; mid: number | undefined }>) {
+  switch (cardKey) {
+    case "headsup":
+      return <HeadsUpCard monthDate={monthDate} memberId={mid} />;
+    case "trends":
+      return <TrendsCard monthDate={monthDate} view={view} memberId={mid} />;
+    case "categories":
+      return <CategoriesCard monthDate={monthDate} view={view} memberId={mid} />;
+    case "vendors":
+      return <VendorsCard monthDate={monthDate} view={view} memberId={mid} />;
+    case "geo":
+      return <GeoCard monthDate={monthDate} view={view} memberId={mid} />;
+    case "projects":
+      return <ProjectsCard memberId={mid} />;
+    case "members":
+      return <MemberBreakdownCard monthDate={monthDate} />;
+    case "savings":
+      return <SavingsCard />;
+    case "investments":
+      return <InvestmentsCard />;
+    case "assets":
+      return <AssetsCard />;
+    case "budgets":
+      return <BudgetsCard monthDate={monthDate} />;
+    case "business":
+      return <BusinessCard />;
+    case "travel":
+      return <TravelCard />;
+    case "allowance":
+      return <AllowanceCard />;
+    case "processing":
+      return <ProcessingCard />;
+    default:
+      return null;
+  }
+}
+
 export default function Dashboard() {
   const [month, setMonth] = useState(thisMonth());
   const monthDate = `${month}-01`;
@@ -154,27 +199,6 @@ export default function Dashboard() {
     queryKey: ["summary", monthDate, view, memberId],
     queryFn: () => getSummary(monthDate, view, mid),
   });
-
-  // Each optional card maps to a self-contained renderer; the dashboard renders
-  // them in the user's saved order (#84), filtered by show/hide (#86). Cards that
-  // have no data render null, so the layout stays clean.
-  const renderers: Record<string, () => JSX.Element | null> = {
-    headsup: () => <HeadsUpCard monthDate={monthDate} memberId={mid} />,
-    trends: () => <TrendsCard monthDate={monthDate} view={view} memberId={mid} />,
-    categories: () => <CategoriesCard monthDate={monthDate} view={view} memberId={mid} />,
-    vendors: () => <VendorsCard monthDate={monthDate} view={view} memberId={mid} />,
-    geo: () => <GeoCard monthDate={monthDate} view={view} memberId={mid} />,
-    projects: () => <ProjectsCard memberId={mid} />,
-    members: () => <MemberBreakdownCard monthDate={monthDate} />,
-    savings: () => <SavingsCard />,
-    investments: () => <InvestmentsCard />,
-    assets: () => <AssetsCard />,
-    budgets: () => <BudgetsCard monthDate={monthDate} />,
-    business: () => <BusinessCard />,
-    travel: () => <TravelCard />,
-    allowance: () => <AllowanceCard />,
-    processing: () => <ProcessingCard />,
-  };
 
   return (
     <div className="page">
@@ -269,7 +293,7 @@ export default function Dashboard() {
       )}
 
       {order.filter(show).map((key) => (
-        <Fragment key={key}>{renderers[key]?.()}</Fragment>
+        <Fragment key={key}><DashboardCard cardKey={key} monthDate={monthDate} view={view} mid={mid} /></Fragment>
       ))}
 
       {summary.data && summary.data.uncategorised_transactions > 0 && (
