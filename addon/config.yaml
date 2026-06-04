@@ -1,6 +1,6 @@
 # Home Assistant add-on configuration (spec §26.1).
 name: HA Finance Intelligence
-version: "0.9.0-beta"
+version: "0.9.5-beta"
 slug: ha_finance_intelligence
 description: Local-first personal finance app for Home Assistant
 url: https://github.com/SpiritSLO-UK/HomeAssistant-expenses-analytics
