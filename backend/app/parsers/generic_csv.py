@@ -34,6 +34,29 @@ _HEURISTICS: dict[str, tuple[str, ...]] = {
 }
 
 
+def _mapped(row: dict[str, str], m: dict[str, str], field: str) -> str | None:
+    """The raw cell for a logical ``field``, or None when the field isn't mapped."""
+    return row.get(m[field]) if field in m else None
+
+
+def _build_transaction(
+    row: dict[str, str], m: dict[str, str], amount: Decimal, default_currency: str
+) -> StandardTransaction:
+    """Assemble one StandardTransaction from a mapped row (amount already resolved)."""
+    description = _mapped(row, m, "description") or _mapped(row, m, "merchant") or "(no description)"
+    currency = _mapped(row, m, "currency") or default_currency
+    return StandardTransaction(
+        transaction_date=parse_date(row[m["date"]]),
+        posted_date=parse_optional_date(_mapped(row, m, "posted_date")),
+        amount=amount,
+        currency=currency.upper(),
+        description_raw=description,
+        merchant_raw=_mapped(row, m, "merchant"),
+        category_hint=_mapped(row, m, "category"),
+        external_id=_mapped(row, m, "external_id"),
+    )
+
+
 class GenericCsvParser(BaseStatementParser):
     parser_id = "generic_csv"
     institution = "Generic"
@@ -92,29 +115,8 @@ class GenericCsvParser(BaseStatementParser):
             date_str = row.get(m["date"])
             if not date_str:
                 raise ParseError(f"Generic row {i}: missing date")
-
             amount = self._row_amount(row, m, i)
-            description = (
-                (row.get(m["description"]) if "description" in m else None)
-                or (row.get(m["merchant"]) if "merchant" in m else None)
-                or "(no description)"
-            )
-            currency = (row.get(m["currency"]) if "currency" in m else None) or self.default_currency
-
-            out.append(
-                StandardTransaction(
-                    transaction_date=parse_date(date_str),
-                    posted_date=parse_optional_date(
-                        row.get(m["posted_date"]) if "posted_date" in m else None
-                    ),
-                    amount=amount,
-                    currency=currency.upper(),
-                    description_raw=description,
-                    merchant_raw=row.get(m["merchant"]) if "merchant" in m else None,
-                    category_hint=row.get(m["category"]) if "category" in m else None,
-                    external_id=row.get(m["external_id"]) if "external_id" in m else None,
-                )
-            )
+            out.append(_build_transaction(row, m, amount, self.default_currency))
         return out
 
     def _row_amount(self, row: dict[str, str], m: dict[str, str], i: int) -> Decimal:

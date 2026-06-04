@@ -50,6 +50,83 @@ TRANSACTION_HEADERS = [
 ]
 
 
+def _equality_conditions(
+    *,
+    transaction_id: int | None,
+    date_from: date | None,
+    date_to: date | None,
+    account_id: int | None,
+    category_id: int | None,
+    vendor_id: int | None,
+    project_id: int | None,
+    tag_id: int | None,
+    needs_review: bool | None,
+    is_business: bool | None,
+    amount_min: Decimal | None,
+    amount_max: Decimal | None,
+) -> list:
+    """The straightforward equality/comparison filters (each appended only when set)."""
+    conditions: list = []
+    if transaction_id is not None:
+        # The focus deep-link (Review-Queue "Open transaction →", trip drill-down)
+        # narrows the list to a single row so it's always surfaced regardless of
+        # which page it would otherwise fall on.
+        conditions.append(Transaction.id == transaction_id)
+    if date_from is not None:
+        conditions.append(Transaction.transaction_date >= date_from)
+    if date_to is not None:
+        conditions.append(Transaction.transaction_date <= date_to)
+    if account_id is not None:
+        conditions.append(Transaction.account_id == account_id)
+    if category_id is not None:
+        conditions.append(Transaction.category_id == category_id)
+    if vendor_id is not None:
+        conditions.append(Transaction.merchant_id == vendor_id)
+    if project_id is not None:
+        conditions.append(Transaction.project_id == project_id)
+    if tag_id is not None:
+        conditions.append(Transaction.tags.any(Tag.id == tag_id))
+    if needs_review is not None:
+        conditions.append(Transaction.needs_review.is_(needs_review))
+    if is_business is not None:
+        conditions.append(Transaction.is_business.is_(is_business))
+    if amount_min is not None:
+        conditions.append(Transaction.amount >= amount_min)
+    if amount_max is not None:
+        conditions.append(Transaction.amount <= amount_max)
+    return conditions
+
+
+def _search_conditions(
+    *,
+    country: str | None,
+    uncategorised: bool | None,
+    search: str | None,
+) -> list:
+    """The filters that need normalisation/special-casing (country, uncategorised, search)."""
+    from sqlalchemy import or_
+
+    conditions: list = []
+    if country:
+        # Drill-down from the "Spending by location" card. Country is stored as an
+        # ISO alpha-2 upper-case code (see the bulk-update normaliser), so match it.
+        conditions.append(Transaction.country == country.strip().upper()[:2])
+    if uncategorised is not None:
+        # "Uncategorised" = no category assigned. This is distinct from
+        # needs_review (a flag set on low-confidence/PDF imports): a transaction
+        # can be uncategorised without being flagged, and vice versa.
+        conditions.append(
+            Transaction.category_id.is_(None) if uncategorised
+            else Transaction.category_id.is_not(None)
+        )
+    if search:
+        like = f"%{search}%"
+        conditions.append(
+            or_(Transaction.description_raw.ilike(like), Transaction.merchant_raw.ilike(like))
+        )
+    return conditions
+
+
 def build_transaction_filters(
     *,
     transaction_id: int | None = None,
@@ -76,53 +153,26 @@ def build_transaction_filters(
     ``account_ids`` is the visibility scope (None = unrestricted); it is applied
     in addition to the explicit ``account_id`` UI filter. Archived (aged-out)
     transactions are excluded unless ``include_archived`` (backlog #78)."""
-    from sqlalchemy import or_
-
     conditions: list = [*account_scope_condition(account_ids), *archived_condition(include_archived)]
-    if transaction_id is not None:
-        # The focus deep-link (Review-Queue "Open transaction →", trip drill-down)
-        # narrows the list to a single row so it's always surfaced regardless of
-        # which page it would otherwise fall on.
-        conditions.append(Transaction.id == transaction_id)
-    if date_from is not None:
-        conditions.append(Transaction.transaction_date >= date_from)
-    if date_to is not None:
-        conditions.append(Transaction.transaction_date <= date_to)
-    if account_id is not None:
-        conditions.append(Transaction.account_id == account_id)
-    if category_id is not None:
-        conditions.append(Transaction.category_id == category_id)
-    if vendor_id is not None:
-        conditions.append(Transaction.merchant_id == vendor_id)
-    if project_id is not None:
-        conditions.append(Transaction.project_id == project_id)
-    if tag_id is not None:
-        conditions.append(Transaction.tags.any(Tag.id == tag_id))
-    if country:
-        # Drill-down from the "Spending by location" card. Country is stored as an
-        # ISO alpha-2 upper-case code (see the bulk-update normaliser), so match it.
-        conditions.append(Transaction.country == country.strip().upper()[:2])
-    if needs_review is not None:
-        conditions.append(Transaction.needs_review.is_(needs_review))
-    if uncategorised is not None:
-        # "Uncategorised" = no category assigned. This is distinct from
-        # needs_review (a flag set on low-confidence/PDF imports): a transaction
-        # can be uncategorised without being flagged, and vice versa.
-        conditions.append(
-            Transaction.category_id.is_(None) if uncategorised
-            else Transaction.category_id.is_not(None)
+    conditions.extend(
+        _equality_conditions(
+            transaction_id=transaction_id,
+            date_from=date_from,
+            date_to=date_to,
+            account_id=account_id,
+            category_id=category_id,
+            vendor_id=vendor_id,
+            project_id=project_id,
+            tag_id=tag_id,
+            needs_review=needs_review,
+            is_business=is_business,
+            amount_min=amount_min,
+            amount_max=amount_max,
         )
-    if is_business is not None:
-        conditions.append(Transaction.is_business.is_(is_business))
-    if amount_min is not None:
-        conditions.append(Transaction.amount >= amount_min)
-    if amount_max is not None:
-        conditions.append(Transaction.amount <= amount_max)
-    if search:
-        like = f"%{search}%"
-        conditions.append(
-            or_(Transaction.description_raw.ilike(like), Transaction.merchant_raw.ilike(like))
-        )
+    )
+    conditions.extend(
+        _search_conditions(country=country, uncategorised=uncategorised, search=search)
+    )
     return conditions
 
 

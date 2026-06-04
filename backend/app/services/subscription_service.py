@@ -75,6 +75,92 @@ def _find_existing(db: Session, vendor_id: int | None, name: str) -> Subscriptio
     ).first()
 
 
+def _positive_gaps(dates: list[date]) -> list[int]:
+    gaps = [(dates[i + 1] - dates[i]).days for i in range(len(dates) - 1)]
+    return [g for g in gaps if g > 0]
+
+
+def _confidence(db: Session, gaps: list[int], max_dev: Decimal, latest: Transaction) -> float:
+    gap_mean = statistics.mean(gaps)
+    gap_cov = (statistics.pstdev(gaps) / gap_mean) if gap_mean else 0.0
+    confidence = 0.5
+    confidence += max(0.0, 0.3 * (1 - min(gap_cov, 1.0)))       # regular interval
+    confidence += max(0.0, 0.2 * (1 - float(max_dev) / 0.35))   # consistent amount
+    if _is_subscription_category(db, latest.category_id):
+        confidence += 0.1
+    return round(min(1.0, confidence), 2)
+
+
+def _detect_group(db: Session, items: list[Transaction], min_occurrences: int) -> dict | None:
+    """Validate one vendor/name group and, if it looks like a subscription,
+    return the field values to upsert; otherwise None (group skipped)."""
+    if len(items) < min_occurrences:
+        return None
+    items.sort(key=lambda t: t.transaction_date)
+    dates = [t.transaction_date for t in items]
+    gaps = _positive_gaps(dates)
+    if len(gaps) < min_occurrences - 1:
+        return None
+
+    freq = _classify(statistics.median(gaps))
+    if freq is None:
+        return None
+
+    amounts = [abs(Decimal(t.base_amount)) for t in items]
+    mean_amt = sum(amounts) / len(amounts)
+    if mean_amt == 0:
+        return None
+    max_dev = max(abs(a - mean_amt) for a in amounts) / mean_amt
+    if max_dev > Decimal("0.35"):
+        return None  # too variable to be a fixed subscription
+
+    latest = items[-1]
+    confidence = _confidence(db, gaps, max_dev, latest)
+    interval = FREQUENCY_INTERVALS[freq]
+    last_seen = dates[-1]
+    return {
+        "category_id": latest.category_id,
+        "name": _label(latest),
+        "amount": amounts[-1].quantize(TWO_DP),  # current price = most recent charge
+        "frequency": freq,
+        "interval_days": interval,
+        "last_seen_date": last_seen,
+        "next_expected_date": last_seen + timedelta(days=interval),
+        "confidence_score": confidence,
+        "occurrences": len(items),
+        "status": "active" if confidence >= 0.6 else "possible",
+    }
+
+
+def _upsert_subscription(db: Session, vendor_id: int | None, base_currency: str, fields: dict) -> str:
+    """Create or update the subscription for this vendor/name. Returns
+    ``"created"`` or ``"updated"``."""
+    existing = _find_existing(db, vendor_id, fields["name"])
+    if existing is None:
+        db.add(
+            Subscription(
+                household_id=get_or_create_default_household(db).id,
+                vendor_id=vendor_id,
+                currency=base_currency,
+                **fields,
+            )
+        )
+        return "created"
+    existing.category_id = fields["category_id"]
+    existing.name = fields["name"]
+    existing.amount = fields["amount"]
+    existing.currency = base_currency
+    existing.frequency = fields["frequency"]
+    existing.interval_days = fields["interval_days"]
+    existing.last_seen_date = fields["last_seen_date"]
+    existing.next_expected_date = fields["next_expected_date"]
+    existing.confidence_score = fields["confidence_score"]
+    existing.occurrences = fields["occurrences"]
+    if existing.status not in USER_LOCKED:
+        existing.status = fields["status"]
+    return "updated"
+
+
 def detect(db: Session, min_occurrences: int = 3) -> dict:
     """Scan transactions and upsert detected subscriptions. Returns counts."""
     base_currency = settings_service.get_base_currency(db)
@@ -97,77 +183,13 @@ def detect(db: Session, min_occurrences: int = 3) -> dict:
 
     created = updated = 0
     for key, items in groups.items():
-        if len(items) < min_occurrences:
+        fields = _detect_group(db, items, min_occurrences)
+        if fields is None:
             continue
-        items.sort(key=lambda t: t.transaction_date)
-        dates = [t.transaction_date for t in items]
-        gaps = [(dates[i + 1] - dates[i]).days for i in range(len(dates) - 1)]
-        gaps = [g for g in gaps if g > 0]
-        if len(gaps) < min_occurrences - 1:
-            continue
-
-        freq = _classify(statistics.median(gaps))
-        if freq is None:
-            continue
-
-        amounts = [abs(Decimal(t.base_amount)) for t in items]
-        mean_amt = sum(amounts) / len(amounts)
-        if mean_amt == 0:
-            continue
-        max_dev = max(abs(a - mean_amt) for a in amounts) / mean_amt
-        if max_dev > Decimal("0.35"):
-            continue  # too variable to be a fixed subscription
-
-        gap_mean = statistics.mean(gaps)
-        gap_cov = (statistics.pstdev(gaps) / gap_mean) if gap_mean else 0.0
-        confidence = 0.5
-        confidence += max(0.0, 0.3 * (1 - min(gap_cov, 1.0)))       # regular interval
-        confidence += max(0.0, 0.2 * (1 - float(max_dev) / 0.35))   # consistent amount
-        latest = items[-1]
-        if _is_subscription_category(db, latest.category_id):
-            confidence += 0.1
-        confidence = round(min(1.0, confidence), 2)
-
-        interval = FREQUENCY_INTERVALS[freq]
-        last_seen = dates[-1]
-        amount = amounts[-1].quantize(TWO_DP)  # current price = most recent charge
         vendor_id = key[1] if key[0] == "v" else None
-        name = _label(latest)
-        status = "active" if confidence >= 0.6 else "possible"
-
-        existing = _find_existing(db, vendor_id, name)
-        if existing is None:
-            db.add(
-                Subscription(
-                    household_id=get_or_create_default_household(db).id,
-                    vendor_id=vendor_id,
-                    category_id=latest.category_id,
-                    name=name,
-                    amount=amount,
-                    currency=base_currency,
-                    frequency=freq,
-                    interval_days=interval,
-                    last_seen_date=last_seen,
-                    next_expected_date=last_seen + timedelta(days=interval),
-                    confidence_score=confidence,
-                    occurrences=len(items),
-                    status=status,
-                )
-            )
+        if _upsert_subscription(db, vendor_id, base_currency, fields) == "created":
             created += 1
         else:
-            existing.category_id = latest.category_id
-            existing.name = name
-            existing.amount = amount
-            existing.currency = base_currency
-            existing.frequency = freq
-            existing.interval_days = interval
-            existing.last_seen_date = last_seen
-            existing.next_expected_date = last_seen + timedelta(days=interval)
-            existing.confidence_score = confidence
-            existing.occurrences = len(items)
-            if existing.status not in USER_LOCKED:
-                existing.status = status
             updated += 1
 
     db.commit()

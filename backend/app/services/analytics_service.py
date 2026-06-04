@@ -105,6 +105,32 @@ def _month_totals(
 # --- Trends -----------------------------------------------------------------
 
 
+def _trend_direction(delta: Decimal, pct: float | None) -> str:
+    if pct is None:
+        if delta > 0:
+            return "up"
+        if delta < 0:
+            return "down"
+        return "flat"
+    if abs(pct) < 1:
+        return "flat"
+    return "up" if delta > 0 else "down"
+
+
+def _trend_entry(current: dict, previous: dict, key: str) -> dict:
+    cur = Decimal(current[key])
+    prev = Decimal(previous[key])
+    delta = cur - prev
+    pct = float(delta / abs(prev) * 100) if prev != 0 else None
+    return {
+        "current": str(cur),
+        "previous": str(prev),
+        "delta": str(delta),
+        "pct": round(pct, 1) if pct is not None else None,
+        "direction": _trend_direction(delta, pct),
+    }
+
+
 def monthly_series(db: Session, ref: date, months: int = 6, *, account_ids: set[int] | None = None) -> dict:
     series = []
     for start, end in _month_windows(ref, months):
@@ -122,28 +148,7 @@ def monthly_series(db: Session, ref: date, months: int = 6, *, account_ids: set[
     if len(series) >= 2:
         current, previous = series[-1], series[-2]
         for key in ("spend", "income", "net"):
-            cur = Decimal(current[key])
-            prev = Decimal(previous[key])
-            delta = cur - prev
-            pct = float(delta / abs(prev) * 100) if prev != 0 else None
-            if pct is None:
-                if delta > 0:
-                    direction = "up"
-                elif delta < 0:
-                    direction = "down"
-                else:
-                    direction = "flat"
-            elif abs(pct) < 1:
-                direction = "flat"
-            else:
-                direction = "up" if delta > 0 else "down"
-            trend[key] = {
-                "current": str(cur),
-                "previous": str(prev),
-                "delta": str(delta),
-                "pct": round(pct, 1) if pct is not None else None,
-                "direction": direction,
-            }
+            trend[key] = _trend_entry(current, previous, key)
 
     return {"currency": settings_service.get_base_currency(db), "months": series, "trend": trend}
 
@@ -200,13 +205,11 @@ def _large_charges(
     return items
 
 
-def _category_spikes(
+def _prior_category_totals(
     db: Session, ref: date, history_months: int, *, account_ids: set[int] | None = None
-) -> list[dict]:
-    current = {
-        r["category_id"]: (r["name"], Decimal(r["total"]))
-        for r in dashboard_service.category_breakdown(db, ref, account_ids=account_ids)
-    }
+) -> tuple[dict[int | None, list[Decimal]], int]:
+    """Per-category prior-month totals (excluding the current month) and the
+    number of prior months that had any data."""
     prior_totals: dict[int | None, list[Decimal]] = defaultdict(list)
     months_with_data = 0
     for start, _end in _month_windows(ref, history_months + 1)[:-1]:  # exclude current
@@ -215,6 +218,44 @@ def _category_spikes(
             months_with_data += 1
         for r in rows:
             prior_totals[r["category_id"]].append(Decimal(r["total"]))
+    return prior_totals, months_with_data
+
+
+def _category_spike_item(
+    cid: int | None, name: str, cur_total: Decimal, prior: list[Decimal], currency: str
+) -> dict | None:
+    """One category-spike heads-up item, or None when this category isn't a spike."""
+    if not prior:
+        return None
+    avg = sum(prior, Decimal("0")) / len(prior)
+    if avg <= 0:
+        return None
+    if not (cur_total > avg * CATEGORY_SPIKE_MULTIPLE and (cur_total - avg) >= CATEGORY_SPIKE_FLOOR):
+        return None
+    pct = float((cur_total - avg) / avg * 100)
+    return {
+        "type": "category_spike",
+        "severity": "warn" if cur_total > avg * 2 else "info",
+        "title": f"{name} spending is up",
+        "detail": (
+            f"{_money(cur_total, currency)} this month vs "
+            f"{_money(avg, currency)} average ({pct:.0f}% higher)"
+        ),
+        "amount": str(_two_dp(cur_total)),
+        "category_id": cid,
+    }
+
+
+def _category_spikes(
+    db: Session, ref: date, history_months: int, *, account_ids: set[int] | None = None
+) -> list[dict]:
+    current = {
+        r["category_id"]: (r["name"], Decimal(r["total"]))
+        for r in dashboard_service.category_breakdown(db, ref, account_ids=account_ids)
+    }
+    prior_totals, months_with_data = _prior_category_totals(
+        db, ref, history_months, account_ids=account_ids
+    )
 
     if months_with_data < 2:  # not enough history to call anything a spike
         return []
@@ -222,27 +263,9 @@ def _category_spikes(
     currency = settings_service.get_base_currency(db)
     items = []
     for cid, (name, cur_total) in current.items():
-        prior = prior_totals.get(cid, [])
-        if not prior:
-            continue
-        avg = sum(prior, Decimal("0")) / len(prior)
-        if avg <= 0:
-            continue
-        if cur_total > avg * CATEGORY_SPIKE_MULTIPLE and (cur_total - avg) >= CATEGORY_SPIKE_FLOOR:
-            pct = float((cur_total - avg) / avg * 100)
-            items.append(
-                {
-                    "type": "category_spike",
-                    "severity": "warn" if cur_total > avg * 2 else "info",
-                    "title": f"{name} spending is up",
-                    "detail": (
-                        f"{_money(cur_total, currency)} this month vs "
-                        f"{_money(avg, currency)} average ({pct:.0f}% higher)"
-                    ),
-                    "amount": str(_two_dp(cur_total)),
-                    "category_id": cid,
-                }
-            )
+        item = _category_spike_item(cid, name, cur_total, prior_totals.get(cid, []), currency)
+        if item is not None:
+            items.append(item)
     items.sort(key=lambda i: float(i["amount"]), reverse=True)
     return items[:MAX_PER_DETECTOR]
 

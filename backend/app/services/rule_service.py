@@ -52,6 +52,21 @@ def _to_decimal(value: str) -> Decimal | None:
         return None
 
 
+def _matches_amount_equals(cv: str, txn: Transaction) -> bool:
+    target = _to_decimal(cv)
+    return target is not None and txn.amount == target
+
+
+def _matches_amount_between(cv: str, txn: Transaction) -> bool:
+    # "lo,hi" on the signed amount.
+    parts = cv.replace("|", ",").split(",")
+    if len(parts) == 2:
+        lo, hi = _to_decimal(parts[0]), _to_decimal(parts[1])
+        if lo is not None and hi is not None:
+            return lo <= txn.amount <= hi
+    return False
+
+
 def matches(rule: Rule, txn: Transaction) -> bool:
     ct = rule.condition_type
     cv = (rule.condition_value or "").strip()
@@ -69,19 +84,27 @@ def matches(rule: Rule, txn: Transaction) -> bool:
     if ct == "category_equals":
         return txn.category_id is not None and str(txn.category_id) == cv
     if ct == "amount_equals":
-        target = _to_decimal(cv)
-        return target is not None and txn.amount == target
+        return _matches_amount_equals(cv, txn)
     if ct == "amount_between":
-        # "lo,hi" on the signed amount.
-        parts = cv.replace("|", ",").split(",")
-        if len(parts) == 2:
-            lo, hi = _to_decimal(parts[0]), _to_decimal(parts[1])
-            if lo is not None and hi is not None:
-                return lo <= txn.amount <= hi
-        return False
+        return _matches_amount_between(cv, txn)
     # recurring_payment / source_format are not supported yet (Stage 6 / needs
     # statement context) — they simply never match for now.
     return False
+
+
+def _int_action_value(av: str | None) -> int | None:
+    """Parse a numeric action value, or ``None`` when it isn't a plain integer."""
+    return int(av) if av and av.isdigit() else None
+
+
+def _apply_set_category(txn: Transaction, av: str | None) -> None:
+    # Don't override a manual choice (spec §15.1: manual > rule).
+    if txn.confidence_score is not None and txn.confidence_score >= MANUAL_CONFIDENCE:
+        return
+    value = _int_action_value(av)
+    if value is not None:
+        txn.category_id = value
+        txn.confidence_score = RULE_CONFIDENCE
 
 
 def apply_action(rule: Rule, txn: Transaction) -> None:
@@ -89,18 +112,15 @@ def apply_action(rule: Rule, txn: Transaction) -> None:
     av = rule.action_value
 
     if at == "set_category":
-        # Don't override a manual choice (spec §15.1: manual > rule).
-        if txn.confidence_score is not None and txn.confidence_score >= MANUAL_CONFIDENCE:
-            return
-        if av and av.isdigit():
-            txn.category_id = int(av)
-            txn.confidence_score = RULE_CONFIDENCE
+        _apply_set_category(txn, av)
     elif at == "set_vendor":
-        if av and av.isdigit():
-            txn.merchant_id = int(av)
+        value = _int_action_value(av)
+        if value is not None:
+            txn.merchant_id = value
     elif at == "set_project":
-        if av and av.isdigit():
-            txn.project_id = int(av)
+        value = _int_action_value(av)
+        if value is not None:
+            txn.project_id = value
     elif at == "mark_transfer":
         txn.is_transfer = True
     elif at == "mark_income":
