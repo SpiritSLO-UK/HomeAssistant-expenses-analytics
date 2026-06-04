@@ -21,7 +21,7 @@ from app.services.auth_service import get_current_user, require_owner, require_o
 router = APIRouter(prefix="/users", tags=["users"])
 
 
-@router.get("/me", response_model=MeOut)
+@router.get("/me")
 def get_me(
     request: Request, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(get_current_user)]
 ) -> MeOut:

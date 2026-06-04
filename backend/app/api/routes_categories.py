@@ -40,13 +40,13 @@ def create_category(payload: CategoryCreate, db: Annotated[Session, Depends(get_
     return category_service.create_category(db, payload.model_dump(exclude_unset=True))
 
 
-@router.post("/import-library", response_model=dict)
+@router.post("/import-library")
 def import_library(db: Annotated[Session, Depends(get_db)]) -> dict:
     created = category_service.import_library(db)
     return {"created": created}
 
 
-@router.get("/privacy", response_model=dict)
+@router.get("/privacy")
 def get_privacy_default(
     db: Annotated[Session, Depends(get_db)], _user: Annotated[User, Depends(auth_service.require_settings_manager)]
 ) -> dict:
@@ -55,7 +55,7 @@ def get_privacy_default(
     return {"level": category_service.get_privacy_default(db)}
 
 
-@router.post("/privacy", response_model=dict)
+@router.post("/privacy")
 def set_all_privacy(
     payload: CategoryPrivacyLevel,
     db: Annotated[Session, Depends(get_db)],

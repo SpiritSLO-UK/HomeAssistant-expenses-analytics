@@ -220,7 +220,14 @@ def score_match(receipt: Receipt, txn: Transaction) -> tuple[int, dict]:
     proximity = 0
     if receipt.receipt_date is not None:
         d = abs((receipt.receipt_date - txn.transaction_date).days)
-        proximity = 20 if d == 0 else 16 if d <= 1 else 12 if d <= 3 else 6 if d <= 7 else 0
+        if d == 0:
+            proximity = 20
+        elif d <= 1:
+            proximity = 16
+        elif d <= 3:
+            proximity = 12
+        elif d <= 7:
+            proximity = 6
     parts["date"] = proximity
 
     # vendor similarity (20)

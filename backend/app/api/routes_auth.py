@@ -22,7 +22,7 @@ from app.services.auth_service import get_current_user
 router = APIRouter(prefix="/auth/mfa", tags=["auth"])
 
 
-@router.post("/setup", response_model=SetupOut)
+@router.post("/setup")
 def setup(db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(get_current_user)]) -> SetupOut:
     data = mfa_service.start_enrolment(db, user)
     return SetupOut(**data)
@@ -50,7 +50,7 @@ def disable(
     return {"status": "disabled"}
 
 
-@router.post("/verify", response_model=VerifyOut)
+@router.post("/verify")
 def verify(
     payload: CodeIn, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(get_current_user)]
 ) -> VerifyOut:
