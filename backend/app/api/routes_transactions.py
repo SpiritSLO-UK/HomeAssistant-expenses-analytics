@@ -170,6 +170,38 @@ def categorise_batch(
     return {"updated": len(visible)}
 
 
+def _validate_bulk_ids(db: Session, fields: dict) -> None:
+    """Reject unknown referenced ids up front (a single bad id fails the whole call)."""
+    if fields.get("category_id") is not None and db.get(Category, fields["category_id"]) is None:
+        raise HTTPException(status_code=400, detail="Unknown category")
+    if fields.get("project_id") is not None and db.get(Project, fields["project_id"]) is None:
+        raise HTTPException(status_code=400, detail="Unknown project")
+    if fields.get("merchant_id") is not None and db.get(Vendor, fields["merchant_id"]) is None:
+        raise HTTPException(status_code=400, detail="Unknown vendor")
+
+
+def _apply_bulk_fields(db: Session, txn: Transaction, fields: dict, now: datetime) -> None:
+    """Apply the sent edits to one transaction (only keys present in ``fields``)."""
+    if "category_id" in fields:
+        txn.category_id = fields["category_id"]
+        txn.confidence_score = 1.0  # manual assignment (spec §15.2)
+    if "project_id" in fields:
+        txn.project_id = fields["project_id"]
+    if "merchant_id" in fields:
+        txn.merchant_id = fields["merchant_id"]
+    if "is_business" in fields:
+        txn.is_business = fields["is_business"]
+    if "country" in fields:
+        code = (fields["country"] or "").strip().upper()[:2]
+        txn.country = code or None
+    if "archive" in fields:
+        txn.archived_at = now if fields["archive"] else None
+    if fields.get("add_tag"):
+        current = [tag.name for tag in txn.tags]
+        if fields["add_tag"] not in current:
+            tag_service.set_transaction_tags(db, txn, [*current, fields["add_tag"]])
+
+
 @router.post("/bulk", responses={400: {"description": "Bad request"}})
 def bulk_update(
     payload: BulkUpdateRequest,
@@ -187,13 +219,7 @@ def bulk_update(
     visible = [t for t in rows if scope is None or t.account_id is None or t.account_id in scope]
     fields = payload.model_dump(exclude_unset=True)
 
-    # Validate referenced ids up front (a single bad id fails the whole call).
-    if fields.get("category_id") is not None and db.get(Category, fields["category_id"]) is None:
-        raise HTTPException(status_code=400, detail="Unknown category")
-    if fields.get("project_id") is not None and db.get(Project, fields["project_id"]) is None:
-        raise HTTPException(status_code=400, detail="Unknown project")
-    if fields.get("merchant_id") is not None and db.get(Vendor, fields["merchant_id"]) is None:
-        raise HTTPException(status_code=400, detail="Unknown vendor")
+    _validate_bulk_ids(db, fields)
 
     if payload.delete:
         for txn in visible:
@@ -211,24 +237,7 @@ def bulk_update(
 
     now = datetime.now(UTC).replace(tzinfo=None)
     for txn in visible:
-        if "category_id" in fields:
-            txn.category_id = fields["category_id"]
-            txn.confidence_score = 1.0  # manual assignment (spec §15.2)
-        if "project_id" in fields:
-            txn.project_id = fields["project_id"]
-        if "merchant_id" in fields:
-            txn.merchant_id = fields["merchant_id"]
-        if "is_business" in fields:
-            txn.is_business = fields["is_business"]
-        if "country" in fields:
-            code = (fields["country"] or "").strip().upper()[:2]
-            txn.country = code or None
-        if "archive" in fields:
-            txn.archived_at = now if fields["archive"] else None
-        if fields.get("add_tag"):
-            current = [tag.name for tag in txn.tags]
-            if fields["add_tag"] not in current:
-                tag_service.set_transaction_tags(db, txn, [*current, fields["add_tag"]])
+        _apply_bulk_fields(db, txn, fields, now)
     db.commit()
     return {"updated": len(visible)}
 

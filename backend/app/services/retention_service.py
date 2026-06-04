@@ -82,6 +82,27 @@ def save_policy(db: Session, policy: dict) -> None:
     settings_service.set_value(db, settings_service.RETENTION_POLICY, json.dumps(policy))
 
 
+def _validate_type_policy(dtype: str, values: dict, target: dict) -> None:
+    """Validate one type's submitted ``values`` and apply the valid fields to its
+    ``target`` defaults in place. Raises ``ValueError`` exactly as the caller did."""
+    for field in ("archive_after_days", "purge_after_days"):
+        if field not in target or field not in values or values[field] is None:
+            continue
+        n = values[field]
+        if isinstance(n, bool) or not isinstance(n, int) or n < 0:
+            raise ValueError(f"{dtype}.{field} must be a non-negative whole number of days.")
+        target[field] = n
+    if "auto_purge" in values:
+        if not isinstance(values["auto_purge"], bool):
+            raise ValueError(f"{dtype}.auto_purge must be true or false.")
+        target["auto_purge"] = values["auto_purge"]
+    archive, purge = target.get("archive_after_days"), target.get("purge_after_days")
+    if archive is not None and purge is not None and archive > purge:
+        raise ValueError(
+            f"{dtype}: archive-after ({archive}d) must not be later than purge-after ({purge}d)."
+        )
+
+
 def validate_policy(raw: object) -> dict:
     """Validate a (partial) policy and return the full normalised policy.
 
@@ -96,23 +117,7 @@ def validate_policy(raw: object) -> dict:
             raise ValueError(f"Unknown retention data type: {dtype!r}")
         if not isinstance(values, dict):
             raise ValueError(f"Policy for {dtype!r} must be an object.")
-        target = policy[dtype]
-        for field in ("archive_after_days", "purge_after_days"):
-            if field not in target or field not in values or values[field] is None:
-                continue
-            n = values[field]
-            if isinstance(n, bool) or not isinstance(n, int) or n < 0:
-                raise ValueError(f"{dtype}.{field} must be a non-negative whole number of days.")
-            target[field] = n
-        if "auto_purge" in values:
-            if not isinstance(values["auto_purge"], bool):
-                raise ValueError(f"{dtype}.auto_purge must be true or false.")
-            target["auto_purge"] = values["auto_purge"]
-        archive, purge = target.get("archive_after_days"), target.get("purge_after_days")
-        if archive is not None and purge is not None and archive > purge:
-            raise ValueError(
-                f"{dtype}: archive-after ({archive}d) must not be later than purge-after ({purge}d)."
-            )
+        _validate_type_policy(dtype, values, policy[dtype])
     return policy
 
 
@@ -274,15 +279,9 @@ def any_enabled(policy: dict) -> bool:
     )
 
 
-def run(db: Session, *, actor: str, purge_mode: str) -> dict:
-    """Execute the policy. ``purge_mode='all'`` (owner-confirmed: purge every due
-    type) or ``'auto'`` (startup: purge only ``auto_purge`` types). Archives always
-    run for every due archivable type. Returns per-type counts + whether a backup
-    was taken. Per-type failures are logged and isolated."""
-    policy = get_policy(db)
-    counts = {t: {"archived": 0, "purged": 0} for t in DATA_TYPES}
-
-    # 1. Archive stage — reversible, no backup needed.
+def _run_archive_stage(db: Session, policy: dict, counts: dict) -> None:
+    """Archive stage — reversible, no backup needed. Updates ``counts`` in place;
+    one type's failure is logged and isolated."""
     for dtype in ARCHIVABLE:
         days = policy[dtype].get("archive_after_days")
         if days is None:
@@ -292,7 +291,11 @@ def run(db: Session, *, actor: str, purge_mode: str) -> dict:
         except Exception:  # pragma: no cover - isolate one type's failure
             logger.exception("Retention archive failed for %s", dtype)
 
-    # 2. Purge stage — permanent, so take a safety backup first if it will delete.
+
+def _run_purge_stage(db: Session, policy: dict, purge_mode: str, counts: dict) -> bool:
+    """Purge stage — permanent, so take a safety backup first if it will delete.
+    Updates ``counts`` in place; returns whether a backup was taken. One type's
+    failure is logged and isolated; no purge runs if the backup fails."""
     purge_types = _purge_types(policy, purge_mode)
     will_delete = any(_purge_due(db, t, policy[t]["purge_after_days"]) > 0 for t in purge_types)
     backup_taken = False
@@ -310,8 +313,11 @@ def run(db: Session, *, actor: str, purge_mode: str) -> dict:
                 counts[dtype]["purged"] = _purge(db, dtype, policy[dtype]["purge_after_days"])
             except Exception:  # pragma: no cover - isolate one type's failure
                 logger.exception("Retention purge failed for %s", dtype)
+    return backup_taken
 
-    # 3. Audit every non-zero action.
+
+def _audit_retention_actions(db: Session, actor: str, counts: dict) -> None:
+    """Audit every non-zero archive/purge action."""
     for dtype, c in counts.items():
         if c["archived"]:
             audit_service.record(db, actor=actor, action=f"archive_{dtype}",
@@ -319,6 +325,24 @@ def run(db: Session, *, actor: str, purge_mode: str) -> dict:
         if c["purged"]:
             audit_service.record(db, actor=actor, action=f"purge_{dtype}",
                                  entity_type="retention", details={"count": c["purged"]})
+
+
+def run(db: Session, *, actor: str, purge_mode: str) -> dict:
+    """Execute the policy. ``purge_mode='all'`` (owner-confirmed: purge every due
+    type) or ``'auto'`` (startup: purge only ``auto_purge`` types). Archives always
+    run for every due archivable type. Returns per-type counts + whether a backup
+    was taken. Per-type failures are logged and isolated."""
+    policy = get_policy(db)
+    counts = {t: {"archived": 0, "purged": 0} for t in DATA_TYPES}
+
+    # 1. Archive stage — reversible, no backup needed.
+    _run_archive_stage(db, policy, counts)
+
+    # 2. Purge stage — permanent, so take a safety backup first if it will delete.
+    backup_taken = _run_purge_stage(db, policy, purge_mode, counts)
+
+    # 3. Audit every non-zero action.
+    _audit_retention_actions(db, actor, counts)
     db.commit()
     return {"counts": counts, "backup_taken": backup_taken}
 
