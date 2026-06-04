@@ -66,11 +66,14 @@ export default function FamilySetup() {
       </div>
 
       <ol className="wizard-steps">
-        {STEPS.map((s, i) => (
-          <li key={s} className={i === step ? "is-current" : i < step ? "is-done" : ""}>
-            <span className="wizard-steps__num">{i < step ? "✓" : i + 1}</span> {s}
-          </li>
-        ))}
+        {STEPS.map((s, i) => {
+          const stepClass = i < step ? "is-done" : "";
+          return (
+            <li key={s} className={i === step ? "is-current" : stepClass}>
+              <span className="wizard-steps__num">{i < step ? "✓" : i + 1}</span> {s}
+            </li>
+          );
+        })}
       </ol>
 
       {err && <p className="status status--error">{err}</p>}

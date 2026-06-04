@@ -105,17 +105,20 @@ function ActivityCard({ includeArchived }: Readonly<{ includeArchived: boolean }
               <tr><th>When</th><th>Who</th><th>Action</th><th>Item</th><th>Details</th></tr>
             </thead>
             <tbody>
-              {log.data.map((row) => (
-                <tr key={row.id}>
-                  <td style={{ whiteSpace: "nowrap" }}>{when(row.created_at)}</td>
-                  <td>{row.actor ?? "system"}</td>
-                  <td><code>{row.action}</code></td>
-                  <td className="muted">
-                    {row.entity_type ? row.entity_type + (row.entity_id == null ? "" : ` #${row.entity_id}`) : "—"}
-                  </td>
-                  <td className="muted" style={{ fontSize: "0.82rem" }}>{describe(row)}</td>
-                </tr>
-              ))}
+              {log.data.map((row) => {
+                const entityRef = row.entity_id == null ? "" : ` #${row.entity_id}`;
+                return (
+                  <tr key={row.id}>
+                    <td style={{ whiteSpace: "nowrap" }}>{when(row.created_at)}</td>
+                    <td>{row.actor ?? "system"}</td>
+                    <td><code>{row.action}</code></td>
+                    <td className="muted">
+                      {row.entity_type ? row.entity_type + entityRef : "—"}
+                    </td>
+                    <td className="muted" style={{ fontSize: "0.82rem" }}>{describe(row)}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

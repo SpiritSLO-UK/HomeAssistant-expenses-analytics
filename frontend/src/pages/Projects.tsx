@@ -83,7 +83,8 @@ function ProjectRow({
 }>) {
   const pct = p.percent ?? null;
   const over = pct != null && pct > 100;
-  const colour = over ? "#c0392b" : pct != null && pct >= 80 ? "#d8930a" : "#3a9b5c";
+  const warnColour = pct != null && pct >= 80 ? "#d8930a" : "#3a9b5c";
+  const colour = over ? "#c0392b" : warnColour;
   return (
     <div style={{ padding: "10px 0", borderBottom: "1px solid rgba(127,127,127,0.2)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>

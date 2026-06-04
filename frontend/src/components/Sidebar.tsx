@@ -99,7 +99,9 @@ function EditRow({
   locked: boolean;
   onToggle: () => void;
 }>) {
-  const title = locked ? "Always shown" : shown ? "Hide this tab" : "Show this tab";
+  const stateTitle = shown ? "Hide this tab" : "Show this tab";
+  const title = locked ? "Always shown" : stateTitle;
+  const stateIcon = shown ? "👁️" : "🚫";
   return (
     <button
       type="button"
@@ -110,7 +112,7 @@ function EditRow({
     >
       <span className="sidebar__link-icon">{item.icon}</span>
       <span style={{ flex: 1, textAlign: "left" }}>{item.label}</span>
-      <span aria-hidden="true">{locked ? "🔒" : shown ? "👁️" : "🚫"}</span>
+      <span aria-hidden="true">{locked ? "🔒" : stateIcon}</span>
     </button>
   );
 }

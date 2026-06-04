@@ -661,6 +661,7 @@ function ChildAllowanceRow({ child }: Readonly<{ child: Member }>) {
   const q = useQuery({ queryKey: ["dash-allowance", child.id], queryFn: () => getAllowanceSummary(child.id) });
   const s = q.data;
   const budget = s?.budgets[0];
+  const fallback = s ? <span className="muted">{s.items.length} item(s)</span> : <span className="muted">…</span>;
   return (
     <li>
       <span>{child.display_name}</span>
@@ -669,10 +670,8 @@ function ChildAllowanceRow({ child }: Readonly<{ child: Member }>) {
           <>
             {gbp(budget.spent)} <span className="muted">/ {gbp(budget.amount)}</span>
           </>
-        ) : s ? (
-          <span className="muted">{s.items.length} item(s)</span>
         ) : (
-          <span className="muted">…</span>
+          fallback
         )}
       </span>
     </li>
@@ -758,8 +757,10 @@ function TrendMini({ label, values, metric, currency, key_ }: Readonly<{
   const current = values.length ? values[values.length - 1] : 0;
   // For spend, going down is good; for income/net, going up is good.
   const dir = metric?.direction ?? "flat";
-  const good = dir === "flat" ? null : key_ === "spend" ? dir === "down" : dir === "up";
-  const arrowColour = good == null ? "var(--muted, #888)" : good ? "#3aa55a" : "#e05555";
+  const trendIsGood = key_ === "spend" ? dir === "down" : dir === "up";
+  const good = dir === "flat" ? null : trendIsGood;
+  const goodColour = good ? "#3aa55a" : "#e05555";
+  const arrowColour = good == null ? "var(--muted, #888)" : goodColour;
   return (
     <div>
       <div className="stat__label">{label}</div>
@@ -863,10 +864,12 @@ function SecurityBanner() {
 }
 
 function StatCard({ label, value, tone }: Readonly<{ label: string; value: string; tone?: "pos" | "neg" }>) {
+  const negClass = tone === "neg" ? " amt--neg" : "";
+  const valueClass = tone === "pos" ? " amt--pos" : negClass;
   return (
     <div className="stat">
       <div className="stat__label">{label}</div>
-      <div className={"stat__value" + (tone === "pos" ? " amt--pos" : tone === "neg" ? " amt--neg" : "")}>
+      <div className={"stat__value" + valueClass}>
         {value}
       </div>
     </div>

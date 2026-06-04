@@ -41,7 +41,8 @@ function Gain({ value, pct, currency }: Readonly<{ value: string | null; pct: nu
 // A labelled period-change figure (Day/Month/Year), green up / red down.
 function PeriodChip({ label, ch, currency }: Readonly<{ label: string; ch: { change: string; pct: number | null }; currency: string }>) {
   const n = Number(ch.change);
-  const cls = n > 0 ? "amt--pos" : n < 0 ? "amt--neg" : "muted";
+  const negOrFlat = n < 0 ? "amt--neg" : "muted";
+  const cls = n > 0 ? "amt--pos" : negOrFlat;
   return (
     <div style={{ minWidth: 96 }}>
       <div className="stat__label">{label}</div>
@@ -193,6 +194,7 @@ function PricesCard({ onSynced, onError }: Readonly<{ onSynced: () => void; onEr
 
   const source = status.data?.source ?? "manual";
   const ready = status.data?.ready ?? false;
+  const failedSuffix = result?.failed ? ` · ${result.failed} not found` : "";
 
   return (
     <div className="card">
@@ -231,9 +233,7 @@ function PricesCard({ onSynced, onError }: Readonly<{ onSynced: () => void; onEr
       {result && (
         <p className="muted" style={{ marginTop: 6, fontSize: "0.85rem" }}>
           {result.ran
-            ? `Updated ${result.updated} of ${result.total} holding(s)` +
-              (result.failed ? ` · ${result.failed} not found` : "") +
-              "."
+            ? `Updated ${result.updated} of ${result.total} holding(s)${failedSuffix}.`
             : "Nothing to sync (source is manual)."}
         </p>
       )}
