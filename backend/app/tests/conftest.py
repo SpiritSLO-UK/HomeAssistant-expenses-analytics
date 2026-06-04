@@ -41,18 +41,34 @@ from app.main import app  # noqa: E402
 dbsession.configure(None)
 
 
+def _reset_schema() -> None:
+    """Drop + recreate the whole schema for a fresh, isolated test.
+
+    The engine runs in WAL mode with a connection pool, so doing ``drop_all``
+    and ``create_all`` as two separate engine checkouts can let the second one
+    reflect a stale snapshot (the table still "exists") and skip recreating it
+    *and its indexes* — a race that pytest-xdist's reordering would surface as a
+    flaky missing-index failure. Disposing the pool first clears any stale
+    connection a prior test left behind, and running both DDL steps on a single
+    connection guarantees ``create_all``'s checkfirst sees the post-drop state.
+    """
+    engine = dbsession.require_engine()
+    engine.dispose()
+    with engine.begin() as conn:
+        Base.metadata.drop_all(conn)
+        Base.metadata.create_all(conn)
+
+
 @pytest.fixture()
 def client() -> Generator[TestClient, None, None]:
-    Base.metadata.drop_all(dbsession.require_engine())
-    Base.metadata.create_all(dbsession.require_engine())
+    _reset_schema()
     with TestClient(app) as test_client:
         yield test_client
 
 
 @pytest.fixture()
 def db():
-    Base.metadata.drop_all(dbsession.require_engine())
-    Base.metadata.create_all(dbsession.require_engine())
+    _reset_schema()
     session = SessionLocal()
     try:
         yield session
