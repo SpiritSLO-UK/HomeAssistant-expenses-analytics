@@ -14,7 +14,6 @@ import {
   type MatchResult,
   type Receipt,
 } from "../api/client";
-import PaperlessSetupNote from "../components/PaperlessSetupNote";
 
 export default function Receipts() {
   const qc = useQueryClient();
@@ -101,48 +100,44 @@ function PaperlessCard({ onError }: Readonly<{ onError: (e: unknown) => void }>)
     onError,
   });
 
-  if (status.isLoading) return null;
+  // Show this card only when Paperless is configured (#67/#68). Until then there's
+  // nothing to import here — setup guidance lives in Settings → Integrations.
+  if (!configured) return null;
 
   return (
     <div className="card">
       <h2 className="card__title">Import from Paperless</h2>
-      {configured ? (
-        <>
-          <p className="muted" style={{ marginTop: 0 }}>
-            Connected to <code>{status.data?.url}</code>. Search your documents and import one as a receipt.
-          </p>
-          <form className="form-row" onSubmit={(e) => { e.preventDefault(); setSubmitted(query); }}>
-            <input
-              placeholder="Search (blank = most recent)"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              style={{ flex: 1, minWidth: 160 }}
-            />
-            <button className="btn btn--sm" type="submit">{docs.isFetching ? "Searching…" : "Browse"}</button>
-          </form>
-          {msg && <p className="status status--ok" style={{ marginTop: 8 }}>{msg}</p>}
-          {submitted !== null && docs.data?.length === 0 && (
-            <p className="muted">No documents found.</p>
-          )}
-          {docs.data && docs.data.length > 0 && (
-            <ul className="kv" style={{ marginTop: 8 }}>
-              {docs.data.map((d) => (
-                <li key={d.id}>
-                  <span>{d.title}{d.created && <span className="muted"> · {d.created.slice(0, 10)}</span>}</span>
-                  <button
-                    className="btn btn--sm btn--ghost"
-                    disabled={importDoc.isPending}
-                    onClick={() => importDoc.mutate(d.id)}
-                  >
-                    Import
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </>
-      ) : (
-        <PaperlessSetupNote />
+      <p className="muted" style={{ marginTop: 0 }}>
+        Connected to <code>{status.data?.url}</code>. Search your documents and import one as a receipt.
+      </p>
+      <form className="form-row" onSubmit={(e) => { e.preventDefault(); setSubmitted(query); }}>
+        <input
+          placeholder="Search (blank = most recent)"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          style={{ flex: 1, minWidth: 160 }}
+        />
+        <button className="btn btn--sm" type="submit">{docs.isFetching ? "Searching…" : "Browse"}</button>
+      </form>
+      {msg && <p className="status status--ok" style={{ marginTop: 8 }}>{msg}</p>}
+      {submitted !== null && docs.data?.length === 0 && (
+        <p className="muted">No documents found.</p>
+      )}
+      {docs.data && docs.data.length > 0 && (
+        <ul className="kv" style={{ marginTop: 8 }}>
+          {docs.data.map((d) => (
+            <li key={d.id}>
+              <span>{d.title}{d.created && <span className="muted"> · {d.created.slice(0, 10)}</span>}</span>
+              <button
+                className="btn btn--sm btn--ghost"
+                disabled={importDoc.isPending}
+                onClick={() => importDoc.mutate(d.id)}
+              >
+                Import
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );
