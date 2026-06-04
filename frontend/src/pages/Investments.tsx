@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Sparkline from "../components/Sparkline";
+import RangeSelector from "../components/RangeSelector";
 import {
   adjustAccountValue,
   createHolding,
@@ -58,7 +59,11 @@ export default function Investments() {
   const qc = useQueryClient();
   const [err, setErr] = useState<string | null>(null);
   const summary = useQuery({ queryKey: ["investment-summary"], queryFn: getInvestmentSummary });
-  const history = useQuery({ queryKey: ["investment-history"], queryFn: () => getInvestmentHistory(365) });
+  const [months, setMonths] = useState(12);
+  const history = useQuery({
+    queryKey: ["investment-history", months],
+    queryFn: () => getInvestmentHistory(months * 31),
+  });
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["investment-summary"] });
@@ -99,9 +104,12 @@ export default function Investments() {
               <Gain value={summary.data.total_gain} pct={summary.data.total_gain_pct} currency={base} />
             </p>
           )}
+          <div className="form-row" style={{ gap: 4, marginTop: 10 }} title="Time range">
+            <RangeSelector months={months} onChange={setMonths} />
+          </div>
           {history.data && history.data.points.length >= 2 && (
             <div style={{ margin: "10px 0" }}>
-              <Sparkline values={history.data.points.map((p) => Number(p.value))} color="#6aa9ff" />
+              <Sparkline values={history.data.points.map((p) => Number(p.value))} color="#6aa9ff" width={560} height={120} />
             </div>
           )}
           {history.data && (

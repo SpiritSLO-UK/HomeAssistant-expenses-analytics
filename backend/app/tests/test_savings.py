@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 
 
@@ -124,3 +125,15 @@ def test_goal_update_and_delete(client):
     assert round(goal["percent"]) == 50
     assert client.delete(f"/api/savings/goals/{gid}").status_code == 204
     assert all(g["id"] != gid for g in client.get("/api/savings/goals").json())
+
+
+def test_history_point_in_time_total(client):
+    """Total savings over time = the latest snapshot of each account as of each
+    month's end. Months before the first snapshot read 0."""
+    aid = _account(client, "ISA")
+    _add_balance(client, aid, date.today().isoformat(), "500.00")
+    h = client.get("/api/savings/history?months=3").json()
+    assert len(h["months"]) == 3
+    assert all({"month", "total"} == set(m) for m in h["months"])
+    assert h["months"][-1]["total"] == "500.00"  # current month
+    assert h["months"][0]["total"] == "0.00"     # before any snapshot

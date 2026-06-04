@@ -1187,6 +1187,12 @@ export function getSavingsSummary(): Promise<SavingsSummary> {
   return fetchJson<SavingsSummary>("api/savings/summary");
 }
 
+// Total savings over time (monthly point-in-time) for the Savings chart. Returns
+// the shared TimeSeries shape (defined in the Travel section).
+export function getSavingsHistory(months = 12): Promise<TimeSeries> {
+  return fetchJson<TimeSeries>(`api/savings/history?months=${months}`);
+}
+
 export function createSavingsAccount(data: {
   name: string;
   institution?: string;
