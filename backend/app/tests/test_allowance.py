@@ -157,3 +157,34 @@ def test_child_role_gate(client):
         assert client.get(path, headers=h).status_code == 403, path
     # And cannot write (read-only role + child gate).
     assert client.post("/api/allowance/allocations", json={"child_id": 1, "amount": "1"}, headers=h).status_code == 403
+
+
+def _make_member(client, uid="ha-mem", name="Mem") -> int:
+    """An approved, non-admin adult member."""
+    client.get("/api/users/me", headers=_hdr(uid, name))
+    mid = next(u["id"] for u in client.get("/api/users").json() if u["external_id"] == uid)
+    client.patch(f"/api/users/{mid}", json={"role": "member", "status": "approved"})
+    return mid
+
+
+def test_child_budget_is_admin_only(client):
+    """A budget targeting a child (an allowance budget) may only be created, edited
+    or removed by an owner/admin — a plain member is blocked (parent/admin gate).
+    A shared (non-child) budget stays open to members."""
+    kid = _make_child(client)
+    mhdr = _hdr("ha-mem", "Mem")
+    _make_member(client)
+
+    body = {"name": "Sweets", "amount": "10", "period": "monthly", "owner_user_id": kid}
+    # Non-admin member cannot create a child's budget…
+    assert client.post("/api/budgets", json=body, headers=mhdr).status_code == 403
+    # …but the owner can.
+    bid = client.post("/api/budgets", json=body).json()["id"]
+    # Member cannot edit or delete it; the owner can.
+    assert client.patch(f"/api/budgets/{bid}", json={"amount": "20"}, headers=mhdr).status_code == 403
+    assert client.delete(f"/api/budgets/{bid}", headers=mhdr).status_code == 403
+    assert client.patch(f"/api/budgets/{bid}", json={"amount": "20"}).status_code == 200
+    assert client.delete(f"/api/budgets/{bid}").status_code == 204
+    # A shared (no owner) budget is NOT gated — a member can still create one.
+    shared = {"name": "Food", "amount": "100", "period": "monthly"}
+    assert client.post("/api/budgets", json=shared, headers=mhdr).status_code == 201

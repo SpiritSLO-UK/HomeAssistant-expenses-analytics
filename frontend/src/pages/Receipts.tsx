@@ -14,6 +14,7 @@ import {
   type MatchResult,
   type Receipt,
 } from "../api/client";
+import PaperlessSetupNote from "../components/PaperlessSetupNote";
 
 export default function Receipts() {
   const qc = useQueryClient();
@@ -141,12 +142,7 @@ function PaperlessCard({ onError }: Readonly<{ onError: (e: unknown) => void }>)
           )}
         </>
       ) : (
-        <p className="muted">
-          Pull documents from your <strong>Paperless-ngx</strong> instance into receipts. It's
-          one-directional — we only ever request from Paperless, never the other way. To enable,
-          set <code>HAFI_PAPERLESS_URL</code> and <code>HAFI_PAPERLESS_TOKEN</code> in the add-on /
-          environment and restart.
-        </p>
+        <PaperlessSetupNote />
       )}
     </div>
   );

@@ -83,6 +83,7 @@ class TransactionUpdate(BaseModel):
     vat_amount: Decimal | None = None
     needs_review: bool | None = None
     review_reason: str | None = None
+    country: str | None = None  # ISO alpha-2 for the spend-by-location map ("" clears)
 
 
 # --- Splits (spec §17, §24.4 POST /transactions/{id}/split) ---
