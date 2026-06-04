@@ -218,7 +218,7 @@ def _gain_pct(gain: Decimal | None, cost: Decimal | None) -> float | None:
     return round(float(gain / cost * 100), 1)
 
 
-def holding_to_dict(db: Session, holding: Holding) -> dict:
+def holding_to_dict(holding: Holding) -> dict:
     units = Decimal(holding.units)
     price = Decimal(holding.last_price) if holding.last_price is not None else None
     avg = Decimal(holding.avg_cost) if holding.avg_cost is not None else None
@@ -376,18 +376,20 @@ def history(db: Session, *, account_ids: set[int] | None = None, days: int = 365
 
     dates: set[date] = {today}
     if acct_ids:
-        for d in db.scalars(
-            select(AccountValue.as_of_date).where(
-                AccountValue.account_id.in_(acct_ids), AccountValue.as_of_date >= start
-            )
-        ).all():
-            dates.add(d)
-        for d in db.scalars(
-            select(HoldingPrice.as_of_date)
-            .join(Holding, Holding.id == HoldingPrice.holding_id)
-            .where(Holding.account_id.in_(acct_ids), HoldingPrice.as_of_date >= start)
-        ).all():
-            dates.add(d)
+        dates.update(
+            db.scalars(
+                select(AccountValue.as_of_date).where(
+                    AccountValue.account_id.in_(acct_ids), AccountValue.as_of_date >= start
+                )
+            ).all()
+        )
+        dates.update(
+            db.scalars(
+                select(HoldingPrice.as_of_date)
+                .join(Holding, Holding.id == HoldingPrice.holding_id)
+                .where(Holding.account_id.in_(acct_ids), HoldingPrice.as_of_date >= start)
+            ).all()
+        )
 
     ordered = sorted(d for d in dates if d <= today)
     points = [

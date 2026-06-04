@@ -52,7 +52,10 @@ def _extract_json(text: str) -> dict:
     """Pull the first JSON object out of an LLM response (tolerating code fences
     or surrounding prose)."""
     text = text.strip()
-    text = re.sub(r"(?:^```(?:json)?)|(?:```$)", "", text, flags=re.MULTILINE).strip()
+    # Strip code fences in two simple passes (one anchored pattern each) rather than
+    # an anchored alternation, which reads ambiguously.
+    text = re.sub(r"^```(?:json)?", "", text, flags=re.MULTILINE)
+    text = re.sub(r"```$", "", text, flags=re.MULTILINE).strip()
     try:
         return json.loads(text)
     except json.JSONDecodeError:

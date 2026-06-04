@@ -78,7 +78,7 @@ class _Spec:
     cycle: int  # 0 = this month, 1 = last month, 2 = two months ago
     day: int  # day offset within the cycle (0..28)
     description: str
-    amount: Decimal  # signed; negative = spend
+    amount: Decimal  # signed; negative is spend
     currency: str = "GBP"
     vary: bool = False  # nudge spend a little per cycle so trends aren't flat
     business: bool = False
@@ -276,25 +276,31 @@ def _cat_id(db: Session, name: str) -> int | None:
     return db.scalar(select(Category.id).where(Category.name == name))
 
 
+# Category names reused across the demo seeds (vendors, rules, budgets).
+_CAT_GROCERIES = "Groceries"
+_CAT_SUBSCRIPTIONS = "Subscriptions"
+_CAT_EATING_OUT = "Eating Out"
+_CAT_BILLS = "Bills"
+
 # A vendor library (canonical name, "contains" alias, default category) so the
 # Vendors page is populated and the demo transactions link to real vendor rows
 # (merchant_id) rather than only carrying raw merchant text.
 _DEMO_VENDORS: list[tuple[str, str, str]] = [
-    ("Tesco", "TESCO", "Groceries"),
-    ("Sainsbury's", "SAINSBURYS", "Groceries"),
-    ("Aldi", "ALDI", "Groceries"),
-    ("Lidl", "LIDL", "Groceries"),
-    ("Waitrose", "WAITROSE", "Groceries"),
+    ("Tesco", "TESCO", _CAT_GROCERIES),
+    ("Sainsbury's", "SAINSBURYS", _CAT_GROCERIES),
+    ("Aldi", "ALDI", _CAT_GROCERIES),
+    ("Lidl", "LIDL", _CAT_GROCERIES),
+    ("Waitrose", "WAITROSE", _CAT_GROCERIES),
     ("Shell", "SHELL", "Car"),
     ("BP", "BP CONNECT", "Car"),
-    ("Netflix", "NETFLIX", "Subscriptions"),
-    ("Spotify", "SPOTIFY", "Subscriptions"),
-    ("Disney+", "DISNEY PLUS", "Subscriptions"),
-    ("PureGym", "PURE GYM", "Subscriptions"),
-    ("Costa Coffee", "COSTA COFFEE", "Eating Out"),
-    ("Pret A Manger", "PRET A MANGER", "Eating Out"),
-    ("Deliveroo", "DELIVEROO", "Eating Out"),
-    ("Nando's", "NANDOS", "Eating Out"),
+    ("Netflix", "NETFLIX", _CAT_SUBSCRIPTIONS),
+    ("Spotify", "SPOTIFY", _CAT_SUBSCRIPTIONS),
+    ("Disney+", "DISNEY PLUS", _CAT_SUBSCRIPTIONS),
+    ("PureGym", "PURE GYM", _CAT_SUBSCRIPTIONS),
+    ("Costa Coffee", "COSTA COFFEE", _CAT_EATING_OUT),
+    ("Pret A Manger", "PRET A MANGER", _CAT_EATING_OUT),
+    ("Deliveroo", "DELIVEROO", _CAT_EATING_OUT),
+    ("Nando's", "NANDOS", _CAT_EATING_OUT),
     ("Transport for London", "TfL", "Transport"),
     ("Trainline", "TRAINLINE", "Transport"),
     ("Amazon", "AMAZON", "Shopping"),
@@ -302,10 +308,10 @@ _DEMO_VENDORS: list[tuple[str, str, str]] = [
     ("Boots", "BOOTS", "Health"),
     ("Pets at Home", "PETS AT HOME", "Pets"),
     ("Odeon", "ODEON", "Entertainment"),
-    ("British Gas", "BRITISH GAS", "Bills"),
-    ("Thames Water", "THAMES WATER", "Bills"),
-    ("BT", "BT BROADBAND", "Bills"),
-    ("Vodafone", "VODAFONE", "Bills"),
+    ("British Gas", "BRITISH GAS", _CAT_BILLS),
+    ("Thames Water", "THAMES WATER", _CAT_BILLS),
+    ("BT", "BT BROADBAND", _CAT_BILLS),
+    ("Vodafone", "VODAFONE", _CAT_BILLS),
     ("Admiral", "ADMIRAL", "Insurance"),
     ("Nationwide", "NATIONWIDE MORTGAGE", "Housing"),
     ("Screwfix", "SCREWFIX", "DIY"),
@@ -347,7 +353,7 @@ def _seed_rule(db: Session) -> None:
     """One categorisation rule so the Rules page isn't empty."""
     if db.scalar(select(Rule.id).where(Rule.name == _DEMO_RULE_NAME)):
         return
-    eating = _cat_id(db, "Eating Out")
+    eating = _cat_id(db, _CAT_EATING_OUT)
     db.add(
         Rule(
             household_id=get_or_create_default_household(db).id,
@@ -406,8 +412,8 @@ def _seed_budget(db: Session, name: str, *, amount: Decimal, category: str | Non
 
 def _seed_budgets(db: Session) -> None:
     """A couple of category budgets + a total, so the Budgets page shows progress."""
-    _seed_budget(db, "Groceries", amount=Decimal("450.00"), category="Groceries")
-    _seed_budget(db, "Eating Out", amount=Decimal("150.00"), category="Eating Out")
+    _seed_budget(db, _CAT_GROCERIES, amount=Decimal("450.00"), category=_CAT_GROCERIES)
+    _seed_budget(db, _CAT_EATING_OUT, amount=Decimal("150.00"), category=_CAT_EATING_OUT)
     _seed_budget(db, "Monthly spending", amount=Decimal("2000.00"), category=None)
 
 

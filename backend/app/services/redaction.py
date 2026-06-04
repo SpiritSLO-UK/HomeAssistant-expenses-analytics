@@ -54,7 +54,7 @@ def redact_text(text: str | None) -> str:
     card number isn't partly eaten by the account-number rule.
     """
     if not text:
-        return text or ""
+        return ""
     out = _CARD_RE.sub(_mask_card, text)
     out = _IBAN_RE.sub(IBAN_MASK, out)
     out = _SORT_CODE_RE.sub(SORT_MASK, out)

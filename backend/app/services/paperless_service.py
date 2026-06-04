@@ -68,7 +68,7 @@ def _get(path: str, **kwargs):
     return resp
 
 
-def list_documents(db: Session, *, query: str | None = None, limit: int = 25) -> list[dict]:
+def list_documents(*, query: str | None = None, limit: int = 25) -> list[dict]:
     """Recent documents from Paperless (newest first), optionally full-text filtered."""
     limit = max(1, min(100, limit))
     params: dict[str, object] = {"ordering": "-created", "page_size": limit}

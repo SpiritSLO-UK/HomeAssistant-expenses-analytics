@@ -107,7 +107,7 @@ def _suggest(req: AIRequest, result: dict, cats: list[Category]) -> dict:
     }
 
 
-def _run(db: Session, req: AIRequest, provider: AIProvider, payload: dict, cats: list[Category]) -> dict:
+def _run(req: AIRequest, provider: AIProvider, payload: dict, cats: list[Category]) -> dict:
     """Call the provider and record the outcome on ``req`` (no commit). On a
     provider error, marks the request failed and re-raises."""
     try:
@@ -176,7 +176,7 @@ def classify_transaction(db: Session, txn: Transaction, *, provider=None) -> dic
                  approval_status="not_required" if not is_cloud else "approved",
                  payload=to_send, status="pending", transaction_id=txn.id)
     try:
-        result = _run(db, req, provider, to_send, cats)
+        result = _run(req, provider, to_send, cats)
     except AIError:
         db.commit()
         raise
@@ -195,7 +195,7 @@ def run_request(db: Session, ai_request: AIRequest, *, provider=None) -> dict:
     ai_request.approval_status = "approved"
     payload = json.loads(ai_request.redacted_payload or "{}")
     try:
-        result = _run(db, ai_request, provider, payload, _candidate_categories(db))
+        result = _run(ai_request, provider, payload, _candidate_categories(db))
     except AIError:
         db.commit()
         raise
@@ -342,7 +342,7 @@ def _send_one_approved(
     req.approval_status = "approved"
     payload = json.loads(req.redacted_payload or "{}")
     try:
-        res = _run(db, req, provider, payload, cats)
+        res = _run(req, provider, payload, cats)
     except AIError:
         failed.append(rid)
         return

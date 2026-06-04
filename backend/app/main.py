@@ -92,6 +92,9 @@ if settings.cors_origins:
     )
 
 
+# Common prefix for all data API routes.
+_API_PREFIX = "/api/"
+
 # When the database is locked (encrypted, awaiting unlock), block data APIs with
 # 423 — but allow health and the security/unlock endpoints through (#15b).
 _LOCK_EXEMPT = ("/api/health", "/api/security")
@@ -117,7 +120,7 @@ _CHILD_ALLOWED_PREFIXES = ("/api/allowance/summary",)
 
 @app.middleware("http")
 async def _lock_guard(request: Request, call_next):
-    if dbsession.is_locked() and request.url.path.startswith("/api/"):
+    if dbsession.is_locked() and request.url.path.startswith(_API_PREFIX):
         if not request.url.path.startswith(_LOCK_EXEMPT):
             return JSONResponse(
                 status_code=423,
@@ -135,7 +138,7 @@ async def _auth_guard(request: Request, call_next):
     path = request.url.path
     # Skip non-API paths and anything while the DB is locked (the lock guard owns
     # that case and the auth lookup needs a live DB).
-    if not path.startswith("/api/") or dbsession.is_locked():
+    if not path.startswith(_API_PREFIX) or dbsession.is_locked():
         return await call_next(request)
 
     from app.services import auth_service, mfa_service
@@ -211,7 +214,7 @@ async def _audit_actions(request: Request, call_next):
         path = request.url.path
         if (
             request.method in _AUDIT_METHODS
-            and path.startswith("/api/")
+            and path.startswith(_API_PREFIX)
             and not dbsession.is_locked()
         ):
             from app.services import audit_service
