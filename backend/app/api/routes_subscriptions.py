@@ -46,7 +46,11 @@ def detect(db: Annotated[Session, Depends(get_db)]) -> dict:
     return result
 
 
-@router.patch("/{subscription_id}", response_model=SubscriptionOut)
+@router.patch(
+    "/{subscription_id}",
+    response_model=SubscriptionOut,
+    responses={400: {"description": "Bad request"}, 404: {"description": "Not found"}},
+)
 def update_subscription(
     subscription_id: int, payload: SubscriptionUpdate, db: Annotated[Session, Depends(get_db)]
 ) -> dict:
@@ -66,7 +70,7 @@ def update_subscription(
     return subscription_service.to_dict(sub)
 
 
-@router.delete("/{subscription_id}", status_code=204)
+@router.delete("/{subscription_id}", status_code=204, responses={404: {"description": "Not found"}})
 def delete_subscription(subscription_id: int, db: Annotated[Session, Depends(get_db)]) -> None:
     sub = db.get(Subscription, subscription_id)
     if sub is None:

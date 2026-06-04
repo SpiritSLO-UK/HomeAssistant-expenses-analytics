@@ -55,7 +55,7 @@ def get_policy(db: Annotated[Session, Depends(get_db)], _owner: Annotated[User, 
     return _policy_response(db)
 
 
-@router.put("/policy")
+@router.put("/policy", responses={400: {"description": "Bad request"}})
 def update_policy(
     payload: RetentionPolicyUpdate,
     db: Annotated[Session, Depends(get_db)],

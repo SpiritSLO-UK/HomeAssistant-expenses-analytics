@@ -22,7 +22,7 @@ from app.services.auth_service import get_current_user
 router = APIRouter(prefix="/allowance", tags=["allowance"])
 
 
-@router.get("/summary", response_model=AllowanceSummary)
+@router.get("/summary", response_model=AllowanceSummary, responses={404: {"description": "Not found"}})
 def allowance_summary(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
@@ -40,7 +40,9 @@ def allowance_summary(
     return allowance_service.summary(db, target)
 
 
-@router.post("/allocations", response_model=AllocationOut, status_code=201)
+@router.post(
+    "/allocations", response_model=AllocationOut, status_code=201, responses={400: {"description": "Bad request"}}
+)
 def create_allocation(payload: AllocationCreate, db: Annotated[Session, Depends(get_db)]) -> dict:
     try:
         row = allowance_service.create_allocation(

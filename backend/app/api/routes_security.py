@@ -40,7 +40,7 @@ def status() -> dict:
     return security_service.status()
 
 
-@router.post("/unlock")
+@router.post("/unlock", responses={400: {"description": "Bad request"}})
 def unlock(payload: Passphrase) -> dict:
     if not security_service.unlock(payload.passphrase):
         failed = security_service.record_failed_unlock()
@@ -52,7 +52,7 @@ def unlock(payload: Passphrase) -> dict:
     return {"status": "unlocked"}
 
 
-@router.post("/enable")
+@router.post("/enable", responses={400: {"description": "Bad request"}})
 def enable(payload: EnableRequest) -> dict:
     try:
         security_service.enable_encryption(payload.passphrase, payload.unlock_mode)
@@ -61,7 +61,7 @@ def enable(payload: EnableRequest) -> dict:
     return {"status": "encrypted", "unlock_mode": payload.unlock_mode}
 
 
-@router.post("/disable")
+@router.post("/disable", responses={400: {"description": "Bad request"}})
 def disable(payload: Passphrase) -> dict:
     try:
         security_service.disable_encryption(payload.passphrase)

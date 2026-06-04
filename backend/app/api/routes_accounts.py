@@ -49,7 +49,15 @@ def list_accounts(request: Request, db: Annotated[Session, Depends(get_db)]) -> 
     return [_to_dict(a, owner_names) for a in accounts]
 
 
-@router.patch("/{account_id}", response_model=AccountOut)
+@router.patch(
+    "/{account_id}",
+    response_model=AccountOut,
+    responses={
+        400: {"description": "Bad request"},
+        403: {"description": "Forbidden"},
+        404: {"description": "Not found"},
+    },
+)
 def update_account(
     account_id: int,
     payload: AccountUpdate,

@@ -170,7 +170,7 @@ def categorise_batch(
     return {"updated": len(visible)}
 
 
-@router.post("/bulk")
+@router.post("/bulk", responses={400: {"description": "Bad request"}})
 def bulk_update(
     payload: BulkUpdateRequest,
     request: Request,
@@ -238,7 +238,7 @@ def get_transaction(transaction_id: int, request: Request, db: Annotated[Session
     return _get_visible_txn(request, db, transaction_id)
 
 
-@router.patch("/{transaction_id}", response_model=TransactionOut)
+@router.patch("/{transaction_id}", response_model=TransactionOut, responses={400: {"description": "Bad request"}})
 def update_transaction(
     transaction_id: int, payload: TransactionUpdate, request: Request, db: Annotated[Session, Depends(get_db)]
 ) -> Transaction:
@@ -300,7 +300,7 @@ def get_splits(transaction_id: int, request: Request, db: Annotated[Session, Dep
     return _splits_response(_get_visible_txn(request, db, transaction_id))
 
 
-@router.post("/{transaction_id}/split", response_model=SplitsResponse)
+@router.post("/{transaction_id}/split", response_model=SplitsResponse, responses={400: {"description": "Bad request"}})
 def set_splits(
     transaction_id: int, payload: SetSplitsRequest, request: Request, db: Annotated[Session, Depends(get_db)]
 ) -> dict:
@@ -350,7 +350,12 @@ def list_transaction_receipts(
     return [receipt_service.to_dict(db, r) for r in receipt_service.receipts_for_transaction(db, txn.id)]
 
 
-@router.post("/{transaction_id}/receipts", response_model=ReceiptOut, status_code=201)
+@router.post(
+    "/{transaction_id}/receipts",
+    response_model=ReceiptOut,
+    status_code=201,
+    responses={400: {"description": "Bad request"}, 413: {"description": "Payload too large"}},
+)
 async def attach_transaction_receipt(
     transaction_id: int, request: Request, file: Annotated[UploadFile, File()], db: Annotated[Session, Depends(get_db)]
 ) -> dict:

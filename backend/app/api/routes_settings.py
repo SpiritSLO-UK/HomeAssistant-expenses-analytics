@@ -96,7 +96,7 @@ def services_status(db: Annotated[Session, Depends(get_db)]) -> dict:
     }
 
 
-@router.put("")
+@router.put("", responses={400: {"description": "Bad request"}})
 def update_settings(
     payload: SettingsUpdate,
     db: Annotated[Session, Depends(get_db)],

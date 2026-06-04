@@ -20,6 +20,8 @@ from app.services import auth_service, category_service
 
 router = APIRouter(prefix="/categories", tags=["categories"])
 
+_NOT_FOUND = "Category not found"
+
 
 @router.get("", response_model=list[CategoryOut])
 def list_categories(db: Annotated[Session, Depends(get_db)], include_inactive: bool = False) -> list[Category]:
@@ -55,7 +57,7 @@ def get_privacy_default(
     return {"level": category_service.get_privacy_default(db)}
 
 
-@router.post("/privacy")
+@router.post("/privacy", responses={400: {"description": "Bad request"}})
 def set_all_privacy(
     payload: CategoryPrivacyLevel,
     db: Annotated[Session, Depends(get_db)],
@@ -70,24 +72,24 @@ def set_all_privacy(
     return {"updated": updated, "level": payload.level}
 
 
-@router.get("/{category_id}", response_model=CategoryOut)
+@router.get("/{category_id}", response_model=CategoryOut, responses={404: {"description": "Not found"}})
 def get_category(category_id: int, db: Annotated[Session, Depends(get_db)]) -> Category:
     category = category_service.get_category(db, category_id)
     if category is None:
-        raise HTTPException(status_code=404, detail="Category not found")
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
     return category
 
 
-@router.patch("/{category_id}", response_model=CategoryOut)
+@router.patch("/{category_id}", response_model=CategoryOut, responses={404: {"description": "Not found"}})
 def update_category(category_id: int, payload: CategoryUpdate, db: Annotated[Session, Depends(get_db)]) -> Category:
     _check_privacy(payload.privacy_sensitivity)
     category = category_service.update_category(db, category_id, payload.model_dump(exclude_unset=True))
     if category is None:
-        raise HTTPException(status_code=404, detail="Category not found")
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
     return category
 
 
-@router.delete("/{category_id}", status_code=204)
+@router.delete("/{category_id}", status_code=204, responses={404: {"description": "Not found"}})
 def delete_category(
     category_id: int,
     db: Annotated[Session, Depends(get_db)],
@@ -95,10 +97,14 @@ def delete_category(
 ) -> None:
     """Deleting a category (built-ins included) is structural — owner only."""
     if not category_service.delete_category(db, category_id):
-        raise HTTPException(status_code=404, detail="Category not found")
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
 
 
-@router.post("/{category_id}/merge", response_model=CategoryOut)
+@router.post(
+    "/{category_id}/merge",
+    response_model=CategoryOut,
+    responses={400: {"description": "Bad request"}, 404: {"description": "Not found"}},
+)
 def merge_category(
     category_id: int,
     payload: CategoryMerge,
@@ -112,5 +118,5 @@ def merge_category(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if target is None:
-        raise HTTPException(status_code=404, detail="Category not found")
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
     return target

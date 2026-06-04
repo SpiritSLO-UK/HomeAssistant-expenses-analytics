@@ -33,7 +33,7 @@ def download_database() -> FileResponse:
     )
 
 
-@router.post("/restore")
+@router.post("/restore", responses={400: {"description": "Bad request"}})
 async def restore_database(file: Annotated[UploadFile, File()], _db: Annotated[Session, Depends(get_db)]) -> dict:
     """Restore the database from an uploaded snapshot (destructive)."""
     content = await file.read()
@@ -44,7 +44,7 @@ async def restore_database(file: Annotated[UploadFile, File()], _db: Annotated[S
     return {"status": "restored"}
 
 
-@router.post("/database/encrypted")
+@router.post("/database/encrypted", responses={400: {"description": "Bad request"}})
 def download_encrypted_database(passphrase: Annotated[str, Form()]) -> Response:
     """Download a passphrase-encrypted snapshot of the database (backlog #15).
 
@@ -65,7 +65,7 @@ def download_encrypted_database(passphrase: Annotated[str, Form()]) -> Response:
     )
 
 
-@router.post("/restore/encrypted")
+@router.post("/restore/encrypted", responses={400: {"description": "Bad request"}})
 async def restore_encrypted_database(
     file: Annotated[UploadFile, File()], passphrase: Annotated[str, Form()], _db: Annotated[Session, Depends(get_db)]
 ) -> dict:
@@ -88,7 +88,7 @@ def export_config(db: Annotated[Session, Depends(get_db)]) -> dict:
     return backup_service.export_config(db)
 
 
-@router.post("/config")
+@router.post("/config", responses={400: {"description": "Bad request"}})
 async def import_config(file: Annotated[UploadFile, File()], db: Annotated[Session, Depends(get_db)]) -> dict:
     content = await file.read()
     try:

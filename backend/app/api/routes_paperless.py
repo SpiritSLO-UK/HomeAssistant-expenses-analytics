@@ -23,7 +23,7 @@ def status() -> dict:
     return paperless_service.status()
 
 
-@router.get("/documents")
+@router.get("/documents", responses={400: {"description": "Bad request"}, 502: {"description": "Upstream error"}})
 def list_documents(db: Annotated[Session, Depends(get_db)], query: str | None = None, limit: int = 25) -> list[dict]:
     try:
         return paperless_service.list_documents(db, query=query, limit=limit)
@@ -33,7 +33,10 @@ def list_documents(db: Annotated[Session, Depends(get_db)], query: str | None = 
         raise HTTPException(status_code=502, detail=f"Could not reach Paperless: {exc}") from exc
 
 
-@router.post("/documents/{doc_id}/import")
+@router.post(
+    "/documents/{doc_id}/import",
+    responses={400: {"description": "Bad request"}, 502: {"description": "Upstream error"}},
+)
 def import_document(doc_id: int, db: Annotated[Session, Depends(get_db)]) -> dict:
     try:
         return paperless_service.import_document(db, doc_id)

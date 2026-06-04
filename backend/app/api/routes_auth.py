@@ -21,6 +21,8 @@ from app.services.auth_service import get_current_user
 
 router = APIRouter(prefix="/auth/mfa", tags=["auth"])
 
+_BAD_CODE = "That code didn't match. Try again."
+
 
 @router.post("/setup")
 def setup(db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(get_current_user)]) -> SetupOut:
@@ -28,18 +30,18 @@ def setup(db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends
     return SetupOut(**data)
 
 
-@router.post("/enable")
+@router.post("/enable", responses={400: {"description": "Bad request"}})
 def enable(
     payload: CodeIn, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(get_current_user)]
 ) -> dict:
     if not mfa_service.enable(db, user, payload.code):
-        raise HTTPException(status_code=400, detail="That code didn't match. Try again.")
+        raise HTTPException(status_code=400, detail=_BAD_CODE)
     audit_service.record(db, actor=user.display_name, action="mfa_enabled", entity_type="user", entity_id=user.id)
     db.commit()
     return {"status": "enabled"}
 
 
-@router.post("/disable")
+@router.post("/disable", responses={400: {"description": "Bad request"}})
 def disable(
     payload: CodeIn, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(get_current_user)]
 ) -> dict:
@@ -50,17 +52,17 @@ def disable(
     return {"status": "disabled"}
 
 
-@router.post("/verify")
+@router.post("/verify", responses={400: {"description": "Bad request"}})
 def verify(
     payload: CodeIn, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(get_current_user)]
 ) -> VerifyOut:
     token = mfa_service.verify_and_open(db, user, payload.code)
     if token is None:
-        raise HTTPException(status_code=400, detail="That code didn't match. Try again.")
+        raise HTTPException(status_code=400, detail=_BAD_CODE)
     return VerifyOut(token=token, expires_in_seconds=int(mfa_service.SESSION_TTL.total_seconds()))
 
 
-@router.post("/step-up")
+@router.post("/step-up", responses={400: {"description": "Bad request"}})
 def step_up(
     payload: CodeIn,
     request: Request,
@@ -69,5 +71,5 @@ def step_up(
 ) -> dict:
     token = request.headers.get(auth_service.SESSION_HEADER)
     if not mfa_service.step_up(db, user, token, payload.code):
-        raise HTTPException(status_code=400, detail="That code didn't match. Try again.")
+        raise HTTPException(status_code=400, detail=_BAD_CODE)
     return {"status": "verified"}

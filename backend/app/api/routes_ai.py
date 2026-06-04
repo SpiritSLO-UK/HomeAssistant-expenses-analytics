@@ -45,7 +45,15 @@ def ai_requests(
     return ai_service.list_requests(db, include_archived=include_archived)
 
 
-@router.post("/classify/{transaction_id}", response_model=ClassifyResult)
+@router.post(
+    "/classify/{transaction_id}",
+    response_model=ClassifyResult,
+    responses={
+        400: {"description": "Bad request"},
+        404: {"description": "Not found"},
+        502: {"description": "Upstream error"},
+    },
+)
 def classify(transaction_id: int, request: Request, db: Annotated[Session, Depends(get_db)]) -> dict:
     """Ask AI to suggest a category (suggestion only — never applied here).
     In cloud_manual mode this returns ``approval_required``; approve it via
@@ -69,7 +77,11 @@ def _get_request(db: Session, request_id: int) -> AIRequest:
     return req
 
 
-@router.post("/requests/{request_id}/approve", response_model=ClassifyResult)
+@router.post(
+    "/requests/{request_id}/approve",
+    response_model=ClassifyResult,
+    responses={400: {"description": "Bad request"}, 502: {"description": "Upstream error"}},
+)
 def approve_request(request_id: int, db: Annotated[Session, Depends(get_db)]) -> dict:
     """Approve a pending cloud request and send it (spec §22.5)."""
     req = _get_request(db, request_id)
@@ -87,7 +99,11 @@ def reject_request(request_id: int, db: Annotated[Session, Depends(get_db)]) -> 
     return ai_service.reject_request(db, _get_request(db, request_id))
 
 
-@router.post("/classify-batch", response_model=BatchResult)
+@router.post(
+    "/classify-batch",
+    response_model=BatchResult,
+    responses={400: {"description": "Bad request"}, 502: {"description": "Upstream error"}},
+)
 def classify_batch(
     request: Request, db: Annotated[Session, Depends(get_db)], limit: Annotated[int, Query(ge=1, le=100)] = 25
 ) -> dict:
@@ -108,7 +124,11 @@ def apply(payload: ApplyRequest, db: Annotated[Session, Depends(get_db)]) -> dic
     return {"applied": ai_service.apply_suggestions(db, items)}
 
 
-@router.post("/cloud-batch/prepare", response_model=CloudBatchPreview)
+@router.post(
+    "/cloud-batch/prepare",
+    response_model=CloudBatchPreview,
+    responses={400: {"description": "Bad request"}, 502: {"description": "Upstream error"}},
+)
 def cloud_batch_prepare(
     request: Request, db: Annotated[Session, Depends(get_db)], limit: Annotated[int, Query(ge=1, le=100)] = 25
 ) -> dict:
@@ -122,7 +142,11 @@ def cloud_batch_prepare(
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
-@router.post("/cloud-batch/send", response_model=CloudBatchSendResult)
+@router.post(
+    "/cloud-batch/send",
+    response_model=CloudBatchSendResult,
+    responses={400: {"description": "Bad request"}, 502: {"description": "Upstream error"}},
+)
 def cloud_batch_send(payload: CloudBatchSendRequest, db: Annotated[Session, Depends(get_db)]) -> dict:
     """Stage 2 of a cloud batch: send the approved redacted requests, reject the
     rest, and return suggestions to review (apply via /api/ai/apply)."""
