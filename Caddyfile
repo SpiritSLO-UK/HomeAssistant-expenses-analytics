@@ -1,0 +1,28 @@
+# Caddy reverse proxy for HA Finance Intelligence (see docker-compose.tls.yml).
+#
+# SITE_ADDRESS controls how Caddy gets its certificate:
+#   - a public domain (finance.example.com) → automatic HTTPS via Let's Encrypt
+#   - localhost                              → Caddy's built-in local CA (default)
+#   - a LAN name/IP (finance.local, 192.168.x.x) → add `tls internal` (see below)
+#
+# Caddy terminates TLS and forwards plain HTTP to the app container on the Docker
+# network. HSTS tells browsers to stick to HTTPS once they've connected.
+
+{$SITE_ADDRESS:localhost} {
+	reverse_proxy app:8099
+	encode gzip
+	header Strict-Transport-Security "max-age=31536000;"
+}
+
+# --- Reaching it by LAN name or IP (no public domain) ------------------------
+# Public CAs won't issue for a private name/IP, so use Caddy's internal CA. Replace
+# the block above with, e.g.:
+#
+#   finance.local {
+#   	tls internal
+#   	reverse_proxy app:8099
+#   	encode gzip
+#   }
+#
+# then trust Caddy's root once (the cert lives in the `caddy_data` volume:
+# /data/caddy/pki/authorities/local/root.crt). See docs/reverse-proxy.md.

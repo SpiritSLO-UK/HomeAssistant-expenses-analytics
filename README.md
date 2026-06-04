@@ -397,6 +397,8 @@ Full docs live in [`docs/`](docs/README.md) — start there for the index. Key g
   and action, worked examples.
 - **[Privacy](docs/privacy.md)** · **[Security & isolation](docs/security.md)** ·
   **[Architecture](docs/architecture.md)**.
+- **[HTTPS / reverse proxy](docs/reverse-proxy.md)** — serve the standalone app
+  over TLS (bundled Caddy `docker-compose.tls.yml`) when reaching it across your network.
 
 ## Home Assistant add-on
 
