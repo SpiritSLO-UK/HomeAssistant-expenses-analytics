@@ -92,7 +92,7 @@ export default function Transactions() {
   const [categoryFilter, setCategoryFilter] = useState(() => searchParams.get("category_id") ?? "");
   const [vendorFilter, setVendorFilter] = useState(() => searchParams.get("vendor_id") ?? "");
   const [countryFilter, setCountryFilter] = useState(() => (searchParams.get("country") ?? "").toUpperCase());
-  const [page, setPage] = useState(0);
+  const [page, setPage] = useState(() => Number(searchParams.get("page")) || 0);
   const [splitId, setSplitId] = useState<number | null>(null);
   // Which row's detail panel is expanded (click a row to edit it). The focused
   // deep-link row opens automatically.
@@ -160,6 +160,31 @@ export default function Transactions() {
     if (!focusId || !data) return;
     document.getElementById(`txn-row-${focusId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [focusId, data]);
+
+  // Mirror the active filters into the URL (replace — no history spam) so a reload
+  // restores them and the filtered view stays shareable/bookmarkable. A ?focus=
+  // deep-link owns the URL, so skip syncing while focused.
+  useEffect(() => {
+    if (focusId) return;
+    const p: Record<string, string> = {};
+    if (search) p.search = search;
+    if (dateFrom) p.date_from = dateFrom;
+    if (dateTo) p.date_to = dateTo;
+    if (needsReview) p.needs_review = "true";
+    if (uncategorisedOnly) p.uncategorised = "true";
+    if (showArchived) p.include_archived = "true";
+    if (businessOnly) p.is_business = "true";
+    if (categoryFilter) p.category_id = categoryFilter;
+    if (vendorFilter) p.vendor_id = vendorFilter;
+    if (countryFilter) p.country = countryFilter;
+    if (projectFilter) p.project_id = projectFilter;
+    if (memberFilter) p.member_id = memberFilter;
+    if (page) p.page = String(page);
+    setSearchParams(p, { replace: true });
+  }, [
+    search, dateFrom, dateTo, needsReview, uncategorisedOnly, showArchived, businessOnly,
+    categoryFilter, vendorFilter, countryFilter, projectFilter, memberFilter, page, focusId,
+  ]);
 
   const setCategory = useMutation({
     mutationFn: (v: { id: number; categoryId: number | null }) =>

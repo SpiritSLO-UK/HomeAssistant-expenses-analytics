@@ -114,6 +114,30 @@ export function setDashboardView(view: string): void {
   writeString(DASH_VIEW_KEY, view);
 }
 
+// --- Dashboard selected month + member filter (per device) ---
+// Persisted so a reload (or revisit) keeps the month/member you were looking at
+// rather than snapping back to the current month.
+
+const DASH_MONTH_KEY = "hafi_dashboard_month";
+
+export function getDashboardMonth(): string {
+  return readString(DASH_MONTH_KEY) || "";
+}
+
+export function setDashboardMonth(month: string): void {
+  writeString(DASH_MONTH_KEY, month);
+}
+
+const DASH_MEMBER_KEY = "hafi_dashboard_member";
+
+export function getDashboardMember(): string {
+  return readString(DASH_MEMBER_KEY) || "";
+}
+
+export function setDashboardMember(memberId: string): void {
+  writeString(DASH_MEMBER_KEY, memberId);
+}
+
 // --- Light/dark theme (per device) ---
 
 const THEME_KEY = "hafi_theme";
