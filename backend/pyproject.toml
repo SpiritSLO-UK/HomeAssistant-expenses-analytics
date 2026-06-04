@@ -28,6 +28,10 @@ Repository = "https://github.com/SpiritSLO-UK/HomeAssistant-expenses-analytics"
 [project.optional-dependencies]
 dev = [
     "pytest>=8.3",
+    # Run the suite across all CPU cores (`-n auto`, set in addopts below). Tests
+    # are isolated by construction — each worker is its own process and gets its
+    # own temp database dir from conftest's mkdtemp — so parallelism is safe.
+    "pytest-xdist>=3.6",
     "httpx>=0.28",
     "ruff>=0.8",
 ]
@@ -83,6 +87,11 @@ extend-immutable-calls = [
 
 [tool.pytest.ini_options]
 testpaths = ["app/tests"]
+# Spread tests across all CPU cores (pytest-xdist). Each worker is a separate
+# process with its own isolated temp DB (conftest mkdtemp), so this is safe and
+# cuts the wall-clock time of the suite by roughly the core count. Override with
+# `-n0` to run serially (e.g. when stepping through a single test in a debugger).
+addopts = "-n auto"
 
 [tool.pyright]
 # Baseline type-checking config so the IDE (Pylance) and any future CI agree.
