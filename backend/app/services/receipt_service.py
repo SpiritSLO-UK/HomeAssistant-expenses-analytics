@@ -88,6 +88,33 @@ def store_upload(db: Session, filename: str, content: bytes) -> tuple[Receipt, b
     return receipt, True
 
 
+def _apply_extracted_fields(receipt: Receipt, fields: dict) -> None:
+    """Fill receipt fields from OCR output without clobbering manual values."""
+    if not receipt.merchant_raw:
+        receipt.merchant_raw = fields["merchant_raw"]
+    if receipt.receipt_date is None:
+        receipt.receipt_date = fields["receipt_date"]
+    if receipt.total_amount is None:
+        receipt.total_amount = fields["total_amount"]
+    if receipt.vat_amount is None:
+        receipt.vat_amount = fields["vat_amount"]
+    if not receipt.currency:
+        receipt.currency = fields["currency"]
+
+
+def _finalise_ocr_confidence(db: Session, receipt: Receipt, ocr_conf: float | None, fields: dict) -> None:
+    """Set the combined OCR confidence and flag low-confidence receipts for review."""
+    parse_conf = fields["parse_confidence"]
+    combined = parse_conf if ocr_conf is None else round((ocr_conf + parse_conf) / 2, 2)
+    receipt.ocr_confidence = combined
+    receipt.ocr_status = "processed"
+
+    low = receipt.total_amount is None or combined < 0.6
+    receipt.needs_review = low
+    if low:
+        _flag(db, receipt, "low_confidence", "Low OCR confidence — check merchant/date/total.")
+
+
 def run_ocr(db: Session, receipt: Receipt, *, auto_match: bool = True) -> Receipt:
     """Extract fields from the stored file (best-effort). Falls back cleanly to
     'skipped' + a review item when OCR is turned off or no engine can handle the file."""
@@ -131,26 +158,8 @@ def run_ocr(db: Session, receipt: Receipt, *, auto_match: bool = True) -> Receip
 
     fields = receipt_parser.extract_fields(text)
     # Don't clobber anything already set manually.
-    if not receipt.merchant_raw:
-        receipt.merchant_raw = fields["merchant_raw"]
-    if receipt.receipt_date is None:
-        receipt.receipt_date = fields["receipt_date"]
-    if receipt.total_amount is None:
-        receipt.total_amount = fields["total_amount"]
-    if receipt.vat_amount is None:
-        receipt.vat_amount = fields["vat_amount"]
-    if not receipt.currency:
-        receipt.currency = fields["currency"]
-
-    parse_conf = fields["parse_confidence"]
-    combined = parse_conf if ocr_conf is None else round((ocr_conf + parse_conf) / 2, 2)
-    receipt.ocr_confidence = combined
-    receipt.ocr_status = "processed"
-
-    low = receipt.total_amount is None or combined < 0.6
-    receipt.needs_review = low
-    if low:
-        _flag(db, receipt, "low_confidence", "Low OCR confidence — check merchant/date/total.")
+    _apply_extracted_fields(receipt, fields)
+    _finalise_ocr_confidence(db, receipt, ocr_conf, fields)
     db.commit()
     db.refresh(receipt)
 
@@ -253,6 +262,36 @@ def _existing_matches(db: Session, receipt_id: int) -> list[TransactionReceiptMa
     )
 
 
+def _drop_stale_matches(db: Session, receipt_id: int) -> None:
+    """Drop previous *suggested* matches (keep confirmed ones) before re-matching."""
+    for m in _existing_matches(db, receipt_id):
+        if m.match_status in ("suggested", "auto_confirmed"):
+            db.delete(m)
+
+
+def _record_best_match(db: Session, receipt: Receipt, best_score: int, best_txn: Transaction, *, mode: str) -> str:
+    """Create the suggested/auto match for the best candidate and apply the
+    auto-confirm side effects. Returns the resulting match status."""
+    auto = mode == "auto" and best_score >= AUTO_MATCH
+    db.add(
+        TransactionReceiptMatch(
+            transaction_id=best_txn.id,
+            receipt_id=receipt.id,
+            match_score=best_score,
+            match_status="auto_confirmed" if auto else "suggested",
+            matched_by="local_ocr",
+        )
+    )
+    if auto:
+        receipt.needs_review = False
+        review_service.resolve_for(db, item_type="receipt", item_id=receipt.id, reason="receipt_unmatched")
+        _propagate_vat(best_txn, receipt)
+        # Processed & matched → optionally drop the original (backlog #147).
+        if settings_service.get_receipt_delete_after_processing(db):
+            drop_original(db, receipt, commit=False)
+    return "auto_confirmed" if auto else "suggested"
+
+
 def match(db: Session, receipt: Receipt, mode: str | None = None) -> dict:
     """Score transactions, (re)create a suggested/auto match for the best, or
     file an 'unmatched' review item. Returns ranked candidates (spec §21.4)."""
@@ -264,10 +303,7 @@ def match(db: Session, receipt: Receipt, mode: str | None = None) -> dict:
         reverse=True,
     )[:5]
 
-    # Drop previous *suggested* matches (keep confirmed ones) before re-matching.
-    for m in _existing_matches(db, receipt.id):
-        if m.match_status in ("suggested", "auto_confirmed"):
-            db.delete(m)
+    _drop_stale_matches(db, receipt.id)
 
     candidates = [
         {
@@ -284,24 +320,7 @@ def match(db: Session, receipt: Receipt, mode: str | None = None) -> dict:
     status = "unmatched"
     if scored and scored[0][0][0] >= SUGGEST_MATCH:
         best_score, best_txn = scored[0][0][0], scored[0][1]
-        auto = mode == "auto" and best_score >= AUTO_MATCH
-        db.add(
-            TransactionReceiptMatch(
-                transaction_id=best_txn.id,
-                receipt_id=receipt.id,
-                match_score=best_score,
-                match_status="auto_confirmed" if auto else "suggested",
-                matched_by="local_ocr",
-            )
-        )
-        status = "auto_confirmed" if auto else "suggested"
-        if auto:
-            receipt.needs_review = False
-            review_service.resolve_for(db, item_type="receipt", item_id=receipt.id, reason="receipt_unmatched")
-            _propagate_vat(best_txn, receipt)
-            # Processed & matched → optionally drop the original (backlog #147).
-            if settings_service.get_receipt_delete_after_processing(db):
-                drop_original(db, receipt, commit=False)
+        status = _record_best_match(db, receipt, best_score, best_txn, mode=mode)
     else:
         receipt.needs_review = True
         _flag(db, receipt, "receipt_unmatched", "No good transaction match — match it manually.")

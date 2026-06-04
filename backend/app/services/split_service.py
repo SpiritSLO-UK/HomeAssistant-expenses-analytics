@@ -49,6 +49,32 @@ def _q(value: Decimal | str | float) -> Decimal:
         raise SplitError(f"Invalid amount: {value!r}") from exc
 
 
+def _validate_part(db: Session, i: int, part: SplitInput, *, txn_negative: bool) -> SplitInput:
+    """Validate one split part (spec §17.2) and return its quantised copy.
+
+    Raises :class:`SplitError` with the same messages as the inline checks did.
+    """
+    amount = _q(part.amount)
+    if amount == 0:
+        raise SplitError(f"Split {i} has a zero amount.")
+    if (amount < 0) != txn_negative:
+        sign = "negative (debit)" if txn_negative else "positive (credit)"
+        raise SplitError(f"Split {i} must be {sign}, to match the transaction.")
+    if part.category_id is None and part.project_id is None:
+        raise SplitError(f"Split {i} needs a category and/or a project.")
+    if part.category_id is not None and db.get(Category, part.category_id) is None:
+        raise SplitError(f"Split {i} references an unknown category.")
+    if part.project_id is not None and db.get(Project, part.project_id) is None:
+        raise SplitError(f"Split {i} references an unknown project.")
+    return SplitInput(
+        amount=amount,
+        category_id=part.category_id,
+        project_id=part.project_id,
+        description=part.description,
+        notes=part.notes,
+    )
+
+
 def validate(db: Session, txn: Transaction, parts: list[SplitInput]) -> list[SplitInput]:
     """Validate ``parts`` against ``txn`` (spec §17.2). Returns the quantised
     parts on success; raises :class:`SplitError` otherwise."""
@@ -63,28 +89,9 @@ def validate(db: Session, txn: Transaction, parts: list[SplitInput]) -> list[Spl
     cleaned: list[SplitInput] = []
     running = Decimal("0.00")
     for i, part in enumerate(parts, start=1):
-        amount = _q(part.amount)
-        if amount == 0:
-            raise SplitError(f"Split {i} has a zero amount.")
-        if (amount < 0) != txn_negative:
-            sign = "negative (debit)" if txn_negative else "positive (credit)"
-            raise SplitError(f"Split {i} must be {sign}, to match the transaction.")
-        if part.category_id is None and part.project_id is None:
-            raise SplitError(f"Split {i} needs a category and/or a project.")
-        if part.category_id is not None and db.get(Category, part.category_id) is None:
-            raise SplitError(f"Split {i} references an unknown category.")
-        if part.project_id is not None and db.get(Project, part.project_id) is None:
-            raise SplitError(f"Split {i} references an unknown project.")
-        running += amount
-        cleaned.append(
-            SplitInput(
-                amount=amount,
-                category_id=part.category_id,
-                project_id=part.project_id,
-                description=part.description,
-                notes=part.notes,
-            )
-        )
+        clean = _validate_part(db, i, part, txn_negative=txn_negative)
+        running += clean.amount
+        cleaned.append(clean)
 
     if running != txn_total:
         raise SplitError(

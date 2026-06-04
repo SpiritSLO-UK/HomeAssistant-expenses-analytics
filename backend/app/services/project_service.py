@@ -49,6 +49,34 @@ def _project_transactions(
     )
 
 
+def _accumulate_txn(
+    txn: Transaction,
+    project_id: int,
+    by_cat: dict[int | None, Decimal],
+    by_vendor: dict[int | None, Decimal],
+) -> Decimal:
+    """Add one transaction's project spend into ``by_cat``/``by_vendor`` (split-aware)
+    and return the positive amount it contributed (``0`` if it contributed nothing)."""
+    contributed = Decimal("0.00")
+    if txn.is_split and txn.splits:
+        for split in txn.splits:
+            if split.project_id != project_id:
+                continue
+            base = split_service.split_base_amount(txn, split)
+            if base is None or base >= 0:
+                continue
+            amt = -base
+            contributed += amt
+            by_cat[split.category_id] += amt
+            by_vendor[txn.merchant_id] += amt
+    elif txn.project_id == project_id and txn.base_amount is not None and txn.base_amount < 0:
+        amt = -txn.base_amount
+        contributed += amt
+        by_cat[txn.category_id] += amt
+        by_vendor[txn.merchant_id] += amt
+    return contributed
+
+
 def _accumulate(db: Session, project_id: int, *, account_ids: set[int] | None = None):
     """Return (spent, by_category, by_vendor, count, first_date, last_date)."""
     by_cat: dict[int | None, Decimal] = defaultdict(lambda: Decimal("0.00"))
@@ -58,26 +86,9 @@ def _accumulate(db: Session, project_id: int, *, account_ids: set[int] | None = 
     dates: list = []
 
     for txn in _project_transactions(db, project_id, account_ids=account_ids):
-        contributed = False
-        if txn.is_split and txn.splits:
-            for split in txn.splits:
-                if split.project_id != project_id:
-                    continue
-                base = split_service.split_base_amount(txn, split)
-                if base is None or base >= 0:
-                    continue
-                amt = -base
-                spent += amt
-                by_cat[split.category_id] += amt
-                by_vendor[txn.merchant_id] += amt
-                contributed = True
-        elif txn.project_id == project_id and txn.base_amount is not None and txn.base_amount < 0:
-            amt = -txn.base_amount
-            spent += amt
-            by_cat[txn.category_id] += amt
-            by_vendor[txn.merchant_id] += amt
-            contributed = True
-        if contributed:
+        before = spent
+        spent += _accumulate_txn(txn, project_id, by_cat, by_vendor)
+        if spent != before:
             count += 1
             dates.append(txn.transaction_date)
 

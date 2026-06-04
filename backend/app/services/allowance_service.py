@@ -38,6 +38,55 @@ def _status(spent: Decimal, amount: Decimal, threshold: int | None) -> str:
     return "ok"
 
 
+def _resolve_split_fields(
+    txn: Transaction,
+    split: TransactionSplit,
+    *,
+    category_id: int | None,
+    amount: Decimal | None,
+    description: str | None,
+    as_of: date | None,
+) -> tuple[Decimal, int | None, date, str | None]:
+    """Resolve (amount, category, date, description) for a split allocation."""
+    derived = split_service.split_base_amount(txn, split)
+    fallback = derived if derived is not None else split.amount
+    amt = _out(amount if amount is not None else fallback)
+    cat = category_id if category_id is not None else split.category_id
+    when = as_of or txn.transaction_date
+    desc = description or split.description or txn.description_raw
+    return amt, cat, when, desc
+
+
+def _resolve_txn_fields(
+    txn: Transaction,
+    *,
+    category_id: int | None,
+    amount: Decimal | None,
+    description: str | None,
+    as_of: date | None,
+) -> tuple[Decimal, int | None, date, str | None]:
+    """Resolve (amount, category, date, description) for a whole-transaction allocation."""
+    fallback = txn.base_amount if txn.base_amount is not None else txn.amount
+    amt = _out(amount if amount is not None else fallback)
+    cat = category_id if category_id is not None else txn.category_id
+    when = as_of or txn.transaction_date
+    desc = description or txn.description_raw
+    return amt, cat, when, desc
+
+
+def _resolve_manual_fields(
+    *,
+    category_id: int | None,
+    amount: Decimal | None,
+    description: str | None,
+    as_of: date | None,
+) -> tuple[Decimal, int | None, date, str | None]:
+    """Resolve (amount, category, date, description) for a manual allocation."""
+    if amount is None:
+        raise ValueError("A manual allocation needs an amount")
+    return _out(amount), category_id, as_of or date.today(), description
+
+
 def create_allocation(
     db: Session,
     *,
@@ -64,25 +113,17 @@ def create_allocation(
 
     base_currency = settings_service.get_base_currency(db)
     if split is not None and txn is not None:
-        derived = split_service.split_base_amount(txn, split)
-        fallback = derived if derived is not None else split.amount
-        amt = _out(amount if amount is not None else fallback)
-        cat = category_id if category_id is not None else split.category_id
-        when = as_of or txn.transaction_date
-        desc = description or split.description or txn.description_raw
+        amt, cat, when, desc = _resolve_split_fields(
+            txn, split, category_id=category_id, amount=amount, description=description, as_of=as_of
+        )
     elif txn is not None:
-        fallback = txn.base_amount if txn.base_amount is not None else txn.amount
-        amt = _out(amount if amount is not None else fallback)
-        cat = category_id if category_id is not None else txn.category_id
-        when = as_of or txn.transaction_date
-        desc = description or txn.description_raw
+        amt, cat, when, desc = _resolve_txn_fields(
+            txn, category_id=category_id, amount=amount, description=description, as_of=as_of
+        )
     else:  # manual
-        if amount is None:
-            raise ValueError("A manual allocation needs an amount")
-        amt = _out(amount)
-        cat = category_id
-        when = as_of or date.today()
-        desc = description
+        amt, cat, when, desc = _resolve_manual_fields(
+            category_id=category_id, amount=amount, description=description, as_of=as_of
+        )
 
     row = ChildAllocation(
         household_id=child.household_id,

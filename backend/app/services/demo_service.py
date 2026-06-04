@@ -651,26 +651,17 @@ def has_demo_data(db: Session) -> bool:
     return bool(settings_service.get(db, settings_service.DEMO_MANIFEST))
 
 
-def remove_demo(db: Session) -> dict:
-    """Delete everything a previous :func:`load_demo` created, using the recorded
-    manifest of row ids — so only demo rows go, never a real import or anything the
-    user added afterwards. Shared entities (accounts, vendors) are removed only when
-    nothing outside the demo still references them. Manual FX rates seeded for the
-    demo's foreign rows are left in place (harmless, and they help real foreign
-    spend on the same dates). Idempotent: with no manifest there is nothing to do."""
-    raw = settings_service.get(db, settings_service.DEMO_MANIFEST)
-    if not raw:
-        return {"removed": False, "counts": {}}
-    manifest: dict[str, list[int]] = json.loads(raw)
-    counts: dict[str, int] = {}
+def _bulk_delete(db: Session, model: type, ids: list[int]) -> int:
+    """Delete rows of ``model`` by id (no-op for an empty list); returns the count."""
+    if not ids:
+        return 0
+    stmt = delete(model).where(model.id.in_(ids)).execution_options(synchronize_session=False)
+    return db.execute(stmt).rowcount or 0
 
-    def _bulk_delete(model: type, ids: list[int]) -> int:
-        if not ids:
-            return 0
-        stmt = delete(model).where(model.id.in_(ids)).execution_options(synchronize_session=False)
-        return db.execute(stmt).rowcount or 0
 
-    # 1. Transactions on the demo statements (derived — not stored in the manifest).
+def _remove_demo_transactions(db: Session, manifest: dict[str, list[int]], counts: dict[str, int]) -> None:
+    """Delete the demo statements and everything keyed off their transactions."""
+    # Transactions on the demo statements (derived — not stored in the manifest).
     stmt_ids = manifest.get("statements", [])
     txn_ids = (
         list(db.scalars(select(Transaction.id).where(Transaction.statement_id.in_(stmt_ids))).all())
@@ -692,45 +683,73 @@ def remove_demo(db: Session) -> dict:
             .execution_options(synchronize_session=False)
         )
         # Transactions: splits / receipt-matches / tag links cascade (FK ON DELETE).
-        counts["transactions"] = _bulk_delete(Transaction, txn_ids)
-    counts["statements"] = _bulk_delete(Statement, stmt_ids)
+        counts["transactions"] = _bulk_delete(db, Transaction, txn_ids)
+    counts["statements"] = _bulk_delete(db, Statement, stmt_ids)
+
+
+def _delete_if_unreferenced(db: Session, model: type, ids: list[int], ref_column) -> int:
+    """ORM-delete each row in ``ids`` whose ``ref_column`` no transaction still uses
+    (so a shared account/vendor a real import touched is kept). Returns the count."""
+    removed = 0
+    for row_id in ids:
+        row = db.get(model, row_id)
+        if row is None:
+            continue
+        if db.scalar(select(func.count()).select_from(Transaction).where(ref_column == row_id)):
+            continue
+        db.delete(row)
+        removed += 1
+    return removed
+
+
+def _reset_demo_settings(db: Session) -> None:
+    """Clear the spent manifest and undo the demo's DEBUG logging default."""
+    from app.logging import set_level
+
+    settings_service.set_value(db, settings_service.DEMO_MANIFEST, "")
+    default_level = settings_service._defaults()[settings_service.LOG_LEVEL]
+    settings_service.set_value(db, settings_service.LOG_LEVEL, default_level)
+    set_level(default_level)
+
+
+def remove_demo(db: Session) -> dict:
+    """Delete everything a previous :func:`load_demo` created, using the recorded
+    manifest of row ids — so only demo rows go, never a real import or anything the
+    user added afterwards. Shared entities (accounts, vendors) are removed only when
+    nothing outside the demo still references them. Manual FX rates seeded for the
+    demo's foreign rows are left in place (harmless, and they help real foreign
+    spend on the same dates). Idempotent: with no manifest there is nothing to do."""
+    raw = settings_service.get(db, settings_service.DEMO_MANIFEST)
+    if not raw:
+        return {"removed": False, "counts": {}}
+    manifest: dict[str, list[int]] = json.loads(raw)
+    counts: dict[str, int] = {}
+
+    # 1. Transactions on the demo statements (derived — not stored in the manifest).
+    _remove_demo_transactions(db, manifest, counts)
 
     # 2. Savings goals (before any savings account they point at), then the uniquely
     #    demo budgets / projects / rules.
-    counts["savings_goals"] = _bulk_delete(SavingsGoal, manifest.get("savings_goals", []))
-    counts["budgets"] = _bulk_delete(Budget, manifest.get("budgets", []))
-    counts["projects"] = _bulk_delete(Project, manifest.get("projects", []))
-    counts["rules"] = _bulk_delete(Rule, manifest.get("rules", []))
+    counts["savings_goals"] = _bulk_delete(db, SavingsGoal, manifest.get("savings_goals", []))
+    counts["budgets"] = _bulk_delete(db, Budget, manifest.get("budgets", []))
+    counts["projects"] = _bulk_delete(db, Project, manifest.get("projects", []))
+    counts["rules"] = _bulk_delete(db, Rule, manifest.get("rules", []))
     # Subscriptions detected from the demo's recurring transactions (vendor_id is
     # FK SET NULL, so order vs vendors doesn't matter).
-    counts["subscriptions"] = _bulk_delete(Subscription, manifest.get("subscriptions", []))
+    counts["subscriptions"] = _bulk_delete(db, Subscription, manifest.get("subscriptions", []))
 
     # 3. Accounts (Curve / Sam's Card / Emergency Fund) — only when no transaction
     #    is left on them, so an account a real import also used is kept. Savings
     #    balance snapshots cascade (FK ON DELETE).
-    removed_accounts = 0
-    for acc_id in manifest.get("accounts", []):
-        account = db.get(Account, acc_id)
-        if account is None:
-            continue
-        if db.scalar(select(func.count()).select_from(Transaction).where(Transaction.account_id == acc_id)):
-            continue
-        db.delete(account)
-        removed_accounts += 1
-    counts["accounts"] = removed_accounts
+    counts["accounts"] = _delete_if_unreferenced(
+        db, Account, manifest.get("accounts", []), Transaction.account_id
+    )
 
     # 4. Vendors — only those no surviving transaction still links to (demo txns are
     #    gone, so demo vendors are now unreferenced). Aliases cascade (FK ON DELETE).
-    removed_vendors = 0
-    for v_id in manifest.get("vendors", []):
-        vendor = db.get(Vendor, v_id)
-        if vendor is None:
-            continue
-        if db.scalar(select(func.count()).select_from(Transaction).where(Transaction.merchant_id == v_id)):
-            continue
-        db.delete(vendor)
-        removed_vendors += 1
-    counts["vendors"] = removed_vendors
+    counts["vendors"] = _delete_if_unreferenced(
+        db, Vendor, manifest.get("vendors", []), Transaction.merchant_id
+    )
 
     # 5. Demo users last (cascades any remaining allocations; owned accounts/budgets
     #    were handled above and otherwise FK SET NULL).
@@ -744,12 +763,7 @@ def remove_demo(db: Session) -> dict:
     counts["users"] = removed_users
 
     # The manifest is spent; clear it and undo the demo's DEBUG logging default.
-    from app.logging import set_level
-
-    settings_service.set_value(db, settings_service.DEMO_MANIFEST, "")
-    default_level = settings_service._defaults()[settings_service.LOG_LEVEL]
-    settings_service.set_value(db, settings_service.LOG_LEVEL, default_level)
-    set_level(default_level)
+    _reset_demo_settings(db)
 
     db.commit()
     return {"removed": True, "counts": counts}

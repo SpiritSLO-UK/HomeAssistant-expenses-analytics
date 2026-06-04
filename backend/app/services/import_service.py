@@ -194,6 +194,37 @@ def create_import(
     }
 
 
+def _persist_parsed_transaction(
+    db: Session,
+    txn: StandardTransaction,
+    *,
+    household_id: int,
+    account_id: int,
+    statement_id: int,
+    existing_hashes: set[str],
+    base_currency: str,
+    fx_mode: str,
+) -> tuple[int, int, int]:
+    """Persist one parsed transaction, skipping exact duplicates.
+
+    Returns ``(new, categorised, needs_rate)`` deltas (each 0 or 1) and mutates
+    ``existing_hashes`` so duplicates within the same statement are caught."""
+    h = source_hash(account_id, txn)
+    if h in existing_hashes:
+        return 0, 0, 0  # duplicate
+    existing_hashes.add(h)
+    row = _to_transaction(txn, household_id, account_id, statement_id, h)
+    db.add(row)
+    db.flush()
+    categorised = 1 if _auto_categorise(db, row) else 0
+    # Convert to base currency (backlog #29). In manual mode, foreign rows
+    # with no cached rate are flagged needs_rate for later backfill.
+    needs_rate = 0 if fx_service.convert_transaction(
+        db, row, base_currency, fx_mode, allow_fetch=(fx_mode == "frankfurter")
+    ) else 1
+    return 1, categorised, needs_rate
+
+
 def confirm_import(db: Session, import_id: int) -> dict:
     """Persist the transactions for a pending statement, skipping exact
     duplicates (spec §14.5)."""
@@ -235,23 +266,22 @@ def confirm_import(db: Session, import_id: int) -> dict:
     categorised = 0
     needs_rate = 0
     for txn in parsed:
-        h = source_hash(account.id, txn)
-        if h in existing_hashes:
+        new_delta, cat_delta, rate_delta = _persist_parsed_transaction(
+            db,
+            txn,
+            household_id=household.id,
+            account_id=account.id,
+            statement_id=statement.id,
+            existing_hashes=existing_hashes,
+            base_currency=base_currency,
+            fx_mode=fx_mode,
+        )
+        if not new_delta:
             dup_count += 1
             continue
-        existing_hashes.add(h)
-        row = _to_transaction(txn, household.id, account.id, statement.id, h)
-        db.add(row)
-        db.flush()
-        if _auto_categorise(db, row):
-            categorised += 1
-        # Convert to base currency (backlog #29). In manual mode, foreign rows
-        # with no cached rate are flagged needs_rate for later backfill.
-        if not fx_service.convert_transaction(
-            db, row, base_currency, fx_mode, allow_fetch=(fx_mode == "frankfurter")
-        ):
-            needs_rate += 1
-        new_count += 1
+        new_count += new_delta
+        categorised += cat_delta
+        needs_rate += rate_delta
 
     statement.status = "imported"
     statement.transaction_count = new_count

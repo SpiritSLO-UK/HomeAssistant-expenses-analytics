@@ -60,6 +60,33 @@ def period_bounds(budget: Budget, ref: date) -> tuple[date, date]:
     return start, end
 
 
+def _split_contribution(txn: Transaction, budget: Budget) -> Decimal | None:
+    """Positive spend from a split transaction's matching parts, or None if none
+    of its parts match the budget."""
+    part = Decimal("0.00")
+    matched = False
+    for split in txn.splits:
+        if _split_matches(split, budget):
+            base = split_service.split_base_amount(txn, split)
+            if base is not None:
+                part += -base
+                matched = True
+    return part if matched else None
+
+
+def _txn_contribution(txn: Transaction, budget: Budget) -> Decimal | None:
+    """Positive spend this transaction contributes to the budget, or None if it
+    doesn't count (mirrors total/category/project, split-aware)."""
+    if budget.category_id is None and budget.project_id is None:
+        # Total budget: the whole transaction counts.
+        return -txn.base_amount
+    if txn.is_split and txn.splits:
+        return _split_contribution(txn, budget)
+    if _txn_matches(txn, budget):
+        return -txn.base_amount
+    return None
+
+
 def _spent(
     db: Session, start: date, end: date, budget: Budget, *, account_ids: set[int] | None = None
 ) -> Decimal:
@@ -79,17 +106,9 @@ def _spent(
 
     total = Decimal("0.00")
     for txn in txns:
-        if budget.category_id is None and budget.project_id is None:
-            # Total budget: the whole transaction counts.
-            total += -txn.base_amount
-        elif txn.is_split and txn.splits:
-            for split in txn.splits:
-                if _split_matches(split, budget):
-                    base = split_service.split_base_amount(txn, split)
-                    if base is not None:
-                        total += -base
-        elif _txn_matches(txn, budget):
-            total += -txn.base_amount
+        contrib = _txn_contribution(txn, budget)
+        if contrib is not None:
+            total += contrib
     return total
 
 
@@ -197,22 +216,7 @@ def budget_transactions(
 
     out: list[dict] = []
     for txn in txns:
-        contrib: Decimal | None = None
-        if budget.category_id is None and budget.project_id is None:
-            contrib = -txn.base_amount
-        elif txn.is_split and txn.splits:
-            part = Decimal("0.00")
-            matched = False
-            for split in txn.splits:
-                if _split_matches(split, budget):
-                    base = split_service.split_base_amount(txn, split)
-                    if base is not None:
-                        part += -base
-                        matched = True
-            if matched:
-                contrib = part
-        elif _txn_matches(txn, budget):
-            contrib = -txn.base_amount
+        contrib = _txn_contribution(txn, budget)
         if contrib is not None:
             out.append(
                 {
