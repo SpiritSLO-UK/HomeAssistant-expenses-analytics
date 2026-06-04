@@ -127,7 +127,12 @@ def monthly_series(db: Session, ref: date, months: int = 6, *, account_ids: set[
             delta = cur - prev
             pct = float(delta / abs(prev) * 100) if prev != 0 else None
             if pct is None:
-                direction = "up" if delta > 0 else ("down" if delta < 0 else "flat")
+                if delta > 0:
+                    direction = "up"
+                elif delta < 0:
+                    direction = "down"
+                else:
+                    direction = "flat"
             elif abs(pct) < 1:
                 direction = "flat"
             else:

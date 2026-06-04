@@ -12,9 +12,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # --- locate the backend virtualenv's python ---
-if [ -x "$ROOT/backend/.venv/bin/python" ]; then
+if [[ -x "$ROOT/backend/.venv/bin/python" ]]; then
   PY="$ROOT/backend/.venv/bin/python"
-elif [ -x "$ROOT/backend/.venv/Scripts/python.exe" ]; then
+elif [[ -x "$ROOT/backend/.venv/Scripts/python.exe" ]]; then
   PY="$ROOT/backend/.venv/Scripts/python.exe"
 else
   echo "Backend venv not found. Create it with:" >&2
@@ -31,7 +31,7 @@ echo
 echo "== Frontend: type-check (tsc) =="
 if command -v npm >/dev/null 2>&1 && command -v node >/dev/null 2>&1; then
   NPM=npm
-elif [ -x "/c/Program Files/nodejs/npm" ]; then
+elif [[ -x "/c/Program Files/nodejs/npm" ]]; then
   # Git Bash on Windows without Node on PATH: add it so npm can find node.
   export PATH="/c/Program Files/nodejs:$PATH"
   NPM=npm
@@ -41,7 +41,7 @@ else
 fi
 
 cd "$ROOT/frontend"
-[ -d node_modules ] || "$NPM" install
+[[ -d node_modules ]] || "$NPM" install
 "$NPM" run lint
 
 echo

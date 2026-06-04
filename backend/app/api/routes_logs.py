@@ -38,7 +38,7 @@ def activity(
     return [audit_service.to_dict(e) for e in entries]
 
 
-@router.get("/actions", response_model=list[str])
+@router.get("/actions")
 def actions(db: Annotated[Session, Depends(get_db)], _owner: Annotated[User, Depends(require_owner)]) -> list[str]:
     """Distinct action names present in the log (drives the filter dropdown)."""
     return audit_service.distinct_actions(db)

@@ -12,7 +12,7 @@ set -euo pipefail
 
 OPTIONS_FILE="/data/options.json"
 
-if [ -f "$OPTIONS_FILE" ]; then
+if [[ -f "$OPTIONS_FILE" ]]; then
   # --- Home Assistant add-on: translate options.json -> HAFI_* env vars ---
   read_option() {
     # read_option <json_key> <default>
@@ -54,7 +54,7 @@ export HAFI_DATABASE_PATH="${HAFI_DATABASE_PATH:-/data/finance/finance.db}"
 DATA_DIR="$(dirname "$HAFI_DATABASE_PATH")"
 mkdir -p "$DATA_DIR"
 chmod 700 "$DATA_DIR" || true
-[ -f "$HAFI_DATABASE_PATH" ] && chmod 600 "$HAFI_DATABASE_PATH" || true
+[[ -f "$HAFI_DATABASE_PATH" ]] && chmod 600 "$HAFI_DATABASE_PATH" || true
 
 echo "[run.sh] Applying database migrations..."
 cd /app/backend

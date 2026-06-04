@@ -65,7 +65,8 @@ def create_allocation(
     base_currency = settings_service.get_base_currency(db)
     if split is not None and txn is not None:
         derived = split_service.split_base_amount(txn, split)
-        amt = _out(amount if amount is not None else (derived if derived is not None else split.amount))
+        fallback = derived if derived is not None else split.amount
+        amt = _out(amount if amount is not None else fallback)
         cat = category_id if category_id is not None else split.category_id
         when = as_of or txn.transaction_date
         desc = description or split.description or txn.description_raw
