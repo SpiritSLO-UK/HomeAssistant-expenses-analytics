@@ -842,12 +842,12 @@ function ResizableTh({
   cols,
   className,
   children,
-}: {
+}: Readonly<{
   col: string;
   cols: ReturnType<typeof useResizableColumns>;
   className?: string;
   children: ReactNode;
-}) {
+}>) {
   return (
     <th className={className}>
       {children}
@@ -858,7 +858,7 @@ function ResizableTh({
 
 // Attach a receipt image/PDF to a transaction and view what's attached (the
 // original is kept so it stays viewable). Drill-down receipt viewer.
-function ReceiptsField({ txnId }: { txnId: number }) {
+function ReceiptsField({ txnId }: Readonly<{ txnId: number }>) {
   const qc = useQueryClient();
   const [err, setErr] = useState<string | null>(null);
   const q = useQuery({ queryKey: ["txn-receipts", txnId], queryFn: () => listTransactionReceipts(txnId) });

@@ -117,14 +117,14 @@ function BudgetRow({
   annual,
   categoryName,
   onDelete,
-}: {
+}: Readonly<{
   b: BudgetSummaryItem;
   base: string;
   month: string;
   annual: boolean;
   categoryName: string | null;
   onDelete: () => void;
-}) {
+}>) {
   const [open, setOpen] = useState(false);
   const colour = STATUS_COLOUR[b.status] ?? "#3a9b5c";
   const scope =
@@ -197,12 +197,12 @@ function NewBudget({
   categories,
   onCreated,
   onError,
-}: {
+}: Readonly<{
   base: string;
   categories: { id: number; name: string }[];
   onCreated: () => void;
   onError: (e: string) => void;
-}) {
+}>) {
   const [name, setName] = useState("");
   const [amount, setAmount] = useState("");
   const [period, setPeriod] = useState("monthly");

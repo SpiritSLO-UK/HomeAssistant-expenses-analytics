@@ -7,7 +7,7 @@ interface Props {
 }
 
 // Generic "coming in a later stage" page used by Stage 0 stubs.
-export default function PagePlaceholder({ title, stage, children }: Props) {
+export default function PagePlaceholder({ title, stage, children }: Readonly<Props>) {
   return (
     <div className="page">
       <h1 className="page__title">{title}</h1>

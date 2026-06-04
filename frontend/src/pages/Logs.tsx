@@ -63,7 +63,7 @@ export default function Logs() {
   );
 }
 
-function ActivityCard({ includeArchived }: { includeArchived: boolean }) {
+function ActivityCard({ includeArchived }: Readonly<{ includeArchived: boolean }>) {
   const [action, setAction] = useState("");
   const [limit, setLimit] = useState(100);
   const actions = useQuery({ queryKey: ["audit-actions"], queryFn: listAuditActions });
@@ -124,7 +124,7 @@ function ActivityCard({ includeArchived }: { includeArchived: boolean }) {
   );
 }
 
-function AiRequestsCard({ includeArchived }: { includeArchived: boolean }) {
+function AiRequestsCard({ includeArchived }: Readonly<{ includeArchived: boolean }>) {
   const requests = useQuery({
     queryKey: ["ai-requests", includeArchived],
     queryFn: () => listAiRequests({ includeArchived }),

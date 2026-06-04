@@ -48,12 +48,12 @@ export default function Accounts() {
   );
 }
 
-function AccountRow({ account, isAdmin, meId, users }: {
+function AccountRow({ account, isAdmin, meId, users }: Readonly<{
   account: Account;
   isAdmin: boolean;
   meId: number;
   users: User[];
-}) {
+}>) {
   const qc = useQueryClient();
   const canEdit = isAdmin || account.owner_user_id === meId;
   const b = badge(account);

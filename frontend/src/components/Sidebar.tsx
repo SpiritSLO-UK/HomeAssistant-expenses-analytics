@@ -12,12 +12,12 @@ export default function Sidebar({
   canManageTabs = true,
   open = false,
   onNavigate,
-}: {
+}: Readonly<{
   role?: string;
   canManageTabs?: boolean; // owner or a granted member may customise the nav tabs (#28 RBAC)
   open?: boolean; // drawer open on narrow screens
   onNavigate?: () => void; // close the drawer after picking a page (mobile)
-}) {
+}>) {
   const isAdmin = role === "owner";
   const isChild = role === "child";
   const [hidden, setHidden] = useState<Set<string>>(() => getHiddenNavKeys());
@@ -93,12 +93,12 @@ function EditRow({
   shown,
   locked,
   onToggle,
-}: {
+}: Readonly<{
   item: { path: string; label: string; icon: string };
   shown: boolean;
   locked: boolean;
   onToggle: () => void;
-}) {
+}>) {
   const title = locked ? "Always shown" : shown ? "Hide this tab" : "Show this tab";
   return (
     <button

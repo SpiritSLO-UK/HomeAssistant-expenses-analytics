@@ -170,7 +170,7 @@ export default function Business() {
   );
 }
 
-function PeriodTxns({ row, cur }: { row: BusinessPeriodRow; cur: string }) {
+function PeriodTxns({ row, cur }: Readonly<{ row: BusinessPeriodRow; cur: string }>) {
   const q = useQuery({
     queryKey: ["business-period-txns", row.start, row.end],
     queryFn: () =>

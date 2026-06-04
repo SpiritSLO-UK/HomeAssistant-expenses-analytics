@@ -136,7 +136,7 @@ export default function Import() {
   );
 }
 
-function ImportReportBar({ report }: { report: { rows_detected: number; new: number; duplicates: number; errors: number } }) {
+function ImportReportBar({ report }: Readonly<{ report: { rows_detected: number; new: number; duplicates: number; errors: number } }>) {
   return (
     <div className="report">
       <span className="report__chip">Rows: {report.rows_detected}</span>
@@ -149,7 +149,7 @@ function ImportReportBar({ report }: { report: { rows_detected: number; new: num
   );
 }
 
-function PreviewTable({ rows }: { rows: UploadResponse["preview"] }) {
+function PreviewTable({ rows }: Readonly<{ rows: UploadResponse["preview"] }>) {
   return (
     <div className="table-wrap">
       <table className="table">

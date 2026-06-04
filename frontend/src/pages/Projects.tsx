@@ -74,13 +74,13 @@ function ProjectRow({
   open,
   onToggle,
   onDelete,
-}: {
+}: Readonly<{
   p: ProjectTotal;
   base: string;
   open: boolean;
   onToggle: () => void;
   onDelete: () => void;
-}) {
+}>) {
   const pct = p.percent ?? null;
   const over = pct != null && pct > 100;
   const colour = over ? "#c0392b" : pct != null && pct >= 80 ? "#d8930a" : "#3a9b5c";
@@ -107,7 +107,7 @@ function ProjectRow({
   );
 }
 
-function ProjectDetail({ id, base }: { id: number; base: string }) {
+function ProjectDetail({ id, base }: Readonly<{ id: number; base: string }>) {
   const summary = useQuery({ queryKey: ["project-summary", id], queryFn: () => getProjectSummary(id) });
   const txns = useQuery({
     queryKey: ["project-txns", id],
@@ -131,7 +131,7 @@ function ProjectDetail({ id, base }: { id: number; base: string }) {
   );
 }
 
-function ProjectTxns({ data, projectId }: { data?: TransactionListResponse; projectId: number }) {
+function ProjectTxns({ data, projectId }: Readonly<{ data?: TransactionListResponse; projectId: number }>) {
   if (!data) return <p className="muted" style={{ margin: "8px 0 0" }}>Loading transactions…</p>;
   if (data.items.length === 0) {
     return (
@@ -166,7 +166,7 @@ function ProjectTxns({ data, projectId }: { data?: TransactionListResponse; proj
   );
 }
 
-function Breakdown({ title, rows, base }: { title: string; rows: { id: number | null; name: string; total: string }[]; base: string }) {
+function Breakdown({ title, rows, base }: Readonly<{ title: string; rows: { id: number | null; name: string; total: string }[]; base: string }>) {
   if (rows.length === 0) return null;
   return (
     <div>
@@ -184,11 +184,11 @@ function NewProject({
   base,
   onCreated,
   onError,
-}: {
+}: Readonly<{
   base: string;
   onCreated: () => void;
   onError: (e: string) => void;
-}) {
+}>) {
   const [name, setName] = useState("");
   const [status, setStatus] = useState("active");
   const [budget, setBudget] = useState("");

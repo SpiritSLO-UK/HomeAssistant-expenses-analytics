@@ -15,7 +15,7 @@ function fmtRange(first: string, last: string): string {
 
 // A tiny 2-letter country tagger for a trip (e.g. ES). Tags all the trip's
 // transactions so the spend-by-location map shows the real country.
-function TripCountry({ onSet, pending }: { onSet: (code: string) => void; pending: boolean }) {
+function TripCountry({ onSet, pending }: Readonly<{ onSet: (code: string) => void; pending: boolean }>) {
   const [code, setCode] = useState("");
   return (
     <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>

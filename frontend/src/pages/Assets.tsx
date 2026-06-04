@@ -65,7 +65,7 @@ export default function Assets() {
   );
 }
 
-function NewAssetForm({ onCreated, onError }: { onCreated: () => void; onError: (e: unknown) => void }) {
+function NewAssetForm({ onCreated, onError }: Readonly<{ onCreated: () => void; onError: (e: unknown) => void }>) {
   const [name, setName] = useState("");
   const [kind, setKind] = useState("car");
   const [identifier, setIdentifier] = useState("");
@@ -106,7 +106,7 @@ function NewAssetForm({ onCreated, onError }: { onCreated: () => void; onError: 
   );
 }
 
-function AssetCard({ asset, onChange, onError }: { asset: Asset; onChange: () => void; onError: (e: unknown) => void }) {
+function AssetCard({ asset, onChange, onError }: Readonly<{ asset: Asset; onChange: () => void; onError: (e: unknown) => void }>) {
   const [open, setOpen] = useState(false);
   const qc = useQueryClient();
   const detail = useQuery({
@@ -164,7 +164,7 @@ function AssetCard({ asset, onChange, onError }: { asset: Asset; onChange: () =>
   );
 }
 
-function CarStatsPanel({ car }: { car: NonNullable<Asset["car"]> }) {
+function CarStatsPanel({ car }: Readonly<{ car: NonNullable<Asset["car"]> }>) {
   const eu = car.economy_unit;
   return (
     <div className="stat-grid" style={{ marginBottom: 12 }}>
@@ -176,7 +176,7 @@ function CarStatsPanel({ car }: { car: NonNullable<Asset["car"]> }) {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value }: Readonly<{ label: string; value: string }>) {
   return (
     <div className="stat">
       <div className="stat__label">{label}</div>
@@ -185,7 +185,7 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function HomeStatsPanel({ home }: { home: NonNullable<Asset["home"]> }) {
+function HomeStatsPanel({ home }: Readonly<{ home: NonNullable<Asset["home"]> }>) {
   if (home.meters.length === 0) {
     return <p className="muted" style={{ marginTop: 0 }}>No meter readings yet — log one below to track usage.</p>;
   }
@@ -207,7 +207,7 @@ function HomeStatsPanel({ home }: { home: NonNullable<Asset["home"]> }) {
 
 const METER_UNITS: Record<string, string> = { electricity: "kWh", gas: "kWh", water: "m3", other: "" };
 
-function ReadingForm({ assetId, onAdded, onError }: { assetId: number; onAdded: () => void; onError: (e: unknown) => void }) {
+function ReadingForm({ assetId, onAdded, onError }: Readonly<{ assetId: number; onAdded: () => void; onError: (e: unknown) => void }>) {
   const [date, setDate] = useState(today());
   const [meter, setMeter] = useState("electricity");
   const [reading, setReading] = useState("");
@@ -255,9 +255,9 @@ function ReadingForm({ assetId, onAdded, onError }: { assetId: number; onAdded: 
   );
 }
 
-function RefuelForm({ assetId, unit, onAdded, onError }: {
+function RefuelForm({ assetId, unit, onAdded, onError }: Readonly<{
   assetId: number; unit: string; onAdded: () => void; onError: (e: unknown) => void;
-}) {
+}>) {
   const imperial = unit === "mi";
   const [date, setDate] = useState(today());
   const [odometer, setOdometer] = useState("");
@@ -301,7 +301,7 @@ function RefuelForm({ assetId, unit, onAdded, onError }: {
   );
 }
 
-function EntryForm({ assetId, onAdded, onError }: { assetId: number; onAdded: () => void; onError: (e: unknown) => void }) {
+function EntryForm({ assetId, onAdded, onError }: Readonly<{ assetId: number; onAdded: () => void; onError: (e: unknown) => void }>) {
   const [date, setDate] = useState(today());
   const [kind, setKind] = useState("expense");
   const [cost, setCost] = useState("");
@@ -335,9 +335,9 @@ function EntryForm({ assetId, onAdded, onError }: { assetId: number; onAdded: ()
   );
 }
 
-function LogHistory({ asset, logs, onChange, onError }: {
+function LogHistory({ asset, logs, onChange, onError }: Readonly<{
   asset: Asset; logs: AssetLog[]; onChange: () => void; onError: (e: unknown) => void;
-}) {
+}>) {
   const remove = useMutation({
     mutationFn: (id: number) => deleteAssetLog(id),
     onSuccess: onChange,

@@ -147,7 +147,7 @@ export default function Vendors() {
 }
 
 // A tiny 2-letter ISO country input that saves on blur/Enter (e.g. GB, US, FR).
-function CountryInput({ value, onSave }: { value: string | null; onSave: (code: string | null) => void }) {
+function CountryInput({ value, onSave }: Readonly<{ value: string | null; onSave: (code: string | null) => void }>) {
   const [text, setText] = useState(value ?? "");
   const commit = () => {
     const code = text.trim().toUpperCase().slice(0, 2);
@@ -168,7 +168,7 @@ function CountryInput({ value, onSave }: { value: string | null; onSave: (code: 
   );
 }
 
-function AliasAdder({ onAdd }: { onAdd: (alias: string) => void }) {
+function AliasAdder({ onAdd }: Readonly<{ onAdd: (alias: string) => void }>) {
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");
   if (!open) {

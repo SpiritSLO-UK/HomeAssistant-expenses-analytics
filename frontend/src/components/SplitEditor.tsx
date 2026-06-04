@@ -27,7 +27,7 @@ interface Props {
 const toCents = (v: string): number => Math.round((Number(v) || 0) * 100);
 const fromCents = (c: number): string => (c / 100).toFixed(2);
 
-export default function SplitEditor({ txnId, amount, currency, isSplit, categories, onDone }: Props) {
+export default function SplitEditor({ txnId, amount, currency, isSplit, categories, onDone }: Readonly<Props>) {
   const qc = useQueryClient();
   const sign = Number(amount) < 0 ? -1 : 1;
   const totalCents = Math.abs(toCents(amount));

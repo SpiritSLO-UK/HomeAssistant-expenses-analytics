@@ -206,7 +206,7 @@ export default function FamilySetup() {
   );
 }
 
-function KidRow({ child, onError, onDone }: { child: User; onError: (e: unknown) => void; onDone: () => void }) {
+function KidRow({ child, onError, onDone }: Readonly<{ child: User; onError: (e: unknown) => void; onDone: () => void }>) {
   const summary = useQuery({ queryKey: ["dash-allowance", child.id], queryFn: () => getAllowanceSummary(child.id) });
   const [amount, setAmount] = useState("");
   const existing = summary.data?.budgets[0];

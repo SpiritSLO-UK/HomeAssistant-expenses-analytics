@@ -6,12 +6,12 @@ export default function Sparkline({
   color = "#6aa9ff",
   width = 132,
   height = 34,
-}: {
+}: Readonly<{
   values: number[];
   color?: string;
   width?: number;
   height?: number;
-}) {
+}>) {
   const pad = 3;
   if (values.length < 2) return <svg width={width} height={height} aria-hidden />;
   const min = Math.min(...values);

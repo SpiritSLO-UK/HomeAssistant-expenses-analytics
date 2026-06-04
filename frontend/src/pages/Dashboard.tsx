@@ -284,7 +284,7 @@ export default function Dashboard() {
   );
 }
 
-function ProjectsCard({ memberId }: { memberId?: number }) {
+function ProjectsCard({ memberId }: Readonly<{ memberId?: number }>) {
   const q = useQuery({ queryKey: ["dashboard-projects", memberId], queryFn: () => getDashboardProjects(memberId) });
   const items = q.data ?? [];
   if (items.length === 0) return null; // non-nagging: no card until there are projects
@@ -317,7 +317,7 @@ function ProjectsCard({ memberId }: { memberId?: number }) {
   );
 }
 
-function CategoriesCard({ monthDate, view, memberId }: { monthDate: string; view: string; memberId?: number }) {
+function CategoriesCard({ monthDate, view, memberId }: Readonly<{ monthDate: string; view: string; memberId?: number }>) {
   const q = useQuery({
     queryKey: ["dash-categories", monthDate, view, memberId ?? ""],
     queryFn: () => getCategoryBreakdown(monthDate, view, memberId),
@@ -368,7 +368,7 @@ function CategoriesCard({ monthDate, view, memberId }: { monthDate: string; view
   );
 }
 
-function VendorsCard({ monthDate, view, memberId }: { monthDate: string; view: string; memberId?: number }) {
+function VendorsCard({ monthDate, view, memberId }: Readonly<{ monthDate: string; view: string; memberId?: number }>) {
   const q = useQuery({
     queryKey: ["dash-vendors", monthDate, view, memberId ?? ""],
     queryFn: () => getVendorBreakdown(monthDate, view, memberId),
@@ -400,7 +400,7 @@ function VendorsCard({ monthDate, view, memberId }: { monthDate: string; view: s
   );
 }
 
-function GeoCard({ monthDate, view, memberId }: { monthDate: string; view: string; memberId?: number }) {
+function GeoCard({ monthDate, view, memberId }: Readonly<{ monthDate: string; view: string; memberId?: number }>) {
   const q = useQuery({
     queryKey: ["dash-geo", monthDate, view, memberId ?? ""],
     queryFn: () => getCountryBreakdown(monthDate, view, memberId),
@@ -443,7 +443,7 @@ function GeoCard({ monthDate, view, memberId }: { monthDate: string; view: strin
   );
 }
 
-function MemberBreakdownCard({ monthDate }: { monthDate: string }) {
+function MemberBreakdownCard({ monthDate }: Readonly<{ monthDate: string }>) {
   const q = useQuery({ queryKey: ["dash-by-member", monthDate], queryFn: () => getMemberBreakdown(monthDate) });
   const rows = (q.data?.members ?? []).filter((r) => Number(r.spend) > 0);
   if (rows.length < 2) return null; // a breakdown only makes sense with ≥2 spenders
@@ -493,7 +493,7 @@ function MemberBreakdownCard({ monthDate }: { monthDate: string }) {
 // --- Per-domain summary cards (#83). Each is self-contained and renders null
 // until that area has data, so the dashboard only shows domains in use. ---
 
-function CardHead({ title, to }: { title: string; to: string }) {
+function CardHead({ title, to }: Readonly<{ title: string; to: string }>) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
       <h2 className="card__title" style={{ margin: 0 }}>{title}</h2>
@@ -572,7 +572,7 @@ function AssetsCard() {
   );
 }
 
-function BudgetsCard({ monthDate }: { monthDate: string }) {
+function BudgetsCard({ monthDate }: Readonly<{ monthDate: string }>) {
   const q = useQuery({ queryKey: ["dash-budgets", monthDate], queryFn: () => getBudgetSummary(monthDate) });
   const items = q.data ?? [];
   if (items.length === 0) return null;
@@ -657,7 +657,7 @@ function AllowanceCard() {
   );
 }
 
-function ChildAllowanceRow({ child }: { child: Member }) {
+function ChildAllowanceRow({ child }: Readonly<{ child: Member }>) {
   const q = useQuery({ queryKey: ["dash-allowance", child.id], queryFn: () => getAllowanceSummary(child.id) });
   const s = q.data;
   const budget = s?.budgets[0];
@@ -748,13 +748,13 @@ function ProcessingCard() {
 
 const ARROW: Record<string, string> = { up: "▲", down: "▼", flat: "→" };
 
-function TrendMini({ label, values, metric, currency, key_ }: {
+function TrendMini({ label, values, metric, currency, key_ }: Readonly<{
   label: string;
   values: number[];
   metric: TrendMetric | undefined;
   currency: string;
   key_: "spend" | "income" | "net";
-}) {
+}>) {
   const current = values.length ? values[values.length - 1] : 0;
   // For spend, going down is good; for income/net, going up is good.
   const dir = metric?.direction ?? "flat";
@@ -777,7 +777,7 @@ function TrendMini({ label, values, metric, currency, key_ }: {
   );
 }
 
-function TrendsCard({ monthDate, view, memberId }: { monthDate: string; view: string; memberId?: number }) {
+function TrendsCard({ monthDate, view, memberId }: Readonly<{ monthDate: string; view: string; memberId?: number }>) {
   const q = useQuery({
     queryKey: ["dash-monthly", monthDate, view, memberId],
     queryFn: () => getMonthlySeries(6, monthDate, view, memberId),
@@ -814,7 +814,7 @@ function TrendsCard({ monthDate, view, memberId }: { monthDate: string; view: st
   );
 }
 
-function HeadsUpCard({ monthDate, memberId }: { monthDate: string; memberId?: number }) {
+function HeadsUpCard({ monthDate, memberId }: Readonly<{ monthDate: string; memberId?: number }>) {
   const q = useQuery({
     queryKey: ["dash-outliers", monthDate, memberId],
     queryFn: () => getOutliers(monthDate, memberId),
@@ -862,7 +862,7 @@ function SecurityBanner() {
   );
 }
 
-function StatCard({ label, value, tone }: { label: string; value: string; tone?: "pos" | "neg" }) {
+function StatCard({ label, value, tone }: Readonly<{ label: string; value: string; tone?: "pos" | "neg" }>) {
   return (
     <div className="stat">
       <div className="stat__label">{label}</div>

@@ -88,12 +88,12 @@ function AccountCard({
   base,
   onChange,
   onError,
-}: {
+}: Readonly<{
   account: SavingsAccount;
   base: string;
   onChange: () => void;
   onError: (e: unknown) => void;
-}) {
+}>) {
   const [open, setOpen] = useState(false);
   const history = useQuery({
     queryKey: ["savings-history", account.id],
@@ -251,7 +251,7 @@ function AccountCard({
   );
 }
 
-function NewAccountForm({ onCreated, onError }: { onCreated: () => void; onError: (e: unknown) => void }) {
+function NewAccountForm({ onCreated, onError }: Readonly<{ onCreated: () => void; onError: (e: unknown) => void }>) {
   const [name, setName] = useState("");
   const [institution, setInstitution] = useState("");
   const create = useMutation({
@@ -280,13 +280,13 @@ function GoalsCard({
   base,
   onChange,
   onError,
-}: {
+}: Readonly<{
   goals: SavingsGoal[];
   accounts: SavingsAccount[];
   base: string;
   onChange: () => void;
   onError: (e: unknown) => void;
-}) {
+}>) {
   const [name, setName] = useState("");
   const [target, setTarget] = useState("");
   const [targetDate, setTargetDate] = useState("");
