@@ -16,7 +16,7 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function BudgetBars({ budgets, base }: { budgets: ChildBudgetStatus[]; base: string }) {
+function BudgetBars({ budgets, base }: Readonly<{ budgets: ChildBudgetStatus[]; base: string }>) {
   if (budgets.length === 0) return <p className="muted">No budgets set yet.</p>;
   const colour = (s: string) => (s === "over" ? "#e05555" : s === "warn" ? "#e0a800" : "#3aa55a");
   return (
@@ -36,7 +36,7 @@ function BudgetBars({ budgets, base }: { budgets: ChildBudgetStatus[]; base: str
   );
 }
 
-function AllowanceView({ data, base }: { data: AllowanceSummary; base: string }) {
+function AllowanceView({ data, base }: Readonly<{ data: AllowanceSummary; base: string }>) {
   return (
     <>
       <div className="card">

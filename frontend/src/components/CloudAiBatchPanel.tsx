@@ -18,7 +18,7 @@ import {
  * Nothing leaves the device until you click "Send", and nothing is written until
  * you click "Apply".
  */
-export default function CloudAiBatchPanel({ base, onClose }: { base: string; onClose: () => void }) {
+export default function CloudAiBatchPanel({ base, onClose }: Readonly<{ base: string; onClose: () => void }>) {
   const qc = useQueryClient();
   const [items, setItems] = useState<CloudBatchItem[] | null>(null);
   const [toSend, setToSend] = useState<Set<number>>(new Set());

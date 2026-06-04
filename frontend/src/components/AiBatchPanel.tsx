@@ -7,7 +7,7 @@ import { applyAiCategories, classifyBatch, type BatchSuggestion } from "../api/c
  * suggestion with a checkbox (pre-ticked above the confidence threshold), and
  * applies only what the user keeps ticked — AI never auto-applies silently.
  */
-export default function AiBatchPanel({ base, onClose }: { base: string; onClose: () => void }) {
+export default function AiBatchPanel({ base, onClose }: Readonly<{ base: string; onClose: () => void }>) {
   const qc = useQueryClient();
   const [threshold, setThreshold] = useState(0.8);
   const [suggestions, setSuggestions] = useState<BatchSuggestion[] | null>(null);

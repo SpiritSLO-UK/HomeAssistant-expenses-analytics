@@ -6,10 +6,10 @@
 export default function CloudAiDisclaimerDialog({
   onConfirm,
   onCancel,
-}: {
+}: Readonly<{
   onConfirm: () => void;
   onCancel: () => void;
-}) {
+}>) {
   return (
     <div
       style={{

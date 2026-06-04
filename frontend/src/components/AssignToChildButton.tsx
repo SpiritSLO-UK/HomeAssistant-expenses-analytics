@@ -7,7 +7,7 @@ import { createAllocation, listCategories, listUsers, type Transaction } from ".
  * allowance list — without changing the parent's own books (backlog #82). Hidden
  * when there are no child accounts.
  */
-export default function AssignToChildButton({ txn, base }: { txn: Transaction; base: string }) {
+export default function AssignToChildButton({ txn, base }: Readonly<{ txn: Transaction; base: string }>) {
   const qc = useQueryClient();
   const users = useQuery({ queryKey: ["users"], queryFn: listUsers });
   const categories = useQuery({ queryKey: ["categories"], queryFn: listCategories });

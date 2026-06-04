@@ -76,7 +76,7 @@ export default function Receipts() {
   );
 }
 
-function PaperlessCard({ onError }: { onError: (e: unknown) => void }) {
+function PaperlessCard({ onError }: Readonly<{ onError: (e: unknown) => void }>) {
   const qc = useQueryClient();
   const status = useQuery({ queryKey: ["paperless-status"], queryFn: getPaperlessStatus });
   const [query, setQuery] = useState("");
@@ -152,7 +152,7 @@ function PaperlessCard({ onError }: { onError: (e: unknown) => void }) {
   );
 }
 
-function ReceiptCard({ r, onError }: { r: Receipt; onError: (e: string) => void }) {
+function ReceiptCard({ r, onError }: Readonly<{ r: Receipt; onError: (e: string) => void }>) {
   const qc = useQueryClient();
   const [merchant, setMerchant] = useState(r.merchant_raw ?? "");
   const [date, setDate] = useState(r.receipt_date ?? "");

@@ -57,7 +57,7 @@ export default function Setup() {
   );
 }
 
-function ShapeCard({ icon, title, detail, onPick }: { icon: string; title: string; detail: string; onPick: () => void }) {
+function ShapeCard({ icon, title, detail, onPick }: Readonly<{ icon: string; title: string; detail: string; onPick: () => void }>) {
   return (
     <button className="card setup-shape" onClick={onPick} style={{ textAlign: "left", cursor: "pointer" }}>
       <div style={{ fontSize: "1.6rem" }}>{icon}</div>
@@ -67,7 +67,7 @@ function ShapeCard({ icon, title, detail, onPick }: { icon: string; title: strin
   );
 }
 
-function SoloSetup({ onBack }: { onBack: () => void }) {
+function SoloSetup({ onBack }: Readonly<{ onBack: () => void }>) {
   const qc = useQueryClient();
   const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
   const currencies = useQuery({ queryKey: ["currencies"], queryFn: getSupportedCurrencies });
@@ -107,7 +107,7 @@ function SoloSetup({ onBack }: { onBack: () => void }) {
   );
 }
 
-function SharedIntro({ onBack }: { onBack: () => void }) {
+function SharedIntro({ onBack }: Readonly<{ onBack: () => void }>) {
   return (
     <div className="card">
       <h2 className="card__title">Household &amp; family</h2>

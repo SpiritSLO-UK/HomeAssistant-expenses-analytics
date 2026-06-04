@@ -26,7 +26,7 @@ function today(): string {
 }
 
 // A signed-amount span: green when ≥ 0, red below. `pct` is optional.
-function Gain({ value, pct, currency }: { value: string | null; pct: number | null; currency: string }) {
+function Gain({ value, pct, currency }: Readonly<{ value: string | null; pct: number | null; currency: string }>) {
   if (value == null) return null;
   const n = Number(value);
   return (
@@ -39,7 +39,7 @@ function Gain({ value, pct, currency }: { value: string | null; pct: number | nu
 }
 
 // A labelled period-change figure (Day/Month/Year), green up / red down.
-function PeriodChip({ label, ch, currency }: { label: string; ch: { change: string; pct: number | null }; currency: string }) {
+function PeriodChip({ label, ch, currency }: Readonly<{ label: string; ch: { change: string; pct: number | null }; currency: string }>) {
   const n = Number(ch.change);
   const cls = n > 0 ? "amt--pos" : n < 0 ? "amt--neg" : "muted";
   return (
@@ -138,7 +138,7 @@ export default function Investments() {
   );
 }
 
-function NewAccountForm({ onCreated, onError }: { onCreated: () => void; onError: (e: unknown) => void }) {
+function NewAccountForm({ onCreated, onError }: Readonly<{ onCreated: () => void; onError: (e: unknown) => void }>) {
   const [name, setName] = useState("");
   const [type, setType] = useState<"investment" | "pension">("investment");
   const [institution, setInstitution] = useState("");
@@ -173,7 +173,7 @@ const PRICE_SOURCES: { value: string; label: string }[] = [
   { value: "alphavantage", label: "Alpha Vantage — needs HAFI_INVESTMENT_API_KEY" },
 ];
 
-function PricesCard({ onSynced, onError }: { onSynced: () => void; onError: (e: unknown) => void }) {
+function PricesCard({ onSynced, onError }: Readonly<{ onSynced: () => void; onError: (e: unknown) => void }>) {
   const qc = useQueryClient();
   const me = useQuery({ queryKey: ["me"], queryFn: getMe });
   const status = useQuery({ queryKey: ["investment-price-status"], queryFn: getInvestmentPriceStatus });
@@ -244,12 +244,12 @@ function AccountCard({
   base,
   onChange,
   onError,
-}: {
+}: Readonly<{
   account: InvestmentAccount;
   base: string;
   onChange: () => void;
   onError: (e: unknown) => void;
-}) {
+}>) {
   const [open, setOpen] = useState(false);
   return (
     <div style={{ borderTop: "1px solid #2a2a2a", padding: "12px 0" }}>
@@ -287,11 +287,11 @@ function HoldingsSection({
   account,
   onChange,
   onError,
-}: {
+}: Readonly<{
   account: InvestmentAccount;
   onChange: () => void;
   onError: (e: unknown) => void;
-}) {
+}>) {
   const holdings = useQuery({
     queryKey: ["investment-holdings", account.id],
     queryFn: () => getHoldings(account.id),
@@ -360,11 +360,11 @@ function HoldingRow({
   holding,
   onChange,
   onError,
-}: {
+}: Readonly<{
   holding: Holding;
   onChange: () => void;
   onError: (e: unknown) => void;
-}) {
+}>) {
   const [units, setUnits] = useState(holding.units);
   const [avgCost, setAvgCost] = useState(holding.avg_cost ?? "");
   const [lastPrice, setLastPrice] = useState(holding.last_price ?? "");
@@ -425,12 +425,12 @@ function ValueSection({
   base,
   onChange,
   onError,
-}: {
+}: Readonly<{
   account: InvestmentAccount;
   base: string;
   onChange: () => void;
   onError: (e: unknown) => void;
-}) {
+}>) {
   const history = useQuery({
     queryKey: ["investment-values", account.id],
     queryFn: () => getValueHistory(account.id),

@@ -96,11 +96,11 @@ function AppShell({
   role,
   canManageTabs = false,
   children,
-}: {
+}: Readonly<{
   role: string;
   canManageTabs?: boolean;
   children: ReactNode;
-}) {
+}>) {
   const [navOpen, setNavOpen] = useState(false);
   return (
     <div className="layout">
@@ -161,7 +161,7 @@ function MfaGate() {
   );
 }
 
-function AccountGate({ status, name }: { status: string; name: string }) {
+function AccountGate({ status, name }: Readonly<{ status: string; name: string }>) {
   const pending = status === "pending";
   return (
     <div className="unlock">
@@ -182,7 +182,7 @@ function AccountGate({ status, name }: { status: string; name: string }) {
   );
 }
 
-function UnlockGate({ failedRecent = 0 }: { failedRecent?: number }) {
+function UnlockGate({ failedRecent = 0 }: Readonly<{ failedRecent?: number }>) {
   const qc = useQueryClient();
   const [passphrase, setPassphrase] = useState("");
   const unlock = useMutation({

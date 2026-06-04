@@ -285,10 +285,10 @@ export default function Settings() {
 function ServicesCard({
   onMessage,
   onError,
-}: {
+}: Readonly<{
   onMessage: (m: string) => void;
   onError: (e: unknown) => void;
-}) {
+}>) {
   const qc = useQueryClient();
   const services = useQuery({ queryKey: ["services"], queryFn: getServices });
   const set = useMutation({
@@ -373,10 +373,10 @@ function ServicesCard({
 function MqttCard({
   onMessage,
   onError,
-}: {
+}: Readonly<{
   onMessage: (m: string) => void;
   onError: (e: unknown) => void;
-}) {
+}>) {
   const status = useQuery({ queryKey: ["mqtt-status"], queryFn: getMqttStatus });
   const publish = useMutation({
     mutationFn: publishMqtt,
@@ -422,10 +422,10 @@ function MqttCard({
 function CurrencyFx({
   onMessage,
   onError,
-}: {
+}: Readonly<{
   onMessage: (m: string) => void;
   onError: (e: unknown) => void;
-}) {
+}>) {
   const qc = useQueryClient();
   const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
   const currencies = useQuery({ queryKey: ["currencies"], queryFn: getSupportedCurrencies });
@@ -597,10 +597,10 @@ function CurrencyFx({
 function AiCard({
   onMessage,
   onError,
-}: {
+}: Readonly<{
   onMessage: (m: string) => void;
   onError: (e: unknown) => void;
-}) {
+}>) {
   const qc = useQueryClient();
   const status = useQuery({ queryKey: ["ai-status"], queryFn: getAiStatus });
   const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
@@ -731,10 +731,10 @@ function AiCard({
 function MfaCard({
   onMessage,
   onError,
-}: {
+}: Readonly<{
   onMessage: (m: string) => void;
   onError: (e: unknown) => void;
-}) {
+}>) {
   const qc = useQueryClient();
   const me = useQuery({ queryKey: ["me"], queryFn: getMe });
   const [setup, setSetup] = useState<{ secret: string; otpauth_uri: string } | null>(null);
@@ -853,10 +853,10 @@ function MfaCard({
 function LoggingCard({
   onMessage,
   onError,
-}: {
+}: Readonly<{
   onMessage: (m: string) => void;
   onError: (e: unknown) => void;
-}) {
+}>) {
   const qc = useQueryClient();
   const me = useQuery({ queryKey: ["me"], queryFn: getMe });
   const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
@@ -893,7 +893,7 @@ function LoggingCard({
   );
 }
 
-function SecurityHealthCard({ onError }: { onError: (e: unknown) => void }) {
+function SecurityHealthCard({ onError }: Readonly<{ onError: (e: unknown) => void }>) {
   const qc = useQueryClient();
   const me = useQuery({ queryKey: ["me"], queryFn: getMe });
   const isAdmin = me.data?.is_admin === true;
@@ -976,10 +976,10 @@ function SecurityHealthCard({ onError }: { onError: (e: unknown) => void }) {
 function SecurityCard({
   onMessage,
   onError,
-}: {
+}: Readonly<{
   onMessage: (m: string) => void;
   onError: (e: unknown) => void;
-}) {
+}>) {
   const qc = useQueryClient();
   const status = useQuery({ queryKey: ["security-status"], queryFn: getSecurityStatus });
   const [pass, setPass] = useState("");
@@ -1082,10 +1082,10 @@ const RETENTION_LABELS: Record<string, string> = {
 function RetentionCard({
   onMessage,
   onError,
-}: {
+}: Readonly<{
   onMessage: (m: string) => void;
   onError: (e: unknown) => void;
-}) {
+}>) {
   const qc = useQueryClient();
   const me = useQuery({ queryKey: ["me"], queryFn: getMe });
   const isAdmin = me.data?.is_admin === true;
@@ -1353,7 +1353,7 @@ function RetentionCard({
   );
 }
 
-function RetentionPlanView({ plan, types }: { plan: RetentionPlan; types: string[] }) {
+function RetentionPlanView({ plan, types }: Readonly<{ plan: RetentionPlan; types: string[] }>) {
   const rows = types
     .map((t) => ({ t, p: plan[t] as RetentionTypePlan }))
     .filter((r) => r.p && (r.p.archive_due > 0 || r.p.purge_due > 0));
