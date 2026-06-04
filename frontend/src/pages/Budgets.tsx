@@ -170,7 +170,7 @@ function BudgetRow({
           {(txns.isLoading || !txns.data) && (
             <p className="muted" style={{ margin: 0 }}>Loading…</p>
           )}
-          {txns.data && txns.data.length === 0 && (
+          {txns.data?.length === 0 && (
             <p className="muted" style={{ margin: 0 }}>No transactions counted toward this budget {annual ? "this year" : "this period"}.</p>
           )}
           {txns.data && txns.data.length > 0 && (

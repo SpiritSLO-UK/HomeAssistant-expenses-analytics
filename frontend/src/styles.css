@@ -282,7 +282,7 @@ button.sidebar__link:disabled {
 }
 
 .status--warn {
-  color: #b26a00;
+  color: #8a4f00;
 }
 
 /* widen cards on data-heavy pages */
@@ -456,7 +456,7 @@ button.sidebar__link:disabled {
 
 .report__chip--dup {
   background: #fff3e0;
-  color: #b26a00;
+  color: #8a4f00;
 }
 
 .report__chip--err {
@@ -526,7 +526,18 @@ button.sidebar__link:disabled {
 
 .tag--dup {
   background: #fff3e0;
-  color: #b26a00;
+  color: #8a4f00;
+}
+
+/* --- modal dialog (native <dialog>, opened via showModal) --- */
+dialog.modal-dialog {
+  border: none;
+  padding: 0;
+  background: transparent;
+  max-width: 560px;
+}
+dialog.modal-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.55);
 }
 
 /* --- pager --- */

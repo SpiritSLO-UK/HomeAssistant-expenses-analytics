@@ -826,9 +826,9 @@ function HeadsUpCard({ monthDate, memberId }: Readonly<{ monthDate: string; memb
     <div className="card" style={{ borderLeft: "3px solid #e0a800" }}>
       <h2 className="card__title">Heads-up</h2>
       <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 8 }}>
-        {items.map((it, i) => (
+        {items.map((it) => (
           <li
-            key={i}
+            key={it.title}
             style={{ borderLeft: `3px solid ${it.severity === "warn" ? "#e05555" : "#e0a800"}`, paddingLeft: 10 }}
           >
             <div><strong>{it.severity === "warn" ? "⚠️" : "💡"} {it.title}</strong></div>

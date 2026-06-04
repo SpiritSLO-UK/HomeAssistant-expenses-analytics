@@ -9,6 +9,7 @@ import {
 } from "../api/client";
 
 interface Row {
+  key: string; // stable React key — rows are added/removed, so index keys break input focus
   amount: string; // absolute magnitude, e.g. "40.00"
   categoryId: string;
 }
@@ -27,15 +28,16 @@ interface Props {
 const toCents = (v: string): number => Math.round((Number(v) || 0) * 100);
 const fromCents = (c: number): string => (c / 100).toFixed(2);
 
+// Monotonic source of stable row keys (unique within the editor's lifetime).
+let _rowSeq = 0;
+const newRow = (amount = "", categoryId = ""): Row => ({ key: String(_rowSeq++), amount, categoryId });
+
 export default function SplitEditor({ txnId, amount, currency, isSplit, categories, onDone }: Readonly<Props>) {
   const qc = useQueryClient();
   const sign = Number(amount) < 0 ? -1 : 1;
   const totalCents = Math.abs(toCents(amount));
 
-  const [rows, setRows] = useState<Row[]>([
-    { amount: "", categoryId: "" },
-    { amount: "", categoryId: "" },
-  ]);
+  const [rows, setRows] = useState<Row[]>([newRow(), newRow()]);
   const [error, setError] = useState<string | null>(null);
 
   // Prefill from existing splits when editing an already-split transaction.
@@ -45,10 +47,9 @@ export default function SplitEditor({ txnId, amount, currency, isSplit, categori
       const res = await getSplits(txnId);
       if (res.splits.length > 0) {
         setRows(
-          res.splits.map((s) => ({
-            amount: fromCents(Math.abs(toCents(s.amount))),
-            categoryId: s.category_id ? String(s.category_id) : "",
-          })),
+          res.splits.map((s) =>
+            newRow(fromCents(Math.abs(toCents(s.amount))), s.category_id ? String(s.category_id) : ""),
+          ),
         );
       }
       return res;
@@ -91,7 +92,7 @@ export default function SplitEditor({ txnId, amount, currency, isSplit, categori
     setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, [field]: value } : r)));
   }
   function addRow() {
-    setRows((rs) => [...rs, { amount: "", categoryId: "" }]);
+    setRows((rs) => [...rs, newRow()]);
   }
   function removeRow(i: number) {
     setRows((rs) => (rs.length > 2 ? rs.filter((_, idx) => idx !== i) : rs));
@@ -138,7 +139,7 @@ export default function SplitEditor({ txnId, amount, currency, isSplit, categori
         </thead>
         <tbody>
           {rows.map((r, i) => (
-            <tr key={i}>
+            <tr key={r.key}>
               <td className="num">
                 <input
                   type="number"
