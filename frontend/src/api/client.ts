@@ -627,6 +627,7 @@ export interface Receipt {
   needs_review: boolean;
   has_file: boolean;
   matches: ReceiptMatch[];
+  already_imported?: boolean; // set on upload when a byte-identical receipt already existed
 }
 
 export interface MatchCandidate {

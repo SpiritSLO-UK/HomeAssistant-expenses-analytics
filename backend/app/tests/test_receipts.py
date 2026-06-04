@@ -104,10 +104,13 @@ def test_match_requires_total(client):
 
 
 def test_upload_is_deduplicated(client):
-    a = _upload(client, content=b"same-bytes").json()["id"]
-    b = _upload(client, content=b"same-bytes").json()["id"]
-    assert a == b
+    first = _upload(client, content=b"same-bytes").json()
+    second = _upload(client, content=b"same-bytes").json()
+    assert first["id"] == second["id"]
     assert len(client.get("/api/receipts").json()) == 1
+    # The re-upload is flagged so the UI can say "already imported" (#21 dedupe UX).
+    assert first["already_imported"] is False
+    assert second["already_imported"] is True
 
 
 def test_delete_receipt(client):
