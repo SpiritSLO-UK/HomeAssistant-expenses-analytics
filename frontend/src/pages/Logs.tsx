@@ -111,7 +111,7 @@ function ActivityCard({ includeArchived }: Readonly<{ includeArchived: boolean }
                   <td>{row.actor ?? "system"}</td>
                   <td><code>{row.action}</code></td>
                   <td className="muted">
-                    {row.entity_type ? `${row.entity_type}${row.entity_id == null ? "" : ` #${row.entity_id}`}` : "—"}
+                    {row.entity_type ? row.entity_type + (row.entity_id == null ? "" : ` #${row.entity_id}`) : "—"}
                   </td>
                   <td className="muted" style={{ fontSize: "0.82rem" }}>{describe(row)}</td>
                 </tr>

@@ -81,7 +81,7 @@ export default function Rules() {
       const v = vendors.data?.find((x) => String(x.id) === r.action_value);
       return `→ vendor: ${v?.canonical_name ?? r.action_value}`;
     }
-    return `→ ${r.action_type.replace("_", " ")}${r.action_value ? `: ${r.action_value}` : ""}`;
+    return `→ ${r.action_type.replace("_", " ")}` + (r.action_value ? `: ${r.action_value}` : "");
   }
 
   return (
