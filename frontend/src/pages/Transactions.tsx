@@ -62,6 +62,12 @@ function presetRange(key: string): [string, string] {
   return [isoDay(from), isoDay(now)];
 }
 
+// Filter-value normalisers: empty controls drop out of the query. Defined at
+// module level so these increments don't inflate the Transactions component.
+const blank = (v: string): string | undefined => v || undefined;
+const flag = (v: boolean): true | undefined => v || undefined;
+const numOrUndef = (v: string): number | undefined => (v ? Number(v) : undefined);
+
 export default function Transactions() {
   const qc = useQueryClient();
   // Deep-link (Review Queue "Open transaction →", trip drill-down): when a
@@ -104,18 +110,18 @@ export default function Transactions() {
       // (include archived so a focused aged-out transaction still shows).
       { transaction_id: focusNum, include_archived: true, limit: 1, offset: 0 }
     : {
-        search: search || undefined,
-        date_from: dateFrom || undefined,
-        date_to: dateTo || undefined,
-        needs_review: needsReview || undefined,
-        uncategorised: uncategorisedOnly || undefined,
-        is_business: businessOnly || undefined,
-        category_id: categoryFilter ? Number(categoryFilter) : undefined,
-        vendor_id: vendorFilter ? Number(vendorFilter) : undefined,
-        country: countryFilter || undefined,
-        project_id: projectFilter ? Number(projectFilter) : undefined,
-        member_id: memberFilter ? Number(memberFilter) : undefined,
-        include_archived: showArchived || undefined,
+        search: blank(search),
+        date_from: blank(dateFrom),
+        date_to: blank(dateTo),
+        needs_review: flag(needsReview),
+        uncategorised: flag(uncategorisedOnly),
+        is_business: flag(businessOnly),
+        category_id: numOrUndef(categoryFilter),
+        vendor_id: numOrUndef(vendorFilter),
+        country: blank(countryFilter),
+        project_id: numOrUndef(projectFilter),
+        member_id: numOrUndef(memberFilter),
+        include_archived: flag(showArchived),
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
       };
