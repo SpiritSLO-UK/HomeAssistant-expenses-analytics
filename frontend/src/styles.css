@@ -163,6 +163,27 @@ button.sidebar__link:disabled {
   cursor: default;
 }
 
+/* Small inline buttons inside an edit row: reorder ▲/▼ and the show/hide toggle. */
+.sidebar__navbtn {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+.sidebar__navbtn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+.sidebar__navbtn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
 /* --- Content --- */
 /* The column holding the (mobile) top bar + scrollable content. min-width:0 lets
    it shrink below its content's intrinsic width so wide blocks (tables) scroll

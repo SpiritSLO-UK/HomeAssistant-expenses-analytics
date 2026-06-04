@@ -102,6 +102,25 @@ export function setHiddenNavKeys(hidden: Set<string>): void {
   writeString(HIDDEN_NAV_KEY, JSON.stringify([...hidden]));
 }
 
+// --- Sidebar nav order (per device) ---
+
+const NAV_ORDER_KEY = "hafi_nav_order";
+
+export function getNavOrder(): string[] {
+  const raw = readString(NAV_ORDER_KEY);
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function setNavOrder(order: string[]): void {
+  writeString(NAV_ORDER_KEY, JSON.stringify(order));
+}
+
 // --- Dashboard Mine/Shared/All view toggle (backlog #66/#82) ---
 
 const DASH_VIEW_KEY = "hafi_dashboard_view";
