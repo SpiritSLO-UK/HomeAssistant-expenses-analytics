@@ -17,9 +17,11 @@ import {
   getMe,
   listAssets,
   getMemberBreakdown,
+  getMissingFx,
   getMonthlySeries,
   getOutliers,
   getProcessingStats,
+  getReviewCount,
   getSavingsSummary,
   getSecurityHealth,
   getSummary,
@@ -307,18 +309,46 @@ export default function Dashboard() {
         </div>
       )}
 
+      {summary.data && <NeedsAttentionCard uncategorised={summary.data.uncategorised_transactions} />}
+
       {order.filter(show).map((key) => (
         <Fragment key={key}><DashboardCard cardKey={key} monthDate={monthDate} view={view} mid={mid} /></Fragment>
       ))}
+    </div>
+  );
+}
 
-      {summary.data && summary.data.uncategorised_transactions > 0 && (
-        <div className="card">
-          <p className="status status--warn">
-            {summary.data.uncategorised_transactions} uncategorised transaction(s).{" "}
-            <Link to="/transactions">Categorise them →</Link>
-          </p>
-        </div>
-      )}
+// One place for "things waiting on you": the review queue, uncategorised
+// transactions, and any foreign rows missing an FX rate. Each row links to where
+// you clear it. The whole card hides when there's nothing outstanding (it never
+// nags). Counts: review = the curated queue (matches the /review page);
+// uncategorised = scoped to the dashboard view (passed in from the summary).
+function NeedsAttentionCard({ uncategorised }: Readonly<{ uncategorised: number }>) {
+  const review = useQuery({ queryKey: ["review", "count"], queryFn: getReviewCount });
+  const fx = useQuery({ queryKey: ["fx-missing"], queryFn: getMissingFx });
+  const reviewOpen = review.data?.open ?? 0;
+  const needsRate = fx.data?.needs_rate ?? 0;
+
+  const rows: { key: string; label: string; to: string }[] = [];
+  if (reviewOpen > 0)
+    rows.push({ key: "review", label: `${reviewOpen} item(s) to review`, to: "/review" });
+  if (uncategorised > 0)
+    rows.push({ key: "uncat", label: `${uncategorised} uncategorised transaction(s)`, to: "/review?tab=uncategorised" });
+  if (needsRate > 0)
+    rows.push({ key: "fx", label: `${needsRate} transaction(s) need an exchange rate`, to: "/settings" });
+
+  if (rows.length === 0) return null;
+  return (
+    <div className="card">
+      <h2 className="card__title">Needs attention</h2>
+      <ul className="kv">
+        {rows.map((r) => (
+          <li key={r.key}>
+            <span>⚠️ {r.label}</span>
+            <Link to={r.to}>Open →</Link>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
