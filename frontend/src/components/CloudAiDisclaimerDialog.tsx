@@ -1,7 +1,12 @@
+import { useEffect, useRef } from "react";
+
 /**
  * One-time "before you enable cloud AI" disclaimer (backlog #42). Shown the
  * first time a user switches to a cloud privacy mode, so enabling cloud AI is a
  * deliberate, informed choice. After acknowledgement it never shows again.
+ *
+ * Uses a native <dialog> opened with showModal(): the browser provides the
+ * backdrop, focus trapping and Esc-to-close (mapped to Cancel) for free.
  */
 export default function CloudAiDisclaimerDialog({
   onConfirm,
@@ -10,20 +15,22 @@ export default function CloudAiDisclaimerDialog({
   onConfirm: () => void;
   onCancel: () => void;
 }>) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    ref.current?.showModal();
+  }, []);
+
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.55)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 16,
-        zIndex: 1000,
+    <dialog
+      ref={ref}
+      className="modal-dialog"
+      aria-label="Before you enable cloud AI"
+      onCancel={(e) => {
+        e.preventDefault(); // Esc → treat as Cancel rather than a silent close
+        onCancel();
       }}
     >
-      <div className="card" role="dialog" aria-modal="true" aria-label="Before you enable cloud AI" style={{ maxWidth: 560, margin: 0 }}>
+      <div className="card" style={{ maxWidth: 560, margin: 0 }}>
         <h2 className="card__title">☁️ Before you enable cloud AI</h2>
         <p className="muted" style={{ marginTop: 0 }}>
           You're about to allow this app to send data to a cloud AI provider. Please read this once:
@@ -55,6 +62,6 @@ export default function CloudAiDisclaimerDialog({
           <button className="btn" onClick={onConfirm}>I understand — enable cloud AI</button>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }
