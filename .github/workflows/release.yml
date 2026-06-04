@@ -1,0 +1,77 @@
+name: Release add-on image
+
+# Build the add-on as a prebuilt multi-arch image and push it to GHCR, so Home
+# Assistant Supervisor PULLS the image (no on-device build). Home Assistant wants
+# one tag per architecture (e.g. `aarch64-…`, `amd64-…`), not a single multi-arch
+# manifest, so each arch is built + pushed under its own arch-prefixed tag — which
+# is exactly what addon/config.yaml's `image: ghcr.io/.../{arch}-…` resolves to.
+#
+# Fires on a version tag (e.g. `v1.0.0-rc1`, `v1.0.0`). Keep addon/config.yaml's
+# `version:` equal to the tag (minus the leading `v`) so Supervisor pulls the
+# image tag matching the installed add-on version.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Image version tag to build (e.g. 1.0.0-rc1)"
+        required: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-push:
+    name: Build & push ${{ matrix.ha_arch }} image
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            ha_arch: amd64
+          - platform: linux/arm64
+            ha_arch: aarch64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version + lowercase owner
+        id: meta
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            version="${{ github.event.inputs.version }}"
+          else
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+      # Third-party actions are pinned to a full commit SHA (supply-chain
+      # hardening) with the human-readable version in a trailing comment.
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push (${{ matrix.ha_arch }})
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: addon/Dockerfile
+          platforms: ${{ matrix.platform }}
+          push: true
+          # No SLSA provenance/SBOM manifest — Supervisor pulls a plain image,
+          # and the extra attestation manifest can trip up the add-on pull.
+          provenance: false
+          tags: |
+            ghcr.io/${{ steps.meta.outputs.owner }}/${{ matrix.ha_arch }}-ha-finance-intelligence:${{ steps.meta.outputs.version }}
+            ghcr.io/${{ steps.meta.outputs.owner }}/${{ matrix.ha_arch }}-ha-finance-intelligence:latest

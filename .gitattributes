@@ -1,0 +1,14 @@
+# Shell scripts MUST keep LF line endings. A CRLF shebang fails inside Linux
+# containers with `env: 'bash\r': No such file or directory`, so a Windows
+# checkout (autocrlf) that rewrites run.sh to CRLF would make a locally-built
+# image (add-on or `docker compose up --build`) refuse to boot. These attributes
+# override core.autocrlf for matched files on every platform.
+*.sh text eol=lf
+addon/run.sh text eol=lf
+
+# Docker build assets are consumed in Linux: keep them LF so a Windows checkout
+# can't introduce CRLF (a trailing \r in a .dockerignore pattern stops it
+# matching; CRLF in a Dockerfile can break RUN heredocs/line continuations).
+.dockerignore text eol=lf
+Dockerfile text eol=lf
+*.dockerfile text eol=lf

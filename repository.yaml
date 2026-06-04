@@ -1,0 +1,13 @@
+# Home Assistant add-on repository manifest.
+#
+# Presence of this file (plus an add-on folder containing config.yaml) lets Home
+# Assistant treat this GitHub repo as an *add-on repository*: users add the repo
+# URL under Settings → Add-ons → Add-on store → ⋮ → Repositories (or click the
+# "Add to my Home Assistant" badge in the README), then install the add-on.
+#
+# The add-on itself lives in the `addon/` folder; it pulls a prebuilt multi-arch
+# image from GHCR (see addon/config.yaml `image:`), so Home Assistant never
+# builds on-device — install is a quick image pull.
+name: HA Finance Intelligence
+url: https://github.com/SpiritSLO-UK/HomeAssistant-expenses-analytics
+maintainer: Blaz Peternel (@SpiritSLO-UK)

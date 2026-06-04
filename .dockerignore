@@ -1,0 +1,51 @@
+# Keep the add-on image lean: the Docker build context is the repo root, but the
+# runtime image only needs backend/app, backend/pyproject.toml + alembic.ini, the
+# built frontend (rebuilt inside the image), and addon/run.sh. Everything below is
+# dev-only or sample/doc material and is excluded so it never enters an image layer
+# (smaller, faster pull on the Pi; see addon/Dockerfile).
+
+# --- VCS / CI ---
+.git
+.github
+.gitignore
+.gitattributes
+
+# --- Editor / dev tooling / agent config ---
+.vscode
+.idea
+.mcp.json
+scripts
+
+# --- Docs, samples and spec (not needed at runtime) ---
+docs
+examples
+*.md
+ha_finance_intelligence_spec.md
+
+# --- Private backlog trackers (git-excluded already; belt-and-braces) ---
+things-to-add-change-consider.md
+things-done-and-answered.md
+
+# --- Python caches, venvs and tests (tests are dev-only, see pyproject) ---
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.ruff_cache
+.venv
+backend/.venv
+**/tests
+
+# --- Node ---
+**/node_modules
+frontend/dist
+
+# --- Local data / databases / backups (never ship user data) ---
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+data
+backend/data
+
+# --- Compose / TLS variants (standalone-only, not used in the image) ---
+docker-compose*.yml

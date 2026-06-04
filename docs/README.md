@@ -8,6 +8,7 @@ and how to run it; the guides below go deeper.
 
 | Guide | What's inside |
 |-------|---------------|
+| [Install on Home Assistant](ha-install.md) | Add the add-on repository, install the prebuilt image, configure options, ingress SSO, MQTT sensors and the energy-cost offset. |
 | [Configuration reference](configuration.md) | Every setting — environment variables (`HAFI_*`), add-on options, and the in-app Settings — what each does and its default. |
 | [Troubleshooting](troubleshooting.md) | Fixes for common install / import / OCR / MQTT / AI / unlock / FX problems. |
 | [Rules](rules.md) | How auto-categorisation rules work: precedence, every condition and action, and worked examples. |
@@ -22,8 +23,8 @@ and how to run it; the guides below go deeper.
 - **Run it standalone:** [README → Beta quick-run](../README.md)
 - **What's changed:** [CHANGELOG](../CHANGELOG.md) (v0.9.0-beta + the post-beta wave)
 - **Serve it over HTTPS:** [HTTPS / reverse proxy](reverse-proxy.md) (`docker-compose.tls.yml`)
-- **Install on Home Assistant:** the [`addon/`](../addon/) folder (ingress panel on
-  port 8099). HA packaging is being finished — see the main README.
+- **Install on Home Assistant:** [Install on Home Assistant](ha-install.md) —
+  one-click repository add → Install (prebuilt image, ingress panel on port 8099).
 - **Report a problem / request a feature:** open an issue on the
   [GitHub repo](https://github.com/SpiritSLO-UK/HomeAssistant-expenses-analytics).
 
