@@ -45,6 +45,19 @@ def test_supported_countries_listed(client):
     assert {"code": "GB", "name": "United Kingdom"} in rows
 
 
+def test_default_vendor_country_set_validate_clear(client):
+    """The default vendor country accepts a valid ISO-2 (case-insensitive), rejects
+    non-countries (incl. the 'EU' pseudo-code), and clears on ""."""
+    ok = client.put("/api/settings", json={"default_vendor_country": "gb"})
+    assert ok.status_code == 200
+    assert ok.json()["default_vendor_country"] == "GB"  # normalised to upper-case
+    assert client.put("/api/settings", json={"default_vendor_country": "ZZ"}).status_code == 400
+    assert client.put("/api/settings", json={"default_vendor_country": "EU"}).status_code == 400
+    cleared = client.put("/api/settings", json={"default_vendor_country": ""})
+    assert cleared.status_code == 200
+    assert cleared.json()["default_vendor_country"] == ""
+
+
 def test_base_currency_must_be_supported(client):
     # A curated code is accepted and recomputes conversions for display.
     ok = client.put("/api/settings", json={"base_currency": "USD"})

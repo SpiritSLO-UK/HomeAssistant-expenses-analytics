@@ -26,13 +26,18 @@ COUNTRY_NAMES = {**_ISO_COUNTRY_NAMES, "EU": "Eurozone"}
 
 
 def country_for(
-    currency: str | None, vendor_country: str | None, txn_country: str | None = None
+    currency: str | None,
+    vendor_country: str | None,
+    txn_country: str | None = None,
+    default_country: str | None = None,
 ) -> str | None:
     """Resolve a transaction's country code, or None when it can't be inferred.
 
     Precedence: the transaction's own country (e.g. tagged for a trip to Spain) →
-    the vendor's country → inferred from the currency (the coarsest fallback)."""
-    for explicit in (txn_country, vendor_country):
+    the vendor's country → the household default vendor country (a settings-level
+    fallback, never overrides the above) → inferred from the currency (the coarsest
+    fallback)."""
+    for explicit in (txn_country, vendor_country, default_country):
         if explicit:
             return explicit.upper()
     if currency:

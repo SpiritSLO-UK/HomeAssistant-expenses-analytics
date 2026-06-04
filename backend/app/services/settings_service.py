@@ -47,6 +47,11 @@ OCR_ENABLED = "ocr_enabled"
 # network calls; ``stooq`` is keyless; ``alphavantage`` is a keyed provider
 # (HAFI_INVESTMENT_API_KEY). Only ticker symbols are ever sent.
 INVESTMENT_PRICE_SOURCE = "investment_price_source"
+# Household default country for vendors with no country of their own — a fallback
+# for the spend-by-location map, below a vendor's/txn's own country, above the
+# currency guess. Empty = no default (geo behaviour unchanged). Never overwrites a
+# manually-set country.
+DEFAULT_VENDOR_COUNTRY = "default_vendor_country"
 
 FX_MODES = {"manual", "frankfurter"}
 INVESTMENT_PRICE_SOURCES = {"manual", "stooq", "alphavantage"}
@@ -90,6 +95,7 @@ def _defaults() -> dict[str, str]:
         LOG_LEVEL: env_settings.log_level.upper(),
         CLOUD_AI_PRIVACY_DEFAULT: "normal",
         INVESTMENT_PRICE_SOURCE: "manual",
+        DEFAULT_VENDOR_COUNTRY: "",
     }
 
 
@@ -153,6 +159,15 @@ def get_ocr_enabled(db: Session) -> bool:
     """Whether receipt OCR is allowed to run (Settings → Services). On by default;
     only an explicit ``"false"`` disables it (then receipts are entered manually)."""
     return get(db, OCR_ENABLED) != "false"
+
+
+def get_default_vendor_country(db: Session) -> str | None:
+    """The household default country (ISO-3166-1 alpha-2) for vendors with no
+    country of their own. Empty/unset means no default. Used as a fallback in
+    ``geo.country_for`` — below a vendor's/txn's own country, above the currency
+    guess — so it never overrides a manually-set country."""
+    code = (get(db, DEFAULT_VENDOR_COUNTRY) or "").strip().upper()
+    return code or None
 
 
 def _int_setting(db: Session, key: str, default: int) -> int:

@@ -51,6 +51,7 @@ import {
 import { getThemePref, isCloudAiAcknowledged, setCloudAiAcknowledged, setThemePref } from "../prefs";
 import { applyTheme, type ThemePref } from "../theme";
 import CloudAiDisclaimerDialog from "../components/CloudAiDisclaimerDialog";
+import CountrySelect from "../components/CountrySelect";
 
 const THEME_OPTIONS: { value: ThemePref; label: string }[] = [
   { value: "system", label: "🖥️ System" },
@@ -177,6 +178,8 @@ export default function Settings() {
       {me.data?.can_manage_settings && <ServicesCard onMessage={ok} onError={fail} />}
 
       {me.data?.can_manage_settings && <CurrencyFx onMessage={ok} onError={fail} />}
+
+      {me.data?.can_manage_settings && <LocationDefaultsCard onMessage={ok} onError={fail} />}
 
       {me.data?.can_manage_settings && <MqttCard onMessage={ok} onError={fail} />}
 
@@ -414,6 +417,53 @@ function ServicesCard({
           </li>
         </ul>
       )}
+    </div>
+  );
+}
+
+function LocationDefaultsCard({
+  onMessage,
+  onError,
+}: Readonly<{
+  onMessage: (m: string) => void;
+  onError: (e: unknown) => void;
+}>) {
+  const qc = useQueryClient();
+  const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
+  const current = settings.data?.default_vendor_country || null;
+  const save = useMutation({
+    mutationFn: (code: string) => updateSettings({ default_vendor_country: code }),
+    onSuccess: (_r, code) => {
+      onMessage(code ? "Default vendor country saved." : "Default vendor country cleared.");
+      qc.invalidateQueries({ queryKey: ["settings"] });
+      qc.invalidateQueries({ queryKey: ["dash-geo"] }); // spend-by-location map uses it
+    },
+    onError,
+  });
+
+  return (
+    <div className="card">
+      <h2 className="card__title">Spending by location</h2>
+      <p className="muted" style={{ marginTop: 0 }}>
+        A default country for vendors that don't have one set — used by the spend-by-location map.
+        It only fills the gap: a transaction's own country (a tagged trip) and a vendor's own country
+        always take precedence, and this never overwrites a country you set manually.
+      </p>
+      <div className="form-row">
+        <label>
+          Default vendor country{" "}
+          <CountrySelect
+            value={current}
+            onChange={(code) => save.mutate(code ?? "")}
+            disabled={save.isPending}
+            style={{ minWidth: 220 }}
+            title="Country assumed for vendors with no country of their own"
+          />
+        </label>
+      </div>
+      <p className="muted" style={{ fontSize: "0.8rem" }}>
+        Leave blank to fall back to inferring the country from each transaction's currency, as before.
+      </p>
     </div>
   );
 }
