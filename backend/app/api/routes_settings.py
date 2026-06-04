@@ -29,6 +29,7 @@ class SettingsUpdate(BaseModel):
     log_level: str | None = None  # DEBUG | INFO | WARNING | ERROR
     investment_price_source: str | None = None  # manual | stooq | alphavantage
     default_vendor_country: str | None = None  # ISO-3166-1 alpha-2, or "" to clear
+    paperless_url: str | None = None  # Paperless-ngx base URL (non-secret), or "" to clear
 
 
 @router.get("")
@@ -178,6 +179,17 @@ def _apply_default_vendor_country(db: Session, payload: SettingsUpdate) -> None:
     settings_service.set_value(db, settings_service.DEFAULT_VENDOR_COUNTRY, code)
 
 
+def _apply_paperless_url(db: Session, payload: SettingsUpdate) -> None:
+    """Validate + persist the Paperless base URL (non-secret). ``""`` clears it
+    (falls back to the env var); otherwise it must be an http(s) URL."""
+    if payload.paperless_url is None:
+        return
+    url = payload.paperless_url.strip()
+    if url and not (url.startswith("http://") or url.startswith("https://")):
+        raise HTTPException(status_code=400, detail="paperless_url must start with http:// or https://")
+    settings_service.set_value(db, settings_service.PAPERLESS_URL, url.rstrip("/"))
+
+
 def _apply_log_level(db: Session, payload: SettingsUpdate) -> None:
     """Validate + persist the log level and apply it immediately."""
     if payload.log_level is None:
@@ -224,6 +236,7 @@ def update_settings(
     _apply_ai_settings(db, payload)
     _apply_ocr_and_price_source(db, payload)
     _apply_default_vendor_country(db, payload)
+    _apply_paperless_url(db, payload)
     _apply_log_level(db, payload)
     recompute = _apply_base_currency(db, payload)
 
