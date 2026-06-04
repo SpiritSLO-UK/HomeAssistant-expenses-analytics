@@ -80,7 +80,11 @@ def _get_request(db: Session, request_id: int) -> AIRequest:
 @router.post(
     "/requests/{request_id}/approve",
     response_model=ClassifyResult,
-    responses={400: {"description": "Bad request"}, 502: {"description": "Upstream error"}},
+    responses={
+        400: {"description": "Bad request"},
+        404: {"description": "Not found"},
+        502: {"description": "Upstream error"},
+    },
 )
 def approve_request(request_id: int, db: Annotated[Session, Depends(get_db)]) -> dict:
     """Approve a pending cloud request and send it (spec §22.5)."""
@@ -93,7 +97,11 @@ def approve_request(request_id: int, db: Annotated[Session, Depends(get_db)]) ->
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
-@router.post("/requests/{request_id}/reject", response_model=AIRequestOut)
+@router.post(
+    "/requests/{request_id}/reject",
+    response_model=AIRequestOut,
+    responses={404: {"description": "Not found"}},
+)
 def reject_request(request_id: int, db: Annotated[Session, Depends(get_db)]) -> AIRequest:
     """Reject a pending cloud request — nothing is sent (spec §22.5)."""
     return ai_service.reject_request(db, _get_request(db, request_id))

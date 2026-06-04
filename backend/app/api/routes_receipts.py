@@ -65,7 +65,7 @@ def _get(db: Session, receipt_id: int) -> Receipt:
     return receipt
 
 
-@router.get("/{receipt_id}", response_model=ReceiptOut)
+@router.get("/{receipt_id}", response_model=ReceiptOut, responses={404: {"description": "Not found"}})
 def get_receipt(receipt_id: int, db: Annotated[Session, Depends(get_db)]) -> dict:
     return receipt_service.to_dict(db, _get(db, receipt_id))
 
@@ -82,21 +82,25 @@ def get_receipt_file(receipt_id: int, db: Annotated[Session, Depends(get_db)]) -
     return FileResponse(path, media_type=media_type, filename=receipt.source_filename or path.name)
 
 
-@router.post("/{receipt_id}/ocr", response_model=ReceiptOut)
+@router.post("/{receipt_id}/ocr", response_model=ReceiptOut, responses={404: {"description": "Not found"}})
 def rerun_ocr(receipt_id: int, db: Annotated[Session, Depends(get_db)]) -> dict:
     receipt = _get(db, receipt_id)
     receipt_service.run_ocr(db, receipt, auto_match=True)
     return receipt_service.to_dict(db, receipt)
 
 
-@router.patch("/{receipt_id}", response_model=ReceiptOut)
+@router.patch("/{receipt_id}", response_model=ReceiptOut, responses={404: {"description": "Not found"}})
 def update_receipt(receipt_id: int, payload: ReceiptUpdate, db: Annotated[Session, Depends(get_db)]) -> dict:
     receipt = _get(db, receipt_id)
     receipt_service.set_fields(db, receipt, **payload.model_dump(exclude_unset=True))
     return receipt_service.to_dict(db, receipt)
 
 
-@router.post("/{receipt_id}/match", response_model=MatchResult, responses={400: {"description": "Bad request"}})
+@router.post(
+    "/{receipt_id}/match",
+    response_model=MatchResult,
+    responses={400: {"description": "Bad request"}, 404: {"description": "Not found"}},
+)
 def match_receipt(receipt_id: int, db: Annotated[Session, Depends(get_db)]) -> dict:
     receipt = _get(db, receipt_id)
     if receipt.total_amount is None:
@@ -104,7 +108,11 @@ def match_receipt(receipt_id: int, db: Annotated[Session, Depends(get_db)]) -> d
     return receipt_service.match(db, receipt)
 
 
-@router.post("/{receipt_id}/confirm-match", response_model=ReceiptOut, responses={400: {"description": "Bad request"}})
+@router.post(
+    "/{receipt_id}/confirm-match",
+    response_model=ReceiptOut,
+    responses={400: {"description": "Bad request"}, 404: {"description": "Not found"}},
+)
 def confirm_match(receipt_id: int, payload: ConfirmMatchRequest, db: Annotated[Session, Depends(get_db)]) -> dict:
     receipt = _get(db, receipt_id)
     try:
@@ -114,6 +122,6 @@ def confirm_match(receipt_id: int, payload: ConfirmMatchRequest, db: Annotated[S
     return receipt_service.to_dict(db, receipt)
 
 
-@router.delete("/{receipt_id}", status_code=204)
+@router.delete("/{receipt_id}", status_code=204, responses={404: {"description": "Not found"}})
 def delete_receipt(receipt_id: int, db: Annotated[Session, Depends(get_db)]) -> None:
     receipt_service.delete(db, _get(db, receipt_id))

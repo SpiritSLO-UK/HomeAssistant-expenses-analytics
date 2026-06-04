@@ -190,7 +190,7 @@ def create_holding(
     return investment_service.holding_to_dict(holding)
 
 
-@router.patch("/holdings/{holding_id}", response_model=HoldingOut)
+@router.patch("/holdings/{holding_id}", response_model=HoldingOut, responses={404: {"description": "Not found"}})
 def update_holding(
     holding_id: int, payload: HoldingUpdate, request: Request, db: Annotated[Session, Depends(get_db)]
 ) -> dict:
@@ -199,7 +199,7 @@ def update_holding(
     return investment_service.holding_to_dict(holding)
 
 
-@router.delete("/holdings/{holding_id}", status_code=204)
+@router.delete("/holdings/{holding_id}", status_code=204, responses={404: {"description": "Not found"}})
 def delete_holding(holding_id: int, request: Request, db: Annotated[Session, Depends(get_db)]) -> None:
     holding = _holding_in_scope(request, db, holding_id)
     investment_service.delete_holding(db, holding)

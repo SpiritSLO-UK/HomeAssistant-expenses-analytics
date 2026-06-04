@@ -72,7 +72,7 @@ def budget_transactions(
     return budget_service.budget_transactions(db, budget, month or date.today(), account_ids=scope, annual=annual)
 
 
-@router.post("", response_model=BudgetOut, status_code=201)
+@router.post("", response_model=BudgetOut, status_code=201, responses={400: {"description": "Bad request"}})
 def create_budget(payload: BudgetIn, db: Annotated[Session, Depends(get_db)]) -> Budget:
     _validate(
         db,
@@ -103,7 +103,11 @@ def create_budget(payload: BudgetIn, db: Annotated[Session, Depends(get_db)]) ->
     return budget
 
 
-@router.patch("/{budget_id}", response_model=BudgetOut, responses={404: {"description": "Not found"}})
+@router.patch(
+    "/{budget_id}",
+    response_model=BudgetOut,
+    responses={400: {"description": "Bad request"}, 404: {"description": "Not found"}},
+)
 def update_budget(budget_id: int, payload: BudgetUpdate, db: Annotated[Session, Depends(get_db)]) -> Budget:
     budget = db.get(Budget, budget_id)
     if budget is None:

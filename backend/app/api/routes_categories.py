@@ -36,7 +36,7 @@ def _check_privacy(value: str | None) -> None:
         )
 
 
-@router.post("", response_model=CategoryOut, status_code=201)
+@router.post("", response_model=CategoryOut, status_code=201, responses={400: {"description": "Bad request"}})
 def create_category(payload: CategoryCreate, db: Annotated[Session, Depends(get_db)]) -> Category:
     _check_privacy(payload.privacy_sensitivity)
     return category_service.create_category(db, payload.model_dump(exclude_unset=True))
@@ -80,7 +80,11 @@ def get_category(category_id: int, db: Annotated[Session, Depends(get_db)]) -> C
     return category
 
 
-@router.patch("/{category_id}", response_model=CategoryOut, responses={404: {"description": "Not found"}})
+@router.patch(
+    "/{category_id}",
+    response_model=CategoryOut,
+    responses={400: {"description": "Bad request"}, 404: {"description": "Not found"}},
+)
 def update_category(category_id: int, payload: CategoryUpdate, db: Annotated[Session, Depends(get_db)]) -> Category:
     _check_privacy(payload.privacy_sensitivity)
     category = category_service.update_category(db, category_id, payload.model_dump(exclude_unset=True))

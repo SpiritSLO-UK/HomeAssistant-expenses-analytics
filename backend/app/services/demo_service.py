@@ -75,7 +75,7 @@ _CYCLE_DAYS = 30
 class _Spec:
     """A demo transaction before it becomes a CSV row + optional enrichment."""
 
-    cycle: int  # 0 = this month, 1 = last month, 2 = two months ago
+    cycle: int  # 0 is this month, 1 is last month, 2 is two months ago
     day: int  # day offset within the cycle (0..28)
     description: str
     amount: Decimal  # signed; negative is spend

@@ -45,13 +45,15 @@ def _get(db: Session, asset_id: int):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
-@router.get("/{asset_id}")
+@router.get("/{asset_id}", responses={404: {"description": "Not found"}})
 def get_asset(asset_id: int, db: Annotated[Session, Depends(get_db)]) -> dict:
     asset = _get(db, asset_id)
     return asset_service.asset_to_dict(db, asset, with_logs=True)
 
 
-@router.patch("/{asset_id}", responses={400: {"description": "Bad request"}})
+@router.patch(
+    "/{asset_id}", responses={400: {"description": "Bad request"}, 404: {"description": "Not found"}}
+)
 def update_asset(asset_id: int, payload: AssetUpdate, db: Annotated[Session, Depends(get_db)]) -> dict:
     asset = _get(db, asset_id)
     try:
@@ -61,18 +63,22 @@ def update_asset(asset_id: int, payload: AssetUpdate, db: Annotated[Session, Dep
     return asset_service.asset_to_dict(db, asset)
 
 
-@router.delete("/{asset_id}", status_code=204)
+@router.delete("/{asset_id}", status_code=204, responses={404: {"description": "Not found"}})
 def delete_asset(asset_id: int, db: Annotated[Session, Depends(get_db)]) -> None:
     asset_service.delete_asset(db, _get(db, asset_id))
 
 
-@router.get("/{asset_id}/logs")
+@router.get("/{asset_id}/logs", responses={404: {"description": "Not found"}})
 def list_logs(asset_id: int, db: Annotated[Session, Depends(get_db)]) -> list[dict]:
     _get(db, asset_id)
     return [asset_service.log_to_dict(lg) for lg in asset_service.list_logs(db, asset_id)]
 
 
-@router.post("/{asset_id}/logs", status_code=201, responses={400: {"description": "Bad request"}})
+@router.post(
+    "/{asset_id}/logs",
+    status_code=201,
+    responses={400: {"description": "Bad request"}, 404: {"description": "Not found"}},
+)
 def add_log(asset_id: int, payload: AssetLogCreate, db: Annotated[Session, Depends(get_db)]) -> dict:
     _get(db, asset_id)
     try:

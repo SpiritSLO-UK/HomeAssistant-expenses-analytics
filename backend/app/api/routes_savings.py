@@ -150,7 +150,11 @@ def _get_goal(db: Session, goal_id: int) -> SavingsGoal:
     return goal
 
 
-@router.patch("/goals/{goal_id}", response_model=GoalOut, responses={400: {"description": "Bad request"}})
+@router.patch(
+    "/goals/{goal_id}",
+    response_model=GoalOut,
+    responses={400: {"description": "Bad request"}, 404: {"description": "Not found"}},
+)
 def update_goal(goal_id: int, payload: GoalUpdate, db: Annotated[Session, Depends(get_db)]) -> dict:
     goal = _get_goal(db, goal_id)
     try:
@@ -160,6 +164,6 @@ def update_goal(goal_id: int, payload: GoalUpdate, db: Annotated[Session, Depend
     return savings_service.goal_to_dict(db, goal)
 
 
-@router.delete("/goals/{goal_id}", status_code=204)
+@router.delete("/goals/{goal_id}", status_code=204, responses={404: {"description": "Not found"}})
 def delete_goal(goal_id: int, db: Annotated[Session, Depends(get_db)]) -> None:
     savings_service.delete_goal(db, _get_goal(db, goal_id))

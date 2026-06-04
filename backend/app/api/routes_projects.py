@@ -35,7 +35,7 @@ def list_projects(db: Annotated[Session, Depends(get_db)]) -> list[Project]:
     return list(db.scalars(select(Project).order_by(Project.name)).all())
 
 
-@router.post("", response_model=ProjectOut, status_code=201)
+@router.post("", response_model=ProjectOut, status_code=201, responses={400: {"description": "Bad request"}})
 def create_project(payload: ProjectIn, db: Annotated[Session, Depends(get_db)]) -> Project:
     _check_status(payload.status)
     household = get_or_create_default_household(db)
@@ -63,7 +63,11 @@ def project_summary(project_id: int, request: Request, db: Annotated[Session, De
     return project_service.summary(db, project, account_ids=scope)
 
 
-@router.patch("/{project_id}", response_model=ProjectOut, responses={404: {"description": "Not found"}})
+@router.patch(
+    "/{project_id}",
+    response_model=ProjectOut,
+    responses={400: {"description": "Bad request"}, 404: {"description": "Not found"}},
+)
 def update_project(project_id: int, payload: ProjectUpdate, db: Annotated[Session, Depends(get_db)]) -> Project:
     project = db.get(Project, project_id)
     if project is None:
