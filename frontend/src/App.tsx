@@ -149,7 +149,7 @@ function MfaGate() {
             placeholder="123456"
             value={code}
             maxLength={8}
-            onChange={(e) => setCode(e.target.value.replace(/[^0-9]/g, ""))}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
           />
           <button className="btn" type="submit" disabled={!code || verify.isPending}>
             {verify.isPending ? "Verifying…" : "Verify"}

@@ -93,13 +93,13 @@ export default function Categories() {
       ? `Delete the built-in category "${c.name}"? Transactions using it become uncategorised. ` +
         `You can restore built-ins later with "Import library".`
       : `Delete the category "${c.name}"? Transactions using it become uncategorised.`;
-    if (window.confirm(msg)) remove.mutate(c.id);
+    if (globalThis.confirm(msg)) remove.mutate(c.id);
   }
 
   function confirmMerge() {
     if (!mergeSource || !mergeTarget || mergeSource === mergeTarget) return;
     if (
-      window.confirm(
+      globalThis.confirm(
         `Merge "${nameOf(mergeSource)}" into "${nameOf(mergeTarget)}"? ` +
           `Everything in the first moves to the second, then the first is removed.`,
       )
@@ -181,7 +181,7 @@ export default function Categories() {
               disabled={applyPrivacy.isPending}
               onClick={() => {
                 if (
-                  window.confirm(
+                  globalThis.confirm(
                     `Set every category to “${o.label}”? This overwrites any per-category choices.`,
                   )
                 ) {

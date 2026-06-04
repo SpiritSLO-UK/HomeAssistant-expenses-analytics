@@ -58,6 +58,10 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      - name: Lint (eslint)
+        working-directory: frontend
+        run: npm run lint
+
       - name: Build (tsc + vite)
         working-directory: frontend
         run: npm run build

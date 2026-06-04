@@ -411,7 +411,7 @@ function HoldingRow({
         </button>{" "}
         <button
           className="link-btn"
-          onClick={() => { if (window.confirm(`Remove holding ${holding.symbol}?`)) remove.mutate(); }}
+          onClick={() => { if (globalThis.confirm(`Remove holding ${holding.symbol}?`)) remove.mutate(); }}
         >
           ✕
         </button>

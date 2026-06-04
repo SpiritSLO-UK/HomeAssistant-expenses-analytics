@@ -4,7 +4,7 @@
 
 function readString(key: string): string | null {
   try {
-    return window.localStorage.getItem(key);
+    return globalThis.localStorage.getItem(key);
   } catch {
     return null;
   }
@@ -12,8 +12,8 @@ function readString(key: string): string | null {
 
 function writeString(key: string, value: string | null): void {
   try {
-    if (value === null) window.localStorage.removeItem(key);
-    else window.localStorage.setItem(key, value);
+    if (value === null) globalThis.localStorage.removeItem(key);
+    else globalThis.localStorage.setItem(key, value);
   } catch {
     /* localStorage unavailable — preferences just won't persist */
   }

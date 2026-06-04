@@ -4,11 +4,11 @@
 // `/api/hassio_ingress/<token>/`. We capture that base path once at load and
 // prefix all API calls with it, so requests resolve correctly both under
 // ingress and in local development (where the base is just `/`). The app uses
-// a HashRouter, so `window.location.pathname` stays at this base for the whole
+// a HashRouter, so `globalThis.location.pathname` stays at this base for the whole
 // session.
 
 const INGRESS_BASE: string = (() => {
-  let path = window.location.pathname;
+  let path = globalThis.location.pathname;
   if (!path.endsWith("/")) path += "/";
   return path;
 })();
@@ -25,7 +25,7 @@ const SESSION_KEY = "hafi_session";
 
 export function getSessionToken(): string | null {
   try {
-    return window.localStorage.getItem(SESSION_KEY);
+    return globalThis.localStorage.getItem(SESSION_KEY);
   } catch {
     return null;
   }
@@ -33,8 +33,8 @@ export function getSessionToken(): string | null {
 
 export function setSessionToken(token: string | null): void {
   try {
-    if (token) window.localStorage.setItem(SESSION_KEY, token);
-    else window.localStorage.removeItem(SESSION_KEY);
+    if (token) globalThis.localStorage.setItem(SESSION_KEY, token);
+    else globalThis.localStorage.removeItem(SESSION_KEY);
   } catch {
     /* localStorage unavailable (private mode) — requests just won't carry it */
   }

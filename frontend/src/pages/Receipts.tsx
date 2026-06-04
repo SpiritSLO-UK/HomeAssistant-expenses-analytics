@@ -211,7 +211,7 @@ function ReceiptCard({ r, onError }: { r: Receipt; onError: (e: string) => void 
         <button className="btn" disabled={!total || match.isPending} onClick={() => match.mutate()}>
           {match.isPending ? "Matching…" : "Find match"}
         </button>
-        <button className="link-btn" onClick={() => { if (window.confirm("Delete this receipt?")) remove.mutate(); }}>delete</button>
+        <button className="link-btn" onClick={() => { if (globalThis.confirm("Delete this receipt?")) remove.mutate(); }}>delete</button>
       </div>
 
       {confirmed && (

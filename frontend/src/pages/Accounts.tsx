@@ -67,7 +67,7 @@ function AccountRow({ account, isAdmin, meId, users }: {
   const patch = useMutation({
     mutationFn: (p: { is_shared?: boolean; owner_user_id?: number | null }) => updateAccount(account.id, p),
     onSuccess: invalidate,
-    onError: (e) => window.alert(String(e instanceof Error ? e.message : e)),
+    onError: (e) => globalThis.alert(String(e instanceof Error ? e.message : e)),
   });
 
   return (

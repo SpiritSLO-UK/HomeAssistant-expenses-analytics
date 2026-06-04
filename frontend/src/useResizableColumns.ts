@@ -34,16 +34,16 @@ export function useResizableColumns(tableKey: string, columns: ColumnDef[]) {
     const onMove = (ev: MouseEvent) =>
       setWidths((prev) => ({ ...prev, [key]: Math.max(MIN_WIDTH, startW + (ev.clientX - startX)) }));
     const onUp = () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
+      globalThis.removeEventListener("mousemove", onMove);
+      globalThis.removeEventListener("mouseup", onUp);
       // Persist the final widths on this device.
       setWidths((prev) => {
         setColumnWidths(tableKey, prev);
         return prev;
       });
     };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
+    globalThis.addEventListener("mousemove", onMove);
+    globalThis.addEventListener("mouseup", onUp);
   }
 
   function reset() {

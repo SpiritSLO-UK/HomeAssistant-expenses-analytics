@@ -14,11 +14,11 @@ export default function Search() {
 
   // Debounce typing, and keep ?q= in sync so the result is shareable/back-able.
   useEffect(() => {
-    const id = window.setTimeout(() => {
+    const id = globalThis.setTimeout(() => {
       setDebounced(term);
       setParams(term ? { q: term } : {}, { replace: true });
     }, 250);
-    return () => window.clearTimeout(id);
+    return () => globalThis.clearTimeout(id);
   }, [term, setParams]);
 
   const q = useQuery({

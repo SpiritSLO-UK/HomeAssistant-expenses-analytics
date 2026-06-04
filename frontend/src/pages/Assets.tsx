@@ -139,7 +139,7 @@ function AssetCard({ asset, onChange, onError }: { asset: Asset; onChange: () =>
         </div>
         <button
           className="link-btn"
-          onClick={() => { if (window.confirm(`Delete "${asset.name}" and all its logs?`)) remove.mutate(); }}
+          onClick={() => { if (globalThis.confirm(`Delete "${asset.name}" and all its logs?`)) remove.mutate(); }}
         >
           ✕
         </button>
@@ -384,7 +384,7 @@ function LogHistory({ asset, logs, onChange, onError }: {
                 </td>
                 <td style={{ whiteSpace: "nowrap" }}>{lg.cost != null ? gbp(lg.cost) : "—"}</td>
                 <td>
-                  <button className="link-btn" onClick={() => { if (window.confirm("Delete this entry?")) remove.mutate(lg.id); }}>✕</button>
+                  <button className="link-btn" onClick={() => { if (globalThis.confirm("Delete this entry?")) remove.mutate(lg.id); }}>✕</button>
                 </td>
               </tr>
             );
