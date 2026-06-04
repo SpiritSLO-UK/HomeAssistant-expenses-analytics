@@ -113,12 +113,16 @@ def reject_request(request_id: int, db: Annotated[Session, Depends(get_db)]) -> 
     responses={400: {"description": "Bad request"}, 502: {"description": "Upstream error"}},
 )
 def classify_batch(
-    request: Request, db: Annotated[Session, Depends(get_db)], limit: Annotated[int, Query(ge=1, le=100)] = 25
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    scope: Annotated[str, Query(pattern="^(uncategorised|recheck)$")] = "uncategorised",
 ) -> dict:
-    """Suggest categories for uncategorised transactions (local_llm only).
-    Suggestions only — apply with /api/ai/apply after the user approves."""
+    """Suggest categories in a batch (local_llm only). ``scope=uncategorised``
+    (default) only fills blanks; ``scope=recheck`` re-examines auto-categorised
+    rows too (never manual). Suggestions only — apply with /api/ai/apply."""
     try:
-        return ai_service.classify_batch(db, limit=limit, account_ids=_scope(request, db))
+        return ai_service.classify_batch(db, limit=limit, scope=scope, account_ids=_scope(request, db))
     except AIDisabled as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except AIError as exc:
@@ -138,12 +142,16 @@ def apply(payload: ApplyRequest, db: Annotated[Session, Depends(get_db)]) -> dic
     responses={400: {"description": "Bad request"}, 502: {"description": "Upstream error"}},
 )
 def cloud_batch_prepare(
-    request: Request, db: Annotated[Session, Depends(get_db)], limit: Annotated[int, Query(ge=1, le=100)] = 25
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    scope: Annotated[str, Query(pattern="^(uncategorised|recheck)$")] = "uncategorised",
 ) -> dict:
     """Stage 1 of a cloud batch (spec §22.3, §22.5): preview the redacted payloads
-    that *would* be sent for uncategorised transactions. Nothing is sent yet."""
+    that *would* be sent. ``scope=recheck`` also includes auto-categorised rows
+    (never manual) for re-processing. Nothing is sent yet."""
     try:
-        return ai_service.cloud_batch_prepare(db, limit=limit, account_ids=_scope(request, db))
+        return ai_service.cloud_batch_prepare(db, limit=limit, scope=scope, account_ids=_scope(request, db))
     except AIDisabled as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except AIError as exc:

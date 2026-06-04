@@ -25,17 +25,18 @@ export default function CloudAiBatchPanel({ base, onClose }: Readonly<{ base: st
   const [suggestions, setSuggestions] = useState<BatchSuggestion[] | null>(null);
   const [picked, setPicked] = useState<Set<number>>(new Set());
   const [threshold, setThreshold] = useState(0.8);
+  const [recheck, setRecheck] = useState(false);
   const [showPayload, setShowPayload] = useState<number | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
   const prepare = useMutation({
-    mutationFn: () => cloudBatchPrepare(50),
+    mutationFn: () => cloudBatchPrepare(50, recheck ? "recheck" : "uncategorised"),
     onSuccess: (res) => {
       setItems(res.items);
       setToSend(new Set(res.items.map((i) => i.ai_request_id)));
       setSuggestions(null);
-      setMsg(`Found ${res.count} uncategorised transaction(s). Review what would be sent, then send.`);
+      setMsg(`Found ${res.count} transaction(s). Review what would be sent, then send.`);
       setErr(null);
     },
     onError: (e) => setErr(String(e instanceof Error ? e.message : e)),
@@ -89,6 +90,8 @@ export default function CloudAiBatchPanel({ base, onClose }: Readonly<{ base: st
     }
   }
 
+  const scanLabel = recheck ? "Scan transactions" : "Scan uncategorised";
+
   return (
     <div className="card" style={{ borderLeft: "3px solid #e0a800" }}>
       <div className="page__head">
@@ -103,9 +106,15 @@ export default function CloudAiBatchPanel({ base, onClose }: Readonly<{ base: st
       </p>
 
       {!items && !suggestions && (
-        <button className="btn" disabled={prepare.isPending} onClick={() => prepare.mutate()}>
-          {prepare.isPending ? "Scanning…" : "Scan uncategorised"}
-        </button>
+        <div className="form-row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <button className="btn" disabled={prepare.isPending} onClick={() => prepare.mutate()}>
+            {prepare.isPending ? "Scanning…" : scanLabel}
+          </button>
+          <label className="checkbox">
+            <input type="checkbox" checked={recheck} onChange={(e) => setRecheck(e.target.checked)} />{" "}
+            Re-check already-categorised (skips manual)
+          </label>
+        </div>
       )}
 
       {err && <p className="status status--error">{err}</p>}
@@ -161,7 +170,7 @@ export default function CloudAiBatchPanel({ base, onClose }: Readonly<{ base: st
           </button>
         </>
       )}
-      {items?.length === 0 && <p className="muted">Nothing uncategorised to send.</p>}
+      {items?.length === 0 && <p className="muted">Nothing to send.</p>}
 
       {/* Stage 2: review the suggestions the cloud returned */}
       {suggestions && suggestions.length > 0 && (

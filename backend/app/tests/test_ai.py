@@ -198,3 +198,46 @@ def test_apply_suggestions_endpoint(client):
     r = client.post("/api/ai/apply", json={"items": [{"transaction_id": txn_id, "category_id": groceries}]})
     assert r.json()["applied"] == 1
     assert client.get(f"/api/transactions/{txn_id}").json()["category_id"] == groceries
+
+
+# --- re-process (scope=recheck): re-run AI over auto-categorised rows, never manual ---
+
+def test_apply_suggestions_never_overwrites_manual(client):
+    txn_id = _import_txn(client)
+    cats = client.get("/api/categories").json()
+    groceries = next(c["id"] for c in cats if c["name"] == "Groceries")
+    eating_out = next(c["id"] for c in cats if c["name"] == "Eating Out")
+    # Manual choice -> confidence 1.0 (locked).
+    client.post(f"/api/transactions/{txn_id}/categorise", json={"category_id": groceries})
+    # A re-process suggestion must not overwrite it.
+    r = client.post("/api/ai/apply", json={"items": [{"transaction_id": txn_id, "category_id": eating_out}]})
+    assert r.json()["applied"] == 0
+    assert client.get(f"/api/transactions/{txn_id}").json()["category_id"] == groceries
+
+
+def test_recheck_scope_includes_auto_not_manual(client):
+    # TESCO -> Groceries by keyword (auto, confidence < 1.0); ZZQ -> uncategorised;
+    # MANUAL CO -> manually set (locked).
+    _import_rows(client, [
+        ("2026-05-02", "TESCO STORES 41", "-20.00"),
+        ("2026-05-03", "ZZQ MARKET", "-12.00"),
+        ("2026-05-04", "MANUAL CO", "-5.00"),
+    ])
+    by_desc = {t["description_raw"]: t for t in client.get("/api/transactions").json()["items"]}
+    assert by_desc["TESCO STORES 41"]["category_id"] is not None  # keyword auto-categorised
+    assert by_desc["ZZQ MARKET"]["category_id"] is None
+    groceries = next(c["id"] for c in client.get("/api/categories").json() if c["name"] == "Groceries")
+    client.post(f"/api/transactions/{by_desc['MANUAL CO']['id']}/categorise", json={"category_id": groceries})
+
+    _set_mode(client, "local_llm")
+    with SessionLocal() as db:
+        uncat = ai_service.classify_batch(db, provider=FakeProvider(category="Eating Out"))
+        rech = ai_service.classify_batch(db, provider=FakeProvider(category="Eating Out"), scope="recheck")
+    # Default: only the uncategorised ZZQ. Re-check: ZZQ + the auto TESCO, never the manual row.
+    assert uncat["considered"] == 1
+    assert rech["considered"] == 2
+
+
+def test_classify_batch_rejects_bad_scope(client):
+    _set_mode(client, "local_llm")
+    assert client.post("/api/ai/classify-batch?scope=everything").status_code == 422
