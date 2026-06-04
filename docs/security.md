@@ -44,6 +44,15 @@ you prefer that visibility over isolation, set `database_path` back to
 5. **Ingress auth.** The UI is served through Home Assistant ingress, so HA
    handles authentication — the app is not exposed on a public port.
 
+### Standalone (no Home Assistant)
+
+Running via Docker there is no ingress in front, so **you** own the network edge:
+serve the app over **HTTPS** — a reverse proxy terminates TLS (see
+[reverse-proxy.md](reverse-proxy.md)) — whenever it is reachable beyond
+`localhost`, and keep the `finance_data` volume backed up. **Encrypted backups**
+(passphrase, AES-256-GCM) let you keep an off-device copy safely; optional at-rest
+encryption protects the live DB file.
+
 ## Access control, MFA & multi-user (Stage 12)
 
 Identity is supplied by **Home Assistant ingress**, which sets

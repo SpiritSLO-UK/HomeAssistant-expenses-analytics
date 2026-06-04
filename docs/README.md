@@ -20,6 +20,7 @@ and how to run it; the guides below go deeper.
 ## Quick links
 
 - **Run it standalone:** [README → Beta quick-run](../README.md)
+- **What's changed:** [CHANGELOG](../CHANGELOG.md) (v0.9.0-beta + the post-beta wave)
 - **Serve it over HTTPS:** [HTTPS / reverse proxy](reverse-proxy.md) (`docker-compose.tls.yml`)
 - **Install on Home Assistant:** the [`addon/`](../addon/) folder (ingress panel on
   port 8099). HA packaging is being finished — see the main README.

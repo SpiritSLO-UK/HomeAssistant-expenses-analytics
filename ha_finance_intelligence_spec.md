@@ -30,7 +30,10 @@ _Living section — updated as the project is built (see git history / README)._
 | 9 | Local AI (§22): provider abstraction (NoAI + OpenAI-compatible), classify-transaction task, privacy gating, audit log, AI settings + "suggest" UI; off by default, suggestion-only | ✅ Done |
 | 10 | Cloud AI approval (§22.5): per-call approve/reject of a pending request with payload preview, never-cloud category blocking (§28), full audit log + UI | ✅ Done |
 | 11 | PDF statement import (§11): generic PDF parser (pypdf text → heuristic rows), review-heavy (rows flagged needs-review), Import UI accepts PDF | ✅ Done |
-| 12 | Polish (CI, dashboard trends/outliers, savings, logs viewer, security/multi-user, …) | 📋 Planned |
+| 12 | Polish: CI, dashboard trends/outliers, savings, logs viewer, security/multi-user (S1–S4), data retention, CSV export, global search, per-device UI prefs | ✅ Done |
+| — | **🎉 v0.9.0-beta released** (standalone, no HA) — see [CHANGELOG.md](CHANGELOG.md) | ✅ Done |
+| — | Post-beta wave: investments & pensions (holdings + price feed + value-over-time), cars/home/assets, geo + world map + per-txn country (`set_country` rule), Paperless-ngx import, period over-time charts, "Needs attention" + Review Uncategorised tab, AI re-process, dark mode, HTTPS reverse-proxy, parallel tests, SonarCloud green | ✅ Done |
+| — | **Home Assistant packaging** (add-on repository + one-click install, ingress SSO, MQTT sensors) + HA energy-cost offset | 📋 Planned (the next milestone) |
 
 Notable deviation from the original spec: the database default path moved from `/config/finance/finance.db` (§26.4) to the add-on's **private** `/data/finance/finance.db` for isolation — see `docs/security.md`.
 

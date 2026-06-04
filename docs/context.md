@@ -26,8 +26,12 @@ addon/      Home Assistant add-on (single container): config.yaml, Dockerfile,
 backend/    FastAPI (Python 3.12) + SQLAlchemy 2.0 + Alembic + SQLite
   app/api/        routers, one per resource, aggregated in api/router.py (prefix /api)
   app/models/     SQLAlchemy models (one file per entity)
-  app/services/   business logic (import, category, vendor, dashboard, fx,
-                  settings, backup, demo, redaction, household)
+  app/services/   business logic — import, category, vendor, rule, dashboard,
+                  analytics, fx, budget, project, tag, split, subscription,
+                  savings, investment (+ price), asset, receipt/ocr, review,
+                  ai (+ provider/redaction), search, geo, travel, business,
+                  retention, backup/crypto, security/totp, paperless, settings,
+                  household, auth, demo
   app/parsers/    bank CSV parsers + detection registry
   app/schemas/    Pydantic request/response models
   app/tests/      pytest (forced temp DB)
@@ -60,23 +64,39 @@ HA integration holds no business logic (spec §9.4).
 - `sqlite3.connect(...)` in a `with` block commits but does **not close** — close explicitly or the file stays locked on Windows (bit us in backup snapshot).
 - Hit the running server at `http://127.0.0.1:8099`, not `localhost` (IPv6 `::1` vs IPv4 bind).
 - Run everything via `scripts/test.sh` (pytest + tsc) and `scripts/dev.sh`.
-- **CI** (`.github/workflows/ci.yml`): ruff + backend pytest + frontend build on
-  every push/PR; Linux CI installs all extras so encryption/MQTT/OCR/PDF run for
-  real. Ruff config in `backend/pyproject.toml` (line-length 120; FastAPI
-  injectors whitelisted for B008; E501 ignored in tests).
+- **CI** (`.github/workflows/ci.yml`): ruff + backend pytest + frontend build +
+  a standalone Docker-image build on every push/PR; Linux CI installs all extras
+  so encryption/MQTT/OCR/PDF run for real. Ruff config in `backend/pyproject.toml`
+  (line-length 120; FastAPI injectors whitelisted for B008; E501 ignored in tests).
+  The pytest suite runs **across all CPU cores** (`pytest-xdist`, `-n auto` in
+  `pyproject.toml`); each xdist worker is its own process with an isolated temp DB,
+  so it's safe — run `-n0` to go serial under a debugger.
+- **Type-checking:** Pyright in "basic" mode over `app` (config in
+  `pyproject.toml`, tests excluded); kept at 0 errors / 0 warnings. Not in CI —
+  run locally before a backend PR.
+- **Quality:** SonarCloud Automatic Analysis on `main` (gate green). Frontend lint
+  mirrors SonarCloud via `eslint-plugin-sonarjs` (CI-enforced).
 
 ## Build status (summary)
 
-Stages 0–11 done (skeleton, CSV import, categories/vendors + dashboard, rules &
-learning, split transactions, projects & tags, budgets + MQTT sensors,
-recurring/subscriptions, review queue, receipts + OCR, local AI, cloud AI
-approval, PDF statement import), plus a data-safety pass (redaction,
-backup/restore, demo data, add-on isolation) and multi-currency. That's the full
-spec §29 roadmap. **Stage 12 polish** is underway — the **security/multi-user
-cluster (S1–S4) is complete**: S1 multi-user identity + RBAC + approval, S2
-optional TOTP MFA + admin step-up, S3 security-health panel + failed-unlock
-alerts, S4 hardening pass + docs. See "Multi-user & access control" below. Full
-detail in spec §0 and git history.
+Stages 0–12 done, **`v0.9.0-beta` released** (standalone, no HA — see
+[CHANGELOG.md](../CHANGELOG.md)), plus a large **post-beta** wave. Stages 0–11:
+skeleton, CSV import, categories/vendors + dashboard, rules & learning, splits,
+projects & tags, budgets + MQTT, recurring/subscriptions, review queue,
+receipts + OCR, local AI, cloud-AI approval, PDF import — plus data-safety
+(redaction, backup/restore, demo, isolation) and multi-currency. **Stage 12**
+(security/multi-user S1–S4, trends/outliers, savings, logs viewer, data
+retention, CSV export, global search, per-device UI prefs) is complete.
+
+**Post-beta** (sections below): investments & pensions (holdings + price feed +
+value-over-time), cars/home/assets, geo + world map + per-transaction country
+(`set_country` rule), Paperless-ngx import, period over-time charts, the
+"Needs attention" dashboard card + Review "Uncategorised" tab, AI re-process,
+dark mode, persisted filters, re-orderable/hideable nav tabs + dashboard cards,
+HTTPS reverse-proxy, parallel tests, and a SonarCloud-green pass.
+
+**Next milestone:** the Home Assistant packaging push (add-on repository +
+one-click install, ingress SSO, MQTT sensors) + HA energy-cost offset.
 
 > Stage-numbering note: the spec §29 order is Stage 7 = review queue, Stage 8 =
 > receipts. We built recurring/subscriptions (§20, not a numbered §29 stage)
@@ -85,7 +105,11 @@ detail in spec §0 and git history.
 Categorisation order (spec §15.1): **manual > rule > vendor default > keyword**.
 Rules (`rule_service`) run on import and re-categorise; a manually-set category
 (confidence 1.0) is never overridden. "Make rule" / `learn_rule` turns a
-correction into a high-priority description rule.
+correction into a high-priority description rule. Rule **actions**: `set_category`
+· `set_vendor` · `set_project` · `set_country` (tag a transaction's ISO-2 spend
+location for the map) · `mark_transfer`/`mark_income`/`mark_subscription` ·
+`require_review` · `block_cloud_ai`. The in-app "How rules work" guide
+(docs/rules.md) documents every condition + action with worked examples.
 
 ## Splits (Stage 4 — spec §17)
 
@@ -202,8 +226,17 @@ provider injected in tests, no network):
 - API: `POST /api/ai/cloud-batch/{prepare,send}`. UI: `CloudAiBatchPanel`
   (Transactions, shown when `is_cloud`) — stage 1 lists the redacted payloads with
   a "view payload" toggle + per-row include checkbox; stage 2 shows suggestions
-  pre-ticked by a confidence threshold → Apply. `_uncategorised_for_batch` is the
-  shared query used by both batches.
+  pre-ticked by a confidence threshold → Apply.
+
+**Re-process (post-beta — `scope=recheck`):** `_select_for_batch(scope)` is the
+shared selector for both batches. Default `scope="uncategorised"` fills blanks
+only; `scope="recheck"` (a "Re-check already-categorised" toggle on both panels)
+also re-examines rows the app auto-categorised (rule/vendor/keyword/AI, confidence
+< 1.0) so the user can re-run after plugging in / improving a model and find new
+matches — a **manual** choice (confidence 1.0) is never selected, and the local
+batch only surfaces a suggestion when it *differs* from the current category.
+Defence in depth: `apply_suggestions` also refuses to overwrite a manual category.
+Routes take a validated `scope` query param.
 
 ## PDF statement import (Stage 11 / §11)
 
@@ -236,6 +269,11 @@ spec §21.4 (amount 50 / date 20 / vendor 20; ≥90 auto if `receipt_match_mode=
 (upload/list/get/ocr/match/confirm-match/patch/delete) + `/api/receipts/status`.
 UI: a Receipts page (upload, per-receipt manual fields, "Find match" → confirm).
 Receipt **line items** (§21.2 level 2) and "apply items to a split" are deferred.
+Upload is **deduped by content hash** (`store_upload` returns `created`); a
+byte-identical re-upload returns the existing receipt and the UI says "already
+imported" (post-beta — the receipt sibling of statement dedup). Receipts can also
+be **attached directly to a transaction** (kept regardless of the retention
+delete-after-processing toggle) and imported from **Paperless-ngx** (below).
 
 **Review queue** (`review_service`, spec §23): a central list of things the app
 wasn't sure about (`ReviewItem`: unknown_vendor, low_confidence, duplicate,
@@ -244,6 +282,15 @@ receipts file/resolve items through it. API: `GET /api/review`, `PATCH /api/revi
 (resolve/ignore), `GET /api/review/count`; a Review Queue page resolves/ignores.
 Note: the dashboard's existing `review_items` count is transaction-level
 (`needs_review`), distinct from the `ReviewItem` queue.
+
+**Needs-attention + Uncategorised tab (post-beta):** the Review page now has two
+tabs — **To review** (the curated `ReviewItem` queue) and **Uncategorised** (a
+paginated list of category-less transactions with inline quick-categorise). The
+dashboard gains one **"Needs attention"** card combining the review-queue open
+count + uncategorised + FX-rate-missing, each linking to where you clear it (the
+uncategorised link deep-links to `?tab=uncategorised`). The two stay **separate
+data** — uncategorised is high-volume and deliberately *not* folded into the
+curated queue — they're just co-located so there's one place to clear both.
 
 ## Budgets + MQTT (Stage 6 — spec §19, §27)
 
@@ -571,15 +618,27 @@ the visuals.
 `frontend/src/prefs.ts` holds small, non-sensitive, **per-browser** prefs in
 localStorage (kept separate from `api/client.ts`, all access defensive for
 private-mode):
-- **Dashboard show/hide (#86):** the Dashboard's "⚙ Customise" toggle hides/shows
-  the optional cards (`headsup`, `trends`, `categories`, `vendors`) via
-  `get/setHiddenDashboardCards`. Core stat tiles + security banner always render;
-  hidden cards aren't mounted (so their queries don't run).
+- **Dashboard show/hide + reorder (#86/#84):** the Dashboard's "⚙ Customise"
+  toggle hides/shows **and reorders** (▲/▼) every optional card — now the full set
+  (heads-up, trends, categories, vendors, geo, projects, members, savings,
+  investments, assets, budgets, business, travel, allowance, processing) — via
+  `get/setHiddenDashboardCards` + `get/setDashboardCardOrder`. Hidden cards aren't
+  mounted (their queries don't run); the order is resilient to cards added/removed.
+- **Sidebar nav show/hide + reorder (#38/#126):** "✏️ Customise tabs" in the
+  sidebar hides (👁️/🚫) and reorders (▲/▼) nav tabs per device
+  (`get/setHiddenNavKeys` + `get/setNavOrder`); Dashboard + Settings stay locked
+  from hiding. Owner/settings-manager only.
+- **Mine/Shared/All view** (`get/setDashboardView`) and **resizable table column
+  widths** (`get/setColumnWidths`, per table) are also per-device.
+- **Dark mode (#103):** `getThemePref`/`setThemePref` + `theme.ts` apply
+  light/dark/system; an Appearance card in Settings switches it.
+- **Persisted filters (#104):** the Transactions filters seed from URL params and
+  persist, so drill-down links arrive pre-filtered and a reload keeps your view.
 - **Cloud-AI disclaimer (#42):** the first time the user saves a cloud privacy
   mode, `CloudAiDisclaimerDialog` is shown and the save is gated until they
   confirm; `isCloudAiAcknowledged`/`setCloudAiAcknowledged` make it one-time.
-  Frontend-only — no backend/no migration; not synced across devices (a view
-  preference / local acknowledgement, not household data).
+  Frontend-only — no backend/no migration; not synced across devices (view
+  preferences / local acknowledgement, not household data).
 
 ## Data retention & expiration (Stage 12 — spec §28; #78, #147)
 
@@ -660,6 +719,75 @@ carries `is_business` + `vat_amount` columns; `build_transaction_filters` gained
 propagates a matched receipt's `vat_amount` onto the txn (without clobbering a manual value).
 Frontend: `pages/Business.tsx` (💼) + a per-row business toggle, VAT prompt, and "Business
 only" filter on Transactions. `tests/test_business.py`.
+
+## Investments & pensions (post-beta — spec §12.4, §27)
+
+`investment_service` over new account types `investment` / `pension` and tables
+`account_values`, `holdings`, `holding_prices` (migrations `c4d5e6f7a8b9`,
+`a8b9c0d1e2f3`). Two **distinct UX flows by type** (the split that QA #58 asked
+for):
+
+- **Investment (shares/ISA) = holdings-first.** A `Holding` (ticker, units,
+  avg-cost, last-price) yields market value + unrealised gain (±£/%); the account
+  value is Σ(units × last price). The cash controls (set-value / contribution /
+  withdrawal) are **rejected with 400** for an investment account — it's valued by
+  holdings, not a typed-in figure.
+- **Pension = statement value.** `AccountValue` snapshots + ＋contribution／
+  －withdrawal; no holdings section.
+- **Value over time:** `history()` reconstructs the portfolio per day from
+  `holding_prices` (+ value snapshots) → a chart + day/month/year change.
+- **Optional price feed** (`price_service`, **off by default**): `manual` /
+  keyless `stooq` / keyed `alphavantage` (`HAFI_INVESTMENT_API_KEY`); only ticker
+  symbols leave the box. `POST /api/investments/sync-prices` + a startup sweep.
+- API `routes_investments` (`/api/investments/...`: summary, history, accounts,
+  values, adjust, holdings, sync-prices, price-status). UI `pages/Investments.tsx`
+  (📈) + dashboard card. Account-scoped like every aggregate.
+
+## Cars, home & assets (post-beta)
+
+`asset_service` over `assets` + `asset_logs` (migration `d5e6f7a8b9c0`).
+An `Asset` is `car | home | other` with a timeline of `AssetLog` rows.
+
+- **Car:** one consistent **unit system** — imperial (miles · gallons · **MPG**)
+  or metric (km · litres · **L/100km**), driven by the distance unit; fuel stored
+  canonically in litres. Refuel rows (odometer + fuel + cost, full-tank flag) give
+  tank-to-tank economy + a per-fill history, plus servicing/running costs.
+- **Home:** utility **meter readings** (electricity/gas/water) → usage + cost
+  between readings (rollover skipped), plus maintenance.
+- Household-level (`routes_assets`); UI `pages/Cars.tsx` (🚗) + dashboard card.
+
+## Spending by location — geo + world map (post-beta — #74/#79/#108)
+
+`geo.py` resolves a transaction's country by precedence **txn → vendor →
+default → currency** (`country_for`). `dashboard_service.country_breakdown` →
+`GET /api/dashboard/by-country`. A per-transaction `transactions.country`
+(migration `b9c0d1e2f3a4`) + `vendors.country` (`f7a8b9c0d1e2`) + a settings
+default vendor country give precise attribution (Spain, not the "Eurozone"
+currency fallback). The `set_country` **rule action** automates it on import.
+UI: a dashboard **world map** (`WorldMap.tsx`, equirectangular bubble map, no
+geocoding service) + a "Spending by location" list; inline country setters on
+Vendors + per-trip on Travel; a `country` filter on the transactions list/CSV.
+All local. `scripts/gen_worldmap.mjs` regenerates the map geometry.
+
+## Paperless-ngx import (post-beta — #72/#110)
+
+`paperless_service`: a one-directional, **outbound-only** pull from the user's own
+Paperless-ngx — we only ever *request* documents; Paperless never sees finance
+data. Off unless both a URL (Settings → Integrations or `HAFI_PAPERLESS_URL`) and
+the secret token (`HAFI_PAPERLESS_TOKEN`, **env-only**) are set. Documents →
+`receipt_service.store_upload` (content-hash dedup) → OCR-if-on. `routes_paperless`
+(status / list / import / test); the Receipts "Import from Paperless" card appears
+**only when configured**. `tests/test_paperless.py` (offline). See
+[configuration.md](configuration.md) for the setup walkthrough.
+
+## Period over-time charts (post-beta — #116–#118)
+
+A shared `RangeSelector` (6M/1Y/2Y/5Y) + `OverTimeChart` drive value-/spend-over-
+time on **Investments**, **Savings**, **Travel** and **Projects**; **Business**
+gained a year scope. Backed by `history(months=…)` helpers
+(`savings_service`/`travel_service`/`project_service`/`investment_service`) built
+on `analytics_service._month_windows`. Read-only; account-scoped; no migrations
+beyond the investment price-history table.
 
 ## Open questions / to scope
 

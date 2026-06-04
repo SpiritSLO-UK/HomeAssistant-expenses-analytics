@@ -3,6 +3,44 @@
 All notable changes to HA Finance Intelligence. This project uses date-stamped,
 human-readable entries; versions follow semantic-ish versioning while pre-1.0.
 
+## Unreleased (post-beta)
+
+Everything the beta listed as "not in this release" has since landed, plus a wave
+of depth and polish. Still standalone-first; the Home Assistant add-on packaging
+remains the next milestone.
+
+### Added
+- **Investments & pensions** — distinct models: an *investment* account is
+  **holdings-first** (tickers × price → market value, unrealised gain, value-over-
+  time chart with day/month/year change) while a *pension* tracks a **statement
+  value** with contributions/withdrawals. Optional, off-by-default **price feed**
+  (keyless Stooq or keyed Alpha Vantage; only ticker symbols leave the box).
+- **Cars, home & assets** — a car uses one consistent unit system (imperial MPG or
+  metric L/100km) with refuel/economy history; a home tracks utility-meter readings
+  → usage & cost; plus maintenance/running-cost logs.
+- **Spending by location** — a world/geo map ranks the month's spend by country
+  (per-transaction country → vendor country → currency fallback), with a
+  `set_country` **rule action** and per-trip/per-vendor country overrides.
+- **Paperless-ngx import** — pull documents from your own Paperless into receipts
+  (outbound-only; off until a URL + env token are set).
+- **Over-time charts** with a 6M/1Y/2Y/5Y range selector across Investments,
+  Savings, Travel and Projects; Business gets a year scope.
+- **"Needs attention"** dashboard card (review queue + uncategorised + FX-needed)
+  and a Review-page **Uncategorised** tab with inline quick-categorise.
+- **AI re-process** — re-run the model over already-categorised rows to find better
+  matches (suggest-only; never overwrites a manual choice).
+- UI: **dark mode**, **persisted filters**, **re-orderable + hideable** sidebar
+  tabs and dashboard cards, resizable columns, an **About & source** card.
+
+### Changed / fixed
+- HTTPS for the standalone deployment via a bundled Caddy reverse-proxy profile.
+- Receipt re-uploads now report **"already imported"** (content-hash dedup).
+- Settings → **Services** split into per-service panels; the Receipts Paperless
+  card only appears once configured.
+- Performance indexes on hot columns; dependency refresh; docs pack.
+- Tests run **across all CPU cores** (`pytest-xdist`); ~405 backend tests.
+- SonarCloud quality gate green (security hotspots reviewed; code smells cleared).
+
 ## v0.9.0-beta — 2026-06-07
 
 First public **beta**. A complete, privacy-first personal-finance app you can run
