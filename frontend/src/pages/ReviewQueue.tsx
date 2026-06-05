@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   categoriseTransaction,
+  getAiStatus,
   getReviewCount,
   listCategories,
   listReviewItems,
@@ -11,6 +12,7 @@ import {
   type ReviewItem,
   type Transaction,
 } from "../api/client";
+import { suggestCategory } from "../lib/aiSuggest";
 
 const PAGE = 25;
 
@@ -72,23 +74,19 @@ export default function ReviewQueue() {
 }
 
 function ReviewTab() {
-  const qc = useQueryClient();
   const [showResolved, setShowResolved] = useState(false);
   const status = showResolved ? "resolved" : "open";
 
   const items = useQuery({ queryKey: ["review", status], queryFn: () => listReviewItems(status) });
-
-  const update = useMutation({
-    mutationFn: (v: { id: number; status: string }) => setReviewStatus(v.id, v.status),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["review"] }),
-  });
+  const categories = useQuery({ queryKey: ["categories"], queryFn: listCategories });
+  const aiStatus = useQuery({ queryKey: ["ai-status"], queryFn: getAiStatus });
 
   return (
     <>
       <div className="form-row" style={{ justifyContent: "space-between", alignItems: "center", gap: 8 }}>
         <p className="muted" style={{ margin: 0 }}>
           Things the app wasn't sure about — unknown vendors, low-confidence reads, unmatched receipts.
-          Resolve or ignore each one.
+          Fix each one right here, or resolve/ignore it.
         </p>
         <label className="checkbox" style={{ whiteSpace: "nowrap" }}>
           <input type="checkbox" checked={showResolved} onChange={(e) => setShowResolved(e.target.checked)} />{" "}
@@ -103,32 +101,114 @@ function ReviewTab() {
         )}
         <div>
           {items.data?.map((item: ReviewItem) => (
-            <div key={item.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "10px 0", borderBottom: "1px solid rgba(127,127,127,0.2)" }}>
-              <div>
-                <span className="tag" style={{ background: SEVERITY_COLOUR[item.severity] }}>
-                  {REASON_LABEL[item.reason] ?? item.reason}
-                </span>{" "}
-                <span className="muted">{item.item_type}{item.item_id == null ? "" : ` #${item.item_id}`}</span>
-                {item.suggested_action && <div style={{ marginTop: 4 }}>{item.suggested_action}</div>}
-              </div>
-              <div style={{ display: "flex", gap: 6, flexShrink: 0, alignItems: "center" }}>
-                {item.item_type === "transaction" && item.item_id != null && (
-                  <Link className="btn btn--ghost" to={`/transactions?focus=${item.item_id}`}>
-                    Open transaction →
-                  </Link>
-                )}
-                {!showResolved && (
-                  <>
-                    <button className="btn btn--ghost" disabled={update.isPending} onClick={() => update.mutate({ id: item.id, status: "resolved" })}>Resolve</button>
-                    <button className="link-btn" disabled={update.isPending} onClick={() => update.mutate({ id: item.id, status: "ignored" })}>Ignore</button>
-                  </>
-                )}
-              </div>
-            </div>
+            <ReviewRow
+              key={item.id}
+              item={item}
+              showResolved={showResolved}
+              categories={categories.data ?? []}
+              aiEnabled={aiStatus.data?.enabled ?? false}
+            />
           ))}
         </div>
       </div>
     </>
+  );
+}
+
+function ReviewRow({
+  item,
+  showResolved,
+  categories,
+  aiEnabled,
+}: Readonly<{
+  item: ReviewItem;
+  showResolved: boolean;
+  categories: { id: number; name: string }[];
+  aiEnabled: boolean;
+}>) {
+  const qc = useQueryClient();
+  const isTxn = item.item_type === "transaction" && item.item_id != null;
+  const isReceipt = item.item_type === "receipt" && item.item_id != null;
+
+  const update = useMutation({
+    mutationFn: (newStatus: string) => setReviewStatus(item.id, newStatus),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["review"] }),
+  });
+
+  // Categorising the transaction is the fix for an uncategorised/unknown-vendor
+  // item — once it has a category, resolve the review item too so the row clears.
+  const categorise = useMutation({
+    mutationFn: (categoryId: number) => categoriseTransaction(item.item_id as number, categoryId),
+    onSuccess: async () => {
+      await setReviewStatus(item.id, "resolved");
+      qc.invalidateQueries({ queryKey: ["review"] });
+      qc.invalidateQueries({ queryKey: ["uncategorised"] });
+      qc.invalidateQueries({ queryKey: ["transactions"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+
+  async function onSuggest() {
+    if (item.item_id == null) return;
+    try {
+      const categoryId = await suggestCategory(item.item_id);
+      if (categoryId != null) categorise.mutate(categoryId);
+    } catch (e) {
+      globalThis.alert(String(e instanceof Error ? e.message : e));
+    }
+  }
+
+  const pending = update.isPending || categorise.isPending;
+
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", padding: "10px 0", borderBottom: "1px solid rgba(127,127,127,0.2)" }}>
+      <div style={{ minWidth: 0 }}>
+        <span className="tag" style={{ background: SEVERITY_COLOUR[item.severity] }}>
+          {REASON_LABEL[item.reason] ?? item.reason}
+        </span>{" "}
+        <span className="muted">{item.item_type}{item.item_id == null ? "" : ` #${item.item_id}`}</span>
+        {item.suggested_action && <div style={{ marginTop: 4 }}>{item.suggested_action}</div>}
+      </div>
+      <div style={{ display: "flex", gap: 6, flexShrink: 0, alignItems: "center", flexWrap: "wrap" }}>
+        {/* Fix-in-place: categorise the transaction without leaving the queue. */}
+        {isTxn && !showResolved && (
+          <>
+            <select
+              defaultValue=""
+              disabled={pending}
+              aria-label="Categorise this transaction"
+              onChange={(e) => { if (e.target.value) categorise.mutate(Number(e.target.value)); }}
+            >
+              <option value="">Categorise…</option>
+              {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+            {aiEnabled && (
+              <button className="link-btn" disabled={pending} title="Ask the AI assistant to suggest a category" onClick={onSuggest}>
+                ✨ suggest
+              </button>
+            )}
+          </>
+        )}
+        {isTxn && (
+          <Link className="btn btn--ghost" to={`/transactions?focus=${item.item_id}`}>
+            Open transaction →
+          </Link>
+        )}
+        {/* Unmatched / low-confidence receipts are actioned on the Receipts page
+            (find match, extract with AI, edit fields) — link straight to it. */}
+        {isReceipt && (
+          <Link className="btn btn--ghost" to={`/receipts?focus=${item.item_id}`}>
+            Open receipt →
+          </Link>
+        )}
+        {!showResolved && (
+          <>
+            <button className="btn btn--ghost" disabled={pending} onClick={() => update.mutate("resolved")}>Resolve</button>
+            <button className="link-btn" disabled={pending} onClick={() => update.mutate("ignored")}>Ignore</button>
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 
