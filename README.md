@@ -14,12 +14,12 @@ categories. All privacy-first, with **strict local mode as the default**.
 Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md)
 (the build-status section at the top tracks progress).
 
-## 🧪 Beta — run it standalone (no Home Assistant needed)
+## 🚀 Run it standalone (no Home Assistant needed)
 
-This is the **v0.9.5-beta** release — the practical close of beta development: a
-complete, standalone app you can run today with Docker. The Home Assistant add-on
-(one-click install, ingress SSO, MQTT sensors) is scaffolded under
-[`addon/`](addon/) and is the focus of the **next** release.
+This is the **v1.0.0** release — a complete, privacy-first finance app you can run
+today with Docker, standalone. Prefer Home Assistant? It also installs as a
+**one-click HA add-on** (ingress SSO, MQTT sensors, energy-cost offset) — see
+[Install on Home Assistant](#-install-on-home-assistant-add-on) below.
 
 ```bash
 git clone https://github.com/SpiritSLO-UK/HomeAssistant-expenses-analytics.git
@@ -32,8 +32,8 @@ Your data (SQLite DB + uploads + safety backups) is kept in the `finance_data`
 Docker volume. Standalone, the app runs single-user as a local owner. Set your
 base currency and other options in [`docker-compose.yml`](docker-compose.yml) (or
 `HAFI_*` env vars), then **Settings → Demo data → Load demo data** to explore.
-See the [CHANGELOG](CHANGELOG.md) for what's in this beta. _Beta software: no
-warranty, not financial advice — keep your own backups._
+See the [CHANGELOG](CHANGELOG.md) for what's in this release. _Provided "as is",
+no warranty, not financial advice — keep your own backups._
 
 ## 🏠 Install on Home Assistant (add-on)
 
@@ -76,7 +76,7 @@ with the Supervisor (Home Assistant OS or Supervised)._
 | 10 | Cloud AI approval: preview + approve/reject each request, never-cloud category blocking, audit log | ✅ |
 | 11 | PDF statement import: best-effort, rows flagged for review | ✅ |
 | 12 | Polish: CI, dashboard trends/outliers, savings, investments & pensions, cars & home, geo/world map, data retention, multi-user & roles, global search, performance indexes | ✅ |
-| — | **v0.9.5-beta** released (standalone, no HA) — practical end of beta development; the **Home Assistant add-on** (one-click install) is the next release | 🚧 |
+| — | **v1.0.0** released — standalone **and** a one-click **Home Assistant add-on** (prebuilt multi-arch image, ingress SSO, MQTT sensors, energy-cost offset, at-rest encryption) | ✅ |
 
 ## What it does today
 
