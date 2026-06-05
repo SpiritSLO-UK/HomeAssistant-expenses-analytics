@@ -85,8 +85,8 @@ jobs:
       - name: Run the test suite inside the runtime image
         run: |
           docker run --rm \
-            -v "${{ github.workspace }}/backend:/work" \
-            -w /work \
+            -v "${{ github.workspace }}:/work" \
+            -w /work/backend \
             --entrypoint sh \
             ha-finance-intelligence:ci \
             -c "pip install --no-cache-dir '.[dev,mqtt,ocr,encryption]' && python -m pytest -q"
