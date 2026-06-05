@@ -14,6 +14,7 @@ import {
   listPaperlessDocuments,
   listReceipts,
   matchReceipt,
+  receiptFileUrl,
   updateReceipt,
   uploadReceipt,
   type MatchResult,
@@ -159,6 +160,14 @@ function PaperlessCard({ onError }: Readonly<{ onError: (e: unknown) => void }>)
   );
 }
 
+// `matched_by` stores *how* the match was made, not a person — show it plainly.
+// (Previously the raw "user" leaked into the UI and read like a username.)
+function matchedByLabel(by: string): string {
+  if (by === "user") return "matched by you";
+  if (by === "local_ocr") return "auto-matched";
+  return by;
+}
+
 function ReceiptCard({ r, onError, focused = false }: Readonly<{ r: Receipt; onError: (e: string) => void; focused?: boolean }>) {
   const qc = useQueryClient();
   const [merchant, setMerchant] = useState(r.merchant_raw ?? "");
@@ -237,7 +246,12 @@ function ReceiptCard({ r, onError, focused = false }: Readonly<{ r: Receipt; onE
     >
       <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
         <strong>{r.source_filename ?? `Receipt #${r.id}`}</strong>
-        <span>
+        <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {r.has_file && (
+            <a className="link-btn" href={receiptFileUrl(r.id)} target="_blank" rel="noreferrer" title="Open the uploaded image/PDF in a new tab">
+              View original ↗
+            </a>
+          )}
           <span className="tag">{r.ocr_status}</span>
           {r.needs_review && <span className="tag tag--dup">review</span>}
           {confirmed && <span className="tag" style={{ background: "#3a9b5c", color: "#fff" }}>matched</span>}
@@ -280,7 +294,7 @@ function ReceiptCard({ r, onError, focused = false }: Readonly<{ r: Receipt; onE
       {confirmed && (
         <p className="muted" style={{ marginTop: 6 }}>
           ✓ Matched to transaction #{confirmed.transaction_id}
-          {confirmed.matched_by ? ` (${confirmed.matched_by})` : ""}.
+          {confirmed.matched_by ? ` (${matchedByLabel(confirmed.matched_by)})` : ""}.
         </p>
       )}
 
