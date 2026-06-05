@@ -1,6 +1,6 @@
 # Home Assistant add-on configuration (spec §26.1).
 name: HA Finance Intelligence
-version: "1.0.0-rc1"
+version: "1.0.0-rc2"
 slug: ha_finance_intelligence
 description: Local-first personal finance app for Home Assistant
 url: https://github.com/SpiritSLO-UK/HomeAssistant-expenses-analytics
@@ -31,6 +31,13 @@ auth_api: false
 # To enable the bundled AppArmor profile, copy apparmor.txt.example to
 # apparmor.txt (see docs/security.md) — shipped as an example so an untested
 # profile can't prevent the add-on from starting.
+# Auto-discover the MQTT broker (the Mosquitto add-on) from the Supervisor so the
+# user doesn't have to type host/credentials — run.sh reads /services/mqtt when
+# MQTT is enabled and no username is set manually. "want" = optional: the add-on
+# still starts if no MQTT service is installed. This grants only the MQTT service
+# config; it does not widen access to your wider Home Assistant config.
+services:
+  - mqtt:want
 options:
   database_path: /data/finance/finance.db
   currency: GBP
