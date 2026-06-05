@@ -2,11 +2,9 @@ import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  approveAiRequest,
   attachTransactionReceipt,
   bulkUpdateTransactions,
   categoriseTransaction,
-  classifyWithAi,
   exportTransactionsCsv,
   getAiStatus,
   getSettings,
@@ -31,6 +29,7 @@ import AiBatchPanel from "../components/AiBatchPanel";
 import CloudAiBatchPanel from "../components/CloudAiBatchPanel";
 import AssignToChildButton from "../components/AssignToChildButton";
 import { useResizableColumns, type ColumnDef } from "../useResizableColumns";
+import { suggestCategory } from "../lib/aiSuggest";
 
 const PAGE_SIZE = 50;
 
@@ -334,23 +333,11 @@ export default function Transactions() {
   }
 
   // AI suggests a category (never auto-applies). Cloud-manual mode previews the
-  // redacted payload and asks for approval first (spec §22.5).
+  // redacted payload and asks for approval first (spec §22.5). Shared helper.
   async function suggestAi(t: Transaction) {
     try {
-      let res = await classifyWithAi(t.id);
-      if (res.status === "approval_required") {
-        const preview = JSON.stringify(res.payload ?? {}, null, 2);
-        if (!globalThis.confirm(`Cloud AI needs approval. Only this redacted payload is sent:\n\n${preview}\n\nApprove?`)) return;
-        res = await approveAiRequest(res.ai_request_id);
-      }
-      if (res.status === "ok" && res.category_id) {
-        const pct = res.confidence == null ? "" : ` (${Math.round(res.confidence * 100)}%)`;
-        if (globalThis.confirm(`AI suggests: ${res.category_name}${pct}\n${res.rationale ?? ""}\n\nApply this category?`)) {
-          setCategory.mutate({ id: t.id, categoryId: res.category_id });
-        }
-      } else {
-        globalThis.alert("AI couldn't suggest a category for this transaction.");
-      }
+      const categoryId = await suggestCategory(t.id);
+      if (categoryId != null) setCategory.mutate({ id: t.id, categoryId });
     } catch (e) {
       globalThis.alert(String(e instanceof Error ? e.message : e));
     }

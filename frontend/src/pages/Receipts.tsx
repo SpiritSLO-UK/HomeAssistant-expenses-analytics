@@ -1,4 +1,5 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import AiImageWarningDialog from "../components/AiImageWarningDialog";
 import { isImageAiWarningDismissed, setImageAiWarningDismissed } from "../prefs";
@@ -24,6 +25,9 @@ export default function Receipts() {
   const fileInput = useRef<HTMLInputElement>(null);
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  // Deep-link target from the Review Queue's "Open receipt →" — highlight + scroll to it.
+  const [params] = useSearchParams();
+  const focusId = Number(params.get("focus")) || null;
 
   const ocr = useQuery({ queryKey: ["ocr-status"], queryFn: getOcrStatus });
   const receipts = useQuery({ queryKey: ["receipts"], queryFn: listReceipts });
@@ -81,7 +85,7 @@ export default function Receipts() {
           <p className="muted">No receipts yet. Upload one above.</p>
         )}
         <div>
-          {receipts.data?.map((r) => <ReceiptCard key={r.id} r={r} onError={setErr} />)}
+          {receipts.data?.map((r) => <ReceiptCard key={r.id} r={r} onError={setErr} focused={r.id === focusId} />)}
         </div>
       </div>
     </div>
@@ -155,12 +159,18 @@ function PaperlessCard({ onError }: Readonly<{ onError: (e: unknown) => void }>)
   );
 }
 
-function ReceiptCard({ r, onError }: Readonly<{ r: Receipt; onError: (e: string) => void }>) {
+function ReceiptCard({ r, onError, focused = false }: Readonly<{ r: Receipt; onError: (e: string) => void; focused?: boolean }>) {
   const qc = useQueryClient();
   const [merchant, setMerchant] = useState(r.merchant_raw ?? "");
   const [date, setDate] = useState(r.receipt_date ?? "");
   const [total, setTotal] = useState(r.total_amount ?? "");
   const [result, setResult] = useState<MatchResult | null>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  // When linked to from the Review Queue, scroll this receipt into view once.
+  useEffect(() => {
+    if (focused) cardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [focused]);
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["receipts"] });
@@ -214,7 +224,17 @@ function ReceiptCard({ r, onError }: Readonly<{ r: Receipt; onError: (e: string)
   const suggested = r.matches.find((m) => m.match_status === "suggested");
 
   return (
-    <div style={{ padding: "12px 0", borderBottom: "1px solid rgba(127,127,127,0.2)" }}>
+    <div
+      ref={cardRef}
+      style={{
+        padding: "12px",
+        margin: "0 -12px",
+        borderBottom: "1px solid rgba(127,127,127,0.2)",
+        borderRadius: focused ? 8 : 0,
+        outline: focused ? "2px solid var(--accent, #4a90d9)" : "none",
+        background: focused ? "rgba(74,144,217,0.08)" : "transparent",
+      }}
+    >
       <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
         <strong>{r.source_filename ?? `Receipt #${r.id}`}</strong>
         <span>
