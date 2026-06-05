@@ -10,6 +10,22 @@ RUN npm install
 COPY frontend/ ./
 RUN npm run build
 
+# ---- Stage 1b: build the sqlcipher3 wheel for arm64 ----
+# amd64 gets at-rest encryption from the prebuilt `sqlcipher3-binary` wheel (the
+# `encryption` extra). arm64 has no such wheel, so compile the `sqlcipher3` sdist
+# against Debian's SQLCipher here, in a throwaway stage, and copy just the
+# resulting wheel into the runtime — keeping the build toolchain out of the final
+# image. On amd64 this stage is a no-op (empty /wheels).
+FROM python:3.12-slim AS sqlcipher
+ARG TARGETARCH
+RUN mkdir -p /wheels \
+    && if [ "$TARGETARCH" = "arm64" ]; then \
+        apt-get update \
+        && apt-get install -y --no-install-recommends build-essential libsqlcipher-dev python3-dev \
+        && pip wheel --no-cache-dir --wheel-dir /wheels "sqlcipher3>=0.5" \
+        && rm -rf /var/lib/apt/lists/* ; \
+    fi
+
 # ---- Stage 2: backend runtime ----
 FROM python:3.12-slim AS runtime
 WORKDIR /app
@@ -25,12 +41,11 @@ RUN apt-get update \
 
 # Install backend + optional extras: paho-mqtt (HA sensors, spec §27) and OCR
 # (pytesseract/Pillow/pypdf, spec §21) on every arch. SQLCipher at-rest encryption
-# (backlog #15b) ships a prebuilt wheel for amd64 only — there is no aarch64
-# `sqlcipher3-binary` wheel (same gap as on Windows) — so it is added only on
-# amd64. On aarch64 (e.g. a Raspberry Pi) the app runs without at-rest encryption
-# (reported "unavailable"); container isolation via the private /data volume still
-# applies. TARGETARCH is provided automatically by buildx (amd64 / arm64); a plain
-# `docker build` on an amd64 host leaves it amd64, matching the standalone image.
+# (backlog #15b) ships a prebuilt wheel for amd64 only via the `encryption` extra
+# (`sqlcipher3-binary`). aarch64 has no such wheel, so it gets at-rest encryption
+# from the `sqlcipher3` wheel compiled in the `sqlcipher` stage above (installed
+# below, with the runtime SQLCipher lib). TARGETARCH is provided automatically by
+# buildx (amd64 / arm64); a plain `docker build` on amd64 leaves it amd64.
 ARG TARGETARCH
 COPY backend/pyproject.toml backend/alembic.ini backend/
 COPY backend/app backend/app
@@ -38,6 +53,17 @@ RUN EXTRAS="mqtt,ocr" \
     && if [ "$TARGETARCH" = "amd64" ]; then EXTRAS="encryption,$EXTRAS"; fi \
     && echo "Installing backend extras: [$EXTRAS] (TARGETARCH=$TARGETARCH)" \
     && pip install --no-cache-dir "./backend[$EXTRAS]"
+
+# aarch64: install the locally-built sqlcipher3 wheel + the runtime SQLCipher
+# library, so at-rest encryption works on the Pi too (amd64 already has it above).
+COPY --from=sqlcipher /wheels /tmp/wheels
+RUN if [ "$TARGETARCH" = "arm64" ]; then \
+        apt-get update \
+        && apt-get install -y --no-install-recommends libsqlcipher0 \
+        && rm -rf /var/lib/apt/lists/* \
+        && pip install --no-cache-dir --only-binary=:all: /tmp/wheels/sqlcipher3*.whl ; \
+    fi \
+    && rm -rf /tmp/wheels
 
 # Bring in the built frontend so app.main can serve it from frontend/dist.
 COPY --from=frontend /build/frontend/dist /app/frontend/dist
