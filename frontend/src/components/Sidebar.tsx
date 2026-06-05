@@ -5,7 +5,7 @@ import { NAV_ITEMS } from "../nav";
 import { getAiStatus } from "../api/client";
 import { getHiddenNavKeys, getNavOrder, setHiddenNavKeys, setNavOrder } from "../prefs";
 
-const VERSION = "1.0.0-rc9";
+const VERSION = "1.0.0-rc10";
 
 // The footer badge reflects the live privacy posture: "Local-first" only holds
 // while AI is off or on-device. A cloud AI mode sends data off the box, so the
