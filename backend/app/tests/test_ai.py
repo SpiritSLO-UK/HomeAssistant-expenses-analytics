@@ -364,7 +364,7 @@ def test_ai_extract_import_confirm_persists(client, monkeypatch):
     pseudo-parser couldn't be re-resolved and the image isn't re-parseable."""
     client.get("/api/users/me")
     client.put("/api/settings", json={"privacy_mode": "cloud_manual", "ai_provider": "openai_compatible",
-                                      "ai_base_url": "http://x/v1", "ai_model": "m"})
+                                      "ai_base_url": "https://x/v1", "ai_model": "m"})
     monkeypatch.setattr(ai_service, "get_provider", lambda _db: _VisionProvider(
         {"transactions": [{"date": "2026-06-02", "description": "Post Office", "amount": "-10.95"}]}))
     r = client.post("/api/imports/ai-extract", files={"file": ("s.png", b"\x89PNG\r\n\x1a\n", "image/png")})
