@@ -276,3 +276,29 @@ def test_ai_test_reports_provider_error(client, monkeypatch):
     monkeypatch.setattr(ai_service, "get_provider", lambda _db: _Boom())
     body = client.post("/api/ai/test").json()
     assert body["ok"] is False and body["reason"] == "error" and "connection refused" in body["message"]
+
+
+# --- already-AI-processed flag (exclude on re-categorise) ---
+
+
+def test_already_ai_processed_flag(db):
+    from datetime import date
+    from decimal import Decimal
+
+    def _txn(desc):
+        t = Transaction(description_raw=desc, amount=Decimal("-1"), base_amount=Decimal("-1"),
+                        currency="GBP", direction="debit", transaction_date=date(2026, 6, 1))
+        db.add(t)
+        db.flush()
+        return t
+
+    done_txn, fresh_txn = _txn("DONE"), _txn("FRESH")
+    db.add(AIRequest(transaction_id=done_txn.id, provider="fake", task_type="classify_transaction",
+                     privacy_mode="local_llm", approval_status="not_required", status="completed"))
+    # A pending (not completed) request must NOT count as processed.
+    db.add(AIRequest(transaction_id=fresh_txn.id, provider="fake", task_type="classify_transaction",
+                     privacy_mode="cloud_manual", approval_status="pending", status="pending"))
+    db.commit()
+
+    done = ai_service._already_ai_processed(db, [done_txn.id, fresh_txn.id])
+    assert done_txn.id in done and fresh_txn.id not in done

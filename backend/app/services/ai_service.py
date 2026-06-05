@@ -271,6 +271,7 @@ def classify_batch(
         raise AIDisabled(_NO_AI_PROVIDER)
 
     txns = _select_for_batch(db, limit, scope=scope, account_ids=account_ids)
+    done = _already_ai_processed(db, [t.id for t in txns])  # before this run
 
     suggestions = []
     for txn in txns:
@@ -289,9 +290,24 @@ def classify_batch(
                     "category_name": res["category_name"],
                     "confidence": res.get("confidence"),
                     "rationale": res.get("rationale"),
+                    "already_ai_processed": txn.id in done,
                 }
             )
     return {"considered": len(txns), "count": len(suggestions), "suggestions": suggestions}
+
+
+def _already_ai_processed(db: Session, txn_ids: list[int]) -> set[int]:
+    """Transaction ids that already have a **completed** AIRequest — so the batch
+    UI can flag them and let the user skip re-sending (saves cloud cost + privacy)."""
+    ids = [t for t in txn_ids if t is not None]
+    if not ids:
+        return set()
+    rows = db.scalars(
+        select(AIRequest.transaction_id).where(
+            AIRequest.transaction_id.in_(ids), AIRequest.status == "completed"
+        )
+    ).all()
+    return {t for t in rows if t is not None}
 
 
 def _select_for_batch(
@@ -353,6 +369,7 @@ def cloud_batch_prepare(
 
     cat_names = [c.name for c in _candidate_categories(db)]
     txns = _select_for_batch(db, limit, scope=scope, account_ids=account_ids)
+    done = _already_ai_processed(db, [t.id for t in txns])  # completed before this batch
     items = []
     for txn in txns:
         payload = {
@@ -371,6 +388,7 @@ def cloud_batch_prepare(
             "amount": str(txn.amount),
             "currency": txn.currency,
             "payload": to_send,
+            "already_ai_processed": txn.id in done,
         })
     db.commit()
     return {"considered": len(txns), "count": len(items), "items": items}
