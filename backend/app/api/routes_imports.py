@@ -91,6 +91,7 @@ def _rows_from_ai(extracted: list[dict], base_currency: str) -> list[StandardTra
 async def ai_extract(
     file: Annotated[UploadFile, File()],
     db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
     account_id: Annotated[int | None, Form()] = None,
 ) -> dict:
     """Opt-in vision-AI fallback: extract transactions from a statement **image**
@@ -107,6 +108,8 @@ async def ai_extract(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except AIError as exc:
         raise HTTPException(status_code=502, detail=f"AI extraction failed: {exc}") from exc
+    audit_service.record_image_sent(db, actor=user.display_name, kind="statement", size=len(content))
+    db.commit()
     rows = _rows_from_ai(extracted, settings_service.get_base_currency(db))
     if not rows:
         raise HTTPException(status_code=400, detail="The AI didn't find any transactions in this image.")

@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.models import Receipt
+from app.models import Receipt, User
 from app.schemas.receipts import (
     ConfirmMatchRequest,
     CreateTransactionRequest,
@@ -24,9 +24,10 @@ from app.schemas.receipts import (
     ReceiptUpdate,
     ReceiptUploadOut,
 )
-from app.services import ai_service, ocr_service, receipt_service
+from app.services import ai_service, audit_service, ocr_service, receipt_service
 from app.services.ai_provider import AIError
 from app.services.ai_service import AIDisabled
+from app.services.auth_service import get_current_user
 from app.services.household_service import get_or_create_account, get_or_create_default_household
 
 router = APIRouter(prefix="/receipts", tags=["receipts"])
@@ -138,7 +139,11 @@ def _receipt_fields_from_ai(fields: dict) -> dict:
     responses={400: {"description": "AI off / not an image"}, 404: {"description": "Not found"},
                502: {"description": "AI error"}},
 )
-def ai_extract_receipt(receipt_id: int, db: Annotated[Session, Depends(get_db)]) -> dict:
+def ai_extract_receipt(
+    receipt_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> dict:
     """Opt-in vision-AI fallback: read merchant/date/total from the receipt image
     when OCR couldn't. The frontend warns first (the image is sent to the AI, and
     an image can't be redacted). Image receipts only."""
@@ -149,12 +154,15 @@ def ai_extract_receipt(receipt_id: int, db: Annotated[Session, Depends(get_db)])
     mime = mimetypes.guess_type(receipt.source_filename or path.name)[0] or ""
     if not mime.startswith("image/"):
         raise HTTPException(status_code=400, detail="AI extraction needs an image receipt (not a PDF).")
+    content = path.read_bytes()
     try:
-        fields = ai_service.extract_receipt_image(db, path.read_bytes(), mime)
+        fields = ai_service.extract_receipt_image(db, content, mime)
     except AIDisabled as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except AIError as exc:
         raise HTTPException(status_code=502, detail=f"AI extraction failed: {exc}") from exc
+    audit_service.record_image_sent(db, actor=user.display_name, kind="receipt", size=len(content))
+    db.commit()
     updates = _receipt_fields_from_ai(fields)
     if updates:
         receipt_service.set_fields(db, receipt, **updates)

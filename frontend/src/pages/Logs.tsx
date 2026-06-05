@@ -14,10 +14,13 @@ function when(iso: string): string {
 
 function describe(row: AuditLogRow): string {
   if (!row.details) return "";
-  return Object.entries(row.details)
+  // Decisions carry a human-readable `summary`; show it first, then any extras.
+  const { summary, ...rest } = row.details as Record<string, unknown>;
+  const tail = Object.entries(rest)
     .filter(([, v]) => v !== null && v !== undefined && v !== "")
     .map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : String(v)}`)
     .join(" · ");
+  return [summary ? String(summary) : "", tail].filter(Boolean).join(" — ");
 }
 
 export default function Logs() {
@@ -77,6 +80,13 @@ function ActivityCard({ includeArchived }: Readonly<{ includeArchived: boolean }
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <h2 className="card__title" style={{ margin: 0 }}>Activity</h2>
         <div className="form-row" style={{ gap: 8 }}>
+          <button
+            className={"btn btn--sm" + (action === "decision" ? "" : " btn--ghost")}
+            title="Show only important AI / cloud / privacy decisions"
+            onClick={() => setAction(action === "decision" ? "" : "decision")}
+          >
+            🔑 Decisions
+          </button>
           <select value={action} onChange={(e) => setAction(e.target.value)} title="Filter by action">
             <option value="">All actions</option>
             {actions.data?.map((a) => (
