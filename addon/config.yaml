@@ -2,7 +2,7 @@
 name: HA Finance Intelligence
 version: "1.0.0-rc3"
 slug: ha_finance_intelligence
-description: Local-first personal finance app for Home Assistant
+description: Local-first personal finance — statements, budgets, receipts (OCR), multi-currency, MQTT sensors & optional AI
 url: https://github.com/SpiritSLO-UK/HomeAssistant-expenses-analytics
 # Prebuilt multi-arch image on GHCR. Supervisor substitutes {arch} (aarch64 /
 # amd64) and pulls `<image>:<version>`, so Home Assistant never builds on-device

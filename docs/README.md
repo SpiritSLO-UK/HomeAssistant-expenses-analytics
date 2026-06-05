@@ -9,6 +9,7 @@ and how to run it; the guides below go deeper.
 | Guide | What's inside |
 |-------|---------------|
 | [Install on Home Assistant](ha-install.md) | Add the add-on repository, install the prebuilt image, configure options, ingress SSO, MQTT sensors and the energy-cost offset. |
+| [Testing on Home Assistant](ha-testing.md) | End-to-end checklist for validating the add-on on a real HA (publish an RC image, make packages public, install, SSO, MQTT, energy, backups) before a release. |
 | [Configuration reference](configuration.md) | Every setting — environment variables (`HAFI_*`), add-on options, and the in-app Settings — what each does and its default. |
 | [Troubleshooting](troubleshooting.md) | Fixes for common install / import / OCR / MQTT / AI / unlock / FX problems. |
 | [Rules](rules.md) | How auto-categorisation rules work: precedence, every condition and action, and worked examples. |
