@@ -200,7 +200,8 @@ def _txn(db) -> Transaction:
 
 
 def test_receipt_original_dropped_on_confirm_when_enabled(db):
-    # default setting is ON
+    # delete-after-processing now defaults OFF, so opt in explicitly to test the drop.
+    settings_service.set_value(db, settings_service.RECEIPT_DELETE_AFTER_PROCESSING, "true")
     r, _ = receipt_service.store_upload(db, "conf.jpg", b"confirm-me")
     path = r.storage_path
     txn = _txn(db)
@@ -209,6 +210,17 @@ def test_receipt_original_dropped_on_confirm_when_enabled(db):
     assert r.storage_path is None
     assert not Path(path).exists()
     assert db.get(Receipt, r.id) is not None  # row kept
+
+
+def test_receipt_kept_on_confirm_by_default(db):
+    # New default (keep originals so they stay viewable) — no setting touched.
+    r, _ = receipt_service.store_upload(db, "default.jpg", b"keep-me-default")
+    path = r.storage_path
+    txn = _txn(db)
+    receipt_service.confirm_match(db, r, txn.id)
+    db.refresh(r)
+    assert r.storage_path == path
+    assert Path(path).exists()
 
 
 def test_receipt_kept_on_confirm_when_disabled(db):
