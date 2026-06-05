@@ -97,3 +97,39 @@ finance database (backlog #30).
 
 See [docs/security.md](security.md) for how the database file is protected and
 the limits of isolation within Home Assistant's add-on model.
+
+## 6. Requesting deletion / zero-retention from AI providers
+
+Two questions come up a lot, and the honest answer is the same for both: **a
+client app cannot force a third party to delete or not-retain data.** What the
+app *does* do is keep this in your control:
+
+- **It's opt-in and logged.** Cloud AI is off by default. When you do enable it,
+  every external send is recorded in **Logs → Decisions** (and the AI-requests
+  log) with the date, who, and what was sent — so you always have a record of
+  exactly what a provider received and could be asked to delete.
+- **Prefer not sending in the first place.** A **local LLM** (Ollama / LM Studio)
+  keeps everything on your network — there is nothing to retain or delete. This
+  is the recommended setup if retention worries you at all.
+
+If you do use a cloud provider, here's how retention/deletion works in practice.
+**Provider terms change — always verify the current policy at the links below.**
+
+| Provider | Training on your data? | Retention / zero-retention | Deletion |
+|----------|------------------------|----------------------------|----------|
+| **Local LLM** (Ollama / LM Studio) | Never — runs on your hardware | Nothing leaves your network | N/A — there is nothing stored externally |
+| **OpenAI API** | Not used to train models by default for API traffic | Inputs/outputs held for a short abuse-monitoring window, then deleted; **Zero Data Retention** is available for eligible accounts (nothing is stored) | Request via your account / support; ZDR avoids storage entirely ([platform.openai.com/docs](https://platform.openai.com/docs/guides/your-data)) |
+| **Anthropic API** | Not used to train by default for API traffic | Held per the commercial data-retention policy | Request via support / your account ([anthropic.com/legal](https://www.anthropic.com/legal/commercial-terms)) |
+| **Azure OpenAI** | Not used to train | Optional **no content logging**; data stays in your tenant/region | Managed through your Azure subscription ([learn.microsoft.com](https://learn.microsoft.com/azure/ai-services/openai/concepts/data-privacy)) |
+| Other OpenAI-compatible endpoint | Depends entirely on the operator | Read their policy before enabling | Per their process |
+
+**Images (receipt/statement vision extraction).** When you use the opt-in
+image-AI fallback, the **image itself** is sent and **cannot be redacted** (the
+app warns you each time until you accept the risk). Receipts usually already have
+card numbers masked, but treat any scan as sensitive: prefer a **local** vision
+model, or a cloud provider with **zero data retention**, and use the Decisions
+log to track what was sent if you later want to request its deletion.
+
+**Bottom line:** the app gives you the record and the controls (off by default,
+local option, per-send logging, redaction for text); enforcing deletion is the
+provider's job, and choosing zero-retention or local is how you avoid needing it.
