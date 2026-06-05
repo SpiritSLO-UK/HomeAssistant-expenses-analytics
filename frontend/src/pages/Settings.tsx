@@ -13,6 +13,7 @@ import {
   getAiStatus,
   getHealth,
   listAiRequests,
+  testAiConnection,
   getMe,
   getDemoStatus,
   getMissingFx,
@@ -800,6 +801,15 @@ function AiCard({
     onError,
   });
 
+  // Probe the configured endpoint/key/model with a tiny request (#user).
+  const [testMsg, setTestMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const test = useMutation({
+    mutationFn: testAiConnection,
+    onSuccess: (r) =>
+      setTestMsg({ ok: r.ok, text: r.message + (r.ok && r.sample_category ? ` (sample → ${r.sample_category})` : "") }),
+    onError: (e) => setTestMsg({ ok: false, text: String(e) }),
+  });
+
   // Gate the first switch to a cloud mode behind a one-time disclaimer (#42).
   const handleSave = () => {
     const enablingCloud = (value("privacy_mode") || "").startsWith("cloud");
@@ -863,7 +873,20 @@ function AiCard({
         <button className="btn" disabled={Object.keys(draft).length === 0 || save.isPending} onClick={handleSave}>
           {save.isPending ? "Saving…" : "Save AI settings"}
         </button>
+        <button
+          className="btn btn--ghost"
+          disabled={test.isPending}
+          title="Send a tiny test request to the configured AI endpoint"
+          onClick={() => { setTestMsg(null); test.mutate(); }}
+        >
+          {test.isPending ? "Testing…" : "Test connection"}
+        </button>
       </div>
+      {testMsg && (
+        <p className={"status " + (testMsg.ok ? "status--ok" : "status--error")}>
+          {testMsg.ok ? "✅ " : "❌ "}{testMsg.text}
+        </p>
+      )}
 
       {showDisclaimer && (
         <CloudAiDisclaimerDialog

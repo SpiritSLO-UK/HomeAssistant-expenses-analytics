@@ -241,3 +241,38 @@ def test_recheck_scope_includes_auto_not_manual(client):
 def test_classify_batch_rejects_bad_scope(client):
     _set_mode(client, "local_llm")
     assert client.post("/api/ai/classify-batch?scope=everything").status_code == 422
+
+
+# --- test-connection probe (Settings → AI "Test connection") ---
+
+
+def test_ai_test_off_by_default(client):
+    client.get("/api/users/me")
+    body = client.post("/api/ai/test").json()
+    assert body["ok"] is False and body["reason"] == "off"
+
+
+def test_ai_test_not_configured(client):
+    client.put("/api/settings", json={"privacy_mode": "local_llm"})  # mode on, but no provider/url/model
+    body = client.post("/api/ai/test").json()
+    assert body["ok"] is False and body["reason"] == "not_configured"
+
+
+def test_ai_test_success(client, monkeypatch):
+    _set_mode(client, "local_llm")
+    monkeypatch.setattr(ai_service, "get_provider", lambda _db: FakeProvider(category="Groceries"))
+    body = client.post("/api/ai/test").json()
+    assert body["ok"] is True and body["sample_category"] == "Groceries"
+
+
+def test_ai_test_reports_provider_error(client, monkeypatch):
+    from app.services.ai_provider import AIError
+    _set_mode(client, "cloud_manual")
+
+    class _Boom(FakeProvider):
+        def classify_transaction(self, **kwargs):
+            raise AIError("connection refused")
+
+    monkeypatch.setattr(ai_service, "get_provider", lambda _db: _Boom())
+    body = client.post("/api/ai/test").json()
+    assert body["ok"] is False and body["reason"] == "error" and "connection refused" in body["message"]
