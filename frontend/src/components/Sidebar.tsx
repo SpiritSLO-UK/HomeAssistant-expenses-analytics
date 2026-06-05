@@ -1,7 +1,24 @@
 import { useState } from "react";
 import { NavLink } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { NAV_ITEMS } from "../nav";
+import { getAiStatus } from "../api/client";
 import { getHiddenNavKeys, getNavOrder, setHiddenNavKeys, setNavOrder } from "../prefs";
+
+const VERSION = "1.0.0-rc7";
+
+// The footer badge reflects the live privacy posture: "Local-first" only holds
+// while AI is off or on-device. A cloud AI mode sends data off the box, so the
+// badge says so plainly rather than implying everything stays local.
+function privacyBadge(ai?: { enabled: boolean; is_cloud: boolean }): { label: string; title: string } {
+  if (!ai?.enabled) {
+    return { label: "🔒 Local-first", title: "No AI is active — nothing leaves this device." };
+  }
+  if (ai.is_cloud) {
+    return { label: "☁️ Cloud AI on", title: "A cloud AI mode is enabled — redacted payloads may be sent off-device. See Logs → Decisions." };
+  }
+  return { label: "🔒 Local-first · local AI", title: "A local (on-device) AI model is in use — nothing leaves this device." };
+}
 
 // Core pages that can never be hidden — you always need a way home and a way
 // back to Settings (and Customise itself lives in the sidebar regardless). They
@@ -32,6 +49,8 @@ export default function Sidebar({
 }>) {
   const isAdmin = role === "owner";
   const isChild = role === "child";
+  const ai = useQuery({ queryKey: ["ai-status"], queryFn: getAiStatus });
+  const badge = privacyBadge(ai.data);
   const [hidden, setHidden] = useState<Set<string>>(() => getHiddenNavKeys());
   const [order, setOrder] = useState<string[]>(() => mergeNavOrder(getNavOrder()));
   const [editing, setEditing] = useState(false);
@@ -118,7 +137,7 @@ export default function Sidebar({
         {editing && (
           <p className="sidebar__hint">Use ▲ ▼ to reorder; 👁️ shows/hides. Hidden tabs stay reachable by URL.</p>
         )}
-        <div>Local-first · v1.0.0-rc7</div>
+        <div title={badge.title}>{badge.label} · v{VERSION}</div>
       </div>
     </aside>
   );
