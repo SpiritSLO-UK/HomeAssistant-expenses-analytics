@@ -20,9 +20,10 @@ class FakeProvider:
     name = "fake"
     model = "fake-model"
 
-    def __init__(self, category="Groceries", confidence=0.9):
+    def __init__(self, category="Groceries", confidence=0.9, country=None):
         self.category = category
         self.confidence = confidence
+        self.country = country
         self.calls: list[dict] = []
 
     def available(self) -> bool:
@@ -30,7 +31,8 @@ class FakeProvider:
 
     def classify_transaction(self, description, amount, currency, candidate_categories):
         self.calls.append({"description": description, "candidate_categories": candidate_categories})
-        return {"category": self.category, "confidence": self.confidence, "rationale": "because"}
+        return {"category": self.category, "confidence": self.confidence,
+                "rationale": "because", "country": self.country}
 
 
 def _curve(rows):
@@ -59,6 +61,21 @@ def _classify(txn_id, **kwargs):
 
 
 # --- gating ---
+
+def test_classify_returns_inferred_country(client):
+    txn_id = _import_txn(client, desc="EL CORTE INGLES MADRID")
+    _set_mode(client, "local_llm")
+    res = _classify(txn_id, provider=FakeProvider(country="es"))  # lower-case from the model
+    assert res["country"] == "ES"  # normalised to ISO-3166-1 alpha-2
+
+
+def test_classify_drops_invalid_country(client):
+    txn_id = _import_txn(client)
+    _set_mode(client, "local_llm")
+    # A full name / prose is not a valid alpha-2 code → dropped.
+    assert _classify(txn_id, provider=FakeProvider(country="Spain"))["country"] is None
+    assert _classify(txn_id, provider=FakeProvider(country=None))["country"] is None
+
 
 def test_ai_off_by_default(client):
     txn_id = _import_txn(client)

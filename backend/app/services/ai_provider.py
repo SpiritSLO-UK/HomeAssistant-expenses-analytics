@@ -132,9 +132,11 @@ class OpenAICompatibleProvider(AIProvider):
     ) -> dict:
         system = (
             "You categorise bank transactions. Choose the single best category "
-            "from the provided list. Respond ONLY with JSON: "
-            '{"category": "<exact category name or null>", "confidence": <0..1>, '
-            '"rationale": "<short reason>"}.'
+            "from the provided list. If the merchant/description clearly indicates "
+            "the country where the money was spent, also return its ISO-3166-1 "
+            "alpha-2 code (e.g. GB, US, ES); otherwise use null. Respond ONLY with "
+            'JSON: {"category": "<exact category name or null>", "confidence": <0..1>, '
+            '"rationale": "<short reason>", "country": "<ISO-3166-1 alpha-2 or null>"}.'
         )
         user = json.dumps(
             {
@@ -157,4 +159,5 @@ class OpenAICompatibleProvider(AIProvider):
             "category": category,
             "confidence": max(0.0, min(1.0, confidence)),
             "rationale": str(parsed.get("rationale", ""))[:500],
+            "country": parsed.get("country"),
         }

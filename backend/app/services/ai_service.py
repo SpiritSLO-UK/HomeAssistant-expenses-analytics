@@ -125,6 +125,15 @@ def _candidate_categories(db: Session) -> list[Category]:
     return list(db.scalars(select(Category).where(Category.is_active.is_(True))).all())
 
 
+def _valid_country(value: object) -> str | None:
+    """Accept only a clean ISO-3166-1 alpha-2 code from the model; ignore prose,
+    'null', full country names, etc. (folds country into the ✨ suggest, Feat)."""
+    if not isinstance(value, str):
+        return None
+    code = value.strip().upper()
+    return code if len(code) == 2 and code.isalpha() else None
+
+
 def _suggest(req: AIRequest, result: dict, cats: list[Category]) -> dict:
     name = result.get("category")
     match = None
@@ -138,6 +147,7 @@ def _suggest(req: AIRequest, result: dict, cats: list[Category]) -> dict:
         "category_name": match.name if match else None,
         "confidence": result.get("confidence"),
         "rationale": result.get("rationale"),
+        "country": _valid_country(result.get("country")),
     }
 
 

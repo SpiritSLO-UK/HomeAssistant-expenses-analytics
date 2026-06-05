@@ -26,6 +26,7 @@ class ClassifyResult(BaseModel):
     category_name: str | None = None
     confidence: float | None = None
     rationale: str | None = None
+    country: str | None = None  # ISO-3166-1 alpha-2, when the AI could infer it (folded into ✨ suggest)
     payload: dict | None = None  # set when approval is required (preview)
 
 
