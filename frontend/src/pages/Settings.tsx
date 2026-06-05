@@ -810,6 +810,18 @@ function AiCard({
     save.mutate();
   };
 
+  // Pre-fill sensible OpenAI defaults when the provider is chosen, so the user
+  // doesn't have to type the Base URL/Model (blank fields leave AI "not
+  // configured" — a real setup snag). Only fills when those fields are empty.
+  const onProviderChange = (provider: string) => {
+    const patch: Record<string, string> = { ai_provider: provider };
+    if (provider === "openai_compatible") {
+      if (!value("ai_base_url")) patch.ai_base_url = "https://api.openai.com/v1";
+      if (!value("ai_model")) patch.ai_model = "gpt-4o-mini";
+    }
+    setDraft((d) => ({ ...d, ...patch }));
+  };
+
   const st = status.data;
   const isCloud = (value("privacy_mode") || "").startsWith("cloud");
 
@@ -831,19 +843,19 @@ function AiCard({
         </label>
         <label>
           Provider{" "}
-          <select value={value("ai_provider")} onChange={(e) => setDraft((d) => ({ ...d, ai_provider: e.target.value }))}>
+          <select value={value("ai_provider")} onChange={(e) => onProviderChange(e.target.value)}>
             <option value="none">none</option>
             <option value="openai_compatible">openai_compatible</option>
           </select>
         </label>
         <input
-          placeholder="Base URL (e.g. http://localhost:11434/v1)"
+          placeholder="Base URL (e.g. https://api.openai.com/v1)"
           value={value("ai_base_url")}
           style={{ minWidth: 240 }}
           onChange={(e) => setDraft((d) => ({ ...d, ai_base_url: e.target.value }))}
         />
         <input
-          placeholder="Model (e.g. llama3)"
+          placeholder="Model (e.g. gpt-4o-mini)"
           value={value("ai_model")}
           style={{ width: 140 }}
           onChange={(e) => setDraft((d) => ({ ...d, ai_model: e.target.value }))}
