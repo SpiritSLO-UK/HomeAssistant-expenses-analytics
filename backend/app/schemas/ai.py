@@ -37,6 +37,7 @@ class BatchSuggestion(BaseModel):
     category_name: str
     confidence: float | None
     rationale: str | None
+    already_ai_processed: bool = False  # has a prior completed AIRequest
 
 
 class BatchResult(BaseModel):
@@ -52,6 +53,7 @@ class CloudBatchItem(BaseModel):
     amount: str
     currency: str
     payload: dict  # the full redacted payload that would leave the device
+    already_ai_processed: bool = False  # has a prior completed AIRequest → user can skip re-sending
 
 
 class CloudBatchPreview(BaseModel):

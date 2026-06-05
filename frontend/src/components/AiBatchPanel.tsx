@@ -102,7 +102,12 @@ export default function AiBatchPanel({ base, onClose }: Readonly<{ base: string;
                 {suggestions.map((s) => (
                   <tr key={s.transaction_id}>
                     <td><input type="checkbox" checked={picked.has(s.transaction_id)} onChange={() => toggle(s.transaction_id)} /></td>
-                    <td title={s.rationale ?? ""}>{s.description}</td>
+                    <td title={s.rationale ?? ""}>
+                      {s.description}
+                      {s.already_ai_processed && (
+                        <span className="tag" title="This transaction was AI-processed before">already AI'd</span>
+                      )}
+                    </td>
                     <td className="num">{s.amount} {base}</td>
                     <td>{s.category_name}</td>
                     <td className="num">{s.confidence == null ? "—" : `${Math.round(s.confidence * 100)}%`}</td>

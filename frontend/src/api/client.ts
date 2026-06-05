@@ -827,6 +827,7 @@ export interface BatchSuggestion {
   category_name: string;
   confidence: number | null;
   rationale: string | null;
+  already_ai_processed?: boolean;
 }
 
 export interface BatchResult {
@@ -864,6 +865,7 @@ export interface CloudBatchItem {
   amount: string;
   currency: string;
   payload: Record<string, unknown>;
+  already_ai_processed?: boolean; // has a prior completed AIRequest → unticked by default
 }
 
 export interface CloudBatchPreview {

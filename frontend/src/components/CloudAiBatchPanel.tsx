@@ -34,9 +34,17 @@ export default function CloudAiBatchPanel({ base, onClose }: Readonly<{ base: st
     mutationFn: () => cloudBatchPrepare(50, recheck ? "recheck" : "uncategorised"),
     onSuccess: (res) => {
       setItems(res.items);
-      setToSend(new Set(res.items.map((i) => i.ai_request_id)));
+      // Default-untick rows already sent to AI before, so you don't re-send (and
+      // re-pay/re-expose) them — re-tick any you do want.
+      const fresh = res.items.filter((i) => !i.already_ai_processed);
+      setToSend(new Set(fresh.map((i) => i.ai_request_id)));
       setSuggestions(null);
-      setMsg(`Found ${res.count} transaction(s). Review what would be sent, then send.`);
+      const already = res.items.length - fresh.length;
+      setMsg(
+        `Found ${res.count} transaction(s)` +
+          (already ? ` · ${already} already AI-processed (unticked)` : "") +
+          ". Review what would be sent, then send.",
+      );
       setErr(null);
     },
     onError: (e) => setErr(String(e instanceof Error ? e.message : e)),
@@ -140,6 +148,11 @@ export default function CloudAiBatchPanel({ base, onClose }: Readonly<{ base: st
                     </td>
                     <td>
                       {it.description || <span className="muted">(empty)</span>}
+                      {it.already_ai_processed && (
+                        <span className="tag" title="Already sent to AI before — unticked so it isn't re-sent">
+                          already AI'd
+                        </span>
+                      )}
                       {showPayload === it.ai_request_id && (
                         <pre style={{ whiteSpace: "pre-wrap", fontSize: "0.72rem", marginTop: 4 }}>
                           {JSON.stringify(it.payload, null, 2)}
