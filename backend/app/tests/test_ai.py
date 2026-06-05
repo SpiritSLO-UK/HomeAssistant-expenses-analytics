@@ -20,10 +20,11 @@ class FakeProvider:
     name = "fake"
     model = "fake-model"
 
-    def __init__(self, category="Groceries", confidence=0.9, country=None):
+    def __init__(self, category="Groceries", confidence=0.9, country=None, vendor=None):
         self.category = category
         self.confidence = confidence
         self.country = country
+        self.vendor = vendor
         self.calls: list[dict] = []
 
     def available(self) -> bool:
@@ -32,7 +33,7 @@ class FakeProvider:
     def classify_transaction(self, description, amount, currency, candidate_categories):
         self.calls.append({"description": description, "candidate_categories": candidate_categories})
         return {"category": self.category, "confidence": self.confidence,
-                "rationale": "because", "country": self.country}
+                "rationale": "because", "country": self.country, "vendor": self.vendor}
 
 
 def _curve(rows):
@@ -75,6 +76,15 @@ def test_classify_drops_invalid_country(client):
     # A full name / prose is not a valid alpha-2 code → dropped.
     assert _classify(txn_id, provider=FakeProvider(country="Spain"))["country"] is None
     assert _classify(txn_id, provider=FakeProvider(country=None))["country"] is None
+
+
+def test_classify_returns_suggested_vendor(client):
+    txn_id = _import_txn(client)
+    _set_mode(client, "local_llm")
+    assert _classify(txn_id, provider=FakeProvider(vendor="  Tesco  "))["vendor"] == "Tesco"  # trimmed
+    # Empty / 'null' / non-string → dropped.
+    assert _classify(txn_id, provider=FakeProvider(vendor="null"))["vendor"] is None
+    assert _classify(txn_id, provider=FakeProvider(vendor=None))["vendor"] is None
 
 
 def test_ai_off_by_default(client):

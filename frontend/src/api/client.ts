@@ -807,6 +807,7 @@ export interface ClassifyResult {
   confidence: number | null;
   rationale: string | null;
   country?: string | null; // ISO-3166-1 alpha-2, when the AI could infer it
+  vendor?: string | null; // clean merchant name the AI inferred, to create + link
   payload?: Record<string, unknown> | null;
 }
 

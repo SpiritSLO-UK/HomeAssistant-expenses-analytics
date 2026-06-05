@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   categoriseTransaction,
+  createVendorFromTransaction,
   getAiStatus,
   getReviewCount,
   listCategories,
@@ -155,8 +156,12 @@ function ReviewRow({
       const s = await suggestForTransaction(item.item_id);
       if (!s) return;
       if (s.country) await updateTransaction(item.item_id, { country: s.country });
+      if (s.vendor) {
+        await createVendorFromTransaction(item.item_id, s.vendor);
+        qc.invalidateQueries({ queryKey: ["vendors"] });
+      }
       if (s.categoryId != null) categorise.mutate(s.categoryId); // resolves item + invalidates
-      else qc.invalidateQueries({ queryKey: ["transactions"] }); // country-only change
+      else qc.invalidateQueries({ queryKey: ["transactions"] }); // category-less change
     } catch (e) {
       globalThis.alert(String(e instanceof Error ? e.message : e));
     }
