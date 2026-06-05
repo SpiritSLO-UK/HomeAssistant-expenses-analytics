@@ -1,5 +1,5 @@
-import { Fragment, useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { Fragment, useEffect, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import Sparkline from "../components/Sparkline";
 import WorldMap, { colorForIndex, type MapPlot } from "../components/WorldMap";
@@ -30,6 +30,7 @@ import {
   getVendorBreakdown,
   listAccounts,
   listMembers,
+  uploadReceipt,
   type Member,
   type MonthlyPoint,
   type TrendMetric,
@@ -113,6 +114,48 @@ function txnLink(params: Record<string, string | number | null | undefined>): st
   }
   const qs = sp.toString();
   return qs ? `/transactions?${qs}` : "/transactions";
+}
+
+// Quick-add (#user): drop a receipt straight from the dashboard — pick a file or,
+// on mobile, take a photo (the `capture` hint). Receipts are processed + matched
+// automatically (one step); bank statements go through the Import page (preview +
+// confirm), linked here.
+function QuickAddCard() {
+  const qc = useQueryClient();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const upload = useMutation({
+    mutationFn: (file: File) => uploadReceipt(file),
+    onSuccess: (r) => {
+      setMsg(r.already_imported ? "Receipt already imported." : "Receipt uploaded — processing & matching…");
+      qc.invalidateQueries({ queryKey: ["receipts"] });
+    },
+    onError: (e) => setMsg(String(e instanceof Error ? e.message : e)),
+  });
+  return (
+    <div className="card">
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <strong>Quick add</strong>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*,application/pdf"
+          capture="environment"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) { setMsg(null); upload.mutate(f); }
+            e.target.value = "";
+          }}
+        />
+        <button className="btn" disabled={upload.isPending} onClick={() => fileRef.current?.click()}>
+          {upload.isPending ? "Uploading…" : "🧾 Add receipt (photo or file)"}
+        </button>
+        <Link className="btn btn--ghost" to="/import">📄 Import bank statement →</Link>
+        {msg && <span className="muted">{msg}</span>}
+      </div>
+    </div>
+  );
 }
 
 // Each optional dashboard card maps to a module-level card component; the page
@@ -315,6 +358,8 @@ export default function Dashboard() {
       )}
 
       <SecurityBanner />
+
+      <QuickAddCard />
 
       <div className="stat-grid">
         <StatCard label="Spend" value={summary.data ? gbp(summary.data.spend_this_month) : "—"} tone="neg" />
