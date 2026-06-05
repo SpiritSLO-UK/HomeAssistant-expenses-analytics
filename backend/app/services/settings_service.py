@@ -25,7 +25,7 @@ AI_MODEL = "ai_model"
 # Data retention (spec §28; backlog #78, #147). The policy is a JSON blob owned by
 # retention_service; here we only hold the key + the related boolean/int knobs.
 RETENTION_POLICY = "retention_policy"
-RECEIPT_DELETE_AFTER_PROCESSING = "receipt_delete_after_processing"  # default true
+RECEIPT_DELETE_AFTER_PROCESSING = "receipt_delete_after_processing"  # default false (keep receipts)
 # Backup-trim policy (bound disk growth — backlog #78): how long / how large the
 # safety-backup history may grow before old snapshots are pruned.
 BACKUP_MAX_AGE_DAYS = "backup_max_age_days"
@@ -170,8 +170,10 @@ def get_fx_mode(db: Session) -> str:
 
 def get_receipt_delete_after_processing(db: Session) -> bool:
     """Whether a receipt's original file is dropped once it's processed & matched
-    (backlog #147). On by default — only an explicit ``"false"`` turns it off."""
-    return get(db, RECEIPT_DELETE_AFTER_PROCESSING) != "false"
+    (backlog #147). **Off by default** — a finance app should keep receipts so they
+    stay viewable; only an explicit ``"true"`` (Settings → retention) enables the
+    privacy/disk-saving drop."""
+    return get(db, RECEIPT_DELETE_AFTER_PROCESSING) == "true"
 
 
 def get_investment_price_source(db: Session) -> str:
