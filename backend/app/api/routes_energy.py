@@ -41,6 +41,18 @@ def offset(
     )
 
 
+@router.get("/history")
+def history(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    period: Annotated[str, Query(pattern="^(day|month|year)$")] = "month",
+    count: Annotated[int, Query(ge=1, le=366)] = 12,
+) -> dict:
+    return energy_service.history(
+        db, period=period, count=count, account_ids=auth_service.visible_account_scope(request, db)
+    )
+
+
 @router.get("/status")
 def status(db: Annotated[Session, Depends(get_db)]) -> dict:
     return energy_service.status(db)
