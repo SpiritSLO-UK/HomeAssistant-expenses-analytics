@@ -1954,6 +1954,17 @@ export function updateEnergyConfig(patch: Partial<EnergyConfig>): Promise<Energy
   return fetchJson<EnergyConfig>("api/energy/config", { method: "PUT", body: JSON.stringify(patch) });
 }
 
+export interface EnergyHistory {
+  period: string; // day | month | year
+  currency: string;
+  energy_category_id: number | null;
+  buckets: { label: string; spend: string }[];
+}
+
+export function getEnergyHistory(period: string, count: number): Promise<EnergyHistory> {
+  return fetchJson<EnergyHistory>(`api/energy/history?period=${period}&count=${count}`);
+}
+
 // --- Users & access control (spec §6, §28; backlog #82, #126) ---
 
 export interface Me {

@@ -132,6 +132,58 @@ def test_ha_api_source_reads_named_entities(db, monkeypatch):
     assert out["saving"] == "42.00"
 
 
+# --- history (energy-bill spend over time) ----------------------------------
+
+
+def _spend_txn(db, cid, day, amount):
+    db.add(Transaction(description_raw="energy", amount=Decimal(amount), base_amount=Decimal(amount),
+                       currency="GBP", direction="debit", transaction_date=day, category_id=cid))
+
+
+def test_history_monthly_spend(db):
+    cid = _energy_category(db)
+    _spend_txn(db, cid, date(2026, 5, 10), "-80")
+    _spend_txn(db, cid, date(2026, 6, 3), "-50")
+    _spend_txn(db, cid, date(2026, 6, 20), "-30")
+    db.commit()
+    energy_service.validate_and_save(db, {"energy_category_id": cid})
+
+    h = energy_service.history(db, period="month", count=3, today=date(2026, 6, 15))
+    spend = {b["label"]: Decimal(b["spend"]) for b in h["buckets"]}
+    assert [b["label"] for b in h["buckets"]] == ["2026-04", "2026-05", "2026-06"]
+    assert spend["2026-04"] == 0
+    assert spend["2026-05"] == Decimal("80")
+    assert spend["2026-06"] == Decimal("80")  # 50 + 30
+
+
+def test_history_daily_and_yearly(db):
+    cid = _energy_category(db)
+    _spend_txn(db, cid, date(2026, 6, 15), "-12")
+    db.commit()
+    energy_service.validate_and_save(db, {"energy_category_id": cid})
+
+    day = {b["label"]: Decimal(b["spend"]) for b in energy_service.history(
+        db, period="day", count=2, today=date(2026, 6, 15))["buckets"]}
+    assert day["2026-06-14"] == 0 and day["2026-06-15"] == Decimal("12")
+
+    year = energy_service.history(db, period="year", count=2, today=date(2026, 6, 15))
+    assert [b["label"] for b in year["buckets"]] == ["2025", "2026"]
+    assert {b["label"]: Decimal(b["spend"]) for b in year["buckets"]}["2026"] == Decimal("12")
+
+
+def test_history_zero_without_category(db):
+    h = energy_service.history(db, period="month", count=2, today=date(2026, 6, 15))
+    assert all(Decimal(b["spend"]) == 0 for b in h["buckets"])
+
+
+def test_history_endpoint(client):
+    client.get("/api/users/me")
+    r = client.get("/api/energy/history?period=month&count=3")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["period"] == "month" and len(body["buckets"]) == 3
+
+
 # --- RBAC -------------------------------------------------------------------
 
 

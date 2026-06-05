@@ -20,14 +20,17 @@ so tests never touch HA or a broker.
 from __future__ import annotations
 
 import json
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import AssetLog
+from app.models import AssetLog, Transaction
 from app.services import dashboard_service, ha_service, settings_service
+from app.services.scope import account_scope_condition, archived_condition
+
+HISTORY_PERIODS = {"day", "month", "year"}
 
 ENERGY_SOURCES = settings_service.ENERGY_SOURCES  # {"off", "ha_api", "mqtt"}
 
@@ -259,4 +262,81 @@ def status(db: Session) -> dict:
         "available": _source_available(cfg["source"]),
         "ha_api_available": ha_service.available(),
         "derived_unit_price": (lambda p: str(p) if p is not None else None)(derive_unit_price(db)),
+    }
+
+
+# --- history (energy-bill spend over time) ----------------------------------
+#
+# Production/saving over time is intentionally NOT charted yet: HA energy sensors
+# are point-in-time and could be cumulative ("this-month") or per-interval, so
+# their snapshots can't be aggregated safely without knowing the semantics. The
+# spend series below is unambiguous (the ledger) and answers "what's my energy
+# bill doing day/month/year over time". (Production trend = a documented follow-up.)
+
+
+def _period_buckets(period: str, count: int, today: date) -> list[tuple[str, date, date]]:
+    """`count` consecutive ``(label, start, end)`` windows ending with the one
+    containing ``today`` (``end`` exclusive)."""
+    out: list[tuple[str, date, date]] = []
+    if period == "day":
+        for i in range(count - 1, -1, -1):
+            d = today - timedelta(days=i)
+            out.append((d.isoformat(), d, d + timedelta(days=1)))
+    elif period == "year":
+        for i in range(count - 1, -1, -1):
+            y = today.year - i
+            out.append((str(y), date(y, 1, 1), date(y + 1, 1, 1)))
+    else:  # month
+        ym = today.year * 12 + (today.month - 1)
+        for i in range(count - 1, -1, -1):
+            y, m0 = divmod(ym - i, 12)
+            m = m0 + 1
+            end = date(y + 1, 1, 1) if m == 12 else date(y, m + 1, 1)
+            out.append((f"{y:04d}-{m:02d}", date(y, m, 1), end))
+    return out
+
+
+def _spend_in_range(
+    db: Session, category_id: int, start: date, end: date, account_ids: set[int] | None
+) -> Decimal:
+    val = db.scalar(
+        select(func.coalesce(func.sum(-Transaction.base_amount), 0)).where(
+            Transaction.transaction_date >= start,
+            Transaction.transaction_date < end,
+            Transaction.base_amount < 0,
+            Transaction.category_id == category_id,
+            Transaction.is_transfer.is_(False),
+            Transaction.is_duplicate.is_(False),
+            Transaction.base_amount.is_not(None),
+            *account_scope_condition(account_ids),
+            *archived_condition(),
+        )
+    )
+    return Decimal(str(val or 0))
+
+
+def history(
+    db: Session,
+    *,
+    period: str = "month",
+    count: int = 12,
+    account_ids: set[int] | None = None,
+    today: date | None = None,
+) -> dict:
+    """Energy-bill spend over time (day/month/year), from the ledger — full
+    history, independent of when the offset was first configured."""
+    if period not in HISTORY_PERIODS:
+        period = "month"
+    count = max(1, min(int(count), 366))
+    ref = today or date.today()
+    cid = get_config(db)["energy_category_id"]
+    buckets = [
+        {"label": label, "spend": str(_spend_in_range(db, cid, start, end, account_ids) if cid else Decimal("0"))}
+        for label, start, end in _period_buckets(period, count, ref)
+    ]
+    return {
+        "period": period,
+        "currency": settings_service.get_base_currency(db),
+        "energy_category_id": cid,
+        "buckets": buckets,
     }

@@ -1,12 +1,20 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import Sparkline from "../components/Sparkline";
 import {
+  getEnergyHistory,
   getEnergyOffset,
   getEnergyStatus,
   getMe,
   listCategories,
   updateEnergyConfig,
 } from "../api/client";
+
+const HISTORY_RANGES = [
+  { period: "day", label: "Daily", count: 30 },
+  { period: "month", label: "Monthly", count: 12 },
+  { period: "year", label: "Yearly", count: 5 },
+];
 
 const SOURCES = [
   { value: "off", label: "Off (no offset)" },
@@ -87,7 +95,53 @@ export default function Energy() {
         </div>
       )}
 
+      <EnergyHistoryCard currency={base} />
+
       {canManage && <EnergyConfigCard />}
+    </div>
+  );
+}
+
+function EnergyHistoryCard({ currency }: Readonly<{ currency: string }>) {
+  const [range, setRange] = useState(HISTORY_RANGES[1]); // monthly default
+  const q = useQuery({
+    queryKey: ["energy-history", range.period, range.count],
+    queryFn: () => getEnergyHistory(range.period, range.count),
+  });
+  const buckets = q.data?.buckets ?? [];
+  const values = buckets.map((b) => Number(b.spend));
+  const total = values.reduce((a, b) => a + b, 0);
+  const hasData = values.some((v) => v > 0);
+  return (
+    <div className="card">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <h2 className="card__title" style={{ margin: 0 }}>Energy bill over time</h2>
+        <div style={{ display: "flex", gap: 6 }}>
+          {HISTORY_RANGES.map((r) => (
+            <button
+              key={r.period}
+              className={"btn btn--sm" + (range.period === r.period ? "" : " btn--ghost")}
+              onClick={() => setRange(r)}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {hasData ? (
+        <>
+          <Sparkline values={values} color="#f59e0b" width={560} height={120} />
+          <p className="muted" style={{ marginBottom: 0 }}>
+            {buckets[0].label} – {buckets[buckets.length - 1].label} · total {currency}{" "}
+            {total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </p>
+        </>
+      ) : (
+        <p className="muted">
+          No energy-bill spend to chart yet. Set your <strong>energy-bill category</strong> below — your
+          imported statement history then fills this in (daily / monthly / yearly).
+        </p>
+      )}
     </div>
   );
 }
