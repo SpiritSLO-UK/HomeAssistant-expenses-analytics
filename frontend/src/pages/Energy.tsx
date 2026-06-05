@@ -1,0 +1,221 @@
+import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  getEnergyOffset,
+  getEnergyStatus,
+  getMe,
+  listCategories,
+  updateEnergyConfig,
+} from "../api/client";
+
+const SOURCES = [
+  { value: "off", label: "Off (no offset)" },
+  { value: "ha_api", label: "Home Assistant API — read named entities" },
+  { value: "mqtt", label: "MQTT — read topics" },
+];
+
+const SOURCE_LABEL: Record<string, string> = {
+  off: "Off",
+  ha_api: "Home Assistant API",
+  mqtt: "MQTT",
+};
+
+const PRICE_SOURCE_LABEL: Record<string, string> = {
+  tariff: "your tariff",
+  derived: "derived from meter readings",
+  none: "not set",
+};
+
+export default function Energy() {
+  const me = useQuery({ queryKey: ["me"], queryFn: getMe });
+  const offset = useQuery({ queryKey: ["energy-offset"], queryFn: () => getEnergyOffset() });
+  const canManage = me.data?.can_manage_settings ?? false;
+  const o = offset.data;
+  const base = o?.currency ?? "GBP";
+
+  return (
+    <div className="page">
+      <div className="page__head">
+        <h1 className="page__title">⚡ Energy cost offset</h1>
+        <button className="btn" onClick={() => offset.refetch()} disabled={offset.isFetching}>
+          {offset.isFetching ? "Refreshing…" : "Refresh"}
+        </button>
+      </div>
+      <p className="muted">
+        Net the energy you <strong>produce</strong> (solar/grid, read live from Home Assistant)
+        against what you <strong>spend</strong> on your energy bill, to see your production's effect
+        on the cost. Off by default — point it at your HA sensors (or MQTT topics) below.
+      </p>
+
+      {o && !o.configured && (
+        <p className="status">
+          Energy offset is <strong>off</strong>.{" "}
+          {canManage ? "Pick a source in the settings below to switch it on." : "Ask an admin to enable it."}
+        </p>
+      )}
+
+      {o && o.configured && (
+        <div className="card">
+          <h2 className="card__title">This month ({o.month})</h2>
+          {!o.available && (
+            <p className="status status--warn">
+              Source <strong>{SOURCE_LABEL[o.source] ?? o.source}</strong> isn't reachable right now
+              {o.source === "ha_api" ? " (needs the add-on's Home Assistant API access)" : " (MQTT is off)"}.
+            </p>
+          )}
+          <ul className="kv">
+            <li><span>Produced</span><span>{o.produced_kwh} kWh</span></li>
+            <li>
+              <span>Unit price</span>
+              <span>
+                {o.unit_price ? `${o.unit_price} ${base}/kWh` : "—"}{" "}
+                <span className="muted">
+                  ({PRICE_SOURCE_LABEL[o.unit_price_source] ?? o.unit_price_source})
+                </span>
+              </span>
+            </li>
+            <li><span>Saving from production</span><span><strong>{o.saving} {base}</strong></span></li>
+            <li><span>Energy bill (spend)</span><span>{o.energy_spend} {base}</span></li>
+            <li><span>Net effective cost</span><span><strong>{o.net_cost} {base}</strong></span></li>
+          </ul>
+          {o.unit_price_source === "none" && (
+            <p className="muted" style={{ fontSize: "0.8rem" }}>
+              Set a tariff (£/kWh) below, or log a couple of Home electricity meter readings with costs
+              (Cars &amp; assets) so the price can be derived — otherwise the saving shows as 0.
+            </p>
+          )}
+        </div>
+      )}
+
+      {canManage && <EnergyConfigCard />}
+    </div>
+  );
+}
+
+function lines(text: string): string[] {
+  return text
+    .split(/[\n,]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function EnergyConfigCard() {
+  const qc = useQueryClient();
+  const status = useQuery({ queryKey: ["energy-status"], queryFn: getEnergyStatus });
+  const cats = useQuery({ queryKey: ["categories"], queryFn: listCategories });
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const [source, setSource] = useState("off");
+  const [entities, setEntities] = useState("");
+  const [topics, setTopics] = useState("");
+  const [tariff, setTariff] = useState("");
+  const [categoryId, setCategoryId] = useState("");
+
+  // Seed the form from the saved config once it loads.
+  useEffect(() => {
+    const s = status.data;
+    if (!s) return;
+    setSource(s.source);
+    setEntities(s.production_entities.join("\n"));
+    setTopics(s.production_topics.join("\n"));
+    setTariff(s.tariff_per_kwh);
+    setCategoryId(s.energy_category_id != null ? String(s.energy_category_id) : "");
+  }, [status.data]);
+
+  const save = useMutation({
+    mutationFn: () =>
+      updateEnergyConfig({
+        source,
+        production_entities: lines(entities),
+        production_topics: lines(topics),
+        tariff_per_kwh: tariff.trim(),
+        energy_category_id: categoryId ? Number(categoryId) : null,
+      }),
+    onSuccess: () => {
+      setMsg("Saved.");
+      qc.invalidateQueries({ queryKey: ["energy-offset"] });
+      qc.invalidateQueries({ queryKey: ["energy-status"] });
+    },
+    onError: (e) => setMsg(String(e)),
+  });
+
+  const s = status.data;
+
+  return (
+    <div className="card">
+      <h2 className="card__title">Settings</h2>
+      <p className="muted" style={{ fontSize: "0.85rem" }}>
+        Reading HA entities uses the add-on's read-only Home Assistant API access and only the entities
+        you name. MQTT reads the topics you list from your broker. Both are opt-in.
+      </p>
+
+      <label className="field">
+        <span>Source</span>
+        <select value={source} onChange={(e) => setSource(e.target.value)}>
+          {SOURCES.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+      </label>
+
+      {source === "ha_api" && (
+        <label className="field">
+          <span>Production entities (one per line)</span>
+          <textarea
+            rows={3}
+            placeholder={"sensor.solar_energy_today\nsensor.grid_export_today"}
+            value={entities}
+            onChange={(e) => setEntities(e.target.value)}
+          />
+          <small className="muted">
+            Point at sensors that report the period's production in kWh (e.g. a HA Utility Meter for
+            "this month"). {s?.ha_api_available === false && "⚠️ HA API not available to the add-on yet."}
+          </small>
+        </label>
+      )}
+
+      {source === "mqtt" && (
+        <label className="field">
+          <span>Production topics (one per line)</span>
+          <textarea
+            rows={3}
+            placeholder={"home/solar/energy_this_month"}
+            value={topics}
+            onChange={(e) => setTopics(e.target.value)}
+          />
+        </label>
+      )}
+
+      <label className="field">
+        <span>Tariff (price per kWh)</span>
+        <input
+          inputMode="decimal"
+          placeholder="e.g. 0.28 — blank to derive from meter readings"
+          value={tariff}
+          onChange={(e) => setTariff(e.target.value)}
+        />
+        {s?.derived_unit_price && !tariff && (
+          <small className="muted">Derived from your meter readings: {s.derived_unit_price}/kWh.</small>
+        )}
+      </label>
+
+      <label className="field">
+        <span>Energy-bill category</span>
+        <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+          <option value="">— none —</option>
+          {(cats.data ?? []).map((c) => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </select>
+        <small className="muted">Spending in this category is treated as your energy bill.</small>
+      </label>
+
+      <div style={{ marginTop: 10 }}>
+        <button className="btn" onClick={() => save.mutate()} disabled={save.isPending}>
+          {save.isPending ? "Saving…" : "Save"}
+        </button>
+        {msg && <span className="muted" style={{ marginLeft: 10 }}>{msg}</span>}
+      </div>
+    </div>
+  );
+}

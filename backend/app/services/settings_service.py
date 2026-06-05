@@ -56,8 +56,18 @@ DEFAULT_VENDOR_COUNTRY = "default_vendor_country"
 # the HAFI_PAPERLESS_URL env var as fallback. The token stays env-only (a secret;
 # storing it in the DB needs at-rest encryption = deferred #15).
 PAPERLESS_URL = "paperless_url"
+# Energy-cost offset (HA): net HA solar/grid production against energy-bill spend.
+# Off by default. `energy_source` picks how production is read; entities/topics are
+# JSON-encoded lists; tariff is £/kWh (blank = derive from Home utility-meter logs);
+# energy_category_id is which spend category counts as the energy bill.
+ENERGY_SOURCE = "energy_source"  # off | ha_api | mqtt
+ENERGY_PRODUCTION_ENTITIES = "energy_production_entities"  # JSON list of HA entity ids
+ENERGY_PRODUCTION_TOPICS = "energy_production_topics"  # JSON list of MQTT topics
+ENERGY_TARIFF_PER_KWH = "energy_tariff_per_kwh"  # decimal string, "" = derive
+ENERGY_CATEGORY_ID = "energy_category_id"  # int string, "" = none
 
 FX_MODES = {"manual", "frankfurter"}
+ENERGY_SOURCES = {"off", "ha_api", "mqtt"}
 INVESTMENT_PRICE_SOURCES = {"manual", "stooq", "alphavantage"}
 RECEIPT_MATCH_MODES = {"suggest", "auto"}
 
@@ -101,6 +111,11 @@ def _defaults() -> dict[str, str]:
         INVESTMENT_PRICE_SOURCE: "manual",
         DEFAULT_VENDOR_COUNTRY: "",
         PAPERLESS_URL: "",
+        ENERGY_SOURCE: "off",
+        ENERGY_PRODUCTION_ENTITIES: "[]",
+        ENERGY_PRODUCTION_TOPICS: "[]",
+        ENERGY_TARIFF_PER_KWH: "",
+        ENERGY_CATEGORY_ID: "",
     }
 
 

@@ -1906,6 +1906,54 @@ export function disableEncryption(passphrase: string): Promise<{ status: string 
   return fetchJson("api/security/disable", { method: "POST", body: JSON.stringify({ passphrase }) });
 }
 
+// --- Energy-cost offset (HA) ---
+
+export interface EnergyOffset {
+  month: string;
+  currency: string;
+  source: string; // off | ha_api | mqtt
+  configured: boolean;
+  available: boolean;
+  produced_kwh: string;
+  unit_price: string | null;
+  unit_price_source: string; // tariff | derived | none
+  saving: string;
+  energy_spend: string;
+  net_cost: string;
+  energy_category_id: number | null;
+}
+
+export interface EnergyConfig {
+  source: string;
+  production_entities: string[];
+  production_topics: string[];
+  tariff_per_kwh: string;
+  energy_category_id: number | null;
+}
+
+export interface EnergyStatus extends EnergyConfig {
+  available: boolean;
+  ha_api_available: boolean;
+  derived_unit_price: string | null;
+}
+
+export function getEnergyOffset(month?: string): Promise<EnergyOffset> {
+  const qs = month ? `?month=${encodeURIComponent(month)}` : "";
+  return fetchJson<EnergyOffset>(`api/energy/offset${qs}`);
+}
+
+export function getEnergyStatus(): Promise<EnergyStatus> {
+  return fetchJson<EnergyStatus>("api/energy/status");
+}
+
+export function getEnergyConfig(): Promise<EnergyConfig> {
+  return fetchJson<EnergyConfig>("api/energy/config");
+}
+
+export function updateEnergyConfig(patch: Partial<EnergyConfig>): Promise<EnergyConfig> {
+  return fetchJson<EnergyConfig>("api/energy/config", { method: "PUT", body: JSON.stringify(patch) });
+}
+
 // --- Users & access control (spec §6, §28; backlog #82, #126) ---
 
 export interface Me {
