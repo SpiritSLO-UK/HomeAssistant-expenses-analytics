@@ -57,9 +57,12 @@ RUN EXTRAS="mqtt,ocr" \
 # aarch64: install the locally-built sqlcipher3 wheel + the runtime SQLCipher
 # library, so at-rest encryption works on the Pi too (amd64 already has it above).
 COPY --from=sqlcipher /wheels /tmp/wheels
+# The runtime SQLCipher lib's package name is Debian-release-specific: trixie ships
+# libsqlcipher1, bookworm shipped libsqlcipher0 — try the newer first, fall back.
 RUN if [ "$TARGETARCH" = "arm64" ]; then \
         apt-get update \
-        && apt-get install -y --no-install-recommends libsqlcipher0 \
+        && (apt-get install -y --no-install-recommends libsqlcipher1 \
+            || apt-get install -y --no-install-recommends libsqlcipher0) \
         && rm -rf /var/lib/apt/lists/* \
         && pip install --no-cache-dir --only-binary=:all: /tmp/wheels/sqlcipher3*.whl ; \
     fi \
