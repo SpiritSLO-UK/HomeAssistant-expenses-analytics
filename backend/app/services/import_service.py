@@ -13,7 +13,8 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -178,14 +179,18 @@ def create_import(
 
     stored_path = _uploads_dir() / f"{statement.id}.{parser.format}"
     stored_path.write_bytes(content)
-    statement.notes = json.dumps(
-        {
-            "parser_id": parser.parser_id,
-            "mapping": mapping,
-            "account_id": account.id,
-            "stored_path": str(stored_path),
-        }
-    )
+    notes: dict = {
+        "parser_id": parser.parser_id,
+        "mapping": mapping,
+        "account_id": account.id,
+        "stored_path": str(stored_path),
+    }
+    # AI image-extract rows can't be re-parsed from the stored image on confirm,
+    # so persist the already-parsed rows to rebuild them there (fixes the
+    # "Unknown parser: ai_image_extract" failure on confirm).
+    if isinstance(parser, _RowsParser):
+        notes["ai_rows"] = _serialize_rows(parsed)
+    statement.notes = json.dumps(notes)
     db.commit()
 
     report = ImportReport(len(parsed), new_count, dup_count, 0)
@@ -201,18 +206,59 @@ def create_import(
     }
 
 
+# Pseudo-parser id for AI image-extracted imports. The stored file is the raw
+# image (not re-parseable), so confirm rebuilds the rows from ``notes["ai_rows"]``
+# instead of re-running a parser keyed by this id.
+AI_ROWS_PARSER_ID = "ai_image_extract"
+
+
 class _RowsParser:
     """A pseudo-parser that yields already-parsed rows, so AI image-extraction can
     reuse the normal create_import pipeline (dedupe, Statement, preview, confirm)."""
 
     def __init__(self, rows: list[StandardTransaction], *, institution: str, fmt: str):
         self._rows = rows
-        self.parser_id = "ai_image_extract"
+        self.parser_id = AI_ROWS_PARSER_ID
         self.institution = institution
         self.format = fmt
 
     def parse(self, _filename: str, _content: bytes) -> list[StandardTransaction]:
         return self._rows  # rows are already parsed; the parser interface requires these args
+
+
+def _serialize_rows(rows: list[StandardTransaction]) -> list[dict]:
+    """Persist already-parsed rows on the pending Statement so an AI image-extract
+    import can be re-materialised on confirm (the stored image can't be re-parsed)."""
+    return [
+        {
+            "transaction_date": r.transaction_date.isoformat(),
+            "posted_date": r.posted_date.isoformat() if r.posted_date else None,
+            "amount": str(r.amount),
+            "currency": r.currency,
+            "description_raw": r.description_raw,
+            "merchant_raw": r.merchant_raw,
+            "external_id": r.external_id,
+            "needs_review": r.needs_review,
+        }
+        for r in rows
+    ]
+
+
+def _deserialize_rows(raw: list[dict]) -> list[StandardTransaction]:
+    """Inverse of :func:`_serialize_rows` — rebuild the staged rows on confirm."""
+    return [
+        StandardTransaction(
+            transaction_date=date.fromisoformat(r["transaction_date"]),
+            amount=Decimal(str(r["amount"])),
+            currency=r["currency"],
+            description_raw=r["description_raw"],
+            posted_date=date.fromisoformat(r["posted_date"]) if r.get("posted_date") else None,
+            merchant_raw=r.get("merchant_raw"),
+            external_id=r.get("external_id"),
+            needs_review=bool(r.get("needs_review", True)),
+        )
+        for r in raw
+    ]
 
 
 def create_import_from_rows(
@@ -268,18 +314,24 @@ def confirm_import(db: Session, import_id: int) -> dict:
         raise ImportFailed(f"Import {import_id} was already confirmed")
 
     config = json.loads(statement.notes or "{}")
-    parser = _resolve_parser(config.get("parser_id"), statement.source_filename or "", b"", config.get("mapping"))
-    stored_path = Path(config["stored_path"])
-    if not stored_path.is_file():
-        raise ImportFailed("Uploaded file is no longer available; please re-upload")
-    content = stored_path.read_bytes()
+    ai_rows = config.get("ai_rows")
+    if ai_rows is not None:
+        # AI image-extract: rebuild the rows staged at upload — the stored image
+        # itself isn't re-parseable, so there's no parser to re-run here.
+        parsed = _deserialize_rows(ai_rows)
+    else:
+        parser = _resolve_parser(config.get("parser_id"), statement.source_filename or "", b"", config.get("mapping"))
+        stored_path = Path(config["stored_path"])
+        if not stored_path.is_file():
+            raise ImportFailed("Uploaded file is no longer available; please re-upload")
+        content = stored_path.read_bytes()
 
-    try:
-        parsed = parser.parse(statement.source_filename or "", content)
-    except ParseError as exc:
-        statement.status = "failed"
-        db.commit()
-        raise ImportFailed(f"Parse failed on confirm: {exc}") from exc
+        try:
+            parsed = parser.parse(statement.source_filename or "", content)
+        except ParseError as exc:
+            statement.status = "failed"
+            db.commit()
+            raise ImportFailed(f"Parse failed on confirm: {exc}") from exc
 
     account = db.get(Account, statement.account_id)
     if account is None:

@@ -358,6 +358,28 @@ def test_ai_extract_import_route_creates_import(client, monkeypatch):
     assert r.json()["rows_detected"] == 1
 
 
+def test_ai_extract_import_confirm_persists(client, monkeypatch):
+    """Regression: an AI image-extract import must be confirmable end-to-end.
+    Previously confirm raised 'Unknown parser: ai_image_extract' because the
+    pseudo-parser couldn't be re-resolved and the image isn't re-parseable."""
+    client.get("/api/users/me")
+    client.put("/api/settings", json={"privacy_mode": "cloud_manual", "ai_provider": "openai_compatible",
+                                      "ai_base_url": "http://x/v1", "ai_model": "m"})
+    monkeypatch.setattr(ai_service, "get_provider", lambda _db: _VisionProvider(
+        {"transactions": [{"date": "2026-06-02", "description": "Post Office", "amount": "-10.95"}]}))
+    r = client.post("/api/imports/ai-extract", files={"file": ("s.png", b"\x89PNG\r\n\x1a\n", "image/png")})
+    assert r.status_code == 200, r.text
+    import_id = r.json()["import_id"]
+
+    confirm = client.post(f"/api/imports/{import_id}/confirm")
+    assert confirm.status_code == 200, confirm.text
+    assert confirm.json()["status"] == "imported"
+    assert confirm.json()["report"]["new"] == 1
+
+    txns = client.get("/api/transactions").json()
+    assert any(t["description_raw"] == "Post Office" for t in txns["items"])
+
+
 def test_ai_extract_import_off_returns_400(client):
     client.get("/api/users/me")  # strict_local default → AI off
     r = client.post("/api/imports/ai-extract", files={"file": ("s.png", b"x", "image/png")})
