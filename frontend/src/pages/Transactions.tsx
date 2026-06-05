@@ -681,7 +681,19 @@ export default function Transactions() {
                           </div>
                         )}
                       </td>
-                      <td className={catName ? undefined : "muted"}>{catName ?? "— uncategorised —"}</td>
+                      <td className={catName ? undefined : "muted"}>
+                        {catName ?? "— uncategorised —"}
+                        {!catName && aiStatus.data?.enabled && (
+                          <button
+                            className="link-btn"
+                            style={{ marginLeft: 6 }}
+                            title="Ask the AI assistant to suggest a category"
+                            onClick={() => suggestAi(t)}
+                          >
+                            ✨ suggest
+                          </button>
+                        )}
+                      </td>
                       <td className={projName ? undefined : "muted"}>{projName ?? "—"}</td>
                       <td>
                         {t.is_split && <span className="tag">split</span>}
