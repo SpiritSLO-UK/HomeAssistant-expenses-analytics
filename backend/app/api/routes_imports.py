@@ -12,13 +12,16 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.models import Statement, User
 from app.parsers import available_parsers
+from app.parsers.base import ParseError, StandardTransaction, parse_amount, parse_date
 from app.schemas.imports import (
     ConfirmResponse,
     ImportListItem,
     ParserInfo,
     UploadResponse,
 )
-from app.services import audit_service, import_service
+from app.services import ai_service, audit_service, import_service, settings_service
+from app.services.ai_provider import AIError
+from app.services.ai_service import AIDisabled
 from app.services.auth_service import get_current_user
 from app.services.import_service import ImportFailed
 
@@ -58,6 +61,60 @@ async def upload(
         )
     except ImportFailed as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _rows_from_ai(extracted: list[dict], base_currency: str) -> list[StandardTransaction]:
+    """Turn the AI's [{date, description, amount}] into StandardTransaction rows,
+    skipping any without a usable amount. Flagged needs_review (AI-extracted)."""
+    from datetime import date as _date
+
+    rows: list[StandardTransaction] = []
+    for item in extracted:
+        try:
+            amount = parse_amount(str(item.get("amount", "")))
+        except ParseError:
+            continue  # no usable amount → skip the row
+        try:
+            txn_date = parse_date(str(item.get("date", "")))
+        except ParseError:
+            txn_date = _date.today()
+        desc = (str(item.get("description") or "")).strip() or "(no description)"
+        rows.append(StandardTransaction(
+            transaction_date=txn_date, amount=amount, currency=base_currency,
+            description_raw=desc, needs_review=True,
+        ))
+    return rows
+
+
+@router.post("/ai-extract", response_model=UploadResponse,
+             responses={400: {"description": "Bad request / AI off"}, 502: {"description": "AI error"}})
+async def ai_extract(
+    file: Annotated[UploadFile, File()],
+    db: Annotated[Session, Depends(get_db)],
+    account_id: Annotated[int | None, Form()] = None,
+) -> dict:
+    """Opt-in vision-AI fallback: extract transactions from a statement **image**
+    the OCR parser couldn't read, and stage them as a normal import to review +
+    confirm. The frontend warns before calling this (the image is sent to the AI,
+    and an image can't be redacted)."""
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty file")
+    mime = file.content_type or "image/jpeg"
+    try:
+        extracted = ai_service.extract_statement_image(db, content, mime)
+    except AIDisabled as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except AIError as exc:
+        raise HTTPException(status_code=502, detail=f"AI extraction failed: {exc}") from exc
+    rows = _rows_from_ai(extracted, settings_service.get_base_currency(db))
+    if not rows:
+        raise HTTPException(status_code=400, detail="The AI didn't find any transactions in this image.")
+    name = file.filename or "ai-image"
+    fmt = name.rsplit(".", 1)[-1].lower() if "." in name else "image"
+    return import_service.create_import_from_rows(
+        db, name, content, rows, account_id=account_id, institution="AI-extracted", fmt=fmt
+    )
 
 
 @router.get("", response_model=list[ImportListItem])

@@ -154,6 +154,21 @@ export function confirmImport(importId: number): Promise<ConfirmResponse> {
   return fetchJson<ConfirmResponse>(`api/imports/${importId}/confirm`, { method: "POST" });
 }
 
+// Opt-in vision-AI fallback: extract transactions from a statement image OCR
+// couldn't read, staged as a normal import (preview + confirm). The image is sent
+// to the configured AI (the caller warns first).
+export async function aiExtractImport(file: File, accountId?: number): Promise<UploadResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  if (accountId != null) form.append("account_id", String(accountId));
+  const res = await fetch(apiUrl("api/imports/ai-extract"), { method: "POST", body: form });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error(detail.detail || `AI extract failed: ${res.status}`);
+  }
+  return (await res.json()) as UploadResponse;
+}
+
 // --- Transactions (spec §24.4) ---
 
 export interface Transaction {
@@ -673,6 +688,12 @@ export async function uploadReceipt(file: File): Promise<Receipt> {
 
 export function updateReceipt(id: number, fields: Record<string, unknown>): Promise<Receipt> {
   return fetchJson<Receipt>(`api/receipts/${id}`, { method: "PATCH", body: JSON.stringify(fields) });
+}
+
+// Opt-in vision-AI fallback: read merchant/date/total from a receipt image OCR
+// couldn't. The image is sent to the configured AI (the caller warns first).
+export function aiExtractReceipt(id: number): Promise<Receipt> {
+  return fetchJson<Receipt>(`api/receipts/${id}/ai-extract`, { method: "POST" });
 }
 
 export function matchReceipt(id: number): Promise<MatchResult> {

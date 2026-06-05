@@ -181,3 +181,16 @@ export function isCloudAiAcknowledged(): boolean {
 export function setCloudAiAcknowledged(): void {
   writeString(CLOUD_AI_ACK_KEY, "1");
 }
+
+// --- Per-send AI image warning (Q3): sending an image to AI can't be redacted,
+// so warn before each send until the user ticks "don't warn me again". ---
+
+const IMAGE_AI_WARN_KEY = "hafi_image_ai_warn_dismissed";
+
+export function isImageAiWarningDismissed(): boolean {
+  return readString(IMAGE_AI_WARN_KEY) === "1";
+}
+
+export function setImageAiWarningDismissed(): void {
+  writeString(IMAGE_AI_WARN_KEY, "1");
+}

@@ -302,3 +302,63 @@ def test_already_ai_processed_flag(db):
 
     done = ai_service._already_ai_processed(db, [done_txn.id, fresh_txn.id])
     assert done_txn.id in done and fresh_txn.id not in done
+
+
+# --- vision image extraction (Q3) ---
+
+
+class _VisionProvider:
+    name = "vision-fake"
+    model = "v"
+
+    def __init__(self, result):
+        self._result = result
+
+    def available(self) -> bool:
+        return True
+
+    def extract_from_image(self, image_b64, mime, *, system, instruction):
+        return self._result
+
+
+def _mode(db, mode):
+    from app.services import settings_service
+    settings_service.set_value(db, settings_service.PRIVACY_MODE, mode)
+
+
+def test_extract_statement_image_returns_rows(db, monkeypatch):
+    _mode(db, "cloud_manual")
+    monkeypatch.setattr(ai_service, "get_provider", lambda _db: _VisionProvider(
+        {"transactions": [{"date": "2026-06-01", "description": "Tesco", "amount": "-12.34"}]}))
+    rows = ai_service.extract_statement_image(db, b"\x89PNG\r\n", "image/png")
+    assert rows == [{"date": "2026-06-01", "description": "Tesco", "amount": "-12.34"}]
+
+
+def test_extract_receipt_image_returns_fields(db, monkeypatch):
+    _mode(db, "local_llm")
+    monkeypatch.setattr(ai_service, "get_provider", lambda _db: _VisionProvider(
+        {"merchant": "Tesco", "date": "2026-06-01", "total": "12.34", "currency": "GBP"}))
+    out = ai_service.extract_receipt_image(db, b"img", "image/jpeg")
+    assert out["merchant"] == "Tesco" and out["total"] == "12.34"
+
+
+def test_extract_image_off_is_disabled(db):
+    with pytest.raises(AIDisabled):
+        ai_service.extract_statement_image(db, b"img", "image/png")  # strict_local default
+
+
+def test_ai_extract_import_route_creates_import(client, monkeypatch):
+    client.get("/api/users/me")
+    client.put("/api/settings", json={"privacy_mode": "cloud_manual", "ai_provider": "openai_compatible",
+                                      "ai_base_url": "http://x/v1", "ai_model": "m"})
+    monkeypatch.setattr(ai_service, "get_provider", lambda _db: _VisionProvider(
+        {"transactions": [{"date": "2026-06-02", "description": "ACME", "amount": "-9.99"}]}))
+    r = client.post("/api/imports/ai-extract", files={"file": ("s.png", b"\x89PNG\r\n\x1a\n", "image/png")})
+    assert r.status_code == 200, r.text
+    assert r.json()["rows_detected"] == 1
+
+
+def test_ai_extract_import_off_returns_400(client):
+    client.get("/api/users/me")  # strict_local default → AI off
+    r = client.post("/api/imports/ai-extract", files={"file": ("s.png", b"x", "image/png")})
+    assert r.status_code == 400

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import mimetypes
+from datetime import date as _date
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Annotated
 
@@ -20,7 +22,9 @@ from app.schemas.receipts import (
     ReceiptUpdate,
     ReceiptUploadOut,
 )
-from app.services import ocr_service, receipt_service
+from app.services import ai_service, ocr_service, receipt_service
+from app.services.ai_provider import AIError
+from app.services.ai_service import AIDisabled
 
 router = APIRouter(prefix="/receipts", tags=["receipts"])
 
@@ -92,6 +96,63 @@ def get_receipt_file(receipt_id: int, db: Annotated[Session, Depends(get_db)]) -
 def rerun_ocr(receipt_id: int, db: Annotated[Session, Depends(get_db)]) -> dict:
     receipt = _get(db, receipt_id)
     receipt_service.run_ocr(db, receipt, auto_match=True)
+    return receipt_service.to_dict(db, receipt)
+
+
+def _receipt_fields_from_ai(fields: dict) -> dict:
+    """Map the vision model's {merchant, date, total, currency} to receipt fields."""
+    out: dict = {}
+    merchant = str(fields.get("merchant") or "").strip()
+    if merchant:
+        out["merchant_raw"] = merchant[:300]
+    raw_date = str(fields.get("date") or "").strip()
+    if raw_date and raw_date.lower() != "null":
+        try:
+            out["receipt_date"] = _date.fromisoformat(raw_date[:10])
+        except ValueError:
+            pass
+    raw_total = str(fields.get("total") or "").strip().replace(",", "")
+    if raw_total:
+        try:
+            total = Decimal(raw_total)
+            if total >= 0:
+                out["total_amount"] = total
+        except InvalidOperation:
+            pass
+    cur = str(fields.get("currency") or "").strip()
+    if cur and cur.lower() != "null":
+        out["currency"] = cur[:3].upper()
+    return out
+
+
+@router.post(
+    "/{receipt_id}/ai-extract",
+    response_model=ReceiptOut,
+    responses={400: {"description": "AI off / not an image"}, 404: {"description": "Not found"},
+               502: {"description": "AI error"}},
+)
+def ai_extract_receipt(receipt_id: int, db: Annotated[Session, Depends(get_db)]) -> dict:
+    """Opt-in vision-AI fallback: read merchant/date/total from the receipt image
+    when OCR couldn't. The frontend warns first (the image is sent to the AI, and
+    an image can't be redacted). Image receipts only."""
+    receipt = _get(db, receipt_id)
+    path = Path(receipt.storage_path) if receipt.storage_path else None
+    if path is None or not path.exists():
+        raise HTTPException(status_code=404, detail="Receipt original is not available")
+    mime = mimetypes.guess_type(receipt.source_filename or path.name)[0] or ""
+    if not mime.startswith("image/"):
+        raise HTTPException(status_code=400, detail="AI extraction needs an image receipt (not a PDF).")
+    try:
+        fields = ai_service.extract_receipt_image(db, path.read_bytes(), mime)
+    except AIDisabled as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except AIError as exc:
+        raise HTTPException(status_code=502, detail=f"AI extraction failed: {exc}") from exc
+    updates = _receipt_fields_from_ai(fields)
+    if updates:
+        receipt_service.set_fields(db, receipt, **updates)
+    if receipt.total_amount is not None:
+        receipt_service.match(db, receipt)
     return receipt_service.to_dict(db, receipt)
 
 
