@@ -22,6 +22,7 @@ Subscriptions total (spec §30.11) waits for recurring-payment detection
 from __future__ import annotations
 
 import json
+import time
 from datetime import date
 
 from sqlalchemy.orm import Session
@@ -109,6 +110,15 @@ def _sensors(db: Session, ref: date | None = None) -> list[dict]:
         sensors.append(
             _money(f"project_{p['project_id']}_total", f"Project {p['name']} Total",
                    p["spent"], p["currency"], "mdi:home-currency-usd")
+        )
+    # Energy-cost offset (HA), only when configured. Uses the last live-computed
+    # saving (energy_service caches it) so a publish never does a broker/HA read.
+    from app.services import energy_service  # lazy import: avoids an import cycle
+
+    if energy_service.get_config(db)["source"] != "off":
+        sensors.append(
+            _money("energy_offset_this_month", "Energy Offset This Month",
+                   str(energy_service.last_saving()), currency, "mdi:solar-power")
         )
     return sensors
 
@@ -234,6 +244,48 @@ def publish_safe(db: Session, ref: date | None = None) -> None:
         )
     except Exception as exc:
         logger.warning("MQTT publish failed (non-fatal): %s", exc)
+
+
+def read_topics(topics: list[str], *, connect=None, timeout: float = 2.0) -> dict[str, str]:
+    """Read the latest **retained** payload of each topic (best-effort).
+
+    Used by the energy offset's ``mqtt`` source to read production values that a
+    broker holds retained. Connects, subscribes, waits up to ``timeout`` seconds
+    for the retained messages, then disconnects. Returns ``{topic: payload}``;
+    ``{}`` if MQTT is disabled, there are no topics, or nothing arrives.
+    ``connect`` is injectable for tests (no real broker needed).
+    """
+    wanted = [t for t in (topics or []) if t]
+    if not settings.mqtt_enabled or not wanted:
+        return {}
+
+    results: dict[str, str] = {}
+
+    def _on_message(_client, _userdata, msg) -> None:
+        try:
+            results[msg.topic] = msg.payload.decode("utf-8", "ignore")
+        except (AttributeError, UnicodeDecodeError):  # pragma: no cover - defensive
+            pass
+
+    try:
+        client = (connect or _default_connect)()
+    except Exception as exc:  # best-effort: broker problems must never raise
+        logger.warning("MQTT read_topics connect failed (non-fatal): %s", exc)
+        return {}
+    try:
+        client.on_message = _on_message
+        for topic in wanted:
+            client.subscribe(topic)
+        client.loop_start()
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline and len(results) < len(wanted):
+            time.sleep(0.05)
+        client.loop_stop()
+    except Exception as exc:  # best-effort
+        logger.warning("MQTT read_topics failed (non-fatal): %s", exc)
+    finally:
+        _safe_disconnect(client)
+    return results
 
 
 def status(db: Session | None = None) -> dict:

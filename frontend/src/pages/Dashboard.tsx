@@ -13,6 +13,7 @@ import {
   getCategoryBreakdown,
   getCountryBreakdown,
   getDashboardProjects,
+  getEnergyOffset,
   getInvestmentSummary,
   getMe,
   listAssets,
@@ -63,6 +64,7 @@ const OPTIONAL_CARDS: { key: string; label: string }[] = [
   { key: "savings", label: "Savings" },
   { key: "investments", label: "Investments" },
   { key: "assets", label: "Cars & assets" },
+  { key: "energy", label: "Energy cost offset" },
   { key: "budgets", label: "Budgets" },
   { key: "business", label: "Business" },
   { key: "travel", label: "Travel" },
@@ -143,6 +145,8 @@ function DashboardCard({
       return <InvestmentsCard />;
     case "assets":
       return <AssetsCard />;
+    case "energy":
+      return <EnergyCard monthDate={monthDate} />;
     case "budgets":
       return <BudgetsCard monthDate={monthDate} />;
     case "business":
@@ -156,6 +160,24 @@ function DashboardCard({
     default:
       return null;
   }
+}
+
+// Energy-cost offset (HA). Null unless a source is configured, so it only shows
+// for users who've wired up their HA energy sensors. Links through to the page.
+function EnergyCard({ monthDate }: Readonly<{ monthDate: string }>) {
+  const q = useQuery({ queryKey: ["energy-offset", monthDate], queryFn: () => getEnergyOffset(monthDate) });
+  const o = q.data;
+  if (!o || !o.configured) return null;
+  return (
+    <div className="card">
+      <h2 className="card__title"><Link to="/energy">⚡ Energy cost offset</Link></h2>
+      <ul className="kv">
+        <li><span>Produced</span><span>{o.produced_kwh} kWh</span></li>
+        <li><span>Saving</span><span><strong>{gbp(o.saving)}</strong></span></li>
+        <li><span>Net energy cost</span><span>{gbp(o.net_cost)}</span></li>
+      </ul>
+    </div>
+  );
 }
 
 export default function Dashboard() {

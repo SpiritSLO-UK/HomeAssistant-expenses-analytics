@@ -370,6 +370,35 @@ button.sidebar__link:disabled {
   align-items: center;
 }
 
+/* Stacked labelled form field (label above its control). */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 12px 0;
+  max-width: 540px;
+}
+.field > span {
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+.field input,
+.field select,
+.field textarea {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+}
+.field textarea {
+  resize: vertical;
+}
+.field small {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
 .filters label {
   font-size: 0.85rem;
   color: var(--muted);

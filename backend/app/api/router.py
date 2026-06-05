@@ -15,6 +15,7 @@ from app.api import (
     routes_business,
     routes_categories,
     routes_dashboard,
+    routes_energy,
     routes_export,
     routes_fx,
     routes_health,
@@ -74,3 +75,4 @@ api_router.include_router(routes_allowance.router)
 api_router.include_router(routes_accounts.router)
 api_router.include_router(routes_travel.router)
 api_router.include_router(routes_business.router)
+api_router.include_router(routes_energy.router)
