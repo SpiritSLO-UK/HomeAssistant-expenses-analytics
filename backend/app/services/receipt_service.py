@@ -19,8 +19,15 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.logging import get_logger
-from app.models import Receipt, Transaction, TransactionReceiptMatch
-from app.services import ocr_service, receipt_parser, review_service, settings_service
+from app.models import Account, Receipt, Transaction, TransactionReceiptMatch
+from app.services import (
+    fx_service,
+    import_service,
+    ocr_service,
+    receipt_parser,
+    review_service,
+    settings_service,
+)
 from app.services.household_service import get_or_create_default_household
 from app.services.ocr_service import OcrUnavailable
 
@@ -435,3 +442,46 @@ def attach_to_transaction(db: Session, receipt: Receipt, transaction_id: int) ->
     db.commit()
     db.refresh(chosen)
     return chosen
+
+
+def create_transaction_from_receipt(db: Session, receipt: Receipt, *, account_id: int) -> Transaction:
+    """Materialise a transaction from a receipt's fields and attach the receipt to
+    it as a confirmed match (keeps the original).
+
+    For cash or otherwise un-imported purchases where matching found nothing — the
+    receipt becomes the source of a real transaction. Receipts are purchases, so
+    the amount is recorded as money out (debit); it's converted to base currency
+    and auto-categorised exactly like an imported row, and the unmatched review
+    item is cleared by the attach.
+    """
+    if receipt.total_amount is None:
+        raise ValueError("Set the receipt total before creating a transaction")
+    account = db.get(Account, account_id)
+    if account is None:
+        raise ValueError("Account not found")
+
+    household = get_or_create_default_household(db)
+    base_currency = settings_service.get_base_currency(db)
+    fx_mode = settings_service.get_fx_mode(db)
+
+    txn = Transaction(
+        household_id=household.id,
+        account_id=account.id,
+        transaction_date=receipt.receipt_date or _now().date(),
+        description_raw=receipt.merchant_raw or f"Receipt #{receipt.id}",
+        merchant_raw=receipt.merchant_raw,
+        amount=-abs(Decimal(receipt.total_amount)),
+        currency=(receipt.currency or base_currency or "GBP")[:3].upper(),
+        direction="debit",
+        source_hash=_hash(f"receipt-txn:{receipt.id}".encode()),
+        needs_review=False,
+    )
+    db.add(txn)
+    db.flush()
+    fx_service.convert_transaction(db, txn, base_currency, fx_mode, allow_fetch=(fx_mode == "frankfurter"))
+    import_service.auto_categorise(db, txn)
+    db.commit()
+    db.refresh(txn)
+
+    attach_to_transaction(db, receipt, txn.id)
+    return txn

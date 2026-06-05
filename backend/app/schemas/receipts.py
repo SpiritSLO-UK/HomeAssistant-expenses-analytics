@@ -63,3 +63,17 @@ class MatchResult(BaseModel):
 
 class ConfirmMatchRequest(BaseModel):
     transaction_id: int
+
+
+class CreateTransactionRequest(BaseModel):
+    """Create a transaction from an unmatched receipt. Either target an existing
+    account (``account_id``) or set ``new_account`` to use/create a dedicated
+    'Cash & receipts' account for receipt-derived transactions."""
+
+    account_id: int | None = None
+    new_account: bool = False
+
+
+class CreateTransactionResult(BaseModel):
+    transaction_id: int
+    receipt: ReceiptOut

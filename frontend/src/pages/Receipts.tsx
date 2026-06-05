@@ -6,11 +6,13 @@ import { isImageAiWarningDismissed, setImageAiWarningDismissed } from "../prefs"
 import {
   aiExtractReceipt,
   confirmReceiptMatch,
+  createTransactionFromReceipt,
   deleteReceipt,
   getAiStatus,
   getOcrStatus,
   getPaperlessStatus,
   importPaperlessDocument,
+  listAccounts,
   listPaperlessDocuments,
   listReceipts,
   matchReceipt,
@@ -211,6 +213,23 @@ function ReceiptCard({ r, onError, focused = false }: Readonly<{ r: Receipt; onE
     onError: (e) => onError(String(e)),
   });
 
+  // Create a transaction from this receipt (cash / un-imported purchases). Pick an
+  // existing account, or create/use a dedicated "Cash & receipts" account ("new").
+  const accounts = useQuery({ queryKey: ["accounts"], queryFn: listAccounts });
+  const [acct, setAcct] = useState("new");
+  const createTxn = useMutation({
+    mutationFn: () =>
+      createTransactionFromReceipt(r.id, acct === "new" ? { new_account: true } : { account_id: Number(acct) }),
+    onSuccess: () => {
+      setResult(null);
+      invalidate();
+      qc.invalidateQueries({ queryKey: ["transactions"] });
+      qc.invalidateQueries({ queryKey: ["accounts"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+    onError: (e) => onError(String(e)),
+  });
+
   // Opt-in vision-AI fallback: read merchant/date/total from the image.
   const aiStatus = useQuery({ queryKey: ["ai-status"], queryFn: getAiStatus });
   const [showAiWarn, setShowAiWarn] = useState(false);
@@ -323,6 +342,26 @@ function ReceiptCard({ r, onError, focused = false }: Readonly<{ r: Receipt; onE
         <p className="muted" style={{ marginTop: 6 }}>
           Suggested match: transaction #{suggested.transaction_id} (score {suggested.match_score}). Click <em>Find match</em> to review.
         </p>
+      )}
+
+      {/* No matching transaction (e.g. cash, or the statement isn't imported)?
+          Create one straight from the receipt. */}
+      {!confirmed && (
+        <div className="form-row" style={{ marginTop: 8, gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <span className="muted">No matching transaction? Create one:</span>
+          <select value={acct} onChange={(e) => setAcct(e.target.value)} disabled={createTxn.isPending} aria-label="Account for the new transaction">
+            <option value="new">➕ New “Cash &amp; receipts” account</option>
+            {accounts.data?.map((a) => <option key={a.id} value={String(a.id)}>{a.name}</option>)}
+          </select>
+          <button
+            className="btn btn--ghost"
+            disabled={!total || createTxn.isPending}
+            title={total ? "Create a transaction from this receipt's merchant, date and total" : "Set the total first"}
+            onClick={() => createTxn.mutate()}
+          >
+            {createTxn.isPending ? "Creating…" : "Create transaction"}
+          </button>
+        </div>
       )}
     </div>
   );
