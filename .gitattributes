@@ -12,3 +12,10 @@ addon/run.sh text eol=lf
 .dockerignore text eol=lf
 Dockerfile text eol=lf
 *.dockerfile text eol=lf
+
+# Binary assets — never normalise line endings (would corrupt them).
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.pdf binary
