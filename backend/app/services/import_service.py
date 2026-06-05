@@ -295,7 +295,7 @@ def _persist_parsed_transaction(
     row = _to_transaction(txn, household_id, account_id, statement_id, h)
     db.add(row)
     db.flush()
-    categorised = 1 if _auto_categorise(db, row) else 0
+    categorised = 1 if auto_categorise(db, row) else 0
     # Convert to base currency (backlog #29). In manual mode, foreign rows
     # with no cached rate are flagged needs_rate for later backfill.
     needs_rate = 0 if fx_service.convert_transaction(
@@ -455,16 +455,19 @@ def recategorise(db: Session, only_uncategorised: bool = True) -> int:
     count = 0
     for txn in db.scalars(stmt).all():
         had_category = txn.category_id is not None
-        _auto_categorise(db, txn)
+        auto_categorise(db, txn)
         if not had_category and txn.category_id is not None:
             count += 1
     db.commit()
     return count
 
 
-def _auto_categorise(db: Session, txn: Transaction) -> bool:
+def auto_categorise(db: Session, txn: Transaction) -> bool:
     """Categorisation order (spec §15.1): manual > rule > vendor default >
-    keyword. Returns True if the transaction ends up with a category."""
+    keyword. Returns True if the transaction ends up with a category.
+
+    Public so other services (e.g. a transaction materialised from a receipt)
+    can categorise a freshly-created row the same way an import does."""
     # 1. Rules (highest precedence after manual; may also set vendor/flags).
     rule_service.apply_rules(db, txn)
     # 2. Vendor alias match (sets merchant; category only if still unset).

@@ -156,3 +156,56 @@ def test_attach_receipt_validation(client):
     assert client.post(
         "/api/transactions/999999/receipts", files={"file": ("x.png", b"data", "image/png")}
     ).status_code == 404
+
+
+# --- create a transaction from an unmatched receipt (cash / un-imported) ---
+
+def _by_id(client, txn_id):
+    return next(t for t in client.get("/api/transactions").json()["items"] if t["id"] == txn_id)
+
+
+def test_create_transaction_from_receipt_new_account(client):
+    rid = _upload(client).json()["id"]
+    client.patch(f"/api/receipts/{rid}", json={
+        "merchant_raw": "CASH CAFE", "receipt_date": "2026-05-04", "total_amount": "12.50",
+    })
+    res = client.post(f"/api/receipts/{rid}/create-transaction", json={"new_account": True})
+    assert res.status_code == 200, res.text
+    body = res.json()
+    txn_id = body["transaction_id"]
+
+    # The receipt is now a confirmed match and no longer needs review.
+    assert body["receipt"]["needs_review"] is False
+    assert any(m["transaction_id"] == txn_id and m["match_status"] == "confirmed"
+               for m in body["receipt"]["matches"])
+
+    # The transaction is money out, carries the receipt's merchant/date.
+    from decimal import Decimal
+    txn = _by_id(client, txn_id)
+    assert Decimal(txn["amount"]) == Decimal("-12.50")
+    assert txn["direction"] == "debit"
+    assert txn["description_raw"] == "CASH CAFE"
+
+    # ...in the dedicated "Cash & receipts" account.
+    accounts = client.get("/api/accounts").json()
+    cash = next(a for a in accounts if a["name"] == "Cash & receipts")
+    assert txn["account_id"] == cash["id"]
+
+
+def test_create_transaction_from_receipt_existing_account(client):
+    _import(client, _curve([("2026-05-02", "SEED TXN", "-1.00")]))
+    account_id = client.get("/api/accounts").json()[0]["id"]
+    rid = _upload(client).json()["id"]
+    client.patch(f"/api/receipts/{rid}", json={"merchant_raw": "SHOP", "total_amount": "5.00"})
+    res = client.post(f"/api/receipts/{rid}/create-transaction", json={"account_id": account_id})
+    assert res.status_code == 200, res.text
+    assert _by_id(client, res.json()["transaction_id"])["account_id"] == account_id
+
+
+def test_create_transaction_from_receipt_requires_total_and_account(client):
+    rid = _upload(client).json()["id"]
+    # No total set yet → 400.
+    assert client.post(f"/api/receipts/{rid}/create-transaction", json={"new_account": True}).status_code == 400
+    # Total set, but no account chosen → 400.
+    client.patch(f"/api/receipts/{rid}", json={"total_amount": "9.99"})
+    assert client.post(f"/api/receipts/{rid}/create-transaction", json={}).status_code == 400

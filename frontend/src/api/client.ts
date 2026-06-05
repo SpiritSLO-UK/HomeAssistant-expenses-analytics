@@ -712,6 +712,24 @@ export async function deleteReceipt(id: number): Promise<void> {
   if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
 }
 
+export interface CreateTransactionResult {
+  transaction_id: number;
+  receipt: Receipt;
+}
+
+// Materialise a transaction from an unmatched receipt (cash / un-imported).
+// Either target an existing account, or set new_account to use/create a
+// dedicated "Cash & receipts" account.
+export function createTransactionFromReceipt(
+  id: number,
+  body: { account_id?: number; new_account?: boolean },
+): Promise<CreateTransactionResult> {
+  return fetchJson<CreateTransactionResult>(`api/receipts/${id}/create-transaction`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
 // Per-transaction receipt attach + viewer (backlog: receipt image on a transaction).
 export function receiptFileUrl(id: number): string {
   return apiUrl(`api/receipts/${id}/file`);

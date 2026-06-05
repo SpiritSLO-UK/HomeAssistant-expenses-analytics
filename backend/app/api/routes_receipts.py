@@ -17,6 +17,8 @@ from app.db.session import get_db
 from app.models import Receipt
 from app.schemas.receipts import (
     ConfirmMatchRequest,
+    CreateTransactionRequest,
+    CreateTransactionResult,
     MatchResult,
     ReceiptOut,
     ReceiptUpdate,
@@ -25,8 +27,13 @@ from app.schemas.receipts import (
 from app.services import ai_service, ocr_service, receipt_service
 from app.services.ai_provider import AIError
 from app.services.ai_service import AIDisabled
+from app.services.household_service import get_or_create_account, get_or_create_default_household
 
 router = APIRouter(prefix="/receipts", tags=["receipts"])
+
+# Dedicated account for transactions materialised from receipts (cash / un-imported
+# purchases), when the user doesn't want to attribute them to a real bank account.
+CASH_RECEIPTS_ACCOUNT = "Cash & receipts"
 
 MAX_BYTES = 15 * 1024 * 1024  # 15 MB upload cap
 
@@ -187,6 +194,31 @@ def confirm_match(receipt_id: int, payload: ConfirmMatchRequest, db: Annotated[S
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return receipt_service.to_dict(db, receipt)
+
+
+@router.post(
+    "/{receipt_id}/create-transaction",
+    response_model=CreateTransactionResult,
+    responses={400: {"description": "Bad request"}, 404: {"description": "Not found"}},
+)
+def create_transaction(
+    receipt_id: int, payload: CreateTransactionRequest, db: Annotated[Session, Depends(get_db)]
+) -> dict:
+    """Materialise a transaction from an unmatched receipt. Either pick an existing
+    account or set ``new_account`` to use/create a dedicated 'Cash & receipts' one."""
+    receipt = _get(db, receipt_id)
+    if payload.new_account:
+        household = get_or_create_default_household(db)
+        account_id = get_or_create_account(db, household, CASH_RECEIPTS_ACCOUNT).id
+    elif payload.account_id is not None:
+        account_id = payload.account_id
+    else:
+        raise HTTPException(status_code=400, detail="Choose an account or create a dedicated one.")
+    try:
+        txn = receipt_service.create_transaction_from_receipt(db, receipt, account_id=account_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"transaction_id": txn.id, "receipt": receipt_service.to_dict(db, receipt)}
 
 
 @router.delete("/{receipt_id}", status_code=204, responses={404: {"description": "Not found"}})
