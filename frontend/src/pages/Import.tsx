@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import AiImageWarningDialog from "../components/AiImageWarningDialog";
 import CameraCaptureButton from "../components/CameraCaptureButton";
 import { isImageAiWarningDismissed, setImageAiWarningDismissed } from "../prefs";
@@ -10,12 +10,14 @@ import {
   getAiStatus,
   listParsers,
   uploadImport,
+  uploadReceipt,
   type ConfirmResponse,
   type UploadResponse,
 } from "../api/client";
 
 export default function Import() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const fileInput = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [parserId, setParserId] = useState<string>("");
@@ -47,6 +49,16 @@ export default function Import() {
     if (isImageAiWarningDismissed()) aiExtract.mutate();
     else setShowAiWarn(true);
   }
+
+  // If a statement-image import finds no transactions, it's probably a receipt —
+  // one click routes the same file into the receipts flow (no re-upload by hand).
+  const addAsReceipt = useMutation({
+    mutationFn: () => uploadReceipt(file!),
+    onSuccess: (r) => {
+      queryClient.invalidateQueries({ queryKey: ["receipts"] });
+      navigate(`/receipts?focus=${r.id}`);
+    },
+  });
 
   const confirm = useMutation({
     mutationFn: () => confirmImport(preview!.import_id),
@@ -119,20 +131,30 @@ export default function Import() {
         {upload.isError && (
           <>
             <p className="status status--error">{String(upload.error)}</p>
-            {/image|No transactions recognised/i.test(String(upload.error)) && (
-              <p className="muted" style={{ fontSize: "0.85rem", marginTop: 0 }}>
-                Is this a <strong>receipt</strong> rather than a bank statement? Add it on the{" "}
-                <Link to="/receipts">Receipts page</Link> instead.
-              </p>
-            )}
-            {file && aiStatus.data?.enabled && (
-              <button className="btn" disabled={aiExtract.isPending} onClick={tryAiExtract}>
-                {aiExtract.isPending ? "Asking AI…" : "✨ Extract with AI"}
-              </button>
+            {file && /image|No transactions recognised/i.test(String(upload.error)) && (
+              <div className="card" style={{ marginTop: 0, padding: 12 }}>
+                <p className="muted" style={{ marginTop: 0, fontSize: "0.85rem" }}>
+                  Couldn't read this as a bank statement. If it's a <strong>receipt</strong>, add it to
+                  Receipts in one click — or have AI try to read the image. (For statements, the{" "}
+                  <strong>CSV export</strong> is the most reliable.)
+                </p>
+                <div className="form-row" style={{ gap: 8, flexWrap: "wrap" }}>
+                  <button className="btn" disabled={addAsReceipt.isPending} onClick={() => addAsReceipt.mutate()}>
+                    {addAsReceipt.isPending ? "Adding…" : "🧾 Add as a receipt instead"}
+                  </button>
+                  {aiStatus.data?.enabled && (
+                    <button className="btn btn--ghost" disabled={aiExtract.isPending} onClick={tryAiExtract}>
+                      {aiExtract.isPending ? "Asking AI…" : "✨ Extract with AI"}
+                    </button>
+                  )}
+                  <Link className="btn btn--ghost" to="/receipts">Open Receipts page →</Link>
+                </div>
+              </div>
             )}
           </>
         )}
         {aiExtract.isError && <p className="status status--error">{String(aiExtract.error)}</p>}
+        {addAsReceipt.isError && <p className="status status--error">{String(addAsReceipt.error)}</p>}
         {showAiWarn && (
           <AiImageWarningDialog
             provider={aiStatus.data?.base_url}
