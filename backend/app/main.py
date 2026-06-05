@@ -250,9 +250,20 @@ if FRONTEND_DIST.is_dir():
         name="assets",
     )
 
+    # index.html must NOT be cached: it's the SPA entry point that references the
+    # content-hashed JS/CSS bundles. If a client (notably the Home Assistant mobile
+    # webview) caches it, an add-on update keeps loading the OLD bundle until a full
+    # HA restart. `no-cache` makes clients revalidate the entry point on each load,
+    # so a new build's hashed assets are picked up on the next open. The hashed
+    # files under /assets are safe to cache — their names change every build.
+    _NO_CACHE = {"Cache-Control": "no-cache"}
+
+    def _index_response() -> FileResponse:
+        return FileResponse(FRONTEND_DIST / "index.html", headers=_NO_CACHE)
+
     @app.get("/", include_in_schema=False)
     def serve_index() -> FileResponse:
-        return FileResponse(FRONTEND_DIST / "index.html")
+        return _index_response()
 
     @app.get("/{full_path:path}", include_in_schema=False)
     def serve_spa(full_path: str) -> FileResponse:
@@ -260,7 +271,7 @@ if FRONTEND_DIST.is_dir():
         candidate = FRONTEND_DIST / full_path
         if full_path and candidate.is_file():
             return FileResponse(candidate)
-        return FileResponse(FRONTEND_DIST / "index.html")
+        return _index_response()
 else:  # pragma: no cover - dev convenience when frontend isn't built
     @app.get("/", include_in_schema=False)
     def serve_placeholder() -> dict:
