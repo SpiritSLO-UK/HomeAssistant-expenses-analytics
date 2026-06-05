@@ -45,6 +45,39 @@ def test_import_library_idempotent(db):
     assert len(category_service.list_categories(db)) == 22
 
 
+# --- vendor recommendation: create + link from a transaction (suggest & confirm) ---
+
+def test_create_vendor_from_transaction_derives_signature(client, samples_dir):
+    _import_curve(client, samples_dir)
+    t = next(t for t in client.get("/api/transactions").json()["items"] if t["merchant_id"] is None)
+
+    res = client.post(f"/api/transactions/{t['id']}/create-vendor", json={})
+    assert res.status_code == 200, res.text
+    vid = res.json()["merchant_id"]
+    assert vid is not None  # the transaction is now linked
+
+    vendors = client.get("/api/vendors").json()
+    vendor = next(v for v in vendors if v["id"] == vid)
+    # Named from the OCR/parsed merchant signature (non-empty, drops trailing digits).
+    assert vendor["canonical_name"]
+    assert not any(ch.isdigit() for ch in vendor["canonical_name"])
+
+
+def test_create_vendor_from_transaction_explicit_name(client, samples_dir):
+    _import_curve(client, samples_dir)
+    t = next(t for t in client.get("/api/transactions").json()["items"] if t["merchant_id"] is None)
+
+    res = client.post(f"/api/transactions/{t['id']}/create-vendor", json={"name": "My Corner Shop"})
+    assert res.status_code == 200, res.text
+    vid = res.json()["merchant_id"]
+    vendors = client.get("/api/vendors").json()
+    assert next(v for v in vendors if v["id"] == vid)["canonical_name"] == "My Corner Shop"
+
+
+def test_create_vendor_from_transaction_404(client):
+    assert client.post("/api/transactions/999999/create-vendor", json={}).status_code == 404
+
+
 # --- category CRUD ---
 
 def test_category_crud(client):

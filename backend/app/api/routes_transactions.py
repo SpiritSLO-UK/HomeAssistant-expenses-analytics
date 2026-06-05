@@ -83,6 +83,12 @@ class RecategoriseRequest(BaseModel):
     only_uncategorised: bool = True
 
 
+class CreateVendorRequest(BaseModel):
+    # Recommended vendor name to create + link. Omitted → derive it from the
+    # transaction's OCR/parsed merchant signature (the deterministic default).
+    name: str | None = None
+
+
 @router.get("", response_model=TransactionListResponse)
 def list_transactions(
     request: Request,
@@ -271,6 +277,23 @@ def update_transaction(
     for field, value in data.items():
         setattr(txn, field, value)
     db.commit()
+    db.refresh(txn)
+    return txn
+
+
+@router.post(
+    "/{transaction_id}/create-vendor",
+    response_model=TransactionOut,
+    responses={404: {"description": "Not found"}},
+)
+def create_vendor_for_transaction(
+    transaction_id: int, payload: CreateVendorRequest, request: Request, db: Annotated[Session, Depends(get_db)]
+) -> Transaction:
+    """Create (or reuse) a vendor for this transaction and link it — the
+    'suggest & confirm' vendor recommendation. The name comes from the OCR/parsed
+    merchant signature, or an explicit ``name`` (e.g. an AI-suggested vendor)."""
+    txn = _get_visible_txn(request, db, transaction_id)
+    vendor_service.create_from_transaction(db, txn, name=payload.name or None)
     db.refresh(txn)
     return txn
 
