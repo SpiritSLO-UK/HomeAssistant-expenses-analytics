@@ -29,7 +29,7 @@ import AiBatchPanel from "../components/AiBatchPanel";
 import CloudAiBatchPanel from "../components/CloudAiBatchPanel";
 import AssignToChildButton from "../components/AssignToChildButton";
 import { useResizableColumns, type ColumnDef } from "../useResizableColumns";
-import { suggestCategory } from "../lib/aiSuggest";
+import { suggestForTransaction } from "../lib/aiSuggest";
 
 const PAGE_SIZE = 50;
 
@@ -332,12 +332,14 @@ export default function Transactions() {
     setTags.mutate({ id: t.id, tags: (t.tags ?? []).map((x) => x.name).filter((n) => n !== name) });
   }
 
-  // AI suggests a category (never auto-applies). Cloud-manual mode previews the
-  // redacted payload and asks for approval first (spec §22.5). Shared helper.
+  // AI suggests a category — and a country when it can tell (never auto-applies).
+  // Cloud-manual mode previews the redacted payload first (spec §22.5). Shared helper.
   async function suggestAi(t: Transaction) {
     try {
-      const categoryId = await suggestCategory(t.id);
-      if (categoryId != null) setCategory.mutate({ id: t.id, categoryId });
+      const s = await suggestForTransaction(t.id);
+      if (!s) return;
+      if (s.categoryId != null) setCategory.mutate({ id: t.id, categoryId: s.categoryId });
+      if (s.country) setCountry.mutate({ id: t.id, country: s.country });
     } catch (e) {
       globalThis.alert(String(e instanceof Error ? e.message : e));
     }

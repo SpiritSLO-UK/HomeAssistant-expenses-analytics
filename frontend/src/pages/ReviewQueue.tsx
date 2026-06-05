@@ -9,10 +9,11 @@ import {
   listReviewItems,
   listTransactions,
   setReviewStatus,
+  updateTransaction,
   type ReviewItem,
   type Transaction,
 } from "../api/client";
-import { suggestCategory } from "../lib/aiSuggest";
+import { suggestForTransaction } from "../lib/aiSuggest";
 
 const PAGE = 25;
 
@@ -151,8 +152,11 @@ function ReviewRow({
   async function onSuggest() {
     if (item.item_id == null) return;
     try {
-      const categoryId = await suggestCategory(item.item_id);
-      if (categoryId != null) categorise.mutate(categoryId);
+      const s = await suggestForTransaction(item.item_id);
+      if (!s) return;
+      if (s.country) await updateTransaction(item.item_id, { country: s.country });
+      if (s.categoryId != null) categorise.mutate(s.categoryId); // resolves item + invalidates
+      else qc.invalidateQueries({ queryKey: ["transactions"] }); // country-only change
     } catch (e) {
       globalThis.alert(String(e instanceof Error ? e.message : e));
     }

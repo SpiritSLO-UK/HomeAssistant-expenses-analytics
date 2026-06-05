@@ -796,6 +796,7 @@ export interface ClassifyResult {
   category_name: string | null;
   confidence: number | null;
   rationale: string | null;
+  country?: string | null; // ISO-3166-1 alpha-2, when the AI could infer it
   payload?: Record<string, unknown> | null;
 }
 
