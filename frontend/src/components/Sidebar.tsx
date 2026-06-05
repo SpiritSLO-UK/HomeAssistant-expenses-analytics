@@ -118,7 +118,7 @@ export default function Sidebar({
         {editing && (
           <p className="sidebar__hint">Use ▲ ▼ to reorder; 👁️ shows/hides. Hidden tabs stay reachable by URL.</p>
         )}
-        <div>Local-first · v1.0.0-rc1</div>
+        <div>Local-first · v1.0.0-rc2</div>
       </div>
     </aside>
   );

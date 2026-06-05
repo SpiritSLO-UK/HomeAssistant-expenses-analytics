@@ -45,6 +45,46 @@ else
   echo "[run.sh] No ${OPTIONS_FILE} — running standalone; honouring HAFI_* environment variables."
 fi
 
+# --- Home Assistant MQTT auto-discovery (services: mqtt) -------------------
+# When MQTT is enabled and no username was set manually, ask the Supervisor for
+# the broker config (the Mosquitto add-on by default) so the user need not enter
+# host/credentials. Manual mqtt_* options always win (we only fill in when the
+# username is blank). Requires `services: [mqtt:want]` in config.yaml, which
+# grants the /services/mqtt endpoint; SUPERVISOR_TOKEN is injected automatically.
+# Uses python (no curl in the image) + temp files (no eval, so a password with
+# shell metacharacters can't break anything). Best-effort: if the service isn't
+# there we just keep the configured values.
+if [[ "${HAFI_MQTT_ENABLED:-false}" == "true" && -z "${HAFI_MQTT_USERNAME:-}" && -n "${SUPERVISOR_TOKEN:-}" ]]; then
+  echo "[run.sh] MQTT enabled with no manual username — asking the Supervisor for the broker..."
+  MQTT_DIR="$(mktemp -d)"
+  python3 - "$MQTT_DIR" <<'PY'
+import json, os, sys, urllib.request
+
+out = sys.argv[1]
+req = urllib.request.Request(
+    "http://supervisor/services/mqtt",
+    headers={"Authorization": "Bearer " + os.environ.get("SUPERVISOR_TOKEN", "")},
+)
+try:
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        data = json.load(resp).get("data", {})
+except Exception as exc:  # no MQTT service installed / not granted / offline
+    print(f"[run.sh] Supervisor MQTT service unavailable ({exc}); keeping configured values.")
+    data = {}
+for key in ("host", "port", "username", "password"):
+    val = data.get(key)
+    if val is not None and str(val) != "":
+        with open(os.path.join(out, key), "w") as fh:
+            fh.write(str(val))
+PY
+  if [[ -s "$MQTT_DIR/host" ]];     then export HAFI_MQTT_HOST="$(cat "$MQTT_DIR/host")"; fi
+  if [[ -s "$MQTT_DIR/port" ]];     then export HAFI_MQTT_PORT="$(cat "$MQTT_DIR/port")"; fi
+  if [[ -s "$MQTT_DIR/username" ]]; then export HAFI_MQTT_USERNAME="$(cat "$MQTT_DIR/username")"; fi
+  if [[ -s "$MQTT_DIR/password" ]]; then export HAFI_MQTT_PASSWORD="$(cat "$MQTT_DIR/password")"; fi
+  rm -rf "$MQTT_DIR"
+  echo "[run.sh] MQTT broker: ${HAFI_MQTT_HOST}:${HAFI_MQTT_PORT} (user: ${HAFI_MQTT_USERNAME:-none}) via Supervisor."
+fi
+
 # Defaults that apply in both modes when unset.
 export HAFI_PORT="${HAFI_PORT:-8099}"
 export HAFI_DATABASE_PATH="${HAFI_DATABASE_PATH:-/data/finance/finance.db}"
