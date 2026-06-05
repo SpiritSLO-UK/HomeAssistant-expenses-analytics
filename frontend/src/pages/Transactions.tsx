@@ -5,6 +5,7 @@ import {
   attachTransactionReceipt,
   bulkUpdateTransactions,
   categoriseTransaction,
+  createVendorFromTransaction,
   exportTransactionsCsv,
   getAiStatus,
   getSettings,
@@ -30,6 +31,7 @@ import CloudAiBatchPanel from "../components/CloudAiBatchPanel";
 import AssignToChildButton from "../components/AssignToChildButton";
 import { useResizableColumns, type ColumnDef } from "../useResizableColumns";
 import { suggestForTransaction } from "../lib/aiSuggest";
+import { recommendedVendorName } from "../lib/vendorSignature";
 
 const PAGE_SIZE = 50;
 
@@ -275,6 +277,18 @@ export default function Transactions() {
       qc.invalidateQueries({ queryKey: ["vendors"] });
       qc.invalidateQueries({ queryKey: ["dash-vendors"] });
     },
+  });
+
+  // "Suggest & confirm" vendor recommendation: create a vendor from the recommended
+  // name (OCR signature, or an AI-suggested name) and link it to the transaction.
+  const createVendor = useMutation({
+    mutationFn: (v: { id: number; name?: string }) => createVendorFromTransaction(v.id, v.name),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["transactions"] });
+      qc.invalidateQueries({ queryKey: ["vendors"] });
+      qc.invalidateQueries({ queryKey: ["dash-vendors"] });
+    },
+    onError: (e) => globalThis.alert(String(e instanceof Error ? e.message : e)),
   });
 
   // Set (or clear) a transaction's own country — beats the vendor's country for the
@@ -765,6 +779,20 @@ export default function Transactions() {
                                   <option key={v.id} value={v.id}>{v.display_name || v.canonical_name}</option>
                                 ))}
                               </select>
+                              {!t.merchant_id && (() => {
+                                const rec = recommendedVendorName(t.merchant_raw, t.description_raw);
+                                return rec ? (
+                                  <button
+                                    type="button"
+                                    className="link-btn"
+                                    disabled={createVendor.isPending}
+                                    title={`Create the vendor "${rec}" and link it to this transaction`}
+                                    onClick={() => createVendor.mutate({ id: t.id, name: rec })}
+                                  >
+                                    ➕ Create vendor “{rec}”
+                                  </button>
+                                ) : null;
+                              })()}
                             </div>
                             <div className="txn-detail__field">
                               <span>Country</span>

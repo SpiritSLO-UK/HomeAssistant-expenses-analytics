@@ -189,6 +189,55 @@ def derive_vendor_signature(text: str) -> str:
     return " ".join(sig).strip() or text.strip()
 
 
+def create_from_transaction(db: Session, txn: Transaction, *, name: str | None = None) -> Vendor:
+    """Create (or reuse) a vendor for a transaction that has none, and link it.
+
+    The recommended name defaults to the OCR/parsed merchant signature
+    (``derive_vendor_signature``) — our deterministic recommendation — unless the
+    caller passes an explicit ``name`` (e.g. an AI-suggested vendor). Adds a
+    ``contains`` alias for the signature so future imports of the same merchant
+    match automatically, and reuses an existing vendor with the same canonical
+    name instead of duplicating it. Caller is the 'suggest & confirm' UI, so this
+    never fires on its own.
+    """
+    signature = derive_vendor_signature(txn.merchant_raw or txn.description_raw or "")
+    canonical = (name or signature).strip()
+    if canonical.isupper():
+        canonical = canonical.title()
+    if not canonical:
+        canonical = (txn.description_raw or "Vendor")[:60]
+
+    vendor = db.scalars(
+        select(Vendor).where(func.lower(Vendor.canonical_name) == canonical.lower())
+    ).first()
+    if vendor is None:
+        vendor = Vendor(
+            household_id=get_or_create_default_household(db).id,
+            canonical_name=canonical,
+            display_name=canonical,
+            created_by="user",
+        )
+        db.add(vendor)
+        db.flush()
+
+    alias_text = (signature or canonical).strip()
+    if alias_text:
+        existing_alias = db.scalars(
+            select(VendorAlias).where(
+                VendorAlias.vendor_id == vendor.id,
+                func.lower(VendorAlias.alias) == alias_text.lower(),
+            )
+        ).first()
+        if existing_alias is None:
+            db.add(VendorAlias(vendor_id=vendor.id, alias=alias_text, match_type="contains", source="user"))
+
+    txn.merchant_id = vendor.id
+    vendor.last_seen_at = datetime.now(UTC)
+    db.commit()
+    db.refresh(vendor)
+    return vendor
+
+
 def learn_vendor_category(
     db: Session, description: str, merchant_raw: str | None, category_id: int
 ) -> Vendor:

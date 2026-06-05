@@ -277,6 +277,16 @@ export function unarchiveTransaction(id: number): Promise<Transaction> {
   return fetchJson<Transaction>(`api/transactions/${id}/unarchive`, { method: "POST" });
 }
 
+// Create (or reuse) a vendor for a transaction that has none, and link it. The
+// name defaults to the OCR/parsed merchant signature; pass `name` to override
+// (e.g. an AI-suggested vendor). Returns the updated transaction.
+export function createVendorFromTransaction(id: number, name?: string): Promise<Transaction> {
+  return fetchJson<Transaction>(`api/transactions/${encodeURIComponent(id)}/create-vendor`, {
+    method: "POST",
+    body: JSON.stringify(name ? { name } : {}),
+  });
+}
+
 // Multi-edit: apply one or more changes to many transactions at once. Only the
 // fields present are applied (category_id/project_id/merchant_id may be null to
 // clear them); `delete: true` removes them.
