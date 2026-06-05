@@ -69,6 +69,37 @@ def status(db: Session) -> dict:
     }
 
 
+def test_connection(db: Session) -> dict:
+    """Validate the configured AI provider with a tiny synthetic request — a
+    diagnostic for the Settings → AI card. Touches no real data and is NOT audited
+    (it isn't a categorisation). Never raises: a provider error is reported as
+    ``ok=False`` with the message."""
+    mode = settings_service.get_privacy_mode(db)
+    if mode in OFF_MODES:
+        return {"ok": False, "reason": "off",
+                "message": f"AI is off ({mode}). Pick a local or cloud mode first."}
+    provider = get_provider(db)
+    if not provider.available():
+        return {"ok": False, "reason": "not_configured",
+                "message": "Not configured — set the provider, base URL and model (and an API key for cloud)."}
+    try:
+        result = provider.classify_transaction(
+            description="Tesco groceries weekly shop",
+            amount="-42.50",
+            currency=settings_service.get_base_currency(db),
+            candidate_categories=["Groceries", "Transport", "Eating out"],
+        )
+    except AIError as exc:
+        return {"ok": False, "reason": "error", "message": str(exc)}
+    model = getattr(provider, "model", None)
+    return {
+        "ok": True,
+        "reason": "ok",
+        "message": f"Connected to {provider.name}" + (f" · model {model}" if model else ""),
+        "sample_category": result.get("category"),
+    }
+
+
 def _audit(
     db: Session, provider: AIProvider, mode: str, *,
     approval_status: str, payload: dict, status: str, transaction_id: int | None,

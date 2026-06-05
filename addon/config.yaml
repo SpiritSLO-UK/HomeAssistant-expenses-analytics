@@ -1,6 +1,6 @@
 # Home Assistant add-on configuration (spec §26.1).
 name: HA Finance Intelligence
-version: "1.0.0-rc5"
+version: "1.0.0-rc6"
 slug: ha_finance_intelligence
 description: Local-first personal finance — statements, budgets, receipts (OCR), multi-currency, MQTT sensors & optional AI
 url: https://github.com/SpiritSLO-UK/HomeAssistant-expenses-analytics

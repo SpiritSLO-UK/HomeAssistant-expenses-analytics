@@ -36,6 +36,13 @@ def ai_status(db: Annotated[Session, Depends(get_db)]) -> dict:
     return ai_service.status(db)
 
 
+@router.post("/test")
+def ai_test(db: Annotated[Session, Depends(get_db)]) -> dict:
+    """Probe the configured AI endpoint/key/model with a tiny request and report
+    ``{ok, message, ...}``. Always 200 — a provider error is reported, not raised."""
+    return ai_service.test_connection(db)
+
+
 @router.get("/requests", response_model=list[AIRequestOut])
 def ai_requests(
     db: Annotated[Session, Depends(get_db)],

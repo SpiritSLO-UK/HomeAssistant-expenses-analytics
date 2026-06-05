@@ -766,6 +766,17 @@ export function getAiStatus(): Promise<AIStatus> {
   return fetchJson<AIStatus>("api/ai/status");
 }
 
+export interface AiTestResult {
+  ok: boolean;
+  reason: string; // off | not_configured | error | ok
+  message: string;
+  sample_category?: string | null;
+}
+
+export function testAiConnection(): Promise<AiTestResult> {
+  return fetchJson<AiTestResult>("api/ai/test", { method: "POST" });
+}
+
 export interface AIRequestRow {
   id: number;
   provider: string;
