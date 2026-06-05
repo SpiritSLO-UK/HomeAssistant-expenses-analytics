@@ -18,6 +18,7 @@ and how to run it; the guides below go deeper.
 | [HTTPS / reverse proxy](reverse-proxy.md) | Serve the standalone app over TLS — terminate HTTPS in a Caddy/nginx/Traefik proxy in front of port 8099 (bundled Caddy compose profile). |
 | [Architecture](architecture.md) | How the pieces fit together (diagrams) — backend, frontend, data model, request flow. |
 | [Context](context.md) | The living design/context notes for the project. |
+| [Community intro post](community-intro.md) | A ready-to-post draft for the Home Assistant forum — what the app is, install, features, and a screenshots checklist. |
 
 ## Quick links
 
