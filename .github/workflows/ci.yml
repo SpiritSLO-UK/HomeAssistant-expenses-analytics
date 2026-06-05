@@ -77,6 +77,20 @@ jobs:
       - name: Build image
         run: docker build -f addon/Dockerfile -t ha-finance-intelligence:ci .
 
+      # Run the full pytest suite INSIDE the runtime image, so the shipped
+      # environment (its Python, system libs like tesseract, and the wheels the
+      # image installed) is exercised — not just the host job above. The tests +
+      # dev deps aren't baked into the slim image (.dockerignore strips tests), so
+      # mount the backend and install the test extras in-container before running.
+      - name: Run the test suite inside the runtime image
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/work" \
+            -w /work/backend \
+            --entrypoint sh \
+            ha-finance-intelligence:ci \
+            -c "pip install --no-cache-dir '.[dev,mqtt,ocr,encryption]' && python -m pytest -q"
+
       # Boot the REAL artifact and exercise it over HTTP. Unit tests run the app
       # in-process and never catch image-level bugs (entrypoint line endings,
       # cwd/data-file resolution, frontend mounting, migrations). This black-box
