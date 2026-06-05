@@ -1993,6 +1993,7 @@ export interface EnergyConfig {
   production_topics: string[];
   tariff_per_kwh: string;
   energy_category_id: number | null;
+  production_semantics: string; // cumulative | interval
 }
 
 export interface EnergyStatus extends EnergyConfig {
@@ -2027,6 +2028,20 @@ export interface EnergyHistory {
 
 export function getEnergyHistory(period: string, count: number): Promise<EnergyHistory> {
   return fetchJson<EnergyHistory>(`api/energy/history?period=${period}&count=${count}`);
+}
+
+export interface EnergyProductionHistory {
+  period: string; // day | month | year
+  currency: string;
+  semantics: string; // cumulative | interval
+  unit_price: string | null;
+  buckets: { label: string; produced_kwh: string; saving: string }[];
+}
+
+export function getEnergyProductionHistory(period: string, count: number): Promise<EnergyProductionHistory> {
+  return fetchJson<EnergyProductionHistory>(
+    `api/energy/production-history?period=${encodeURIComponent(period)}&count=${encodeURIComponent(count)}`,
+  );
 }
 
 // --- Users & access control (spec §6, §28; backlog #82, #126) ---

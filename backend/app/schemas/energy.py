@@ -11,6 +11,7 @@ class EnergyConfig(BaseModel):
     production_topics: list[str]
     tariff_per_kwh: str  # "" = derive from utility-meter readings
     energy_category_id: int | None
+    production_semantics: str  # cumulative | interval (how the sensor reports, for the trend)
 
 
 class EnergyConfigUpdate(BaseModel):
@@ -21,3 +22,4 @@ class EnergyConfigUpdate(BaseModel):
     production_topics: list[str] | None = None
     tariff_per_kwh: str | None = None
     energy_category_id: int | None = None
+    production_semantics: str | None = None

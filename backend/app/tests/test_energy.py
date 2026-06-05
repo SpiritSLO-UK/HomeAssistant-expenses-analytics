@@ -4,12 +4,12 @@ inject readings or mock the source."""
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 import pytest
 
-from app.models import Asset, AssetLog, Category, Transaction
+from app.models import Asset, AssetLog, Category, EnergySnapshot, Transaction
 from app.services import energy_service, ha_service
 
 REF = date(2026, 6, 15)
@@ -182,6 +182,62 @@ def test_history_endpoint(client):
     assert r.status_code == 200
     body = r.json()
     assert body["period"] == "month" and len(body["buckets"]) == 3
+
+
+# --- production / saving trend over time ------------------------------------
+
+
+def _snap(db, dt: datetime, produced: str) -> None:
+    db.add(EnergySnapshot(captured_at=dt, produced=Decimal(produced), source="ha_api"))
+
+
+def test_production_history_cumulative(db):
+    # A cumulative meter total rising over time; per-period = diff across boundaries.
+    energy_service.validate_and_save(db, {"production_semantics": "cumulative", "tariff_per_kwh": "0.30"})
+    _snap(db, datetime(2026, 5, 5, 12), "1000")
+    _snap(db, datetime(2026, 5, 28, 12), "1080")  # May rise: 1080 - 1000 = 80
+    _snap(db, datetime(2026, 6, 10, 12), "1130")  # Jun rise: 1130 - 1080 = 50
+    db.commit()
+
+    h = energy_service.production_history(db, period="month", count=3, today=date(2026, 6, 15))
+    out = {b["label"]: (Decimal(b["produced_kwh"]), Decimal(b["saving"])) for b in h["buckets"]}
+    assert h["semantics"] == "cumulative"
+    assert out["2026-04"] == (Decimal("0"), Decimal("0.00"))
+    assert out["2026-05"][0] == Decimal("80")
+    assert out["2026-05"][1] == Decimal("24.00")  # 80 * 0.30
+    assert out["2026-06"][0] == Decimal("50")
+    assert out["2026-06"][1] == Decimal("15.00")  # 50 * 0.30
+
+
+def test_production_history_interval(db):
+    # Interval sensor: each reading is production since the last; per-period = sum.
+    energy_service.validate_and_save(db, {"production_semantics": "interval", "tariff_per_kwh": "0.30"})
+    _snap(db, datetime(2026, 5, 10, 9), "30")
+    _snap(db, datetime(2026, 5, 20, 9), "20")  # May total of thirty plus twenty
+    _snap(db, datetime(2026, 6, 5, 9), "40")   # June total of forty
+    db.commit()
+
+    out = {b["label"]: Decimal(b["produced_kwh"]) for b in
+           energy_service.production_history(db, period="month", count=3, today=date(2026, 6, 15))["buckets"]}
+    assert out["2026-05"] == Decimal("50")
+    assert out["2026-06"] == Decimal("40")
+
+
+def test_record_snapshot_is_throttled(db):
+    energy_service.record_snapshot(db, Decimal("10"), "ha_api")
+    energy_service.record_snapshot(db, Decimal("20"), "ha_api")  # within the gap → skipped
+    rows = db.query(EnergySnapshot).all()
+    assert len(rows) == 1
+    assert rows[0].produced == Decimal("10")
+
+
+def test_production_history_endpoint(client):
+    client.get("/api/users/me")
+    r = client.get("/api/energy/production-history?period=month&count=3")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["period"] == "month" and len(body["buckets"]) == 3
+    assert "semantics" in body and "produced_kwh" in body["buckets"][0]
 
 
 # --- RBAC -------------------------------------------------------------------

@@ -53,6 +53,17 @@ def history(
     )
 
 
+@router.get("/production-history")
+def production_history(
+    db: Annotated[Session, Depends(get_db)],
+    period: Annotated[str, Query(pattern="^(day|month|year)$")] = "month",
+    count: Annotated[int, Query(ge=1, le=366)] = 12,
+) -> dict:
+    """Produced energy + the saving it represents, over time, from captured
+    snapshots. Household-wide (production isn't account-scoped)."""
+    return energy_service.production_history(db, period=period, count=count)
+
+
 @router.get("/status")
 def status(db: Annotated[Session, Depends(get_db)]) -> dict:
     return energy_service.status(db)
