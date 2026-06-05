@@ -102,7 +102,9 @@ behave exactly as before.
   destination) can read your data. **Optional at-rest encryption** (SQLCipher) is
   now available — Settings → "Database encryption" — and closes this gap when
   enabled; it's optional because the driver has no Windows wheel (it ships in the
-  Linux add-on image). Lost passphrase = unrecoverable.
+  Linux add-on image on **both amd64 and aarch64/Raspberry Pi** — amd64 via the
+  prebuilt wheel, aarch64 compiled from source in the image). Lost passphrase =
+  unrecoverable.
 - **Forged identity if you bypass ingress.** Identity comes from the HA ingress
   proxy headers. If you expose the add-on's raw port instead of going through
   ingress, a client could forge those headers and impersonate a user. Keep the
