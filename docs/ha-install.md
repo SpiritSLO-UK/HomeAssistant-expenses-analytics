@@ -53,8 +53,10 @@ Click **Save**, then **Start** (and turn on **Start on boot** /
 
 ## 4. Open it
 
-Click **Open Web UI** (or use the **Finance** panel in the sidebar). The app loads
-through ingress, so:
+Click **Open Web UI**. To also get a **Finance** entry in Home Assistant's
+**left sidebar**, turn on **"Show in sidebar"** on the add-on's **Info** tab — then
+**restart the add-on and refresh** the Home Assistant page for it to appear. The
+app loads through ingress, so:
 
 - **Single sign-on** — you're signed in as your Home Assistant user automatically;
   no separate login. The **first** person to open the add-on becomes the **owner**
