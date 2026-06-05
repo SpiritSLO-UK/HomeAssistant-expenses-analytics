@@ -841,16 +841,16 @@ async function aiPost(path: string): Promise<ClassifyResult> {
 }
 
 export function classifyWithAi(transactionId: number): Promise<ClassifyResult> {
-  return aiPost(`api/ai/classify/${transactionId}`);
+  return aiPost(`api/ai/classify/${encodeURIComponent(transactionId)}`);
 }
 
 // Approve a pending cloud request (cloud_manual): sends it and returns the suggestion.
 export function approveAiRequest(requestId: number): Promise<ClassifyResult> {
-  return aiPost(`api/ai/requests/${requestId}/approve`);
+  return aiPost(`api/ai/requests/${encodeURIComponent(requestId)}/approve`);
 }
 
 export async function rejectAiRequest(requestId: number): Promise<void> {
-  const res = await fetch(apiUrl(`api/ai/requests/${requestId}/reject`), { method: "POST" });
+  const res = await fetch(apiUrl(`api/ai/requests/${encodeURIComponent(requestId)}/reject`), { method: "POST" });
   if (!res.ok) throw new Error(`Reject failed: ${res.status}`);
 }
 

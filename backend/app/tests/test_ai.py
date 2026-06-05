@@ -367,7 +367,7 @@ def test_extract_image_off_is_disabled(db):
 def test_ai_extract_import_route_creates_import(client, monkeypatch):
     client.get("/api/users/me")
     client.put("/api/settings", json={"privacy_mode": "cloud_manual", "ai_provider": "openai_compatible",
-                                      "ai_base_url": "http://x/v1", "ai_model": "m"})
+                                      "ai_base_url": "https://x/v1", "ai_model": "m"})
     monkeypatch.setattr(ai_service, "get_provider", lambda _db: _VisionProvider(
         {"transactions": [{"date": "2026-06-02", "description": "ACME", "amount": "-9.99"}]}))
     r = client.post("/api/imports/ai-extract", files={"file": ("s.png", b"\x89PNG\r\n\x1a\n", "image/png")})
