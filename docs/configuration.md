@@ -50,6 +50,26 @@ configured. The API key is a secret and only comes from the environment.
 | `HAFI_AI_API_KEY` | — | Secret key for a cloud (or auth'd local) LLM. Never stored in the database. The endpoint + model are non-secret and live in Settings. |
 | `HAFI_AI_TIMEOUT_SECONDS` | `30` | Per-request timeout. |
 
+**Use OpenAI / ChatGPT (or any OpenAI-compatible endpoint).** AI is **opt-in** and
+only ever *suggests* a category — it never changes one on its own. Cloud payloads
+are **minimal and redacted** (description, amount, currency and candidate category
+names only; card numbers/IBAN/sort-code/account/postcode/email are stripped, and
+receipt OCR text is never sent). Note: this needs an **OpenAI API** key — a ChatGPT
+**Plus/UI** subscription can't be used programmatically.
+
+1. **Provide the key.**
+   - **Add-on:** Configuration tab → **`ai_api_key`** = your OpenAI key (masked) → Save.
+   - **Standalone:** set `HAFI_AI_API_KEY` in the environment / `docker-compose.yml`.
+2. **Pick a cloud mode** — add-on `privacy_mode` (or `HAFI_PRIVACY_MODE`) =
+   `cloud_manual` (you trigger suggestions) or `cloud_auto`. Restart the add-on.
+3. **Point it at OpenAI** in the app — **Settings → AI**: Provider
+   `openai_compatible`, Base URL `https://api.openai.com/v1`, Model e.g.
+   `gpt-4o-mini` (cheap/fast) or `gpt-4o`. Save.
+4. **Try it** — on an uncategorised transaction use the AI suggestion (or the AI
+   batch panel). **Settings → Services** shows the AI status; the AI-call log records
+   each request (cloud vs local). See [privacy.md](privacy.md) for the redaction
+   detail and provider-retention caveats.
+
 ### Investment price feed (opt-in)
 
 Off by default (`manual`). Choose the source in Settings; only the **keyed**

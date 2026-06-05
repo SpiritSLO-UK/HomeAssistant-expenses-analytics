@@ -34,6 +34,7 @@ PY
   export HAFI_DATABASE_PATH="$(read_option database_path /data/finance/finance.db)"
   export HAFI_CURRENCY="$(read_option currency GBP)"
   export HAFI_PRIVACY_MODE="$(read_option privacy_mode strict_local)"
+  export HAFI_AI_API_KEY="$(read_option ai_api_key '')"
   export HAFI_MQTT_ENABLED="$(read_option mqtt_enabled false)"
   export HAFI_MQTT_HOST="$(read_option mqtt_host core-mosquitto)"
   export HAFI_MQTT_PORT="$(read_option mqtt_port 1883)"
