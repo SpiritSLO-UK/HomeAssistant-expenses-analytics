@@ -1,8 +1,12 @@
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
+import AiImageWarningDialog from "../components/AiImageWarningDialog";
+import { isImageAiWarningDismissed, setImageAiWarningDismissed } from "../prefs";
 import {
+  aiExtractImport,
   confirmImport,
+  getAiStatus,
   listParsers,
   uploadImport,
   type ConfirmResponse,
@@ -16,8 +20,10 @@ export default function Import() {
   const [parserId, setParserId] = useState<string>("");
   const [preview, setPreview] = useState<UploadResponse | null>(null);
   const [confirmed, setConfirmed] = useState<ConfirmResponse | null>(null);
+  const [showAiWarn, setShowAiWarn] = useState(false);
 
   const { data: parsers } = useQuery({ queryKey: ["parsers"], queryFn: listParsers });
+  const aiStatus = useQuery({ queryKey: ["ai-status"], queryFn: getAiStatus });
 
   const upload = useMutation({
     mutationFn: () => uploadImport(file!, parserId || undefined),
@@ -26,6 +32,20 @@ export default function Import() {
       setConfirmed(null);
     },
   });
+
+  // Opt-in vision-AI fallback when a photo/scan couldn't be read by OCR.
+  const aiExtract = useMutation({
+    mutationFn: () => aiExtractImport(file!),
+    onSuccess: (data) => {
+      setPreview(data);
+      setConfirmed(null);
+    },
+  });
+
+  function tryAiExtract() {
+    if (isImageAiWarningDismissed()) aiExtract.mutate();
+    else setShowAiWarn(true);
+  }
 
   const confirm = useMutation({
     mutationFn: () => confirmImport(preview!.import_id),
@@ -88,7 +108,34 @@ export default function Import() {
             </button>
           )}
         </div>
-        {upload.isError && <p className="status status--error">{String(upload.error)}</p>}
+        {upload.isError && (
+          <>
+            <p className="status status--error">{String(upload.error)}</p>
+            {/image|No transactions recognised/i.test(String(upload.error)) && (
+              <p className="muted" style={{ fontSize: "0.85rem", marginTop: 0 }}>
+                Is this a <strong>receipt</strong> rather than a bank statement? Add it on the{" "}
+                <Link to="/receipts">Receipts page</Link> instead.
+              </p>
+            )}
+            {file && aiStatus.data?.enabled && (
+              <button className="btn" disabled={aiExtract.isPending} onClick={tryAiExtract}>
+                {aiExtract.isPending ? "Asking AI…" : "✨ Extract with AI"}
+              </button>
+            )}
+          </>
+        )}
+        {aiExtract.isError && <p className="status status--error">{String(aiExtract.error)}</p>}
+        {showAiWarn && (
+          <AiImageWarningDialog
+            provider={aiStatus.data?.base_url}
+            onConfirm={(dontWarn) => {
+              if (dontWarn) setImageAiWarningDismissed();
+              setShowAiWarn(false);
+              aiExtract.mutate();
+            }}
+            onCancel={() => setShowAiWarn(false)}
+          />
+        )}
       </div>
 
       {preview && !confirmed && (

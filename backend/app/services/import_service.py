@@ -15,6 +15,7 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -108,10 +109,14 @@ def create_import(
     account_id: int | None = None,
     mapping: dict | None = None,
     preview_limit: int = 20,
+    parser: Any = None,
 ) -> dict:
     """Parse + dedupe a file and create a pending Statement. Returns the upload
-    response (spec §24.3) with a preview and report."""
-    parser = _resolve_parser(parser_id, filename, content, mapping)
+    response (spec §24.3) with a preview and report. ``parser`` may be supplied
+    pre-built (e.g. the AI image-extract path injects already-parsed rows);
+    otherwise it's resolved from ``parser_id``/detection."""
+    if parser is None:
+        parser = _resolve_parser(parser_id, filename, content, mapping)
 
     try:
         parsed = parser.parse(filename, content)
@@ -194,6 +199,32 @@ def create_import(
         "preview": preview,
         "warnings": warnings,
     }
+
+
+class _RowsParser:
+    """A pseudo-parser that yields already-parsed rows, so AI image-extraction can
+    reuse the normal create_import pipeline (dedupe, Statement, preview, confirm)."""
+
+    def __init__(self, rows: list[StandardTransaction], *, institution: str, fmt: str):
+        self._rows = rows
+        self.parser_id = "ai_image_extract"
+        self.institution = institution
+        self.format = fmt
+
+    def parse(self, _filename: str, _content: bytes) -> list[StandardTransaction]:
+        return self._rows  # rows are already parsed; the parser interface requires these args
+
+
+def create_import_from_rows(
+    db: Session, filename: str, content: bytes, rows: list[StandardTransaction],
+    *, account_id: int | None = None, institution: str = "AI-extracted", fmt: str = "image",
+) -> dict:
+    """Create an import from pre-parsed rows (the AI image-extract path) — same
+    dedupe/preview/confirm flow as a normal upload."""
+    return create_import(
+        db, filename, content, account_id=account_id,
+        parser=_RowsParser(rows, institution=institution, fmt=fmt),
+    )
 
 
 def _persist_parsed_transaction(

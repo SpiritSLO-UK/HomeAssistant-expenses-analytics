@@ -15,6 +15,7 @@ Privacy gating (spec §7, §22):
 
 from __future__ import annotations
 
+import base64
 import json
 from datetime import UTC, datetime
 
@@ -308,6 +309,89 @@ def _already_ai_processed(db: Session, txn_ids: list[int]) -> set[int]:
         )
     ).all()
     return {t for t in rows if t is not None}
+
+
+# --- vision image extraction (opt-in fallback when OCR finds nothing) --------
+#
+# Sends the *image* to a vision model. Unlike classify/batch, the payload is an
+# image, so redaction can't apply — the FE warns per send (with a dismissible
+# tick). Gated on AI being on + a provider configured. Every send is audited
+# (the image isn't stored in the audit row, only a note that one was sent).
+
+_STATEMENT_VISION_SYSTEM = (
+    "You read a photo or scan of a bank/card statement and extract its transactions. "
+    'Respond ONLY with JSON: {"transactions": [{"date": "YYYY-MM-DD", '
+    '"description": "<text>", "amount": "<signed number, negative for money out>"}]}. '
+    "No prose, no code fences."
+)
+_RECEIPT_VISION_SYSTEM = (
+    "You read a photo of a purchase receipt and extract its summary. Respond ONLY with "
+    'JSON: {"merchant": "<name>", "date": "YYYY-MM-DD or null", "total": "<number>", '
+    '"currency": "<ISO code or null>"}. No prose, no code fences.'
+)
+
+
+def _require_vision(db: Session) -> tuple[AIProvider, str]:
+    mode = settings_service.get_privacy_mode(db)
+    if mode in OFF_MODES:
+        raise AIDisabled("AI is off — enable a local or cloud mode to extract images.")
+    provider = get_provider(db)
+    if not provider.available():
+        raise AIDisabled(_NO_AI_PROVIDER)
+    return provider, mode
+
+
+def _audit_image(db: Session, provider: AIProvider, mode: str, *, kind: str, size: int) -> AIRequest:
+    req = AIRequest(
+        household_id=get_or_create_default_household(db).id,
+        provider=provider.name,
+        model=getattr(provider, "model", None),
+        task_type=f"extract_image_{kind}",
+        privacy_mode=mode,
+        approval_status="not_required",
+        # An image can't be redacted — record only that one was sent, never the image.
+        redacted_payload=json.dumps({"image_bytes": size, "note": "image sent to AI (not redactable)"}),
+        status="pending",
+    )
+    db.add(req)
+    db.flush()
+    return req
+
+
+def _run_image(db: Session, req: AIRequest, provider: AIProvider, content: bytes, mime: str,
+               *, system: str, instruction: str) -> dict:
+    image_b64 = base64.b64encode(content).decode("ascii")
+    try:
+        result = provider.extract_from_image(image_b64, mime, system=system, instruction=instruction)
+    except AIError as exc:
+        req.status = "failed"
+        req.error_message = str(exc)
+        req.completed_at = datetime.now(UTC)
+        db.commit()
+        raise
+    req.status = "completed"
+    req.completed_at = datetime.now(UTC)
+    db.commit()
+    return result
+
+
+def extract_statement_image(db: Session, content: bytes, mime: str) -> list[dict]:
+    """Vision-extract statement transactions from an image. Returns a list of
+    ``{date, description, amount}`` dicts (the route turns them into an import)."""
+    provider, mode = _require_vision(db)
+    req = _audit_image(db, provider, mode, kind="statement", size=len(content))
+    result = _run_image(db, req, provider, content, mime,
+                        system=_STATEMENT_VISION_SYSTEM, instruction="Extract every transaction in this statement.")
+    txns = result.get("transactions")
+    return txns if isinstance(txns, list) else []
+
+
+def extract_receipt_image(db: Session, content: bytes, mime: str) -> dict:
+    """Vision-extract a receipt's merchant/date/total/currency from an image."""
+    provider, mode = _require_vision(db)
+    req = _audit_image(db, provider, mode, kind="receipt", size=len(content))
+    return _run_image(db, req, provider, content, mime,
+                      system=_RECEIPT_VISION_SYSTEM, instruction="Extract this receipt's summary.")
 
 
 def _select_for_batch(

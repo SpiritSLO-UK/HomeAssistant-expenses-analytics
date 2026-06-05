@@ -37,6 +37,11 @@ class AIProvider:
         """Return ``{"category": <name|None>, "confidence": 0..1, "rationale": str}``."""
         raise NotImplementedError
 
+    def extract_from_image(self, image_b64: str, mime: str, *, system: str, instruction: str) -> dict:
+        """Send an image to a vision model and return the parsed JSON it produces.
+        Used only for the opt-in AI image-extraction fallback (spec §22)."""
+        raise NotImplementedError
+
 
 class NoAIProvider(AIProvider):
     name = "none"
@@ -45,6 +50,9 @@ class NoAIProvider(AIProvider):
         return False
 
     def classify_transaction(self, *args, **kwargs) -> dict:  # pragma: no cover
+        raise AIError("AI is disabled")
+
+    def extract_from_image(self, *args, **kwargs) -> dict:  # pragma: no cover
         raise AIError("AI is disabled")
 
 
@@ -82,29 +90,42 @@ class OpenAICompatibleProvider(AIProvider):
     def available(self) -> bool:
         return bool(self.base_url and self.model)
 
-    def _chat(self, system: str, user: str) -> str:
+    def _complete(self, messages: list[dict]) -> str:
+        """POST a chat-completions request and return the message content."""
         import httpx
 
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
-        body = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            "temperature": 0,
-            "stream": False,
-        }
+        body = {"model": self.model, "messages": messages, "temperature": 0, "stream": False}
         try:
             with httpx.Client(timeout=self.timeout) as client:
                 resp = client.post(f"{self.base_url}/chat/completions", headers=headers, json=body)
             resp.raise_for_status()
-            data = resp.json()
-            return data["choices"][0]["message"]["content"]
+            return resp.json()["choices"][0]["message"]["content"]
         except (httpx.HTTPError, KeyError, IndexError, ValueError) as exc:
             raise AIError(f"AI request failed: {exc}") from exc
+
+    def _chat(self, system: str, user: str) -> str:
+        return self._complete(
+            [{"role": "system", "content": system}, {"role": "user", "content": user}]
+        )
+
+    def extract_from_image(self, image_b64: str, mime: str, *, system: str, instruction: str) -> dict:
+        """Send an image (data URL) to the vision model and parse its JSON reply."""
+        raw = self._complete(
+            [
+                {"role": "system", "content": system},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": instruction},
+                        {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{image_b64}"}},
+                    ],
+                },
+            ]
+        )
+        return _extract_json(raw)
 
     def classify_transaction(
         self, description: str, amount: str, currency: str, candidate_categories: list[str]

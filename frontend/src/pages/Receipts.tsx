@@ -1,8 +1,12 @@
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import AiImageWarningDialog from "../components/AiImageWarningDialog";
+import { isImageAiWarningDismissed, setImageAiWarningDismissed } from "../prefs";
 import {
+  aiExtractReceipt,
   confirmReceiptMatch,
   deleteReceipt,
+  getAiStatus,
   getOcrStatus,
   getPaperlessStatus,
   importPaperlessDocument,
@@ -188,6 +192,24 @@ function ReceiptCard({ r, onError }: Readonly<{ r: Receipt; onError: (e: string)
     onError: (e) => onError(String(e)),
   });
 
+  // Opt-in vision-AI fallback: read merchant/date/total from the image.
+  const aiStatus = useQuery({ queryKey: ["ai-status"], queryFn: getAiStatus });
+  const [showAiWarn, setShowAiWarn] = useState(false);
+  const aiExtract = useMutation({
+    mutationFn: () => aiExtractReceipt(r.id),
+    onSuccess: (updated) => {
+      setMerchant(updated.merchant_raw ?? "");
+      setDate(updated.receipt_date ?? "");
+      setTotal(updated.total_amount ?? "");
+      invalidate();
+    },
+    onError: (e) => onError(String(e)),
+  });
+  const tryAiExtract = () => {
+    if (isImageAiWarningDismissed()) aiExtract.mutate();
+    else setShowAiWarn(true);
+  };
+
   const confirmed = r.matches.find((m) => m.match_status === "confirmed" || m.match_status === "auto_confirmed");
   const suggested = r.matches.find((m) => m.match_status === "suggested");
 
@@ -210,8 +232,30 @@ function ReceiptCard({ r, onError }: Readonly<{ r: Receipt; onError: (e: string)
         <button className="btn" disabled={!total || match.isPending} onClick={() => match.mutate()}>
           {match.isPending ? "Matching…" : "Find match"}
         </button>
+        {aiStatus.data?.enabled && (
+          <button
+            className="btn btn--ghost"
+            disabled={aiExtract.isPending}
+            title="Read the merchant, date and total from the image with AI"
+            onClick={tryAiExtract}
+          >
+            {aiExtract.isPending ? "Asking AI…" : "✨ Extract with AI"}
+          </button>
+        )}
         <button className="link-btn" onClick={() => { if (globalThis.confirm("Delete this receipt?")) remove.mutate(); }}>delete</button>
       </div>
+
+      {showAiWarn && (
+        <AiImageWarningDialog
+          provider={aiStatus.data?.base_url}
+          onConfirm={(dontWarn) => {
+            if (dontWarn) setImageAiWarningDismissed();
+            setShowAiWarn(false);
+            aiExtract.mutate();
+          }}
+          onCancel={() => setShowAiWarn(false)}
+        />
+      )}
 
       {confirmed && (
         <p className="muted" style={{ marginTop: 6 }}>
