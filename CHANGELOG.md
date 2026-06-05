@@ -1,7 +1,40 @@
 # Changelog
 
 All notable changes to HA Finance Intelligence. This project uses date-stamped,
-human-readable entries; versions follow semantic-ish versioning while pre-1.0.
+human-readable entries; versions follow semantic versioning.
+
+## v1.0.0 — 2026-06-05
+
+The **1.0 release** — and the point the project becomes **Home Assistant-first**.
+Everything from the beta, now installable on Home Assistant as a first-class
+**add-on**: a one-click repository add, a prebuilt multi-arch image (amd64 +
+aarch64/Raspberry Pi — no on-device build), ingress single sign-on, MQTT sensors,
+and an energy-cost offset that nets your solar/grid production against your energy
+bill. Validated end-to-end on a Raspberry Pi 4.
+
+> Provided "as is", no warranty, not financial advice — keep your own backups.
+
+### Added — Home Assistant
+- **Add-on install** from a prebuilt GHCR image via an HA **add-on repository**
+  (one-click "Add repository" badge); the Supervisor pulls the image — fast even
+  on a Raspberry Pi, no on-device build.
+- **Ingress SSO** — open from the HA sidebar; your Home Assistant identity signs
+  you in, and the first user becomes the owner.
+- **MQTT discovery sensors** — spend / income / net / review / uncategorised /
+  subscriptions, plus per-budget and per-project, auto-created as an HA device.
+- **Energy-cost offset** — read solar/grid production from Home Assistant
+  (`ha_api`) or MQTT and net it against your energy-bill spend, with a
+  production/saving **trend over time**.
+- **At-rest database encryption** on both shipped architectures (SQLCipher; opt-in).
+
+### Changed / fixed (since v0.9.5-beta)
+- Receipts-first **Import** page — a dedicated receipt uploader on top — plus a
+  friendlier "this looks like a receipt" recovery when a statement image can't be read.
+- `index.html` is served `no-cache` so add-on updates load on next open (no full
+  Home Assistant restart needed).
+- AI **✨ suggest** proposes category + country + vendor in one step; a **decision
+  audit log** records every privacy-relevant change and every image sent to AI.
+- Many UX fixes surfaced by release-candidate testing on real Home Assistant hardware.
 
 ## v0.9.5-beta — 2026-06-04
 
