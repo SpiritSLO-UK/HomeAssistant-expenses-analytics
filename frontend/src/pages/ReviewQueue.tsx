@@ -225,6 +225,7 @@ function UncategorisedTab() {
   const qc = useQueryClient();
   const [offset, setOffset] = useState(0);
   const categories = useQuery({ queryKey: ["categories"], queryFn: listCategories });
+  const aiStatus = useQuery({ queryKey: ["ai-status"], queryFn: getAiStatus });
   const txns = useQuery({
     queryKey: ["uncategorised", "page", offset],
     queryFn: () => listTransactions({ uncategorised: true, limit: PAGE, offset }),
@@ -257,7 +258,13 @@ function UncategorisedTab() {
           <p className="muted">Everything's categorised — nothing here. 🎉</p>
         )}
         {data?.items.map((t) => (
-          <UncategorisedRow key={t.id} txn={t} categories={categories.data ?? []} onDone={onDone} />
+          <UncategorisedRow
+            key={t.id}
+            txn={t}
+            categories={categories.data ?? []}
+            aiEnabled={aiStatus.data?.enabled ?? false}
+            onDone={onDone}
+          />
         ))}
         {total > PAGE && (
           <div className="form-row" style={{ justifyContent: "space-between", alignItems: "center", marginTop: 10 }}>
@@ -274,12 +281,29 @@ function UncategorisedTab() {
 function UncategorisedRow({
   txn,
   categories,
+  aiEnabled,
   onDone,
-}: Readonly<{ txn: Transaction; categories: { id: number; name: string }[]; onDone: () => void }>) {
+}: Readonly<{ txn: Transaction; categories: { id: number; name: string }[]; aiEnabled: boolean; onDone: () => void }>) {
   const set = useMutation({
     mutationFn: (categoryId: number) => categoriseTransaction(txn.id, categoryId),
     onSuccess: onDone,
   });
+
+  // Same ✨ suggest as the "To review" tab + the Transactions list: category (+
+  // country/vendor when the AI infers them). Applying the category drops the row.
+  async function onSuggest() {
+    try {
+      const s = await suggestForTransaction(txn.id);
+      if (!s) return;
+      if (s.country) await updateTransaction(txn.id, { country: s.country });
+      if (s.vendor) await createVendorFromTransaction(txn.id, s.vendor);
+      if (s.categoryId != null) set.mutate(s.categoryId);
+      else onDone();
+    } catch (e) {
+      globalThis.alert(String(e instanceof Error ? e.message : e));
+    }
+  }
+
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "10px 0", borderBottom: "1px solid rgba(127,127,127,0.2)" }}>
       <div style={{ minWidth: 0 }}>
@@ -296,6 +320,11 @@ function UncategorisedRow({
           <option value="">Categorise…</option>
           {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
+        {aiEnabled && (
+          <button className="link-btn" disabled={set.isPending} title="Ask the AI assistant to suggest a category" onClick={onSuggest}>
+            ✨ suggest
+          </button>
+        )}
       </div>
     </div>
   );

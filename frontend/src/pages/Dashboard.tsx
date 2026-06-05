@@ -125,15 +125,26 @@ function QuickAddCard() {
   const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [lastReceiptId, setLastReceiptId] = useState<number | null>(null);
+  // Upload runs OCR + matching server-side and returns the finished receipt, so
+  // report the actual outcome (matched / needs review) + a link — not a stuck
+  // "processing…" that leaves the user wondering if anything happened.
   const upload = useMutation({
     mutationFn: (file: File) => uploadReceipt(file),
     onSuccess: (r) => {
-      setMsg(r.already_imported ? "Receipt already imported." : "Receipt uploaded — processing & matching…");
+      const matched = (r.matches ?? []).some(
+        (m) => m.match_status === "confirmed" || m.match_status === "auto_confirmed",
+      );
+      if (r.already_imported) setMsg("That receipt was already imported.");
+      else if (matched) setMsg("Receipt added ✓ and auto-matched to a transaction.");
+      else setMsg("Receipt added ✓ — review/match it on the Receipts page.");
+      setLastReceiptId(r.id);
       qc.invalidateQueries({ queryKey: ["receipts"] });
+      qc.invalidateQueries({ queryKey: ["review"] });
     },
-    onError: (e) => setMsg(String(e instanceof Error ? e.message : e)),
+    onError: (e) => { setLastReceiptId(null); setMsg(String(e instanceof Error ? e.message : e)); },
   });
-  const send = (f: File) => { setMsg(null); upload.mutate(f); };
+  const send = (f: File) => { setMsg(null); setLastReceiptId(null); upload.mutate(f); };
   return (
     <div className="card">
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
@@ -155,6 +166,9 @@ function QuickAddCard() {
         <CameraCaptureButton onCapture={send} disabled={upload.isPending} className="btn" />
         <Link className="btn btn--ghost" to="/import">📄 Import bank statement →</Link>
         {msg && <span className="muted">{msg}</span>}
+        {lastReceiptId != null && (
+          <Link className="link-btn" to={`/receipts?focus=${lastReceiptId}`}>Open on Receipts →</Link>
+        )}
       </div>
     </div>
   );
