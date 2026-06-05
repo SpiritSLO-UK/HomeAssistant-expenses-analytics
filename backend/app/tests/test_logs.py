@@ -80,6 +80,36 @@ def test_actions_endpoint_lists_distinct_sorted(client):
     assert len(actions) == len(set(actions))
 
 
+def test_privacy_mode_change_is_recorded_as_decision(client):
+    client.get("/api/users/me")  # owner
+    r = client.put("/api/settings", json={"privacy_mode": "cloud_manual"})
+    assert r.status_code == 200
+
+    decisions = client.get("/api/logs/activity", params={"action": "decision"}).json()
+    assert decisions, "an AI mode change should be logged as a decision"
+    top = decisions[0]
+    assert top["action"] == "decision"
+    assert "AI mode changed" in top["details"]["summary"]
+    assert top["details"]["to"] == "cloud_manual"
+    assert top["actor"]  # the user who made the change
+    assert "decision" in client.get("/api/logs/actions").json()
+
+
+def test_no_decision_logged_when_setting_unchanged(client):
+    client.get("/api/users/me")
+    # strict_local is the default → setting it again is a no-op, no decision.
+    client.put("/api/settings", json={"privacy_mode": "strict_local"})
+    assert client.get("/api/logs/activity", params={"action": "decision"}).json() == []
+
+
+def test_ocr_toggle_is_recorded_as_decision(client):
+    client.get("/api/users/me")
+    client.put("/api/settings", json={"ocr_enabled": True})
+    client.put("/api/settings", json={"ocr_enabled": False})
+    decisions = client.get("/api/logs/activity", params={"action": "decision"}).json()
+    assert any("OCR turned off" in d["details"]["summary"] for d in decisions)
+
+
 def test_all_mutating_api_calls_are_audited(client):
     """Every mutating (non-GET) /api request is logged as a generic `api_call`
     entry with the actor + method + path + status (backlog: track all actions)."""

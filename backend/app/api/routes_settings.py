@@ -11,7 +11,15 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.logging import set_level as set_log_level
 from app.models import User
-from app.services import ai_service, auth_service, fx_service, mqtt_service, ocr_service, settings_service
+from app.services import (
+    ai_service,
+    audit_service,
+    auth_service,
+    fx_service,
+    mqtt_service,
+    ocr_service,
+    settings_service,
+)
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -226,12 +234,48 @@ def _apply_base_currency(db: Session, payload: SettingsUpdate) -> dict | None:
     return None
 
 
+def _privacy_posture(db: Session) -> dict:
+    """The AI / cloud / OCR / FX posture, snapshotted so a change can be logged as
+    an explicit user decision (Logs → Decisions, backlog Feat)."""
+    return {
+        "privacy_mode": settings_service.get(db, settings_service.PRIVACY_MODE) or "strict_local",
+        "ocr_enabled": settings_service.get_ocr_enabled(db),
+        "fx_mode": settings_service.get_fx_mode(db),
+    }
+
+
+def _record_posture_decisions(db: Session, actor: str | None, before: dict) -> None:
+    after = _privacy_posture(db)
+    if after["privacy_mode"] != before["privacy_mode"]:
+        cloud = after["privacy_mode"] in {"cloud_manual", "cloud_auto"}
+        note = " — data may now be sent to the cloud" if cloud else ""
+        audit_service.record_decision(
+            db, actor=actor,
+            summary=f"AI mode changed: {before['privacy_mode']} → {after['privacy_mode']}{note}",
+            details={"setting": "privacy_mode", "from": before["privacy_mode"], "to": after["privacy_mode"]},
+        )
+    if after["ocr_enabled"] != before["ocr_enabled"]:
+        audit_service.record_decision(
+            db, actor=actor,
+            summary=f"Receipt OCR turned {'on' if after['ocr_enabled'] else 'off'}",
+            details={"setting": "ocr_enabled", "to": after["ocr_enabled"]},
+        )
+    if after["fx_mode"] != before["fx_mode"]:
+        on = after["fx_mode"] == "frankfurter"
+        audit_service.record_decision(
+            db, actor=actor,
+            summary=f"Online exchange rates turned {'on' if on else 'off'}",
+            details={"setting": "fx_mode", "to": after["fx_mode"]},
+        )
+
+
 @router.put("", responses={400: {"description": "Bad request"}})
 def update_settings(
     payload: SettingsUpdate,
     db: Annotated[Session, Depends(get_db)],
-    _user: Annotated[User, Depends(auth_service.require_settings_manager)],
+    user: Annotated[User, Depends(auth_service.require_settings_manager)],
 ) -> dict:
+    before = _privacy_posture(db)
     _apply_fx_and_receipt(db, payload)
     _apply_ai_settings(db, payload)
     _apply_ocr_and_price_source(db, payload)
@@ -239,6 +283,9 @@ def update_settings(
     _apply_paperless_url(db, payload)
     _apply_log_level(db, payload)
     recompute = _apply_base_currency(db, payload)
+
+    _record_posture_decisions(db, user.display_name, before)
+    db.commit()
 
     result: dict[str, object] = {**settings_service.get_all(db)}
     if recompute is not None:
