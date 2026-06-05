@@ -3,6 +3,7 @@ import { approveAiRequest, classifyWithAi } from "../api/client";
 export interface AiSuggestion {
   categoryId: number | null;
   country: string | null; // ISO-3166-1 alpha-2, when the AI inferred one
+  vendor: string | null; // clean merchant name, to create + link
 }
 
 /**
@@ -28,15 +29,17 @@ export async function suggestForTransaction(transactionId: number): Promise<AiSu
     res = await approveAiRequest(res.ai_request_id);
   }
   const country = res.country ?? null;
-  if (res.status === "ok" && (res.category_id || country)) {
+  const vendor = res.vendor ?? null;
+  if (res.status === "ok" && (res.category_id || country || vendor)) {
     const pct = res.confidence == null ? "" : ` (${Math.round(res.confidence * 100)}%)`;
     const lines = [
       res.category_id ? `Category: ${res.category_name}${pct}` : null,
+      vendor ? `Vendor: ${vendor}` : null,
       country ? `Country: ${country}` : null,
       res.rationale || null,
     ].filter(Boolean);
     if (globalThis.confirm(`AI suggests:\n\n${lines.join("\n")}\n\nApply?`)) {
-      return { categoryId: res.category_id, country };
+      return { categoryId: res.category_id, country, vendor };
     }
     return null;
   }

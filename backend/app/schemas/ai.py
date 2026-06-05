@@ -27,6 +27,7 @@ class ClassifyResult(BaseModel):
     confidence: float | None = None
     rationale: str | None = None
     country: str | None = None  # ISO-3166-1 alpha-2, when the AI could infer it (folded into ✨ suggest)
+    vendor: str | None = None  # clean merchant name the AI inferred, to create + link (folded into ✨ suggest)
     payload: dict | None = None  # set when approval is required (preview)
 
 

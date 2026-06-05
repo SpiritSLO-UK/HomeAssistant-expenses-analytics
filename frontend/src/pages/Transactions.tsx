@@ -354,6 +354,7 @@ export default function Transactions() {
       if (!s) return;
       if (s.categoryId != null) setCategory.mutate({ id: t.id, categoryId: s.categoryId });
       if (s.country) setCountry.mutate({ id: t.id, country: s.country });
+      if (s.vendor && !t.merchant_id) createVendor.mutate({ id: t.id, name: s.vendor });
     } catch (e) {
       globalThis.alert(String(e instanceof Error ? e.message : e));
     }

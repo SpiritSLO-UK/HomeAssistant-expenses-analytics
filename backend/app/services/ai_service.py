@@ -134,6 +134,16 @@ def _valid_country(value: object) -> str | None:
     return code if len(code) == 2 and code.isalpha() else None
 
 
+def _valid_vendor(value: object) -> str | None:
+    """Accept a clean vendor name from the model; drop empty / 'null' / overlong."""
+    if not isinstance(value, str):
+        return None
+    name = value.strip()
+    if not name or name.lower() in {"null", "none"}:
+        return None
+    return name[:120]
+
+
 def _suggest(req: AIRequest, result: dict, cats: list[Category]) -> dict:
     name = result.get("category")
     match = None
@@ -148,6 +158,7 @@ def _suggest(req: AIRequest, result: dict, cats: list[Category]) -> dict:
         "confidence": result.get("confidence"),
         "rationale": result.get("rationale"),
         "country": _valid_country(result.get("country")),
+        "vendor": _valid_vendor(result.get("vendor")),
     }
 
 
