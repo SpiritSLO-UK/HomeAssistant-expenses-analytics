@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import AiImageWarningDialog from "../components/AiImageWarningDialog";
+import CameraCaptureButton from "../components/CameraCaptureButton";
 import { isImageAiWarningDismissed, setImageAiWarningDismissed } from "../prefs";
 import {
   aiExtractImport,
@@ -87,6 +88,10 @@ export default function Import() {
               setConfirmed(null);
             }}
           />
+          <CameraCaptureButton
+            label="📷 Take photo"
+            onCapture={(f) => { setFile(f); setPreview(null); setConfirmed(null); }}
+          />
           <select value={parserId} onChange={(e) => setParserId(e.target.value)}>
             <option value="">Auto-detect</option>
             {parsers?.map((p) => (
@@ -108,6 +113,9 @@ export default function Import() {
             </button>
           )}
         </div>
+        {file && !preview && !confirmed && (
+          <p className="muted" style={{ marginTop: 6, fontSize: "0.85rem" }}>Selected: {file.name}</p>
+        )}
         {upload.isError && (
           <>
             <p className="status status--error">{String(upload.error)}</p>

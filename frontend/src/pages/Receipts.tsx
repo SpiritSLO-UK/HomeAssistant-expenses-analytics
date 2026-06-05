@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import AiImageWarningDialog from "../components/AiImageWarningDialog";
+import CameraCaptureButton from "../components/CameraCaptureButton";
 import { isImageAiWarningDismissed, setImageAiWarningDismissed } from "../prefs";
 import {
   aiExtractReceipt,
@@ -74,9 +75,12 @@ export default function Receipts() {
             if (fileInput.current) fileInput.current.value = "";
           }}
         />
-        <button className="btn" disabled={upload.isPending} onClick={() => fileInput.current?.click()}>
-          {upload.isPending ? "Uploading…" : "⬆ Upload receipt"}
-        </button>
+        <div className="form-row" style={{ gap: 8, flexWrap: "wrap" }}>
+          <button className="btn" disabled={upload.isPending} onClick={() => fileInput.current?.click()}>
+            {upload.isPending ? "Uploading…" : "⬆ Upload receipt"}
+          </button>
+          <CameraCaptureButton onCapture={(f) => upload.mutate(f)} disabled={upload.isPending} />
+        </div>
       </div>
 
       <PaperlessCard onError={(e) => setErr(String(e))} />

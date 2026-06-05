@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import Sparkline from "../components/Sparkline";
 import WorldMap, { colorForIndex, type MapPlot } from "../components/WorldMap";
+import CameraCaptureButton from "../components/CameraCaptureButton";
 import {
   type CountryBreakdownItem,
   exportCategoriesCsv,
@@ -116,10 +117,10 @@ function txnLink(params: Record<string, string | number | null | undefined>): st
   return qs ? `/transactions?${qs}` : "/transactions";
 }
 
-// Quick-add (#user): drop a receipt straight from the dashboard — pick a file or,
-// on mobile, take a photo (the `capture` hint). Receipts are processed + matched
-// automatically (one step); bank statements go through the Import page (preview +
-// confirm), linked here.
+// Quick-add (#user): drop a receipt straight from the dashboard — pick a file, or
+// on mobile take a photo (a dedicated camera button, reliable across browsers).
+// Receipts are processed + matched automatically (one step); bank statements go
+// through the Import page (preview + confirm), linked here.
 function QuickAddCard() {
   const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -132,6 +133,7 @@ function QuickAddCard() {
     },
     onError: (e) => setMsg(String(e instanceof Error ? e.message : e)),
   });
+  const send = (f: File) => { setMsg(null); upload.mutate(f); };
   return (
     <div className="card">
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
@@ -140,17 +142,17 @@ function QuickAddCard() {
           ref={fileRef}
           type="file"
           accept="image/*,application/pdf"
-          capture="environment"
           style={{ display: "none" }}
           onChange={(e) => {
             const f = e.target.files?.[0];
-            if (f) { setMsg(null); upload.mutate(f); }
+            if (f) send(f);
             e.target.value = "";
           }}
         />
         <button className="btn" disabled={upload.isPending} onClick={() => fileRef.current?.click()}>
-          {upload.isPending ? "Uploading…" : "🧾 Add receipt (photo or file)"}
+          {upload.isPending ? "Uploading…" : "🧾 Add receipt (file)"}
         </button>
+        <CameraCaptureButton onCapture={send} disabled={upload.isPending} className="btn" />
         <Link className="btn btn--ghost" to="/import">📄 Import bank statement →</Link>
         {msg && <span className="muted">{msg}</span>}
       </div>
