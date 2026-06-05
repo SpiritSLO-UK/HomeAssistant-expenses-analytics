@@ -12,6 +12,7 @@ from app.models.audit_log import AuditLog
 from app.models.budget import Budget
 from app.models.category import Category
 from app.models.child_allocation import ChildAllocation
+from app.models.energy_snapshot import EnergySnapshot
 from app.models.fx_rate import FxRate
 from app.models.household import Household
 from app.models.investment import AccountValue, Holding, HoldingPrice
@@ -38,6 +39,7 @@ __all__ = [
     "AuditLog",
     "Budget",
     "Category",
+    "EnergySnapshot",
     "ChildAllocation",
     "FxRate",
     "Household",

@@ -20,19 +20,27 @@ so tests never touch HA or a broker.
 from __future__ import annotations
 
 import json
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import AssetLog, Transaction
+from app.logging import get_logger
+from app.models import AssetLog, EnergySnapshot, Transaction
 from app.services import dashboard_service, ha_service, settings_service
+from app.services.household_service import get_or_create_default_household
 from app.services.scope import account_scope_condition, archived_condition
+
+logger = get_logger(__name__)
 
 HISTORY_PERIODS = {"day", "month", "year"}
 
 ENERGY_SOURCES = settings_service.ENERGY_SOURCES  # {"off", "ha_api", "mqtt"}
+ENERGY_SEMANTICS = settings_service.ENERGY_SEMANTICS  # {"cumulative", "interval"}
+
+# Don't snapshot more than once per this window (page loads can be frequent).
+_SNAPSHOT_MIN_GAP = timedelta(minutes=10)
 
 # Last live-computed offset, so the MQTT sensor can publish a value without doing
 # its own (potentially circular) broker/HA read during a publish. Updated whenever
@@ -60,48 +68,58 @@ def get_config(db: Session) -> dict:
         category_id = int(cat_raw) if cat_raw else None
     except ValueError:
         category_id = None
+    semantics = settings_service.get(db, settings_service.ENERGY_PRODUCTION_SEMANTICS) or "cumulative"
+    if semantics not in ENERGY_SEMANTICS:
+        semantics = "cumulative"
     return {
         "source": source,
         "production_entities": _json_list(settings_service.get(db, settings_service.ENERGY_PRODUCTION_ENTITIES)),
         "production_topics": _json_list(settings_service.get(db, settings_service.ENERGY_PRODUCTION_TOPICS)),
         "tariff_per_kwh": (settings_service.get(db, settings_service.ENERGY_TARIFF_PER_KWH) or "").strip(),
         "energy_category_id": category_id,
+        "production_semantics": semantics,
     }
+
+
+def _save_enum(db: Session, payload: dict, field: str, key: str, choices: set[str]) -> None:
+    if field not in payload:
+        return
+    value = str(payload[field])
+    if value not in choices:
+        raise ValueError(f"{field} must be one of {sorted(choices)}")
+    settings_service.set_value(db, key, value)
+
+
+def _save_str_list(db: Session, payload: dict, field: str, key: str) -> None:
+    if field not in payload:
+        return
+    items = payload[field] or []
+    if not isinstance(items, list):
+        raise ValueError(f"{field} must be a list")
+    settings_service.set_value(db, key, json.dumps([str(x).strip() for x in items if str(x).strip()]))
+
+
+def _save_tariff(db: Session, payload: dict) -> None:
+    if "tariff_per_kwh" not in payload:
+        return
+    raw = str(payload["tariff_per_kwh"] or "").strip()
+    if raw:
+        try:
+            if Decimal(raw) < 0:
+                raise ValueError
+        except (InvalidOperation, ValueError) as exc:
+            raise ValueError("tariff_per_kwh must be a non-negative number") from exc
+    settings_service.set_value(db, settings_service.ENERGY_TARIFF_PER_KWH, raw)
 
 
 def validate_and_save(db: Session, payload: dict) -> dict:
     """Validate a partial config update and persist it. Raises ``ValueError`` on
     bad input. Only the keys present in ``payload`` are changed."""
-    if "source" in payload:
-        source = str(payload["source"])
-        if source not in ENERGY_SOURCES:
-            raise ValueError(f"source must be one of {sorted(ENERGY_SOURCES)}")
-        settings_service.set_value(db, settings_service.ENERGY_SOURCE, source)
-    if "production_entities" in payload:
-        items = payload["production_entities"] or []
-        if not isinstance(items, list):
-            raise ValueError("production_entities must be a list")
-        settings_service.set_value(
-            db, settings_service.ENERGY_PRODUCTION_ENTITIES,
-            json.dumps([str(x).strip() for x in items if str(x).strip()]),
-        )
-    if "production_topics" in payload:
-        items = payload["production_topics"] or []
-        if not isinstance(items, list):
-            raise ValueError("production_topics must be a list")
-        settings_service.set_value(
-            db, settings_service.ENERGY_PRODUCTION_TOPICS,
-            json.dumps([str(x).strip() for x in items if str(x).strip()]),
-        )
-    if "tariff_per_kwh" in payload:
-        raw = str(payload["tariff_per_kwh"] or "").strip()
-        if raw:
-            try:
-                if Decimal(raw) < 0:
-                    raise ValueError
-            except (InvalidOperation, ValueError) as exc:
-                raise ValueError("tariff_per_kwh must be a non-negative number") from exc
-        settings_service.set_value(db, settings_service.ENERGY_TARIFF_PER_KWH, raw)
+    _save_enum(db, payload, "source", settings_service.ENERGY_SOURCE, ENERGY_SOURCES)
+    _save_enum(db, payload, "production_semantics", settings_service.ENERGY_PRODUCTION_SEMANTICS, ENERGY_SEMANTICS)
+    _save_str_list(db, payload, "production_entities", settings_service.ENERGY_PRODUCTION_ENTITIES)
+    _save_str_list(db, payload, "production_topics", settings_service.ENERGY_PRODUCTION_TOPICS)
+    _save_tariff(db, payload)
     if "energy_category_id" in payload:
         cid = payload["energy_category_id"]
         settings_service.set_value(
@@ -172,6 +190,32 @@ def _production_kwh(db: Session, cfg: dict, *, live: bool) -> Decimal:
     return Decimal("0")
 
 
+def _now() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
+def record_snapshot(db: Session, produced: Decimal, source: str) -> None:
+    """Best-effort: store a production sample for the trend, throttled to one per
+    :data:`_SNAPSHOT_MIN_GAP`. Never raises into the offset read path."""
+    try:
+        last = db.scalars(
+            select(EnergySnapshot).order_by(EnergySnapshot.captured_at.desc()).limit(1)
+        ).first()
+        now = _now()
+        if last is not None and (now - last.captured_at) < _SNAPSHOT_MIN_GAP:
+            return
+        db.add(EnergySnapshot(
+            household_id=get_or_create_default_household(db).id,
+            captured_at=now,
+            produced=produced,
+            source=source,
+        ))
+        db.commit()
+    except Exception:  # pragma: no cover - capture must never break the offset read
+        logger.warning("Energy snapshot capture failed (non-fatal)", exc_info=True)
+        db.rollback()
+
+
 # --- offset -----------------------------------------------------------------
 
 
@@ -206,6 +250,9 @@ def offset(
         produced = Decimal("0")
     else:
         produced = _production_kwh(db, cfg, live=live)
+        # A real live read → sample it for the production trend (throttled).
+        if live:
+            record_snapshot(db, produced, cfg["source"])
 
     tariff = cfg["tariff_per_kwh"]
     if tariff:
@@ -338,5 +385,79 @@ def history(
         "period": period,
         "currency": settings_service.get_base_currency(db),
         "energy_category_id": cid,
+        "buckets": buckets,
+    }
+
+
+# --- production / saving trend over time (from snapshots) --------------------
+
+
+def _unit_price(db: Session, cfg: dict) -> Decimal | None:
+    tariff = cfg["tariff_per_kwh"]
+    return Decimal(tariff) if tariff else derive_unit_price(db)
+
+
+def _produced_in_bucket(
+    snaps: list[tuple[datetime, Decimal]], start_dt: datetime, end_dt: datetime, semantics: str
+) -> Decimal:
+    """Production within ``[start_dt, end_dt)`` for the configured sensor semantics.
+
+    interval  → sum the readings in the window (each is production since last read).
+    cumulative→ rise of the meter across the window: last-in-window minus the
+                boundary baseline (last reading before the window, else the first
+                reading in it); negative (a reset) clamps to 0.
+    """
+    if semantics == "interval":
+        return sum((v for dt, v in snaps if start_dt <= dt < end_dt), Decimal("0"))
+    in_bucket = [v for dt, v in snaps if start_dt <= dt < end_dt]
+    if not in_bucket:
+        return Decimal("0")
+    prior: Decimal | None = None
+    for dt, v in snaps:
+        if dt < start_dt:
+            prior = v
+        else:
+            break
+    base = prior if prior is not None else in_bucket[0]
+    delta = in_bucket[-1] - base
+    return delta if delta > 0 else Decimal("0")
+
+
+def production_history(
+    db: Session, *, period: str = "month", count: int = 12, today: date | None = None
+) -> dict:
+    """Produced energy + the saving it represents, over time, from the captured
+    snapshots. Empty/flat where no snapshots were taken (capture is best-effort on
+    live reads). See the semantics note on ``_produced_in_bucket``."""
+    if period not in HISTORY_PERIODS:
+        period = "month"
+    count = max(1, min(int(count), 366))
+    ref = today or date.today()
+    cfg = get_config(db)
+    semantics = cfg["production_semantics"]
+    unit_price = _unit_price(db, cfg)
+
+    snaps: list[tuple[datetime, Decimal]] = [
+        (s.captured_at, Decimal(s.produced))
+        for s in db.scalars(select(EnergySnapshot).order_by(EnergySnapshot.captured_at)).all()
+    ]
+
+    buckets = []
+    for label, start, end in _period_buckets(period, count, ref):
+        produced = _produced_in_bucket(
+            snaps, datetime.combine(start, datetime.min.time()), datetime.combine(end, datetime.min.time()), semantics
+        )
+        saving = (produced * unit_price).quantize(Decimal("0.01")) if unit_price is not None else Decimal("0.00")
+        buckets.append({
+            "label": label,
+            "produced_kwh": str(produced),
+            "saving": str(saving),
+        })
+
+    return {
+        "period": period,
+        "currency": settings_service.get_base_currency(db),
+        "semantics": semantics,
+        "unit_price": str(unit_price) if unit_price is not None else None,
         "buckets": buckets,
     }

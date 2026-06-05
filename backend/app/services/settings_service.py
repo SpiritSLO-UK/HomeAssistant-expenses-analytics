@@ -65,9 +65,14 @@ ENERGY_PRODUCTION_ENTITIES = "energy_production_entities"  # JSON list of HA ent
 ENERGY_PRODUCTION_TOPICS = "energy_production_topics"  # JSON list of MQTT topics
 ENERGY_TARIFF_PER_KWH = "energy_tariff_per_kwh"  # decimal string, "" = derive
 ENERGY_CATEGORY_ID = "energy_category_id"  # int string, "" = none
+# How the production sensor reports, for the trend-over-time maths:
+#   cumulative = an ever-increasing total (kWh) → per-period = diff between boundaries
+#   interval   = production since the last reading → per-period = sum of readings
+ENERGY_PRODUCTION_SEMANTICS = "energy_production_semantics"  # cumulative | interval
 
 FX_MODES = {"manual", "frankfurter"}
 ENERGY_SOURCES = {"off", "ha_api", "mqtt"}
+ENERGY_SEMANTICS = {"cumulative", "interval"}
 INVESTMENT_PRICE_SOURCES = {"manual", "stooq", "alphavantage"}
 RECEIPT_MATCH_MODES = {"suggest", "auto"}
 
@@ -116,6 +121,7 @@ def _defaults() -> dict[str, str]:
         ENERGY_PRODUCTION_TOPICS: "[]",
         ENERGY_TARIFF_PER_KWH: "",
         ENERGY_CATEGORY_ID: "",
+        ENERGY_PRODUCTION_SEMANTICS: "cumulative",
     }
 
 

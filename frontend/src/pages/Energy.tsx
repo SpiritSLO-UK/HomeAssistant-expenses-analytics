@@ -4,6 +4,7 @@ import Sparkline from "../components/Sparkline";
 import {
   getEnergyHistory,
   getEnergyOffset,
+  getEnergyProductionHistory,
   getEnergyStatus,
   getMe,
   listCategories,
@@ -97,6 +98,8 @@ export default function Energy() {
 
       <EnergyHistoryCard currency={base} />
 
+      {o && o.configured && <ProductionTrendCard currency={base} />}
+
       {canManage && <EnergyConfigCard />}
     </div>
   );
@@ -146,6 +149,53 @@ function EnergyHistoryCard({ currency }: Readonly<{ currency: string }>) {
   );
 }
 
+function ProductionTrendCard({ currency }: Readonly<{ currency: string }>) {
+  const [range, setRange] = useState(HISTORY_RANGES[1]); // monthly default
+  const q = useQuery({
+    queryKey: ["energy-production-history", range.period, range.count],
+    queryFn: () => getEnergyProductionHistory(range.period, range.count),
+  });
+  const buckets = q.data?.buckets ?? [];
+  const produced = buckets.map((b) => Number(b.produced_kwh));
+  const totalProduced = produced.reduce((a, b) => a + b, 0);
+  const totalSaving = buckets.reduce((a, b) => a + Number(b.saving), 0);
+  const hasData = produced.some((v) => v > 0);
+  return (
+    <div className="card">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <h2 className="card__title" style={{ margin: 0 }}>Production &amp; saving over time</h2>
+        <div style={{ display: "flex", gap: 6 }}>
+          {HISTORY_RANGES.map((r) => (
+            <button
+              key={r.period}
+              className={"btn btn--sm" + (range.period === r.period ? "" : " btn--ghost")}
+              onClick={() => setRange(r)}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {hasData ? (
+        <>
+          <Sparkline values={produced} color="#22c55e" width={560} height={120} />
+          <p className="muted" style={{ marginBottom: 0 }}>
+            {buckets[0].label} – {buckets[buckets.length - 1].label} · produced{" "}
+            {totalProduced.toLocaleString(undefined, { maximumFractionDigits: 2 })} kWh · saved {currency}{" "}
+            {totalSaving.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </p>
+        </>
+      ) : (
+        <p className="muted">
+          No production captured yet. Production is sampled when this page reads your source — open it
+          (or refresh) over time and the trend fills in. Set the sensor type below (cumulative total vs.
+          per-interval) so the maths matches your sensor.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function lines(text: string): string[] {
   return text
     .split(/[\n,]+/)
@@ -164,6 +214,7 @@ function EnergyConfigCard() {
   const [topics, setTopics] = useState("");
   const [tariff, setTariff] = useState("");
   const [categoryId, setCategoryId] = useState("");
+  const [semantics, setSemantics] = useState("cumulative");
 
   // Seed the form from the saved config once it loads.
   useEffect(() => {
@@ -174,6 +225,7 @@ function EnergyConfigCard() {
     setTopics(s.production_topics.join("\n"));
     setTariff(s.tariff_per_kwh);
     setCategoryId(s.energy_category_id != null ? String(s.energy_category_id) : "");
+    setSemantics(s.production_semantics);
   }, [status.data]);
 
   const save = useMutation({
@@ -184,11 +236,13 @@ function EnergyConfigCard() {
         production_topics: lines(topics),
         tariff_per_kwh: tariff.trim(),
         energy_category_id: categoryId ? Number(categoryId) : null,
+        production_semantics: semantics,
       }),
     onSuccess: () => {
       setMsg("Saved.");
       qc.invalidateQueries({ queryKey: ["energy-offset"] });
       qc.invalidateQueries({ queryKey: ["energy-status"] });
+      qc.invalidateQueries({ queryKey: ["energy-production-history"] });
     },
     onError: (e) => setMsg(String(e)),
   });
@@ -237,6 +291,20 @@ function EnergyConfigCard() {
             value={topics}
             onChange={(e) => setTopics(e.target.value)}
           />
+        </label>
+      )}
+
+      {source !== "off" && (
+        <label className="field">
+          <span>Production sensor type</span>
+          <select value={semantics} onChange={(e) => setSemantics(e.target.value)}>
+            <option value="cumulative">Cumulative total (an ever-increasing kWh meter)</option>
+            <option value="interval">Per-interval (production since the last reading)</option>
+          </select>
+          <small className="muted">
+            How your sensor reports, so the over-time trend is computed correctly. Most solar/grid
+            "total energy" sensors are cumulative; a "this reading" / per-period sensor is interval.
+          </small>
         </label>
       )}
 
