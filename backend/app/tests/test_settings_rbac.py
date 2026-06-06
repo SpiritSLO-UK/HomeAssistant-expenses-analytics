@@ -47,3 +47,18 @@ def test_user_list_exposes_the_grant(client):
     client.patch(f"/api/users/{bob}", json={"can_manage_settings": True})
     users = {u["external_id"]: u for u in client.get("/api/users").json()}
     assert users["ha-bob"]["can_manage_settings"] is True
+
+
+def test_stats_endpoint_manager_gated_and_shaped(client):
+    """Settings stats card (DB size + AI tallies): manager-gated, sane shape."""
+    client.get("/api/users/me")  # the local owner (a settings-manager)
+    r = client.get("/api/settings/stats")
+    assert r.status_code == 200
+    body = r.json()
+    assert isinstance(body["database_bytes"], int) and body["database_bytes"] >= 0
+    for key in ("transactions", "statements", "receipts", "ai_total", "ai_cloud", "ai_local"):
+        assert key in body
+
+    # A plain approved member without the grant is blocked.
+    _approved_member(client, "ha-bob", "Bob")
+    assert client.get("/api/settings/stats", headers=_hdr("ha-bob", "Bob")).status_code == 403

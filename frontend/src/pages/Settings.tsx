@@ -23,6 +23,7 @@ import {
   getSecurityStatus,
   getServices,
   getSettings,
+  getSettingsStats,
   getSupportedCurrencies,
   updateServiceSettings,
   importConfig,
@@ -89,6 +90,57 @@ function AppearanceCard() {
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
+  const value = bytes / 1024 ** i;
+  return `${value.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+// Storage & statistics (owner/manager): database size on disk plus how much
+// importing and AI processing has happened. Read-only; backed by /settings/stats.
+function StatsCard() {
+  const stats = useQuery({ queryKey: ["settings-stats"], queryFn: getSettingsStats });
+  const s = stats.data;
+  return (
+    <div className="card">
+      <h2 className="card__title">Storage &amp; statistics</h2>
+      {stats.isLoading && <p className="muted">Loading…</p>}
+      {s && (
+        <ul className="kv">
+          <li><span>Database size</span><span>{formatBytes(s.database_bytes)}</span></li>
+          <li><span>Transactions</span><span>{s.transactions.toLocaleString()}</span></li>
+          <li><span>Statements imported</span><span>{s.statements.toLocaleString()}</span></li>
+          <li><span>Receipts</span><span>{s.receipts.toLocaleString()}</span></li>
+          <li>
+            <span>AI calls</span>
+            <span>
+              {s.ai_total.toLocaleString()}
+              {s.ai_total > 0 && (
+                <span className="muted"> ({s.ai_cloud.toLocaleString()} cloud · {s.ai_local.toLocaleString()} local)</span>
+              )}
+            </span>
+          </li>
+          {s.ai_total > 0 && (
+            <li>
+              <span>AI completed / failed</span>
+              <span>{s.ai_completed.toLocaleString()} / {s.ai_failed.toLocaleString()}</span>
+            </li>
+          )}
+          {s.ai_avg_seconds != null && (
+            <li><span>Avg AI turnaround</span><span>{s.ai_avg_seconds.toFixed(1)} s</span></li>
+          )}
+        </ul>
+      )}
+      <p className="muted" style={{ fontSize: "0.78rem", marginTop: 8 }}>
+        Database size includes the live SQLite file and its write-ahead-log sidecars.
+        AI counts are 0 in strict-local mode (nothing is sent anywhere).
+      </p>
     </div>
   );
 }
@@ -178,6 +230,8 @@ export default function Settings() {
           </p>
         </div>
       )}
+
+      {me.data?.can_manage_settings && <StatsCard />}
 
       {me.data?.can_manage_settings && <ServicesCard onMessage={ok} onError={fail} />}
 

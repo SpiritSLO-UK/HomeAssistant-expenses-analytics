@@ -1797,6 +1797,25 @@ export function updateServiceSettings(patch: {
   return fetchJson("api/settings", { method: "PUT", body: JSON.stringify(patch) });
 }
 
+// Storage + processing/AI tallies for the Settings "Storage & statistics" card
+// (manager-gated). DB size is the on-disk SQLite file (+ wal/shm sidecars).
+export interface SettingsStats {
+  database_bytes: number;
+  transactions: number;
+  statements: number;
+  receipts: number;
+  ai_total: number;
+  ai_cloud: number;
+  ai_local: number;
+  ai_completed: number;
+  ai_failed: number;
+  ai_avg_seconds: number | null;
+}
+
+export function getSettingsStats(): Promise<SettingsStats> {
+  return fetchJson<SettingsStats>("api/settings/stats");
+}
+
 // --- Global search ---
 
 export interface SearchResults {

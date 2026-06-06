@@ -19,6 +19,7 @@ from app.services import (
     mqtt_service,
     ocr_service,
     settings_service,
+    stats_service,
 )
 
 router = APIRouter(prefix="/settings", tags=["settings"])
@@ -61,6 +62,16 @@ def supported_countries() -> list[dict]:
         ({"code": c, "name": n} for c, n in geo.COUNTRY_NAMES.items() if c != "EU"),
         key=lambda x: x["name"],
     )
+
+
+@router.get("/stats")
+def system_statistics(
+    db: Annotated[Session, Depends(get_db)],
+    _user: Annotated[User, Depends(auth_service.require_settings_manager)],
+) -> dict:
+    """Storage + processing/AI tallies for the Settings 'Storage & statistics' card.
+    Manager-gated, like the rest of the settings-management surface."""
+    return stats_service.system_stats(db)
 
 
 @router.get("/services")
