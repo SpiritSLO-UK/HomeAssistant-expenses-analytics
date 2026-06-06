@@ -8,6 +8,7 @@ and how to run it; the guides below go deeper.
 
 | Guide | What's inside |
 |-------|---------------|
+| [Screenshots](screenshots.md) | A visual tour of the app on demo data — dashboard, transactions, receipts, search, budgets/investments, settings and the audit log. |
 | [Install on Home Assistant](ha-install.md) | Add the add-on repository, install the prebuilt image, configure options, ingress SSO, MQTT sensors and the energy-cost offset. |
 | [Testing on Home Assistant](ha-testing.md) | End-to-end checklist for validating the add-on on a real HA (publish an RC image, make packages public, install, SSO, MQTT, energy, backups) before a release. |
 | [Configuration reference](configuration.md) | Every setting — environment variables (`HAFI_*`), add-on options, and the in-app Settings — what each does and its default. |
