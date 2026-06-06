@@ -43,6 +43,37 @@ def test_parser_total_falls_back_to_largest_amount():
     assert str(f["total_amount"]) == "9.99"
 
 
+# Real card-payment slip a user uploaded — OCR collapsed it to one long line of
+# terminal/transaction boilerplate. The merchant heuristic must NOT dump that into
+# the merchant field (backlog: receipt-OCR merchant gibberish, 2026-06-06).
+_CARD_SLIP = (
+    "REG No f Issue: SESSION: M CUSTOMER DEBIT CARD PAYMENT VEDI d Number: "
+    "492181XXXXXX1031 h Code: 026242 Merchant ID; **#*265 Terminal ID; ****0647 "
+    "Application ID: A0000000031010 PAN Seq No: 00 HTxn ID: SAT6A2713444 "
+    "TRX ID: 486143548512099 Amount NO CARDHOLDER VERIFICATION PAYMENT APPROVED CARDHOLDER R"
+)
+
+
+def test_merchant_rejects_card_slip_one_line():
+    # One giant run-on OCR line → too long to be a name → no merchant (→ review).
+    assert receipt_parser.detect_merchant(_CARD_SLIP) is None
+
+
+def test_merchant_skips_payment_boilerplate_lines():
+    slip = "CARDHOLDER COPY\nDEBIT CARD PAYMENT\nMERCHANT ID: 12345\nTERMINAL ID: 0647\nPAYMENT APPROVED"
+    assert receipt_parser.detect_merchant(slip) is None
+
+
+def test_merchant_keeps_real_name_above_payment_lines():
+    # A genuine shop header is still picked even when payment boilerplate follows.
+    slip = "COSTA COFFEE\nDEBIT CARD PAYMENT\nTERMINAL ID: 0647\nTOTAL 4.50"
+    assert receipt_parser.detect_merchant(slip) == "COSTA COFFEE"
+
+
+def test_merchant_rejects_overlong_line():
+    assert receipt_parser.detect_merchant("A" + " WORD" * 20) is None  # > 60 chars, not a name
+
+
 # --- API: status + flow ---
 
 def _curve(rows):
