@@ -24,6 +24,11 @@ from sqlalchemy.engine import CursorResult, Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import settings
+
+# Imported for the side effect of registering the FTS `after_create` hook on
+# Base.metadata, so the full-text search index is (re)built on every create_all
+# (startup safety net, fresh installs and the test harness). Best-effort.
+from app.db import search_index  # noqa: F401
 from app.logging import get_logger
 
 logger = get_logger(__name__)

@@ -83,6 +83,10 @@ export default function Transactions() {
   // Dashboard/Vendors/etc. (e.g. ?category_id=5&date_from=…) arrives pre-filtered
   // and the matching control reflects it — and stays fully editable from here.
   const [search, setSearch] = useState(() => searchParams.get("search") ?? "");
+  // The query uses a debounced copy of `search` so we fire one request after the
+  // user pauses typing, not one per keystroke (backlog #43). The input below stays
+  // bound to `search` for instant feedback.
+  const [debouncedSearch, setDebouncedSearch] = useState(search);
   const [dateFrom, setDateFrom] = useState(() => searchParams.get("date_from") ?? "");
   const [dateTo, setDateTo] = useState(() => searchParams.get("date_to") ?? "");
   const [needsReview, setNeedsReview] = useState(() => searchParams.get("needs_review") === "true");
@@ -112,7 +116,7 @@ export default function Transactions() {
       // (include archived so a focused aged-out transaction still shows).
       { transaction_id: focusNum, include_archived: true, limit: 1, offset: 0 }
     : {
-        search: blank(search),
+        search: blank(debouncedSearch),
         date_from: blank(dateFrom),
         date_to: blank(dateTo),
         needs_review: flag(needsReview),
@@ -136,7 +140,7 @@ export default function Transactions() {
   // Reset every filter control to its default and drop any drill-down params from
   // the URL (so a refresh doesn't silently re-apply them).
   function clearAllFilters() {
-    setSearch(""); setDateFrom(""); setDateTo("");
+    setSearch(""); setDebouncedSearch(""); setDateFrom(""); setDateTo("");
     setNeedsReview(false); setUncategorisedOnly(false); setBusinessOnly(false); setShowArchived(false);
     setCategoryFilter(""); setVendorFilter(""); setCountryFilter("");
     setProjectFilter(""); setMemberFilter("");
@@ -156,6 +160,13 @@ export default function Transactions() {
     queryFn: () => listTransactions(filters),
     placeholderData: keepPreviousData,
   });
+
+  // Debounce the search box: wait ~300ms after the last keystroke before the
+  // query refetches, so typing "Amazon" fires one request, not six (backlog #43).
+  useEffect(() => {
+    const id = globalThis.setTimeout(() => setDebouncedSearch(search), 300);
+    return () => globalThis.clearTimeout(id);
+  }, [search]);
 
   // Scroll the deep-linked (focused) transaction into view once it's rendered.
   useEffect(() => {

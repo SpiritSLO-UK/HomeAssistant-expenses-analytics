@@ -31,11 +31,17 @@ def search(db: Session, query: str, *, account_ids: set[int] | None, limit: int 
     if len(q) < MIN_QUERY:
         return result
 
+    from app.db import search_index
+
     like = f"%{q}%"
-    txn_match: list[ColumnElement[bool]] = [
-        Transaction.description_raw.ilike(like),
-        Transaction.merchant_raw.ilike(like),
-    ]
+    if search_index.use_fts(q):
+        # Index-backed substring search across description + merchant (backlog #43).
+        txn_match: list[ColumnElement[bool]] = [Transaction.id.in_(search_index.match_subquery(q))]
+    else:
+        txn_match = [
+            Transaction.description_raw.ilike(like),
+            Transaction.merchant_raw.ilike(like),
+        ]
     amount = _amount(q)
     if amount is not None:
         txn_match.append(func.abs(Transaction.amount) == amount)
