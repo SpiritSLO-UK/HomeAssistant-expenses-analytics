@@ -46,6 +46,14 @@ sent — receipt images and OCR text are never included in an AI payload. The
 matches) uses the same gated, redacted, suggestion-only path and never overwrites
 a manual choice.
 
+**AI usage shrinks over time.** AI is only ever consulted for transactions that
+your **rules, vendor defaults and the category keyword library didn't already
+categorise** (that ordering is described in [rules.md](rules.md)). Every correction
+you teach it — a learned rule, a vendor's default category — settles more of each
+future import deterministically, so the proportion that reaches the AI keeps
+falling. Enabling AI is not an ongoing "send everything forever" cost: the longer
+you run it, the fewer external calls it needs to make.
+
 ### What we can and cannot guarantee about the AI provider
 
 Being honest about the boundary of what software can enforce:
