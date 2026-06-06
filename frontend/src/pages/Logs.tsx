@@ -12,6 +12,18 @@ function when(iso: string): string {
   return iso.replace("T", " ").slice(0, 16);
 }
 
+// AI / cloud / privacy decisions are recorded under the `decision` action (AI-mode
+// switches, OCR on/off, "image sent to AI"). Group them on their own in the action
+// filter so they aren't mixed in with ordinary CRUD / api_call actions (#177 follow-up).
+function isAiAction(action: string): boolean {
+  return (
+    action === "decision" ||
+    action.startsWith("ai_") ||
+    action.includes("privacy") ||
+    action.includes("cloud")
+  );
+}
+
 function describe(row: AuditLogRow): string {
   if (!row.details) return "";
   // Decisions carry a human-readable `summary`; show it first, then any extras.
@@ -89,9 +101,25 @@ function ActivityCard({ includeArchived }: Readonly<{ includeArchived: boolean }
           </button>
           <select value={action} onChange={(e) => setAction(e.target.value)} title="Filter by action">
             <option value="">All actions</option>
-            {actions.data?.map((a) => (
-              <option key={a} value={a}>{a}</option>
-            ))}
+            {(() => {
+              const all = actions.data ?? [];
+              const ai = all.filter(isAiAction);
+              const other = all.filter((a) => !isAiAction(a));
+              return (
+                <>
+                  {ai.length > 0 && (
+                    <optgroup label="AI & privacy">
+                      {ai.map((a) => <option key={a} value={a}>{a}</option>)}
+                    </optgroup>
+                  )}
+                  {other.length > 0 && (
+                    <optgroup label="Other actions">
+                      {other.map((a) => <option key={a} value={a}>{a}</option>)}
+                    </optgroup>
+                  )}
+                </>
+              );
+            })()}
           </select>
           <select value={limit} onChange={(e) => setLimit(Number(e.target.value))} title="How many to show">
             {[50, 100, 250, 500].map((n) => (
