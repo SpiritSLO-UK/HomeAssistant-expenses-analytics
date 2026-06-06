@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { NavLink } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { NAV_ITEMS } from "../nav";
+import { NAV_ITEMS, navKey } from "../nav";
 import { getAiStatus } from "../api/client";
 import { getHiddenNavKeys, getNavOrder, setHiddenNavKeys, setNavOrder } from "../prefs";
 
@@ -39,11 +39,13 @@ function mergeNavOrder(saved: string[]): string[] {
 export default function Sidebar({
   role = "owner",
   canManageTabs = true,
+  blockedNavKeys = [],
   open = false,
   onNavigate,
 }: Readonly<{
   role?: string;
   canManageTabs?: boolean; // owner or a granted member may customise the nav tabs (#28 RBAC)
+  blockedNavKeys?: string[]; // pages the owner restricted for this user (#108)
   open?: boolean; // drawer open on narrow screens
   onNavigate?: () => void; // close the drawer after picking a page (mobile)
 }>) {
@@ -55,9 +57,12 @@ export default function Sidebar({
   const [order, setOrder] = useState<string[]>(() => mergeNavOrder(getNavOrder()));
   const [editing, setEditing] = useState(false);
 
-  // Role visibility (child → allowance only; ownerOnly → admin). Unchanged.
+  // Role visibility (child → allowance only; ownerOnly → admin), then drop any
+  // pages the owner has restricted for this user (#108 — the API enforces it too).
+  const blocked = new Set(blockedNavKeys);
   const roleItems = NAV_ITEMS.filter((item) => {
     if (isChild) return item.childVisible;
+    if (!item.ownerOnly && blocked.has(navKey(item.path))) return false;
     return !item.ownerOnly || isAdmin;
   });
 

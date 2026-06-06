@@ -151,6 +151,8 @@ async def _auth_guard(request: Request, call_next):
         request.state.user_role = user.role
         request.state.user_status = user.status
         request.state.user_name = user.display_name
+        # Per-user blocked pages (#108): API prefixes this user may not reach.
+        request.state.user_blocked_prefixes = auth_service.blocked_api_prefixes(user)
         # MFA presence for the entry gate (only matters if the user enabled it).
         mfa_ok = not user.mfa_enabled or mfa_service.has_valid_session(
             db, user.id, request.headers.get(auth_service.SESSION_HEADER)
@@ -191,6 +193,15 @@ async def _auth_guard(request: Request, call_next):
     # Child role: confined to its own allowance view (defence in depth — the nav
     # also hides everything else, but the API must not rely on the client).
     if request.state.user_role == "child" and not path.startswith(_CHILD_ALLOWED_PREFIXES):
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "This area isn't available for your account."},
+        )
+
+    # Per-user blocked pages (#108): the owner can restrict an individual non-admin
+    # user from specific pages — enforced here, not just hidden in the sidebar.
+    blocked = getattr(request.state, "user_blocked_prefixes", ())
+    if any(path.startswith(prefix) for prefix in blocked):
         return JSONResponse(
             status_code=403,
             content={"detail": "This area isn't available for your account."},

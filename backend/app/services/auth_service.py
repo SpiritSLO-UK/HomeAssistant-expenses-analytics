@@ -17,6 +17,7 @@ stored row, keyed by the proxy-supplied identity (#74).
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 
 from fastapi import Depends, HTTPException, Request, status
@@ -28,6 +29,42 @@ from app.models import Account, User
 from app.models.user import ADMIN_ROLES, ROLES, STATUSES, WRITE_ROLES
 from app.services import audit_service
 from app.services.household_service import get_or_create_default_household
+
+# Pages the owner may block for an individual non-admin user (backlog #108), mapped
+# to the API path prefix the auth guard 403s when blocked. Keys are the nav-page
+# slugs (the route path without the leading slash). Dashboard, Settings, Users and
+# Logs are deliberately not blockable: Dashboard is the always-on landing page,
+# Settings is already RBAC-gated (and holds personal MFA), and Users/Logs are
+# owner-only. Mirrors `BLOCKABLE_NAV_KEYS` in the frontend nav.
+BLOCKABLE_NAV: dict[str, str] = {
+    "search": "/api/search",
+    "import": "/api/imports",
+    "transactions": "/api/transactions",
+    "categories": "/api/categories",
+    "vendors": "/api/vendors",
+    "rules": "/api/rules",
+    "projects": "/api/projects",
+    "travel": "/api/travel",
+    "business": "/api/business",
+    "budgets": "/api/budgets",
+    "savings": "/api/savings",
+    "investments": "/api/investments",
+    "accounts": "/api/accounts",
+    "assets": "/api/assets",
+    "energy": "/api/energy",
+    "allowance": "/api/allowance",
+    "subscriptions": "/api/subscriptions",
+    "receipts": "/api/receipts",
+    "review": "/api/review",
+}
+
+
+def blocked_api_prefixes(user: User) -> list[str]:
+    """The API path prefixes a (non-admin) user is blocked from (backlog #108).
+    Admins are never restricted, so they always get an empty list."""
+    if is_admin(user.role):
+        return []
+    return [BLOCKABLE_NAV[k] for k in user.blocked_nav_keys if k in BLOCKABLE_NAV]
 
 # HA ingress identity headers (lower-cased lookup; Starlette headers are
 # case-insensitive). ``X-Remote-User-Id`` is the stable key.
@@ -336,9 +373,10 @@ def _apply_user_changes(
     display_name: str | None,
     email: str | None,
     can_manage_settings: bool | None,
+    blocked_nav_keys: list[str] | None = None,
 ) -> dict:
     """Apply the supplied fields to ``target`` and return the audited before/after
-    changes (only role/status/can_manage_settings are audited, matching the original)."""
+    changes (role/status/can_manage_settings/blocked_nav_keys are audited)."""
     changes: dict = {}
     if role is not None and role != target.role:
         changes["role"] = [target.role, role]
@@ -354,6 +392,12 @@ def _apply_user_changes(
     if can_manage_settings is not None and can_manage_settings != target.can_manage_settings:
         changes["can_manage_settings"] = [target.can_manage_settings, can_manage_settings]
         target.can_manage_settings = can_manage_settings
+    if blocked_nav_keys is not None:
+        normalised = sorted({k for k in blocked_nav_keys if k in BLOCKABLE_NAV})
+        new_val = json.dumps(normalised) if normalised else None
+        if new_val != target.blocked_nav:
+            changes["blocked_nav_keys"] = [target.blocked_nav_keys, normalised]
+            target.blocked_nav = new_val
     return changes
 
 
@@ -367,12 +411,17 @@ def update_user(
     display_name: str | None = None,
     email: str | None = None,
     can_manage_settings: bool | None = None,
+    blocked_nav_keys: list[str] | None = None,
 ) -> User:
     """Apply an owner-initiated change to ``target``. Raises ``ValueError`` on a
     bad value or if the change would strip the household's last active owner."""
     _validate_user_update(
         db, actor=actor, target=target, role=role, new_status=new_status
     )
+    if blocked_nav_keys is not None:
+        unknown = [k for k in blocked_nav_keys if k not in BLOCKABLE_NAV]
+        if unknown:
+            raise ValueError(f"Unknown page(s) to restrict: {', '.join(sorted(unknown))}")
 
     changes = _apply_user_changes(
         target,
@@ -381,6 +430,7 @@ def update_user(
         display_name=display_name,
         email=email,
         can_manage_settings=can_manage_settings,
+        blocked_nav_keys=blocked_nav_keys,
     )
 
     audit_service.record(

@@ -8,9 +8,10 @@ the owner then manages their role and approval status (backlog #82, #126).
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin
@@ -54,3 +55,18 @@ class User(Base, TimestampMixin):
     # seed; ``mfa_enabled`` flips true only after the user confirms a code.
     mfa_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
     mfa_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Owner-set list of app pages this (non-admin) user may NOT reach (backlog #108),
+    # JSON array of nav-page keys (e.g. ["budgets","investments"]). NULL/empty =
+    # unrestricted. Enforced server-side by the auth guard + hidden in the sidebar.
+    blocked_nav: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    @property
+    def blocked_nav_keys(self) -> list[str]:
+        """The parsed list of blocked nav-page keys (empty when unset/invalid)."""
+        if not self.blocked_nav:
+            return []
+        try:
+            data = json.loads(self.blocked_nav)
+        except (ValueError, TypeError):
+            return []
+        return [str(k) for k in data] if isinstance(data, list) else []

@@ -36,3 +36,17 @@ export const NAV_ITEMS: NavItem[] = [
   { path: "/logs", label: "Logs", icon: "📜", ownerOnly: true },
   { path: "/settings", label: "Settings", icon: "🔧" },
 ];
+
+// The nav key for a page = its path without the leading slash (e.g. "/budgets" →
+// "budgets"). This is what the per-user "blocked pages" list (#108) stores.
+export function navKey(path: string): string {
+  return path.replace(/^\//, "");
+}
+
+// Pages the owner can restrict for an individual non-admin user (#108) — mirrors
+// BLOCKABLE_NAV in backend/app/services/auth_service.py. Dashboard, Settings,
+// Users and Logs are deliberately excluded (landing page / RBAC-gated / owner-only).
+const NON_BLOCKABLE = new Set(["/", "/settings", "/users", "/logs"]);
+export const BLOCKABLE_NAV_ITEMS: NavItem[] = NAV_ITEMS.filter(
+  (i) => !NON_BLOCKABLE.has(i.path) && !i.ownerOnly,
+);
