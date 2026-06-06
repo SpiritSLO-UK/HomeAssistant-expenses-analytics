@@ -154,10 +154,16 @@ def _search_conditions(
             else Transaction.category_id.is_not(None)
         )
     if search:
-        like = f"%{search}%"
-        conditions.append(
-            or_(Transaction.description_raw.ilike(like), Transaction.merchant_raw.ilike(like))
-        )
+        from app.db import search_index
+
+        if search_index.use_fts(search):
+            # Index-backed substring search (fast on large datasets, backlog #43).
+            conditions.append(Transaction.id.in_(search_index.match_subquery(search)))
+        else:
+            like = f"%{search}%"
+            conditions.append(
+                or_(Transaction.description_raw.ilike(like), Transaction.merchant_raw.ilike(like))
+            )
     return conditions
 
 
