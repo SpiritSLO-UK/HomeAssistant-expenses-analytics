@@ -58,6 +58,7 @@ It's a **beta** — works end-to-end and I run it on my own HA on a Raspberry Pi
 - Import parsers for **your bank's** statement format (share an anonymised sample and I'll add a parser).
 - The categorisation rules / vendor matching.
 - Anything confusing in the setup or the privacy posture.
+- **Local LLM (Ollama / LM Studio / HA LLM).** The `local_llm` mode is built but I **haven't been able to test it** — I don't have a local model set up. It targets any OpenAI-compatible endpoint and should work; if you run one, I'd love to hear what works (models, endpoint quirks, requirements) so I can harden that path.
 
 Happy to answer anything. Thanks for taking a look! 🙏
 

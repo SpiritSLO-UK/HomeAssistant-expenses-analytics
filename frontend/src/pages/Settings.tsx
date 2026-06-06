@@ -1003,6 +1003,14 @@ function AiCard({
           {test.isPending ? "Testing…" : "Test connection"}
         </button>
       </div>
+      {value("privacy_mode") === "local_llm" && (
+        <p className="status status--warn" style={{ fontSize: "0.82rem" }}>
+          ℹ️ The local-LLM path (Ollama / LM Studio / HA LLM) isn't something the author has been able
+          to test — there's no local model here to try it against. It targets any OpenAI-compatible
+          endpoint and should work, but if you run one, <strong>feedback and requirements are very welcome</strong>{" "}
+          (open an issue on GitHub).
+        </p>
+      )}
       {testMsg && (
         <p className={"status " + (testMsg.ok ? "status--ok" : "status--error")}>
           {testMsg.ok ? "✅ " : "❌ "}{testMsg.text}
