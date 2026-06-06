@@ -261,20 +261,20 @@ def _record_posture_decisions(db: Session, actor: str | None, before: dict) -> N
         cloud = after["privacy_mode"] in {"cloud_manual", "cloud_auto"}
         note = " — data may now be sent to the cloud" if cloud else ""
         audit_service.record_decision(
-            db, actor=actor,
+            db, actor=actor, kind="ai_mode",
             summary=f"AI mode changed: {before['privacy_mode']} → {after['privacy_mode']}{note}",
             details={"setting": "privacy_mode", "from": before["privacy_mode"], "to": after["privacy_mode"]},
         )
     if after["ocr_enabled"] != before["ocr_enabled"]:
         audit_service.record_decision(
-            db, actor=actor,
+            db, actor=actor, kind="ocr",
             summary=f"Receipt OCR turned {'on' if after['ocr_enabled'] else 'off'}",
             details={"setting": "ocr_enabled", "to": after["ocr_enabled"]},
         )
     if after["fx_mode"] != before["fx_mode"]:
         on = after["fx_mode"] == "frankfurter"
         audit_service.record_decision(
-            db, actor=actor,
+            db, actor=actor, kind="fx",
             summary=f"Online exchange rates turned {'on' if on else 'off'}",
             details={"setting": "fx_mode", "to": after["fx_mode"]},
         )

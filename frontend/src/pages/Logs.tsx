@@ -12,16 +12,26 @@ function when(iso: string): string {
   return iso.replace("T", " ").slice(0, 16);
 }
 
-// AI / cloud / privacy decisions are recorded under the `decision` action (AI-mode
-// switches, OCR on/off, "image sent to AI"). Group them on their own in the action
-// filter so they aren't mixed in with ordinary CRUD / api_call actions (#177 follow-up).
-function isAiAction(action: string): boolean {
-  return (
-    action === "decision" ||
-    action.startsWith("ai_") ||
-    action.includes("privacy") ||
-    action.includes("cloud")
-  );
+// Important consent/privacy decisions are recorded as `decision:<kind>` so each
+// kind is its own filterable entry. We group them under a "Decisions" optgroup,
+// separate from ordinary CRUD / api_call actions, and give each a friendly label.
+function isDecisionAction(action: string): boolean {
+  return action === "decision" || action.startsWith("decision:");
+}
+
+const DECISION_LABELS: Record<string, string> = {
+  "decision:ai_mode": "AI mode change",
+  "decision:ocr": "Receipt OCR on/off",
+  "decision:fx": "Online exchange rates on/off",
+  "decision:image": "Image sent to AI",
+};
+
+// Friendly label for a decision action; falls back to a tidied version of any
+// unknown / legacy `decision[:kind]` value.
+function decisionLabel(action: string): string {
+  if (DECISION_LABELS[action]) return DECISION_LABELS[action];
+  const kind = action.includes(":") ? action.slice(action.indexOf(":") + 1) : "";
+  return kind ? kind.replace(/_/g, " ") : "Decision";
 }
 
 function describe(row: AuditLogRow): string {
@@ -103,13 +113,18 @@ function ActivityCard({ includeArchived }: Readonly<{ includeArchived: boolean }
             <option value="">All actions</option>
             {(() => {
               const all = actions.data ?? [];
-              const ai = all.filter(isAiAction);
-              const other = all.filter((a) => !isAiAction(a));
+              const decisions = all.filter(isDecisionAction);
+              const other = all.filter((a) => !isDecisionAction(a));
               return (
                 <>
-                  {ai.length > 0 && (
-                    <optgroup label="AI & privacy">
-                      {ai.map((a) => <option key={a} value={a}>{a}</option>)}
+                  {decisions.length > 0 && (
+                    <optgroup label="Decisions">
+                      {/* "decision" (no kind) prefix-matches every decision — the
+                          same value the 🔑 Decisions toggle uses. */}
+                      <option value="decision">All decisions</option>
+                      {decisions
+                        .filter((a) => a !== "decision")
+                        .map((a) => <option key={a} value={a}>{decisionLabel(a)}</option>)}
                     </optgroup>
                   )}
                   {other.length > 0 && (
