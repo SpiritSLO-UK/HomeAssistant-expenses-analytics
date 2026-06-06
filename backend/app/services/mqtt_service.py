@@ -84,43 +84,94 @@ def _pct(key: str, name: str, value: object, icon: str) -> dict:
     return _sensor(key, name, value, unit="%", state_class="measurement", icon=icon)
 
 
-def _sensors(db: Session, ref: date | None = None) -> list[dict]:
-    """The full set of sensors to publish (core metrics + one per budget)."""
+# Sensor groups for the publish-selection UI (backlog: user picks what to publish).
+# Order here is the display order. A sensor's `group` ties it to one of these.
+SENSOR_GROUP_LABELS: dict[str, str] = {
+    "core": "Monthly totals (spend · income · net)",
+    "counts": "Review & uncategorised counts",
+    "subscriptions": "Subscriptions total",
+    "budgets": "Budgets (one or two per budget)",
+    "projects": "Projects (one per project)",
+    "energy": "Energy offset",
+}
+
+
+def _all_sensors(db: Session, ref: date | None = None) -> list[dict]:
+    """Every sensor we *could* publish, each tagged with its group. The set actually
+    published is this filtered by the user's publish-selection (see :func:`_sensors`)."""
     ref = ref or date.today()
     currency = settings_service.get_base_currency(db)
     summary = dashboard_service.summary(db, ref)
 
-    sensors = [
-        _money("spend_this_month", "Spend This Month", summary["spend_this_month"], currency, "mdi:cash-minus"),
-        _money("income_this_month", "Income This Month", summary["income_this_month"], currency, "mdi:cash-plus"),
-        _money("net_this_month", "Net This Month", summary["net_this_month"], currency, "mdi:cash"),
-        _count("review_items", "Review Items", summary["review_items"], "mdi:alert-circle"),
-        _count("uncategorised", "Uncategorised", summary["uncategorised_transactions"], "mdi:help-circle"),
-        _money("subscriptions_total", "Subscriptions (monthly)",
-               subscription_service.monthly_total(db), currency, "mdi:autorenew"),
-    ]
+    sensors: list[dict] = []
+
+    def _add(group: str, sensor: dict) -> None:
+        sensor["group"] = group
+        sensors.append(sensor)
+
+    _add("core", _money("spend_this_month", "Spend This Month",
+                        summary["spend_this_month"], currency, "mdi:cash-minus"))
+    _add("core", _money("income_this_month", "Income This Month",
+                        summary["income_this_month"], currency, "mdi:cash-plus"))
+    _add("core", _money("net_this_month", "Net This Month", summary["net_this_month"], currency, "mdi:cash"))
+    _add("counts", _count("review_items", "Review Items", summary["review_items"], "mdi:alert-circle"))
+    _add("counts", _count("uncategorised", "Uncategorised",
+                          summary["uncategorised_transactions"], "mdi:help-circle"))
+    _add("subscriptions", _money("subscriptions_total", "Subscriptions (monthly)",
+                                 subscription_service.monthly_total(db), currency, "mdi:autorenew"))
     for b in budget_service.summary(db, ref):
         bid = b["budget_id"]
-        sensors.append(_pct(f"budget_{bid}_percent", f"Budget {b['name']} %", b["percent"], "mdi:chart-arc"))
-        sensors.append(
-            _money(f"budget_{bid}_spent", f"Budget {b['name']} Spent", b["spent"], b["currency"], "mdi:cash-clock")
-        )
+        _add("budgets", _pct(f"budget_{bid}_percent", f"Budget {b['name']} %", b["percent"], "mdi:chart-arc"))
+        _add("budgets", _money(f"budget_{bid}_spent", f"Budget {b['name']} Spent",
+                               b["spent"], b["currency"], "mdi:cash-clock"))
     # Per-project totals (spec §27.3 "Finance House Project Total").
     for p in project_service.totals(db):
-        sensors.append(
-            _money(f"project_{p['project_id']}_total", f"Project {p['name']} Total",
-                   p["spent"], p["currency"], "mdi:home-currency-usd")
-        )
+        _add("projects", _money(f"project_{p['project_id']}_total", f"Project {p['name']} Total",
+                                p["spent"], p["currency"], "mdi:home-currency-usd"))
     # Energy-cost offset (HA), only when configured. Uses the last live-computed
     # saving (energy_service caches it) so a publish never does a broker/HA read.
     from app.services import energy_service  # lazy import: avoids an import cycle
 
     if energy_service.get_config(db)["source"] != "off":
-        sensors.append(
-            _money("energy_offset_this_month", "Energy Offset This Month",
-                   str(energy_service.last_saving()), currency, "mdi:solar-power")
-        )
+        _add("energy", _money("energy_offset_this_month", "Energy Offset This Month",
+                              str(energy_service.last_saving()), currency, "mdi:solar-power"))
     return sensors
+
+
+def _selection(db: Session) -> tuple[set[str], set[str]]:
+    sel = settings_service.get_mqtt_publish_selection(db)
+    return set(sel["groups"]), set(sel["sensors"])
+
+
+def _is_enabled(sensor: dict, disabled_groups: set[str], disabled_keys: set[str]) -> bool:
+    return sensor["group"] not in disabled_groups and sensor["key"] not in disabled_keys
+
+
+def _sensors(db: Session, ref: date | None = None) -> list[dict]:
+    """The sensors that will actually be published — the full set minus the user's
+    publish-selection (disabled groups + individually disabled sensors)."""
+    dg, dk = _selection(db)
+    return [s for s in _all_sensors(db, ref) if _is_enabled(s, dg, dk)]
+
+
+def list_sensors(db: Session) -> dict:
+    """All publishable sensors + the current selection, for the Settings UI:
+    ``{groups: [{key,label,disabled}], sensors: [{key,name,group,enabled}]}``."""
+    dg, dk = _selection(db)
+    sensors = _all_sensors(db)
+    # Groups present (in label order), plus any disabled group with no current
+    # sensors so it can still be re-enabled.
+    present = [g for g in SENSOR_GROUP_LABELS if any(s["group"] == g for s in sensors) or g in dg]
+    return {
+        "groups": [{"key": g, "label": SENSOR_GROUP_LABELS[g], "disabled": g in dg} for g in present],
+        "sensors": [
+            {"key": s["key"], "name": s["name"], "group": s["group"], "enabled": _is_enabled(s, dg, dk)}
+            for s in sensors
+        ],
+        # The raw individual-sensor denylist, so the UI can round-trip per-sensor
+        # overrides without conflating them with a whole-group disable.
+        "disabled_sensors": sorted(dk),
+    }
 
 
 def _state_topic(key: str) -> str:
@@ -213,7 +264,10 @@ def publish_all(db: Session, ref: date | None = None, connect=None) -> dict:
     if not settings.mqtt_enabled:
         return {"enabled": False, "published": 0, "reason": "mqtt disabled"}
 
-    sensors = _sensors(db, ref)
+    all_sensors = _all_sensors(db, ref)
+    dg, dk = _selection(db)
+    sensors = [s for s in all_sensors if _is_enabled(s, dg, dk)]
+    disabled = [s for s in all_sensors if not _is_enabled(s, dg, dk)]
     client = (connect or _default_connect)()
     published = 0
     try:
@@ -227,9 +281,13 @@ def publish_all(db: Session, ref: date | None = None, connect=None) -> dict:
         for sensor in sensors:
             client.publish(_state_topic(sensor["key"]), str(sensor["value"]), retain=True)
             published += 1
+        # Clear the retained discovery config for any sensor the user has disabled,
+        # so Home Assistant drops the entity instead of leaving it stale.
+        for sensor in disabled:
+            client.publish(_discovery_topic(sensor["object_id"]), "", retain=True)
     finally:
         _safe_disconnect(client)
-    return {"enabled": True, "published": published, "sensors": len(sensors)}
+    return {"enabled": True, "published": published, "sensors": len(sensors), "cleared": len(disabled)}
 
 
 def publish_safe(db: Session, ref: date | None = None) -> None:

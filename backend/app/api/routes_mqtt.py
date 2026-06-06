@@ -6,11 +6,13 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.db.session import get_db
-from app.services import mqtt_service
+from app.models import User
+from app.services import auth_service, mqtt_service, settings_service
 
 router = APIRouter(prefix="/mqtt", tags=["mqtt"])
 
@@ -18,6 +20,32 @@ router = APIRouter(prefix="/mqtt", tags=["mqtt"])
 @router.get("/status")
 def mqtt_status(db: Annotated[Session, Depends(get_db)]) -> dict:
     return mqtt_service.status(db)
+
+
+@router.get("/sensors")
+def mqtt_sensors(db: Annotated[Session, Depends(get_db)]) -> dict:
+    """The publishable sensors + which groups/sensors are currently disabled, so the
+    Settings UI can show per-group and per-sensor toggles."""
+    return mqtt_service.list_sensors(db)
+
+
+class PublishSelectionIn(BaseModel):
+    disabled_groups: list[str] = []
+    disabled_sensors: list[str] = []
+
+
+@router.put("/sensors")
+def set_mqtt_sensors(
+    payload: PublishSelectionIn,
+    db: Annotated[Session, Depends(get_db)],
+    _user: Annotated[User, Depends(auth_service.require_settings_manager)],
+) -> dict:
+    """Choose what gets published to MQTT (backlog): a per-group and/or per-sensor
+    denylist. Manager-gated. Returns the refreshed sensor list."""
+    settings_service.set_mqtt_publish_selection(
+        db, groups=payload.disabled_groups, sensors=payload.disabled_sensors
+    )
+    return mqtt_service.list_sensors(db)
 
 
 @router.get("/preview")

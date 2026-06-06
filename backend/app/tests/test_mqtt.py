@@ -94,3 +94,66 @@ def test_mqtt_status_endpoint(client):
 
 def test_mqtt_publish_disabled_returns_400(client):
     assert client.post("/api/mqtt/publish").status_code == 400
+
+
+# --- publish selection: choose what to publish (group + per-sensor) ---
+
+def _hdr(uid: str, name: str | None = None) -> dict[str, str]:
+    return {"X-Remote-User-Id": uid, "X-Remote-User-Display-Name": name or uid}
+
+
+def test_sensors_endpoint_lists_groups_all_enabled_by_default(client):
+    body = client.get("/api/mqtt/sensors").json()
+    group_keys = {g["key"] for g in body["groups"]}
+    assert {"core", "counts", "subscriptions"} <= group_keys
+    assert all(g["disabled"] is False for g in body["groups"])
+    assert body["sensors"] and all(s["enabled"] for s in body["sensors"])
+    assert all(s["group"] in group_keys for s in body["sensors"])  # every sensor tagged
+
+
+def test_disable_group_removes_its_sensors_from_publish(client):
+    client.get("/api/users/me")  # local owner = settings-manager
+    r = client.put("/api/mqtt/sensors", json={"disabled_groups": ["counts"], "disabled_sensors": []})
+    assert r.status_code == 200
+    counts = next(g for g in r.json()["groups"] if g["key"] == "counts")
+    assert counts["disabled"] is True
+    assert all(not s["enabled"] for s in r.json()["sensors"] if s["group"] == "counts")
+    state = client.get("/api/mqtt/preview").json()["state"]
+    assert "review_items" not in state and "uncategorised" not in state
+    assert "spend_this_month" in state  # core untouched
+
+
+def test_disable_individual_sensor(client):
+    client.get("/api/users/me")
+    client.put("/api/mqtt/sensors", json={"disabled_groups": [], "disabled_sensors": ["net_this_month"]})
+    state = client.get("/api/mqtt/preview").json()["state"]
+    assert "net_this_month" not in state
+    assert "spend_this_month" in state and "income_this_month" in state
+
+
+def test_publish_clears_discovery_for_disabled(db, monkeypatch):
+    from app.services import mqtt_service, settings_service
+
+    settings_service.set_mqtt_publish_selection(db, groups=["counts"], sensors=["net_this_month"])
+    monkeypatch.setattr(mqtt_service.settings, "mqtt_enabled", True)
+    fake = FakeClient()
+    report = mqtt_service.publish_all(db, connect=lambda: fake)
+    assert report["cleared"] >= 3  # review_items, uncategorised, net_this_month
+    # A disabled sensor gets an EMPTY retained discovery payload so HA drops it...
+    net_cfg = [(t, p, r) for (t, p, r) in fake.published if t.endswith("finance_net_this_month/config")]
+    assert net_cfg and net_cfg[-1][1] == "" and net_cfg[-1][2] is True
+    # ...and its state is never published.
+    assert not any(t.endswith("/state/net_this_month") for (t, _p, _r) in fake.published)
+
+
+def test_set_sensors_requires_manager(client):
+    client.get("/api/users/me")  # establish the owner first
+    client.get("/api/users/me", headers=_hdr("ha-bob", "Bob"))
+    bob = next(u["id"] for u in client.get("/api/users").json() if u["external_id"] == "ha-bob")
+    client.patch(f"/api/users/{bob}", json={"role": "member", "status": "approved"})
+    r = client.put(
+        "/api/mqtt/sensors",
+        json={"disabled_groups": ["core"], "disabled_sensors": []},
+        headers=_hdr("ha-bob", "Bob"),
+    )
+    assert r.status_code == 403

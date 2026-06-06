@@ -17,6 +17,8 @@ import {
   getDemoStatus,
   getMissingFx,
   getMqttStatus,
+  getMqttSensors,
+  updateMqttSensors,
   getPaperlessStatus,
   testPaperlessConnection,
   getSecurityHealth,
@@ -574,8 +576,74 @@ function MqttCard({
             {publish.isPending ? "Publishing…" : "Publish now"}
           </button>
           {!s.enabled && <p className="muted" style={{ fontSize: "0.78rem", marginTop: 6 }}>Enable MQTT in the add-on options to publish.</p>}
+          <MqttSensorSelector onError={onError} />
         </>
       )}
+    </div>
+  );
+}
+
+// Pick what gets published to MQTT: turn off whole groups, or untick individual
+// sensors. Each toggle saves immediately; disabling a sensor clears it from Home
+// Assistant on the next publish (the backend removes its retained discovery).
+function MqttSensorSelector({ onError }: Readonly<{ onError: (e: unknown) => void }>) {
+  const qc = useQueryClient();
+  const sel = useQuery({ queryKey: ["mqtt-sensors"], queryFn: getMqttSensors });
+  const save = useMutation({
+    mutationFn: (v: { groups: string[]; sensors: string[] }) => updateMqttSensors(v.groups, v.sensors),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["mqtt-sensors"] });
+      qc.invalidateQueries({ queryKey: ["mqtt-status"] });
+    },
+    onError,
+  });
+  const data = sel.data;
+  if (!data) return <p className="muted" style={{ fontSize: "0.82rem" }}>Loading sensors…</p>;
+  if (data.groups.length === 0) return null;
+
+  const disabledGroups = data.groups.filter((g) => g.disabled).map((g) => g.key);
+  const disabledSensors = data.disabled_sensors;
+  const toggleGroup = (key: string) =>
+    save.mutate({
+      groups: disabledGroups.includes(key) ? disabledGroups.filter((g) => g !== key) : [...disabledGroups, key],
+      sensors: disabledSensors,
+    });
+  const toggleSensor = (key: string) =>
+    save.mutate({
+      groups: disabledGroups,
+      sensors: disabledSensors.includes(key) ? disabledSensors.filter((s) => s !== key) : [...disabledSensors, key],
+    });
+
+  return (
+    <div style={{ marginTop: 14 }}>
+      <h3 style={{ margin: "0 0 4px", fontSize: "0.95rem" }}>Published sensors</h3>
+      <p className="muted" style={{ marginTop: 0, fontSize: "0.8rem" }}>
+        Choose what to publish — turn off a whole group, or untick individual sensors. Disabling one
+        removes it from Home Assistant on the next publish.
+      </p>
+      {data.groups.map((g) => (
+        <div key={g.key} style={{ marginBottom: 6 }}>
+          <label className="checkbox" style={{ fontWeight: 600 }}>
+            <input type="checkbox" checked={!g.disabled} disabled={save.isPending} onChange={() => toggleGroup(g.key)} />{" "}
+            {g.label}
+          </label>
+          {!g.disabled && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 14px", paddingLeft: 22, marginTop: 2 }}>
+              {data.sensors.filter((sensor) => sensor.group === g.key).map((sensor) => (
+                <label key={sensor.key} className="checkbox" style={{ fontSize: "0.85rem" }}>
+                  <input
+                    type="checkbox"
+                    checked={!disabledSensors.includes(sensor.key)}
+                    disabled={save.isPending}
+                    onChange={() => toggleSensor(sensor.key)}
+                  />{" "}
+                  {sensor.name.replace(/^Finance /, "")}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 }

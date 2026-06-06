@@ -485,6 +485,38 @@ export async function publishMqtt(): Promise<{ enabled: boolean; published: numb
   return res.json();
 }
 
+// Choose what gets published to MQTT (per-group + per-sensor).
+export interface MqttSensorGroup {
+  key: string;
+  label: string;
+  disabled: boolean;
+}
+export interface MqttSensor {
+  key: string;
+  name: string;
+  group: string;
+  enabled: boolean;
+}
+export interface MqttSensorSelection {
+  groups: MqttSensorGroup[];
+  sensors: MqttSensor[];
+  disabled_sensors: string[]; // raw individual-sensor denylist (for round-tripping)
+}
+
+export function getMqttSensors(): Promise<MqttSensorSelection> {
+  return fetchJson<MqttSensorSelection>("api/mqtt/sensors");
+}
+
+export function updateMqttSensors(
+  disabledGroups: string[],
+  disabledSensors: string[],
+): Promise<MqttSensorSelection> {
+  return fetchJson<MqttSensorSelection>("api/mqtt/sensors", {
+    method: "PUT",
+    body: JSON.stringify({ disabled_groups: disabledGroups, disabled_sensors: disabledSensors }),
+  });
+}
+
 // --- Projects (spec §24.8, §18) ---
 
 export interface Project {
