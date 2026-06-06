@@ -7,6 +7,38 @@ pair: when a transaction matches the condition, the action is applied. Rules run
 The Rules page has a built-in **"How rules work"** panel with the same reference
 and live examples; this document is the standalone version.
 
+## The app learns — less manual work *and* less AI over time
+
+Categorisation runs in a fixed order: **manual → learned rules → vendor defaults →
+category keyword library → (opt-in) AI**. AI is only ever the **last resort** for
+what the first four didn't already settle. That ordering is what makes the app get
+*quieter* the more you use it: anything you teach it is reused automatically on
+future imports, so fewer transactions need a manual touch — and fewer ever reach
+the AI.
+
+You teach it three ways, all of which persist and apply to **future imports** (and
+to existing rows when you hit **Re-categorise**):
+
+- **Learn a rule from a correction.** When you set a category on a transaction, use
+  **"+ rule"** to turn "descriptions like this → this category" into a saved rule.
+  It's **idempotent** — teaching the same merchant→category twice reuses the one
+  rule, it never piles up duplicates. From then on, matching transactions are
+  categorised with **zero** AI and zero clicks.
+- **Build the vendor library.** Assigning (or creating) a **vendor** on a
+  transaction adds a *contains* alias and, if you give the vendor a **default
+  category**, every future transaction from that merchant is recognised and
+  categorised automatically.
+- **Grow the category keyword library.** The built-in keyword fallback catches
+  common descriptions; adding your own categories extends it.
+
+**Why this also lowers AI usage (and cost, and data exposure).** Because AI sits
+*after* rules/vendors/keywords, a transaction only goes to the AI if none of those
+matched. As your rules and vendor defaults accumulate, the share of each new
+statement that's already settled keeps rising — so next month's import is mostly
+auto-categorised from what you taught it this month, and the AI (if you've enabled
+it at all) is consulted for less and less. Less manual review, fewer cloud calls.
+See [privacy.md](privacy.md) for the privacy side of that.
+
 ## How rules are applied (precedence)
 
 - Only **enabled** rules are considered.

@@ -28,6 +28,7 @@ Budgeting apps want a cloud account and your bank login. I wanted the opposite: 
 - **No external calls by default.** Strict-local mode is the default — zero outbound requests (no telemetry, no phone-home).
 - Data lives in the add-on's **private `/data`** volume (SQLite), included in your HA backups.
 - **AI is opt-in.** If you want auto-categorisation help you can point it at a **local LLM (Ollama/LM Studio)** so even that stays on your network, or a cloud model with redaction + per-request approval + a full audit log. Sensitive categories (salary, mortgage, medical…) are never sent.
+- **It learns, so it gets quieter.** Categorisation runs manual → learned rules → vendor defaults → keyword library → (only then) AI. Every correction you teach it (a "+ rule" or a vendor's default category) auto-applies to future imports, so over time there's **less manual tidying and fewer AI calls** — enabling AI isn't a forever-cost.
 - Sign-in is your **Home Assistant login** via ingress — no separate account.
 
 ### Key features
