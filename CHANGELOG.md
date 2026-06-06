@@ -3,6 +3,52 @@
 All notable changes to HA Finance Intelligence. This project uses date-stamped,
 human-readable entries; versions follow semantic versioning.
 
+## v1.0.1 — 2026-06-07
+
+A polish release from real-world testing on top of v1.0.0 — quality-of-life
+features, faster search at scale, a more honest UI, and several fixes. Data and
+config carry over; database migrations run automatically on start.
+
+> Provided "as is", no warranty, not financial advice — keep your own backups.
+
+### Added
+- **Manage accounts** — create, rename, delete (when empty) or **merge** accounts,
+  and a new **Debit account** type.
+- **Settings → Storage & statistics** — database size on disk plus AI-call tallies
+  (cloud vs local, completed/failed, average turnaround).
+- **Choose what to publish to MQTT** — per-group *and* per-sensor selection; a
+  disabled sensor is removed from Home Assistant (its retained discovery is cleared).
+- **Reuse a receipt's AI-extracted category** for the transaction it matches — no
+  second AI call.
+- **Two-factor controls for admins** — require/scope MFA per user (optional vs
+  required; app vs app+admin), an enrolment gate, and per-user page access.
+
+### Improved
+- **Much faster transaction search at scale** — a SQLite FTS5 (trigram) index makes
+  substring search near-instant on very large datasets (falls back to the previous
+  behaviour where unavailable); the Transactions search box now debounces.
+- **Logs** — AI & privacy **decisions** are grouped on their own in the action
+  filter, and each decision kind (AI mode / OCR / FX / image-sent) is individually
+  filterable.
+- **Receipts** — "View original" now **previews in a popup** instead of downloading.
+
+### Fixed
+- Two-factor not prompting on a fresh open; removed a duplicate AI audit-log table.
+- Mobile **bank-CSV** files no longer greyed-out in the import file picker.
+- Receipt OCR no longer dumps **card-payment-slip** terminal text into the merchant
+  field (a clean name or nothing → review).
+- Corrected the Home Assistant **add-on repository** install steps (the missing
+  "Add" step) in the README and docs.
+- A receipt-file accessibility fix (keyboard-dismissable preview dialog).
+
+### Docs
+- A new **screenshot gallery** ([docs/screenshots.md](docs/screenshots.md)) plus a
+  README hero/grid and refreshed community-intro post.
+- Documented that **the app learns** — categorisation goes manual → learned rules →
+  vendor defaults → keyword library → (opt-in) AI, so over time there's less manual
+  tidying and **fewer AI calls**.
+- The **local-LLM** path is noted as built-but-untested, with a call for feedback.
+
 ## v1.0.0 — 2026-06-05
 
 The **1.0 release** — and the point the project becomes **Home Assistant-first**.
