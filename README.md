@@ -24,8 +24,10 @@ can publish finance sensors over **MQTT** plus net an **energy-cost offset**.
 
 [![Add repository to your Home Assistant.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2FSpiritSLO-UK%2FHomeAssistant-expenses-analytics)
 
-1. Click the badge above (or **Settings → Add-ons → Add-on store → ⋮ →
-   Repositories** and paste `https://github.com/SpiritSLO-UK/HomeAssistant-expenses-analytics`).
+1. Click the badge above (recommended — it opens HA and pre-fills the URL). Or add
+   it **manually**: open the Add-on Store (**Settings → Add-ons → Add-on Store**),
+   then **⋮ (top-right) → Repositories**, paste
+   `https://github.com/SpiritSLO-UK/HomeAssistant-expenses-analytics` and click **Add**.
 2. Open **HA Finance Intelligence** in the store and click **Install**.
 3. On the **Configuration** tab set your currency (and, optionally, MQTT / AI /
    energy options), then **Start**.
