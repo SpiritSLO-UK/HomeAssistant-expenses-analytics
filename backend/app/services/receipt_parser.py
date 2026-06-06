@@ -93,17 +93,41 @@ def detect_vat(text: str) -> Decimal | None:
     return None
 
 
+# A clean merchant header is short. Anything much longer is almost certainly a
+# run-on OCR line (e.g. a card-payment slip collapsed onto one line) rather than a
+# shop name, so we don't accept it as the merchant.
+_MAX_MERCHANT_LEN = 60
+
+# Payment-terminal / card-slip boilerplate that is never the merchant name. Lines
+# matching this are skipped when guessing the merchant, so a "merchant copy" debit
+# slip (REG/SESSION/PAN/Terminal ID/PAYMENT APPROVED…) doesn't leak into the field.
+_NON_MERCHANT_RE = re.compile(
+    r"\b(?:"
+    r"cardholder|card|debit|credit|payment|terminal|merchant\s*id|pan\s*(?:seq|no)|"
+    r"application\s*id|aid|txn|trx|transaction|session|approved|verification|"
+    r"visa|mastercard|maestro|amex|contactless|sequence|seq\s*no|reg\s*no|"
+    r"vat\s*(?:no|reg)|receipt|invoice|customer\s*copy|merchant\s*copy"
+    r")\b",
+    re.I,
+)
+
+
 def detect_merchant(text: str) -> str | None:
-    # The merchant is usually the first meaningful line (not a number/date/total).
+    # The merchant is usually the first short, mostly-alphabetic line that isn't a
+    # number/date/total or payment-terminal boilerplate. Skipping the boilerplate
+    # (and over-long run-on lines) avoids dumping card-slip gibberish in the field;
+    # when nothing qualifies we return None → the user fills it in via review.
     for line in text.splitlines():
         s = line.strip()
-        if len(s) < 2:
+        if len(s) < 2 or len(s) > _MAX_MERCHANT_LEN:
             continue
         if _AMOUNT_RE.fullmatch(s) or detect_date(s):
             continue
+        if _NON_MERCHANT_RE.search(s):
+            continue
         letters = sum(c.isalpha() for c in s)
         if letters >= 2 and letters >= len(s) * 0.4:
-            return s[:300]
+            return s[:_MAX_MERCHANT_LEN]
     return None
 
 
