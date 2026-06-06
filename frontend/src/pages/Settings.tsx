@@ -12,7 +12,6 @@ import {
   exportConfig,
   getAiStatus,
   getHealth,
-  listAiRequests,
   testAiConnection,
   getMe,
   getDemoStatus,
@@ -784,7 +783,6 @@ function AiCard({
   const qc = useQueryClient();
   const status = useQuery({ queryKey: ["ai-status"], queryFn: getAiStatus });
   const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
-  const requests = useQuery({ queryKey: ["ai-requests"], queryFn: () => listAiRequests() });
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [showDisclaimer, setShowDisclaimer] = useState(false);
 
@@ -913,31 +911,10 @@ function AiCard({
         </p>
       )}
 
-      {requests.data && requests.data.length > 0 && (
-        <>
-          <h3 style={{ margin: "14px 0 6px", fontSize: "0.95rem" }}>Audit log</h3>
-          <p className="muted" style={{ fontSize: "0.78rem", marginTop: 0 }}>Every AI call is logged (spec §22.6).</p>
-          <div className="table-wrap">
-            <table className="table">
-              <thead>
-                <tr><th>When</th><th>Task</th><th>Provider</th><th>Mode</th><th>Approval</th><th>Status</th></tr>
-              </thead>
-              <tbody>
-                {requests.data.slice(0, 8).map((r) => (
-                  <tr key={r.id}>
-                    <td>{r.created_at.replace("T", " ").slice(0, 16)}</td>
-                    <td>{r.task_type}</td>
-                    <td>{r.provider}</td>
-                    <td>{r.privacy_mode}</td>
-                    <td>{r.approval_status}</td>
-                    <td>{r.status}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
+      <p className="muted" style={{ fontSize: "0.78rem", marginTop: 14 }}>
+        Every AI call is recorded — see the <strong>Logs</strong> page (🔑 Decisions / AI calls) for the
+        full audit trail.
+      </p>
     </div>
   );
 }
