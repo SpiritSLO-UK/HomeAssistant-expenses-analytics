@@ -70,6 +70,14 @@ receipt OCR text is never sent). Note: this needs an **OpenAI API** key — a Ch
    each request (cloud vs local). See [privacy.md](privacy.md) for the redaction
    detail and provider-retention caveats.
 
+> **Local LLM (`local_llm`) — untested, feedback welcome.** The `local_llm` mode
+> points the same OpenAI-compatible client at a local endpoint (Ollama, LM Studio,
+> a Home Assistant LLM, etc.) so nothing leaves your network. It *should* work with
+> any OpenAI-compatible API, but it hasn't been tested against a real local model —
+> there isn't one in the author's setup. If you run one, please share what works (and
+> what doesn't): models, endpoint quirks, and any requirements. Open an issue on
+> GitHub — local-LLM feedback directly shapes this path.
+
 ### Investment price feed (opt-in)
 
 Off by default (`manual`). Choose the source in Settings; only the **keyed**
