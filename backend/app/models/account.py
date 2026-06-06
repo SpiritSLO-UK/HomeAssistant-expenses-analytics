@@ -22,7 +22,7 @@ class Account(Base, TimestampMixin):
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     institution: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    # current_account | credit_card | savings | loan | mortgage | cash | other
+    # current_account | debit_card | credit_card | savings | loan | mortgage | cash | other
     account_type: Mapped[str] = mapped_column(String(32), nullable=False, default="current_account")
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="GBP")
     last_four: Mapped[str | None] = mapped_column(String(4), nullable=True)

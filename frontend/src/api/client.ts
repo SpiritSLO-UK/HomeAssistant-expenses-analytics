@@ -2505,8 +2505,8 @@ export interface Account {
 
 // Account types the backend accepts (mirrors schemas/accounts.ACCOUNT_TYPES).
 export const ACCOUNT_TYPES = [
-  "current_account", "credit_card", "savings", "loan", "mortgage", "cash",
-  "investment", "pension", "other",
+  "current_account", "debit_card", "credit_card", "savings", "loan", "mortgage",
+  "cash", "investment", "pension", "other",
 ] as const;
 
 export function listAccounts(): Promise<Account[]> {
