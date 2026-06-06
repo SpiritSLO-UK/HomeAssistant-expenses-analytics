@@ -2478,10 +2478,28 @@ export interface Account {
   owner_name: string | null;
   is_shared: boolean;
   is_private: boolean;
+  in_use: boolean; // has transactions/snapshots → can only be merged, not deleted
 }
+
+// Account types the backend accepts (mirrors schemas/accounts.ACCOUNT_TYPES).
+export const ACCOUNT_TYPES = [
+  "current_account", "credit_card", "savings", "loan", "mortgage", "cash",
+  "investment", "pension", "other",
+] as const;
 
 export function listAccounts(): Promise<Account[]> {
   return fetchJson<Account[]>("api/accounts");
+}
+
+export function createAccount(payload: {
+  name: string;
+  account_type?: string;
+  currency?: string;
+  institution?: string;
+  owner_user_id?: number | null;
+  is_shared?: boolean;
+}): Promise<Account> {
+  return fetchJson<Account>("api/accounts", { method: "POST", body: JSON.stringify(payload) });
 }
 
 export function updateAccount(
@@ -2489,4 +2507,15 @@ export function updateAccount(
   patch: { name?: string; account_type?: string; is_shared?: boolean; owner_user_id?: number | null },
 ): Promise<Account> {
   return fetchJson<Account>(`api/accounts/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
+}
+
+export function deleteAccount(id: number): Promise<{ deleted: boolean; id: number }> {
+  return fetchJson<{ deleted: boolean; id: number }>(`api/accounts/${id}`, { method: "DELETE" });
+}
+
+export function mergeAccount(id: number, targetId: number): Promise<Account> {
+  return fetchJson<Account>(`api/accounts/${id}/merge`, {
+    method: "POST",
+    body: JSON.stringify({ target_id: targetId }),
+  });
 }

@@ -96,3 +96,82 @@ def test_patch_invalid_account_type(client):
     ids = _setup(client)
     r = client.patch(f"/api/accounts/{ids['shared']}", json={"account_type": "bogus"})
     assert r.status_code == 400
+
+
+# --- create / delete / merge (manage accounts, #112) ---
+
+
+def test_create_account(client):
+    _setup(client)
+    r = client.post("/api/accounts", json={"name": "Savings Pot", "account_type": "savings"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["name"] == "Savings Pot"
+    assert body["account_type"] == "savings"
+    assert body["currency"] == "GBP"  # default base currency
+    assert body["in_use"] is False
+    assert _acct(client, None, body["id"]) is not None
+
+
+def test_create_account_invalid_type(client):
+    _setup(client)
+    r = client.post("/api/accounts", json={"name": "X", "account_type": "bogus"})
+    assert r.status_code == 400
+
+
+def test_member_creates_own_private_account(client):
+    ids = _setup(client)
+    alice = _hdr("ha-alice", "Alice")
+    r = client.post("/api/accounts", json={"name": "Alice Wallet", "account_type": "cash"}, headers=alice)
+    assert r.status_code == 200
+    # A non-admin's new account is owned by them (private) regardless of payload.
+    assert r.json()["owner_user_id"] == ids["alice"]
+    assert r.json()["is_private"] is True
+
+
+def test_delete_empty_account(client):
+    _setup(client)
+    new_id = client.post("/api/accounts", json={"name": "Temp", "account_type": "other"}).json()["id"]
+    r = client.delete(f"/api/accounts/{new_id}")
+    assert r.status_code == 200
+    assert r.json()["deleted"] is True
+    assert _acct(client, None, new_id) is None
+
+
+def test_delete_account_with_data_409(client):
+    ids = _setup(client)  # 'bobs' has a transaction
+    r = client.delete(f"/api/accounts/{ids['bobs']}")
+    assert r.status_code == 409
+    assert "merge" in r.json()["detail"].lower()
+    assert _acct(client, None, ids["bobs"]) is not None  # still there
+
+
+def test_member_cannot_delete_account(client):
+    _setup(client)
+    new_id = client.post("/api/accounts", json={"name": "Temp", "account_type": "other"}).json()["id"]
+    r = client.delete(f"/api/accounts/{new_id}", headers=_hdr("ha-alice", "Alice"))
+    assert r.status_code == 403  # owner-only
+
+
+def test_merge_account_repoints_transactions(client):
+    ids = _setup(client)  # 'bobs' has the SECRET transaction; 'shared' is empty
+    r = client.post(f"/api/accounts/{ids['bobs']}/merge", json={"target_id": ids["shared"]})
+    assert r.status_code == 200
+    assert r.json()["id"] == ids["shared"]
+    assert r.json()["in_use"] is True  # the transaction moved onto the target
+    assert _acct(client, None, ids["bobs"]) is None  # source deleted
+    with SessionLocal() as db:
+        txn = db.query(Transaction).filter(Transaction.description_raw == "SECRET").one()
+        assert txn.account_id == ids["shared"]
+
+
+def test_merge_into_itself_400(client):
+    ids = _setup(client)
+    r = client.post(f"/api/accounts/{ids['shared']}/merge", json={"target_id": ids["shared"]})
+    assert r.status_code == 400
+
+
+def test_merge_unknown_account_404(client):
+    ids = _setup(client)
+    r = client.post(f"/api/accounts/{ids['shared']}/merge", json={"target_id": 999999})
+    assert r.status_code == 404
