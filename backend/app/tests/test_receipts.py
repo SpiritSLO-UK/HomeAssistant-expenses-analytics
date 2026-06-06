@@ -222,10 +222,12 @@ def test_attach_receipt_to_transaction_keeps_original(client):
     listed = client.get(f"/api/transactions/{txn['id']}/receipts").json()
     assert [r["id"] for r in listed] == [receipt["id"]]
 
-    # ...and the original is served back for viewing.
+    # ...and the original is served back for viewing — inline (so the in-app
+    # popup / browser previews it) rather than as a forced download.
     served = client.get(f"/api/receipts/{receipt['id']}/file")
     assert served.status_code == 200
     assert served.content == b"fake-image-bytes"
+    assert "inline" in served.headers.get("content-disposition", "")
 
 
 def test_attach_receipt_validation(client):

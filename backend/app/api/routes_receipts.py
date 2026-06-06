@@ -97,7 +97,15 @@ def get_receipt_file(receipt_id: int, db: Annotated[Session, Depends(get_db)]) -
     if path is None or not path.exists():
         raise HTTPException(status_code=404, detail="Receipt original is not available")
     media_type = mimetypes.guess_type(receipt.source_filename or path.name)[0] or "application/octet-stream"
-    return FileResponse(path, media_type=media_type, filename=receipt.source_filename or path.name)
+    # Serve inline (not as an attachment) so the image/PDF previews in the in-app
+    # viewer / browser tab instead of forcing a download. `filename` is kept as the
+    # suggested name if the user does choose to save it.
+    return FileResponse(
+        path,
+        media_type=media_type,
+        filename=receipt.source_filename or path.name,
+        content_disposition_type="inline",
+    )
 
 
 @router.post("/{receipt_id}/ocr", response_model=ReceiptOut, responses={404: {"description": "Not found"}})
