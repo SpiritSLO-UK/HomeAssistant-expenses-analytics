@@ -14,34 +14,13 @@ categories. All privacy-first, with **strict local mode as the default**.
 Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md)
 (the build-status section at the top tracks progress).
 
-## 🚀 Run it standalone (no Home Assistant needed)
-
-This is the **v1.0.0** release — a complete, privacy-first finance app you can run
-today with Docker, standalone. Prefer Home Assistant? It also installs as a
-**one-click HA add-on** (ingress SSO, MQTT sensors, energy-cost offset) — see
-[Install on Home Assistant](#-install-on-home-assistant-add-on) below.
-
-```bash
-git clone https://github.com/SpiritSLO-UK/HomeAssistant-expenses-analytics.git
-cd HomeAssistant-expenses-analytics
-docker compose up -d --build      # build + start
-# open http://localhost:8099
-```
-
-Your data (SQLite DB + uploads + safety backups) is kept in the `finance_data`
-Docker volume. Standalone, the app runs single-user as a local owner. Set your
-base currency and other options in [`docker-compose.yml`](docker-compose.yml) (or
-`HAFI_*` env vars), then **Settings → Demo data → Load demo data** to explore.
-See the [CHANGELOG](CHANGELOG.md) for what's in this release. _Provided "as is",
-no warranty, not financial advice — keep your own backups._
-
 ## 🏠 Install on Home Assistant (add-on)
 
-The recommended way to run this **on Home Assistant** is as an add-on. It installs
-from a **prebuilt image** (no on-device build — a quick pull, even on a Raspberry
-Pi), shows up as an **ingress sidebar panel**, signs you in automatically with your
-Home Assistant identity (the first user becomes the owner), and can publish finance
-sensors over **MQTT**.
+This is the **v1.0.0** release. The recommended way to run it is **on Home Assistant**
+as an add-on: it installs from a **prebuilt image** (no on-device build — a quick pull,
+even on a Raspberry Pi), shows up as an **ingress sidebar panel**, signs you in
+automatically with your Home Assistant identity (the first user becomes the owner), and
+can publish finance sensors over **MQTT** plus net an **energy-cost offset**.
 
 [![Add repository to your Home Assistant.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2FSpiritSLO-UK%2FHomeAssistant-expenses-analytics)
 
@@ -55,6 +34,25 @@ sensors over **MQTT**.
 Full walkthrough — options, MQTT sensors, energy-cost offset and isolation — is in
 **[docs/ha-install.md](docs/ha-install.md)**. _Requires a Home Assistant install
 with the Supervisor (Home Assistant OS or Supervised)._
+
+## 🚀 Run it standalone (without Home Assistant)
+
+Prefer to run it on its own? It's the same complete, privacy-first finance app, run with
+Docker as a single-user local owner — no Home Assistant required.
+
+```bash
+git clone https://github.com/SpiritSLO-UK/HomeAssistant-expenses-analytics.git
+cd HomeAssistant-expenses-analytics
+docker compose up -d --build      # build + start
+# open http://localhost:8099
+```
+
+Your data (SQLite DB + uploads + safety backups) is kept in the `finance_data`
+Docker volume. Set your base currency and other options in
+[`docker-compose.yml`](docker-compose.yml) (or `HAFI_*` env vars), then
+**Settings → Demo data → Load demo data** to explore. See the [CHANGELOG](CHANGELOG.md)
+for what's in this release. _Provided "as is", no warranty, not financial advice — keep
+your own backups._
 
 ## Status
 
