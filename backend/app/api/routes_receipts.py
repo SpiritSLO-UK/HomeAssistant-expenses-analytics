@@ -162,6 +162,10 @@ def ai_extract_receipt(
     except AIError as exc:
         raise HTTPException(status_code=502, detail=f"AI extraction failed: {exc}") from exc
     audit_service.record_image_sent(db, actor=user.display_name, kind="receipt", size=len(content))
+    # Persist the AI's suggested category so the matched/created transaction can
+    # reuse it without a second AI call (backlog #110).
+    if fields.get("category_id"):
+        receipt.ai_category_id = fields["category_id"]
     db.commit()
     updates = _receipt_fields_from_ai(fields)
     if updates:

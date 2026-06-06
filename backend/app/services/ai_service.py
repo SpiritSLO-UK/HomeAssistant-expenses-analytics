@@ -144,11 +144,17 @@ def _valid_vendor(value: object) -> str | None:
     return name[:120]
 
 
+def _match_category_name(name: object, cats: list[Category]) -> Category | None:
+    """Resolve a model-returned category name to a candidate Category (exact,
+    case-insensitive), or None."""
+    if not name:
+        return None
+    target = str(name).strip().lower()
+    return next((c for c in cats if c.name.strip().lower() == target), None)
+
+
 def _suggest(req: AIRequest, result: dict, cats: list[Category]) -> dict:
-    name = result.get("category")
-    match = None
-    if name:
-        match = next((c for c in cats if c.name.strip().lower() == str(name).strip().lower()), None)
+    match = _match_category_name(result.get("category"), cats)
     return {
         "status": "ok",
         "ai_request_id": req.id,
@@ -348,7 +354,8 @@ _STATEMENT_VISION_SYSTEM = (
 _RECEIPT_VISION_SYSTEM = (
     "You read a photo of a purchase receipt and extract its summary. Respond ONLY with "
     'JSON: {"merchant": "<name>", "date": "YYYY-MM-DD or null", "total": "<number>", '
-    '"currency": "<ISO code or null>"}. No prose, no code fences.'
+    '"currency": "<ISO code or null>", "category": "<one of the provided categories or null>"}. '
+    "No prose, no code fences."
 )
 
 
@@ -408,11 +415,26 @@ def extract_statement_image(db: Session, content: bytes, mime: str) -> list[dict
 
 
 def extract_receipt_image(db: Session, content: bytes, mime: str) -> dict:
-    """Vision-extract a receipt's merchant/date/total/currency from an image."""
+    """Vision-extract a receipt's merchant/date/total/currency from an image, and —
+    in the *same* call — a suggested category (backlog #110). The candidate
+    category names are listed in the instruction; the returned name is resolved to
+    a category id (``category_id``/``category_name``, None when unmatched) so the
+    transaction matched to / created from this receipt can reuse it instead of a
+    separate AI classification call."""
     provider, mode = _require_vision(db)
+    cats = _candidate_categories(db)
+    names = ", ".join(c.name for c in cats)
+    instruction = (
+        "Extract this receipt's summary. For \"category\", choose the single best match "
+        f"from this list, or null if none fit: {names}."
+    )
     req = _audit_image(db, provider, mode, kind="receipt", size=len(content))
-    return _run_image(db, req, provider, content, mime,
-                      system=_RECEIPT_VISION_SYSTEM, instruction="Extract this receipt's summary.")
+    result = _run_image(db, req, provider, content, mime,
+                        system=_RECEIPT_VISION_SYSTEM, instruction=instruction)
+    match = _match_category_name(result.get("category"), cats)
+    result["category_id"] = match.id if match else None
+    result["category_name"] = match.name if match else None
+    return result
 
 
 def _select_for_batch(

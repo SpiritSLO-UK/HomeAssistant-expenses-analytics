@@ -369,6 +369,20 @@ def test_extract_receipt_image_returns_fields(db, monkeypatch):
     assert out["merchant"] == "Tesco" and out["total"] == "12.34"
 
 
+def test_extract_receipt_image_resolves_category(db, monkeypatch):
+    # The same vision call also returns a category, resolved to a candidate id (#110).
+    from app.models import Category
+    cat = Category(name="Groceries", is_active=True)
+    db.add(cat)
+    db.commit()
+    _mode(db, "local_llm")
+    monkeypatch.setattr(ai_service, "get_provider", lambda _db: _VisionProvider(
+        {"merchant": "Tesco", "total": "12.34", "currency": "GBP", "category": "Groceries"}))
+    out = ai_service.extract_receipt_image(db, b"img", "image/jpeg")
+    assert out["category_id"] == cat.id
+    assert out["category_name"] == "Groceries"
+
+
 def test_extract_image_off_is_disabled(db):
     with pytest.raises(AIDisabled):
         ai_service.extract_statement_image(db, b"img", "image/png")  # strict_local default

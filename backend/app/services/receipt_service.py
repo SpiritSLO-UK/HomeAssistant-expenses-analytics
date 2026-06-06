@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.logging import get_logger
-from app.models import Account, Receipt, Transaction, TransactionReceiptMatch
+from app.models import Account, Category, Receipt, Transaction, TransactionReceiptMatch
 from app.services import (
     fx_service,
     import_service,
@@ -196,6 +196,28 @@ def _propagate_vat(txn: Transaction, receipt: Receipt) -> None:
         txn.vat_amount = receipt.vat_amount
 
 
+# Sub-manual confidence for a category reused from a receipt's AI extraction, so
+# it isn't treated as a locked manual pick (a recheck batch can still revisit it).
+_AI_REUSE_CONFIDENCE = 0.8
+
+
+def _reuse_ai_category(db: Session, receipt: Receipt, txn: Transaction) -> None:
+    """Reuse the receipt's AI-suggested category (backlog #110) for its matched
+    transaction, so we don't make a *second* AI call just to categorise it. The
+    category came back on the same vision call that read the receipt. Only fills an
+    **uncategorised** transaction — never overrides a manual/rule/vendor/keyword pick.
+    Guards against a dangling id (no DB-level FK on upgraded SQLite) by confirming
+    the category still exists."""
+    if (
+        receipt.ai_category_id
+        and txn.category_id is None
+        and db.get(Category, receipt.ai_category_id) is not None
+    ):
+        txn.category_id = receipt.ai_category_id
+        if txn.confidence_score is None:
+            txn.confidence_score = _AI_REUSE_CONFIDENCE
+
+
 def _flag(db: Session, receipt: Receipt, reason: str, action: str) -> None:
     review_service.add(
         db, item_type="receipt", item_id=receipt.id, reason=reason,
@@ -363,6 +385,7 @@ def confirm_match(db: Session, receipt: Receipt, transaction_id: int) -> Transac
     review_service.resolve_for(db, item_type="receipt", item_id=receipt.id, reason="receipt_unmatched")
     review_service.resolve_for(db, item_type="receipt", item_id=receipt.id, reason="low_confidence")
     _propagate_vat(txn, receipt)
+    _reuse_ai_category(db, receipt, txn)
     # Processed & matched → optionally drop the original (backlog #147).
     if settings_service.get_receipt_delete_after_processing(db):
         drop_original(db, receipt, commit=False)
@@ -439,6 +462,7 @@ def attach_to_transaction(db: Session, receipt: Receipt, transaction_id: int) ->
     review_service.resolve_for(db, item_type="receipt", item_id=receipt.id, reason="receipt_unmatched")
     review_service.resolve_for(db, item_type="receipt", item_id=receipt.id, reason="low_confidence")
     _propagate_vat(txn, receipt)
+    _reuse_ai_category(db, receipt, txn)
     db.commit()
     db.refresh(chosen)
     return chosen

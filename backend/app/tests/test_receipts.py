@@ -6,8 +6,12 @@ upload→manual-fields→match→confirm flow doesn't depend on a Tesseract bina
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 import pytest
 
+from app.db.session import SessionLocal
+from app.models import Category, Receipt, Transaction
 from app.services import receipt_parser
 
 SAMPLE = """TESCO STORES
@@ -64,6 +68,52 @@ def _upload(client, content=b"not-a-real-image", name="receipt.png"):
 def test_ocr_status_endpoint(client):
     s = client.get("/api/receipts/status").json()
     assert "available" in s and "image_ocr" in s and "pdf_text" in s
+
+
+# --- reuse the receipt's AI-suggested category on its matched transaction (#110) ---
+
+
+def _receipt_with_ai_category(client, *, ai_name: str) -> tuple[int, int, int]:
+    """Import an uncategorisable txn + a receipt that already carries an AI-suggested
+    category. Returns (transaction_id, receipt_id, ai_category_id)."""
+    _import(client, _curve([("2026-05-02", "ZZQ MYSTERY PURCHASE", "-42.18")]))
+    txn = _txn(client, "ZZQ MYSTERY PURCHASE")
+    rid = _upload(client).json()["id"]
+    client.patch(f"/api/receipts/{rid}", json={"merchant_raw": "ZZQ", "receipt_date": "2026-05-02", "total_amount": "42.18"})
+    with SessionLocal() as db:
+        cat = Category(name=ai_name, is_active=True)
+        db.add(cat)
+        db.flush()
+        cat_id = cat.id
+        db.get(Receipt, rid).ai_category_id = cat_id
+        db.commit()
+    return txn["id"], rid, cat_id
+
+
+def test_receipt_ai_category_reused_on_confirm_match(client):
+    txn_id, rid, cat_id = _receipt_with_ai_category(client, ai_name="ReuseCat")
+    # The imported row is uncategorisable, so it has no category yet.
+    with SessionLocal() as db:
+        assert db.get(Transaction, txn_id).category_id is None
+    r = client.post(f"/api/receipts/{rid}/confirm-match", json={"transaction_id": txn_id})
+    assert r.status_code == 200
+    # Reused the receipt's AI category — no separate AI classification call needed.
+    with SessionLocal() as db:
+        assert db.get(Transaction, txn_id).category_id == cat_id
+
+
+def test_receipt_ai_category_does_not_override_existing(client):
+    txn_id, rid, _ai_id = _receipt_with_ai_category(client, ai_name="AiCat")
+    with SessionLocal() as db:
+        manual = Category(name="ManualCat", is_active=True)
+        db.add(manual)
+        db.flush()
+        manual_id = manual.id
+        db.get(Transaction, txn_id).category_id = manual_id  # already categorised
+        db.commit()
+    client.post(f"/api/receipts/{rid}/confirm-match", json={"transaction_id": txn_id})
+    with SessionLocal() as db:
+        assert db.get(Transaction, txn_id).category_id == manual_id  # unchanged
 
 
 def test_upload_then_manual_fields_then_match_and_confirm(client):
@@ -180,7 +230,6 @@ def test_create_transaction_from_receipt_new_account(client):
                for m in body["receipt"]["matches"])
 
     # The transaction is money out, carries the receipt's merchant/date.
-    from decimal import Decimal
     txn = _by_id(client, txn_id)
     assert Decimal(txn["amount"]) == Decimal("-12.50")
     assert txn["direction"] == "debit"
