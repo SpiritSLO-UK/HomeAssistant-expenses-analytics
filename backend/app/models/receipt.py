@@ -36,6 +36,12 @@ class Receipt(Base, TimestampMixin):
     total_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
     currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
     vat_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    # The category the receipt's AI vision extraction suggested (backlog #110), so a
+    # transaction matched to / created from this receipt can reuse it instead of a
+    # second AI call. NULL when AI wasn't used or returned no usable category.
+    ai_category_id: Mapped[int | None] = mapped_column(
+        ForeignKey("categories.id", ondelete="SET NULL"), nullable=True
+    )
     # not_processed | processing | processed | failed | skipped
     ocr_status: Mapped[str] = mapped_column(String(16), nullable=False, default="not_processed")
     ocr_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
