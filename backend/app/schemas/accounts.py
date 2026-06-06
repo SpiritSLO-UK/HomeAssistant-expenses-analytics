@@ -6,8 +6,8 @@ from pydantic import BaseModel, Field
 
 # Account types the model documents (account.py).
 ACCOUNT_TYPES = {
-    "current_account", "credit_card", "savings", "loan", "mortgage", "cash",
-    "investment", "pension", "other",
+    "current_account", "debit_card", "credit_card", "savings", "loan", "mortgage",
+    "cash", "investment", "pension", "other",
 }
 
 

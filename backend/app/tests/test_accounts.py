@@ -119,6 +119,14 @@ def test_create_account_invalid_type(client):
     assert r.status_code == 400
 
 
+def test_create_debit_card_account(client):
+    # debit_card is the natural complement to credit_card (#173 follow-up).
+    _setup(client)
+    r = client.post("/api/accounts", json={"name": "Everyday Debit", "account_type": "debit_card"})
+    assert r.status_code == 200
+    assert r.json()["account_type"] == "debit_card"
+
+
 def test_member_creates_own_private_account(client):
     ids = _setup(client)
     alice = _hdr("ha-alice", "Alice")
