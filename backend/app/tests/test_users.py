@@ -114,3 +114,49 @@ def test_cannot_lock_yourself_out(client):
 
     # …but stepping down (handing over, then demoting yourself) is still allowed.
     assert client.patch(f"/api/users/{me['id']}", json={"role": "member"}).status_code == 200
+
+
+# --- per-user page restrictions (admin chooses which pages a user can reach, #108) ---
+
+
+def _approved_member(client, uid: str, name: str) -> int:
+    client.get("/api/users/me")  # owner bootstraps
+    client.get("/api/users/me", headers=_hdr(uid, name))
+    mid = next(u["id"] for u in client.get("/api/users").json() if u["external_id"] == uid)
+    client.patch(f"/api/users/{mid}", json={"role": "member", "status": "approved"})
+    return mid
+
+
+def test_owner_blocks_member_from_a_page(client):
+    bob_id = _approved_member(client, "ha-bob", "Bob")
+    bob = _hdr("ha-bob", "Bob")
+    assert client.get("/api/budgets", headers=bob).status_code == 200  # before
+
+    r = client.patch(f"/api/users/{bob_id}", json={"blocked_nav_keys": ["budgets"]})
+    assert r.status_code == 200
+    assert r.json()["blocked_nav_keys"] == ["budgets"]
+
+    # Blocked page → 403 (enforced server-side); other pages still work.
+    assert client.get("/api/budgets", headers=bob).status_code == 403
+    assert client.get("/api/transactions", headers=bob).status_code == 200
+    # The user's own /me reflects it so the sidebar can hide the page.
+    assert client.get("/api/users/me", headers=bob).json()["blocked_nav_keys"] == ["budgets"]
+
+    # Owner clears the restriction.
+    client.patch(f"/api/users/{bob_id}", json={"blocked_nav_keys": []})
+    assert client.get("/api/budgets", headers=bob).status_code == 200
+
+
+def test_block_unknown_page_is_400(client):
+    bob_id = _approved_member(client, "ha-bob", "Bob")
+    r = client.patch(f"/api/users/{bob_id}", json={"blocked_nav_keys": ["not-a-page"]})
+    assert r.status_code == 400
+
+
+def test_owner_is_never_restricted(client):
+    client.get("/api/users/me")  # local owner
+    owner_id = next(u["id"] for u in client.get("/api/users").json() if u["external_id"] == "local")
+    # Even with keys stored, an owner (admin) bypasses the block.
+    client.patch(f"/api/users/{owner_id}", json={"blocked_nav_keys": ["budgets"]})
+    assert client.get("/api/budgets").status_code == 200
+    assert client.get("/api/users/me").json()["blocked_nav_keys"] == ["budgets"]

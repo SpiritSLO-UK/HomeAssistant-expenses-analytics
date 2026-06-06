@@ -61,7 +61,11 @@ export default function App() {
   }
 
   return (
-    <AppShell role={me.data?.role ?? "owner"} canManageTabs={me.data?.can_manage_settings ?? false}>
+    <AppShell
+      role={me.data?.role ?? "owner"}
+      canManageTabs={me.data?.can_manage_settings ?? false}
+      blockedNavKeys={me.data?.blocked_nav_keys ?? []}
+    >
       <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/search" element={<Search />} />
@@ -97,16 +101,24 @@ export default function App() {
 function AppShell({
   role,
   canManageTabs = false,
+  blockedNavKeys = [],
   children,
 }: Readonly<{
   role: string;
   canManageTabs?: boolean;
+  blockedNavKeys?: string[];
   children: ReactNode;
 }>) {
   const [navOpen, setNavOpen] = useState(false);
   return (
     <div className="layout">
-      <Sidebar role={role} canManageTabs={canManageTabs} open={navOpen} onNavigate={() => setNavOpen(false)} />
+      <Sidebar
+        role={role}
+        canManageTabs={canManageTabs}
+        blockedNavKeys={blockedNavKeys}
+        open={navOpen}
+        onNavigate={() => setNavOpen(false)}
+      />
       {navOpen && (
         <button className="nav-backdrop" aria-label="Close menu" onClick={() => setNavOpen(false)} />
       )}

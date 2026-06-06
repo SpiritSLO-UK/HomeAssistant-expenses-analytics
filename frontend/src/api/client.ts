@@ -2054,6 +2054,7 @@ export interface Me {
   is_admin: boolean;
   can_write: boolean;
   can_manage_settings: boolean;
+  blocked_nav_keys: string[]; // pages this user is restricted from (#108)
   mfa_enabled: boolean;
   mfa_required: boolean;
 }
@@ -2066,6 +2067,7 @@ export interface User {
   status: string;
   is_active: boolean;
   can_manage_settings: boolean;
+  blocked_nav_keys: string[]; // pages this user is restricted from (#108)
   external_id: string | null;
   last_seen_at: string | null;
   created_at: string;
@@ -2092,7 +2094,14 @@ export function listMembers(): Promise<Member[]> {
 
 export function updateUser(
   id: number,
-  patch: { role?: string; status?: string; display_name?: string; email?: string; can_manage_settings?: boolean },
+  patch: {
+    role?: string;
+    status?: string;
+    display_name?: string;
+    email?: string;
+    can_manage_settings?: boolean;
+    blocked_nav_keys?: string[];
+  },
 ): Promise<User> {
   return fetchJson<User>(`api/users/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
 }

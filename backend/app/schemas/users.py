@@ -17,6 +17,7 @@ class UserOut(BaseModel):
     status: str
     is_active: bool
     can_manage_settings: bool
+    blocked_nav_keys: list[str] = []  # pages this user is restricted from (#108)
     external_id: str | None
     last_seen_at: datetime | None
     created_at: datetime
@@ -34,6 +35,7 @@ class MeOut(BaseModel):
     is_admin: bool
     can_write: bool
     can_manage_settings: bool
+    blocked_nav_keys: list[str] = []  # pages this user is restricted from (#108)
     mfa_enabled: bool
     # True when the user has MFA on but this request lacks a valid session — the
     # frontend then shows the MFA entry gate.
@@ -56,3 +58,4 @@ class UserUpdate(BaseModel):
     display_name: str | None = None
     email: str | None = None
     can_manage_settings: bool | None = None
+    blocked_nav_keys: list[str] | None = None  # pages to restrict this user from (#108)

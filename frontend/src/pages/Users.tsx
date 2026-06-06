@@ -11,8 +11,11 @@ import {
   updateUser,
   type User,
 } from "../api/client";
+import { BLOCKABLE_NAV_ITEMS, navKey } from "../nav";
 
 const ROLES = ["owner", "member", "viewer", "child"];
+
+type UserPatch = { role?: string; status?: string; can_manage_settings?: boolean; blocked_nav_keys?: string[] };
 const STATUSES = ["pending", "approved", "disabled"];
 
 const ROLE_HINT: Record<string, string> = {
@@ -31,6 +34,8 @@ export default function Users() {
   const lastAction = useRef<(() => void) | null>(null);
   const [stepUpOpen, setStepUpOpen] = useState(false);
   const [stepCode, setStepCode] = useState("");
+  // Which user's page-access checklist is open (#108).
+  const [restricting, setRestricting] = useState<number | null>(null);
 
   const me = useQuery({ queryKey: ["me"], queryFn: getMe });
   const users = useQuery({
@@ -53,8 +58,7 @@ export default function Users() {
   };
 
   const patch = useMutation({
-    mutationFn: (v: { id: number; patch: { role?: string; status?: string; can_manage_settings?: boolean } }) =>
-      updateUser(v.id, v.patch),
+    mutationFn: (v: { id: number; patch: UserPatch }) => updateUser(v.id, v.patch),
     onSuccess: () => { setErr(null); invalidate(); },
     onError,
   });
@@ -80,7 +84,7 @@ export default function Users() {
   });
 
   // Record then run an admin action so it can be replayed after a step-up.
-  const doPatch = (id: number, p: { role?: string; status?: string; can_manage_settings?: boolean }) => {
+  const doPatch = (id: number, p: UserPatch) => {
     lastAction.current = () => patch.mutate({ id, patch: p });
     patch.mutate({ id, patch: p });
   };
@@ -105,6 +109,8 @@ export default function Users() {
   }
 
   const pending = (users.data ?? []).filter((u) => u.status === "pending");
+  const restrictingUser =
+    restricting === null ? null : ((users.data ?? []).find((u) => u.id === restricting) ?? null);
 
   return (
     <div className="page">
@@ -189,6 +195,7 @@ export default function Users() {
                   <th>Role</th>
                   <th>Status</th>
                   <th title="May view + change the general Settings and customise nav tabs">Manage settings</th>
+                  <th title="Which pages this person can reach">Pages</th>
                   <th>Last seen</th>
                   <th></th>
                 </tr>
@@ -235,6 +242,20 @@ export default function Users() {
                           />
                         )}
                       </td>
+                      <td style={{ textAlign: "center" }}>
+                        {u.role === "owner" ? (
+                          <span className="muted" title="Owners can reach every page">all</span>
+                        ) : (
+                          <button
+                            className="link-btn"
+                            title="Choose which pages this person can reach"
+                            onClick={() => setRestricting(restricting === u.id ? null : u.id)}
+                          >
+                            {u.blocked_nav_keys.length ? `${u.blocked_nav_keys.length} hidden` : "all"}
+                            {restricting === u.id ? " ▲" : " ▾"}
+                          </button>
+                        )}
+                      </td>
                       <td className="muted">{u.last_seen_at ? u.last_seen_at.replace("T", " ").slice(0, 16) : "—"}</td>
                       <td>
                         {isMe ? (
@@ -258,6 +279,53 @@ export default function Users() {
             </table>
           </div>
         )}
+      </div>
+
+      {restrictingUser && restrictingUser.role !== "owner" && (
+        <RestrictPanel
+          user={restrictingUser}
+          onToggle={(keys) => doPatch(restrictingUser.id, { blocked_nav_keys: keys })}
+          onClose={() => setRestricting(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// Per-user page-access checklist (#108): tick a page to hide it from this person
+// (also blocked server-side). Each toggle persists immediately.
+function RestrictPanel({ user, onToggle, onClose }: Readonly<{
+  user: User;
+  onToggle: (keys: string[]) => void;
+  onClose: () => void;
+}>) {
+  const blocked = new Set(user.blocked_nav_keys);
+  const toggle = (key: string) => {
+    const next = new Set(blocked);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    onToggle([...next]);
+  };
+  return (
+    <div className="card" style={{ borderLeft: "3px solid #6aa9ff" }}>
+      <h2 className="card__title">Hide pages from {user.display_name}</h2>
+      <p className="muted">
+        Ticked pages are hidden from this person's sidebar <strong>and</strong> blocked server-side.
+        Dashboard and Settings always stay available.
+      </p>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 6 }}>
+        {BLOCKABLE_NAV_ITEMS.map((item) => {
+          const key = navKey(item.path);
+          return (
+            <label key={key} className="checkbox">
+              <input type="checkbox" checked={blocked.has(key)} onChange={() => toggle(key)} />{" "}
+              {item.icon} {item.label}
+            </label>
+          );
+        })}
+      </div>
+      <div style={{ marginTop: 10 }}>
+        <button className="btn btn--ghost" onClick={onClose}>Done</button>
       </div>
     </div>
   );
