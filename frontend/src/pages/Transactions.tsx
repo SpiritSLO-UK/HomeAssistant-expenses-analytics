@@ -29,6 +29,7 @@ import CountrySelect from "../components/CountrySelect";
 import AiBatchPanel from "../components/AiBatchPanel";
 import CloudAiBatchPanel from "../components/CloudAiBatchPanel";
 import AssignToChildButton from "../components/AssignToChildButton";
+import ReceiptPreview from "../components/ReceiptPreview";
 import { useResizableColumns, type ColumnDef } from "../useResizableColumns";
 import { suggestForTransaction } from "../lib/aiSuggest";
 import { recommendedVendorName } from "../lib/vendorSignature";
@@ -969,20 +970,24 @@ function ReceiptsField({ txnId }: Readonly<{ txnId: number }>) {
     onError: (e) => setErr(String(e instanceof Error ? e.message : e)),
   });
   const receipts = q.data ?? [];
+  const [preview, setPreview] = useState<{ id: number; name: string | null } | null>(null);
   return (
     <span className="txn-detail__row" style={{ flexDirection: "column", alignItems: "flex-start", gap: 6 }}>
       {receipts.map((r) => (
         <span key={r.id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {r.has_file ? (
-            <a href={receiptFileUrl(r.id)} target="_blank" rel="noreferrer">
+            <button className="link-btn" title="Preview in a popup" onClick={() => setPreview({ id: r.id, name: r.source_filename })}>
               🧾 {r.source_filename || `receipt #${r.id}`}
-            </a>
+            </button>
           ) : (
             <span className="muted">🧾 {r.source_filename || `receipt #${r.id}`} (original removed)</span>
           )}
           {r.total_amount && <span className="muted">· {r.total_amount}</span>}
         </span>
       ))}
+      {preview && (
+        <ReceiptPreview url={receiptFileUrl(preview.id)} filename={preview.name} onClose={() => setPreview(null)} />
+      )}
       {receipts.length === 0 && <span className="muted">No receipt attached.</span>}
       <label className="link-btn" style={{ cursor: "pointer" }}>
         {attach.isPending ? "Uploading…" : "+ Attach receipt"}

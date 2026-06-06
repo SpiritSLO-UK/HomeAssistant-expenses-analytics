@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import AiImageWarningDialog from "../components/AiImageWarningDialog";
 import CameraCaptureButton from "../components/CameraCaptureButton";
+import ReceiptPreview from "../components/ReceiptPreview";
 import { isImageAiWarningDismissed, setImageAiWarningDismissed } from "../prefs";
 import {
   aiExtractReceipt,
@@ -251,6 +252,7 @@ function ReceiptCard({ r, onError, focused = false }: Readonly<{ r: Receipt; onE
     if (isImageAiWarningDismissed()) aiExtract.mutate();
     else setShowAiWarn(true);
   };
+  const [preview, setPreview] = useState(false);
 
   const confirmed = r.matches.find((m) => m.match_status === "confirmed" || m.match_status === "auto_confirmed");
   const suggested = r.matches.find((m) => m.match_status === "suggested");
@@ -271,9 +273,13 @@ function ReceiptCard({ r, onError, focused = false }: Readonly<{ r: Receipt; onE
         <strong>{r.source_filename ?? `Receipt #${r.id}`}</strong>
         <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
           {r.has_file && (
-            <a className="link-btn" href={receiptFileUrl(r.id)} target="_blank" rel="noreferrer" title="Open the uploaded image/PDF in a new tab">
-              View original ↗
-            </a>
+            <button
+              className="link-btn"
+              title="Preview the uploaded image/PDF in a popup"
+              onClick={() => setPreview(true)}
+            >
+              View original
+            </button>
           )}
           <span className="tag">{r.ocr_status}</span>
           {r.needs_review && <span className="tag tag--dup">review</span>}
@@ -311,6 +317,14 @@ function ReceiptCard({ r, onError, focused = false }: Readonly<{ r: Receipt; onE
             aiExtract.mutate();
           }}
           onCancel={() => setShowAiWarn(false)}
+        />
+      )}
+
+      {preview && r.has_file && (
+        <ReceiptPreview
+          url={receiptFileUrl(r.id)}
+          filename={r.source_filename}
+          onClose={() => setPreview(false)}
         />
       )}
 

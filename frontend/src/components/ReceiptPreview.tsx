@@ -1,0 +1,61 @@
+import { useEffect, useRef } from "react";
+
+/**
+ * In-app preview of a receipt's original image/PDF — opens as a modal popup in the
+ * same window instead of a new tab / download. Backed by /api/receipts/{id}/file
+ * (served inline). PDFs render in an <iframe>; everything else as an <img>.
+ * Native <dialog> gives the backdrop + Esc-to-close for free.
+ */
+export default function ReceiptPreview({
+  url,
+  filename,
+  onClose,
+}: Readonly<{
+  url: string;
+  filename?: string | null;
+  onClose: () => void;
+}>) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    ref.current?.showModal();
+  }, []);
+
+  const isPdf = (filename ?? "").toLowerCase().endsWith(".pdf");
+
+  return (
+    <dialog
+      ref={ref}
+      className="modal-dialog"
+      aria-label={`Receipt preview: ${filename ?? "original"}`}
+      onCancel={(e) => { e.preventDefault(); onClose(); }}
+      // Click on the dialog backdrop (outside the inner card) closes it.
+      onClick={(e) => { if (e.target === ref.current) onClose(); }}
+    >
+      <div className="card" style={{ margin: 0, maxWidth: "92vw" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+          <h2
+            className="card__title"
+            style={{ margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+          >
+            {filename ?? "Receipt original"}
+          </h2>
+          <span style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+            <a className="link-btn" href={url} target="_blank" rel="noreferrer">Open in new tab ↗</a>
+            <button className="btn btn--ghost btn--sm" onClick={onClose}>Close ✕</button>
+          </span>
+        </div>
+        <div style={{ marginTop: 10 }}>
+          {isPdf ? (
+            <iframe src={url} title="Receipt PDF" style={{ width: "82vw", height: "78vh", border: "none" }} />
+          ) : (
+            <img
+              src={url}
+              alt={filename ?? "Receipt"}
+              style={{ maxWidth: "88vw", maxHeight: "78vh", display: "block", margin: "0 auto", objectFit: "contain" }}
+            />
+          )}
+        </div>
+      </div>
+    </dialog>
+  );
+}
