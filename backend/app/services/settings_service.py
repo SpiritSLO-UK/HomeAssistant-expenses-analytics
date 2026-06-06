@@ -7,6 +7,8 @@ simple key/value strings.
 
 from __future__ import annotations
 
+import json
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -33,6 +35,10 @@ BACKUP_MAX_TOTAL_MB = "backup_max_total_mb"
 BACKUP_MIN_KEEP = "backup_min_keep"
 # Runtime log level, editable from Settings (spec §38). Mirrors the env default.
 LOG_LEVEL = "log_level"
+# Which MQTT sensors NOT to publish (backlog: let the user choose). JSON
+# {"groups": [...], "sensors": [...]} of *disabled* sensor groups + individual
+# sensor keys. Empty/unset = publish everything (the original behaviour).
+MQTT_PUBLISH_SELECTION = "mqtt_publish_selection"
 # Manifest of the row ids a ``load_demo`` created (JSON), so "Remove demo data"
 # can delete exactly the demo's own rows and nothing a real import/user added.
 DEMO_MANIFEST = "demo_manifest"
@@ -204,6 +210,31 @@ def get_default_vendor_country(db: Session) -> str | None:
     guess — so it never overrides a manually-set country."""
     code = (get(db, DEFAULT_VENDOR_COUNTRY) or "").strip().upper()
     return code or None
+
+
+def get_mqtt_publish_selection(db: Session) -> dict:
+    """Disabled MQTT sensor groups + individual sensor keys (backlog: choose what to
+    publish). Returns ``{"groups": [...], "sensors": [...]}``; empty lists (the
+    default) mean publish everything. Tolerates a missing/garbled value."""
+    raw = get(db, MQTT_PUBLISH_SELECTION)
+    if not raw:
+        return {"groups": [], "sensors": []}
+    try:
+        data = json.loads(raw)
+        return {
+            "groups": [str(g) for g in data.get("groups", [])],
+            "sensors": [str(s) for s in data.get("sensors", [])],
+        }
+    except (ValueError, TypeError):  # pragma: no cover - defensive against bad data
+        return {"groups": [], "sensors": []}
+
+
+def set_mqtt_publish_selection(db: Session, *, groups: list[str], sensors: list[str]) -> None:
+    set_value(
+        db,
+        MQTT_PUBLISH_SELECTION,
+        json.dumps({"groups": sorted(set(groups)), "sensors": sorted(set(sensors))}),
+    )
 
 
 def _int_setting(db: Session, key: str, default: int) -> int:
