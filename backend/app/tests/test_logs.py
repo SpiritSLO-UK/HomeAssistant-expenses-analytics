@@ -85,14 +85,19 @@ def test_privacy_mode_change_is_recorded_as_decision(client):
     r = client.put("/api/settings", json={"privacy_mode": "cloud_manual"})
     assert r.status_code == 200
 
+    # The "decision" prefix still matches every decision kind (the 🔑 Decisions view).
     decisions = client.get("/api/logs/activity", params={"action": "decision"}).json()
     assert decisions, "an AI mode change should be logged as a decision"
     top = decisions[0]
-    assert top["action"] == "decision"
+    # Each kind is now its own namespaced, individually-filterable action.
+    assert top["action"] == "decision:ai_mode"
     assert "AI mode changed" in top["details"]["summary"]
     assert top["details"]["to"] == "cloud_manual"
     assert top["actor"]  # the user who made the change
-    assert "decision" in client.get("/api/logs/actions").json()
+    assert "decision:ai_mode" in client.get("/api/logs/actions").json()
+    # Filtering by the specific kind returns just that decision.
+    only = client.get("/api/logs/activity", params={"action": "decision:ai_mode"}).json()
+    assert only and all(d["action"] == "decision:ai_mode" for d in only)
 
 
 def test_no_decision_logged_when_setting_unchanged(client):

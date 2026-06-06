@@ -63,22 +63,26 @@ def record_api_action(
     )
 
 
-# Single action name for important user decisions (AI/cloud/privacy posture), so
-# the Logs viewer can surface them all together via the action filter. The human-
-# readable text lives in details["summary"]; structured fields sit alongside it.
-DECISION_ACTION = "decision"
+# Important user decisions (AI/cloud/privacy posture) are namespaced as
+# ``decision:<kind>`` so each *kind* is individually filterable in the Logs action
+# dropdown, while the shared ``decision`` prefix still groups them all (the 🔑
+# Decisions view uses prefix matching). The human-readable text lives in
+# details["summary"]; structured fields sit alongside it.
+DECISION_PREFIX = "decision"
 
 
 def record_decision(
-    db: Session, *, summary: str, actor: str | None = None, details: dict | None = None
+    db: Session, *, summary: str, kind: str = "other", actor: str | None = None,
+    details: dict | None = None,
 ) -> None:
     """Record an important consent/privacy decision the user took (e.g. switching AI
-    to a cloud mode, turning OCR on/off, sending an image to the AI). Grouped under
-    the ``decision`` action so the activity log can show a "Decisions" view."""
+    to a cloud mode, turning OCR on/off, sending an image to the AI). ``kind``
+    namespaces the action as ``decision:<kind>`` so each type is its own filterable
+    entry, while the ``decision`` prefix still groups them for the Decisions view."""
     payload: dict = {"summary": summary}
     if details:
         payload.update(details)
-    record(db, action=DECISION_ACTION, actor=actor, entity_type="decision", details=payload)
+    record(db, action=f"{DECISION_PREFIX}:{kind}", actor=actor, entity_type="decision", details=payload)
 
 
 def record_image_sent(db: Session, *, actor: str | None, kind: str, size: int) -> None:
@@ -92,6 +96,7 @@ def record_image_sent(db: Session, *, actor: str | None, kind: str, size: int) -
     record_decision(
         db,
         actor=actor,
+        kind="image",
         summary=f"Sent a {kind} image to {where} for extraction (images can't be redacted)",
         details={"kind": kind, "bytes": size, "privacy_mode": ai.get("privacy_mode")},
     )
