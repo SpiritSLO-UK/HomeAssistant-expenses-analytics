@@ -9,6 +9,11 @@ class CodeIn(BaseModel):
     code: str
 
 
+class EnableIn(BaseModel):
+    code: str
+    scope: str | None = None  # "app" | "app_admin" (#157); None keeps the default
+
+
 class SetupOut(BaseModel):
     secret: str
     otpauth_uri: str

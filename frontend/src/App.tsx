@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { Route, Routes } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { QRCodeSVG } from "qrcode.react";
 import Sidebar from "./components/Sidebar";
 import Dashboard from "./pages/Dashboard";
 import Search from "./pages/Search";
@@ -27,7 +28,7 @@ import Users from "./pages/Users";
 import FamilySetup from "./pages/FamilySetup";
 import Setup from "./pages/Setup";
 import Logs from "./pages/Logs";
-import { getMe, getSecurityStatus, mfaVerify, unlockDatabase } from "./api/client";
+import { getMe, getSecurityStatus, mfaEnable, mfaSetup, mfaVerify, unlockDatabase } from "./api/client";
 
 export default function App() {
   // If the database is encrypted and locked, gate the whole app behind unlock.
@@ -42,6 +43,11 @@ export default function App() {
 
   if (me.data && me.data.status !== "approved") {
     return <AccountGate status={me.data.status} name={me.data.display_name} />;
+  }
+
+  // Admin requires MFA but the user hasn't enrolled (#157) — make them set it up.
+  if (me.data?.mfa_setup_required) {
+    return <MfaSetupGate />;
   }
 
   if (me.data?.mfa_required) {
@@ -130,6 +136,59 @@ function AppShell({
           <span className="mobile-topbar__brand">💷 Finance</span>
         </div>
         <main className="content">{children}</main>
+      </div>
+    </div>
+  );
+}
+
+// Shown when an admin has required MFA for this user but they haven't enrolled
+// (#157). Walks them through setup → confirm; on success the `me` query clears the
+// gate (enable also mints a session, so they aren't bounced to the entry gate).
+function MfaSetupGate() {
+  const qc = useQueryClient();
+  const [setup, setSetup] = useState<{ secret: string; otpauth_uri: string } | null>(null);
+  const [code, setCode] = useState("");
+  const begin = useMutation({ mutationFn: mfaSetup, onSuccess: (s) => setSetup(s) });
+  const enable = useMutation({
+    mutationFn: async () => {
+      await mfaEnable(code);
+      try { await mfaVerify(code); } catch { /* period rolled over — entry gate prompts once */ }
+    },
+    onSuccess: () => qc.invalidateQueries(),
+  });
+  return (
+    <div className="unlock">
+      <div className="unlock__card">
+        <h1>🔐 Two-factor required</h1>
+        <p className="muted">Your administrator requires two-factor authentication for your account. Set it up to continue.</p>
+        {!setup && (
+          <button className="btn" disabled={begin.isPending} onClick={() => begin.mutate()}>
+            {begin.isPending ? "Preparing…" : "Set up two-factor"}
+          </button>
+        )}
+        {setup && (
+          <>
+            <p className="muted">Scan this with an authenticator app (or enter the secret), then type the 6-digit code.</p>
+            <div style={{ background: "#fff", padding: 12, borderRadius: 8, display: "inline-block" }}>
+              <QRCodeSVG value={setup.otpauth_uri} size={176} />
+            </div>
+            <p className="muted" style={{ fontSize: "0.78rem", wordBreak: "break-all" }}>Secret: <code>{setup.secret}</code></p>
+            <form onSubmit={(e) => { e.preventDefault(); if (code) enable.mutate(); }}>
+              <input
+                inputMode="numeric"
+                autoFocus
+                placeholder="123456"
+                maxLength={8}
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+              />
+              <button className="btn" type="submit" disabled={!code || enable.isPending}>
+                {enable.isPending ? "Enabling…" : "Enable & continue"}
+              </button>
+            </form>
+            {enable.isError && <p className="status status--error">That code didn't match. Try again.</p>}
+          </>
+        )}
       </div>
     </div>
   );

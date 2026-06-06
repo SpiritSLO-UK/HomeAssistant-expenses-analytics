@@ -15,7 +15,13 @@ import { BLOCKABLE_NAV_ITEMS, navKey } from "../nav";
 
 const ROLES = ["owner", "member", "viewer", "child"];
 
-type UserPatch = { role?: string; status?: string; can_manage_settings?: boolean; blocked_nav_keys?: string[] };
+type UserPatch = {
+  role?: string;
+  status?: string;
+  can_manage_settings?: boolean;
+  blocked_nav_keys?: string[];
+  mfa_policy?: string;
+};
 const STATUSES = ["pending", "approved", "disabled"];
 
 const ROLE_HINT: Record<string, string> = {
@@ -196,6 +202,7 @@ export default function Users() {
                   <th>Status</th>
                   <th title="May view + change the general Settings and customise nav tabs">Manage settings</th>
                   <th title="Which pages this person can reach">Pages</th>
+                  <th title="Two-factor status + whether it's required">MFA</th>
                   <th>Last seen</th>
                   <th></th>
                 </tr>
@@ -255,6 +262,19 @@ export default function Users() {
                             {restricting === u.id ? " ▲" : " ▾"}
                           </button>
                         )}
+                      </td>
+                      <td style={{ textAlign: "center", whiteSpace: "nowrap" }}>
+                        <span title={u.mfa_enabled ? "Two-factor is set up" : "Not set up yet"}>
+                          {u.mfa_enabled ? "🔐" : "—"}
+                        </span>{" "}
+                        <select
+                          value={u.mfa_policy}
+                          title="Require two-factor for this user (they're blocked from the app until they enrol)"
+                          onChange={(e) => doPatch(u.id, { mfa_policy: e.target.value })}
+                        >
+                          <option value="optional">optional</option>
+                          <option value="required">required</option>
+                        </select>
                       </td>
                       <td className="muted">{u.last_seen_at ? u.last_seen_at.replace("T", " ").slice(0, 16) : "—"}</td>
                       <td>

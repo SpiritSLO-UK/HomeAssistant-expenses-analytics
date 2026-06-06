@@ -930,6 +930,7 @@ function MfaCard({
   const me = useQuery({ queryKey: ["me"], queryFn: getMe });
   const [setup, setSetup] = useState<{ secret: string; otpauth_uri: string } | null>(null);
   const [code, setCode] = useState("");
+  const [scope, setScope] = useState("app_admin"); // what MFA gates (#157)
 
   const begin = useMutation({
     mutationFn: mfaSetup,
@@ -938,7 +939,7 @@ function MfaCard({
   });
   const enable = useMutation({
     mutationFn: async () => {
-      await mfaEnable(code);
+      await mfaEnable(code, scope);
       // Same code is still valid this period — mint a session so the user isn't
       // immediately bounced to the entry gate.
       try {
@@ -1010,6 +1011,17 @@ function MfaCard({
             <li><span>Secret</span><span style={{ fontFamily: "monospace" }}>{setup.secret}</span></li>
             <li><span>otpauth URI</span><span style={{ fontFamily: "monospace", wordBreak: "break-all" }}>{setup.otpauth_uri}</span></li>
           </ul>
+          <fieldset style={{ border: "1px solid #2a2a2a", borderRadius: 8, padding: "8px 12px", margin: "10px 0" }}>
+            <legend className="muted" style={{ fontSize: "0.82rem", padding: "0 6px" }}>When should it ask for a code?</legend>
+            <label className="checkbox" style={{ display: "block", marginBottom: 4 }}>
+              <input type="radio" name="mfa-scope" checked={scope === "app_admin"} onChange={() => setScope("app_admin")} />{" "}
+              <strong>Opening the app + confirming admin actions</strong> (recommended)
+            </label>
+            <label className="checkbox" style={{ display: "block" }}>
+              <input type="radio" name="mfa-scope" checked={scope === "app"} onChange={() => setScope("app")} />{" "}
+              <strong>Opening the app only</strong> (no extra prompt for admin actions)
+            </label>
+          </fieldset>
           <p className="muted" style={{ fontSize: "0.85rem", marginBottom: 4 }}>
             Enter the current 6-digit code, then <strong>Confirm &amp; enable</strong>. (The button
             stays greyed until you type a code.)
@@ -1036,6 +1048,11 @@ function MfaCard({
       {enabled && (
         <>
           <p className="status status--ok">🔐 Two-factor is enabled for your account.</p>
+          <p className="muted" style={{ fontSize: "0.85rem", marginTop: 0 }}>
+            Asks for a code: <strong>{me.data?.mfa_scope === "app" ? "opening the app" : "opening the app + admin actions"}</strong>.
+            {me.data?.mfa_policy === "required" && " Required by an administrator."}
+            {" "}To change the scope, disable and re-enable.
+          </p>
           <div className="form-row" style={{ gap: 8, flexWrap: "wrap" }}>
             <button className="btn btn--ghost" onClick={lockNow}>🔒 Lock now (require a code)</button>
           </div>
