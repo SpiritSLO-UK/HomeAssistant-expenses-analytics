@@ -34,6 +34,7 @@ import {
   mfaEnable,
   mfaSetup,
   mfaVerify,
+  setSessionToken,
   PRIVACY_MODES,
   publishMqtt,
   restoreDatabase,
@@ -987,6 +988,15 @@ function MfaCard({
     onError,
   });
 
+  // Drop this device's MFA session so the entry challenge re-appears immediately —
+  // lets the user prove MFA works + re-lock on demand (the session is otherwise
+  // reused until the app context is closed).
+  const lockNow = () => {
+    setSessionToken(null);
+    onMessage("Locked — enter your code to continue.");
+    qc.invalidateQueries();
+  };
+
   const enabled = me.data?.mfa_enabled ?? false;
 
   return (
@@ -995,8 +1005,9 @@ function MfaCard({
       <p className="muted">
         Optional second factor for <strong>your</strong> account, on top of Home Assistant login.
         When on, you enter a 6-digit code from an authenticator app (Google Authenticator, Aegis,
-        1Password…) each time you open this app, and again to confirm admin actions. Codes are
-        time-based (TOTP) and never leave your device.
+        1Password…) when you <strong>open this app fresh</strong>, and again to confirm admin actions.
+        Codes are time-based (TOTP) and never leave your device. <em>You won't be re-prompted on every
+        page within a session — use <strong>Lock now</strong> below to require a code immediately.</em>
       </p>
 
       {!enabled && !setup && (
@@ -1022,6 +1033,10 @@ function MfaCard({
             <li><span>Secret</span><span style={{ fontFamily: "monospace" }}>{setup.secret}</span></li>
             <li><span>otpauth URI</span><span style={{ fontFamily: "monospace", wordBreak: "break-all" }}>{setup.otpauth_uri}</span></li>
           </ul>
+          <p className="muted" style={{ fontSize: "0.85rem", marginBottom: 4 }}>
+            Enter the current 6-digit code, then <strong>Confirm &amp; enable</strong>. (The button
+            stays greyed until you type a code.)
+          </p>
           <div className="form-row">
             <input
               inputMode="numeric"
@@ -1044,10 +1059,17 @@ function MfaCard({
       {enabled && (
         <>
           <p className="status status--ok">🔐 Two-factor is enabled for your account.</p>
+          <div className="form-row" style={{ gap: 8, flexWrap: "wrap" }}>
+            <button className="btn btn--ghost" onClick={lockNow}>🔒 Lock now (require a code)</button>
+          </div>
+          <p className="muted" style={{ fontSize: "0.85rem", marginTop: 12, marginBottom: 4 }}>
+            To turn it off, enter the <strong>current 6-digit code</strong> from your authenticator.
+            (The button stays greyed until you type a code.)
+          </p>
           <div className="form-row">
             <input
               inputMode="numeric"
-              placeholder="Code to disable"
+              placeholder="123456"
               maxLength={8}
               value={code}
               onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}

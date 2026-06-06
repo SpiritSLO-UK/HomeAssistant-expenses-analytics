@@ -20,12 +20,16 @@ export function apiUrl(endpoint: string): string {
 
 // --- MFA session token (backlog #124) ---
 // Issued by the backend after a TOTP challenge and sent on every request as the
-// X-HAFI-Session header. Stored per-browser in localStorage.
+// X-HAFI-Session header. Stored in **sessionStorage** (not localStorage): the MFA
+// challenge should re-appear on a genuinely fresh open of the app, not be silently
+// reused for 12h across full reopens — sessionStorage is cleared when the
+// page/webview context is closed, so a new open prompts again while in-session
+// navigation doesn't nag. The 12h server-side cap still applies on top (#108/#124).
 const SESSION_KEY = "hafi_session";
 
 export function getSessionToken(): string | null {
   try {
-    return globalThis.localStorage.getItem(SESSION_KEY);
+    return globalThis.sessionStorage.getItem(SESSION_KEY);
   } catch {
     return null;
   }
@@ -33,10 +37,13 @@ export function getSessionToken(): string | null {
 
 export function setSessionToken(token: string | null): void {
   try {
-    if (token) globalThis.localStorage.setItem(SESSION_KEY, token);
-    else globalThis.localStorage.removeItem(SESSION_KEY);
+    if (token) globalThis.sessionStorage.setItem(SESSION_KEY, token);
+    else globalThis.sessionStorage.removeItem(SESSION_KEY);
+    // Drop any token left in localStorage by an older build, so it can't keep a
+    // stale 12h session alive across reopens (the cause of "MFA never prompts").
+    globalThis.localStorage.removeItem(SESSION_KEY);
   } catch {
-    /* localStorage unavailable (private mode) — requests just won't carry it */
+    /* storage unavailable (private mode) — requests just won't carry the token */
   }
 }
 
