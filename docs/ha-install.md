@@ -18,8 +18,8 @@ Click the badge (in the [main README](../README.md#-install-on-home-assistant-ad
 > **Add repository to your Home Assistant** → it opens your HA and pre-fills the
 > repository URL; confirm to add it.
 
-…or add it manually: **Settings → Add-ons → Add-on store → ⋮ (top-right) →
-Repositories**, paste
+…or add it manually: open the Add-on Store (**Settings → Add-ons → Add-on Store**),
+then **⋮ (top-right) → Repositories**, paste the URL below and click **Add**:
 
 ```
 https://github.com/SpiritSLO-UK/HomeAssistant-expenses-analytics
