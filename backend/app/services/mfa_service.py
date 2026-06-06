@@ -22,6 +22,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.models import User, UserSession
+from app.models.user import MFA_SCOPES
 from app.services import totp
 
 ISSUER = "HA Finance"
@@ -55,11 +56,14 @@ def start_enrolment(db: Session, user: User) -> dict:
     }
 
 
-def enable(db: Session, user: User, code: str) -> bool:
-    """Confirm enrolment: verify a code against the pending secret, then turn on."""
+def enable(db: Session, user: User, code: str, scope: str | None = None) -> bool:
+    """Confirm enrolment: verify a code against the pending secret, then turn on.
+    ``scope`` (#157) sets what MFA gates — ``app`` (entry only) or ``app_admin``
+    (entry + admin step-up); an unknown/None value keeps ``app_admin``."""
     if not user.mfa_secret or not totp.verify(user.mfa_secret, code):
         return False
     user.mfa_enabled = True
+    user.mfa_scope = scope if scope in MFA_SCOPES else "app_admin"
     db.commit()
     return True
 

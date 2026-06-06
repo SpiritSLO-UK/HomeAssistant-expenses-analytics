@@ -130,6 +130,68 @@ async def _lock_guard(request: Request, call_next):
     return await call_next(request)
 
 
+def _access_denied(request: Request, path: str) -> JSONResponse | None:
+    """Apply the data-API access gates in order; return a 403 to block, or ``None``
+    to allow. Split out of ``_auth_guard`` so each guard stays simple — it reads the
+    per-request state the middleware stashed (status / role / mfa / blocked-prefixes)."""
+    from app.services import auth_service
+
+    st = request.state
+    if st.user_status != "approved":
+        return JSONResponse(
+            status_code=403,
+            content={
+                "detail": (
+                    "Your account is awaiting approval by an administrator."
+                    if st.user_status == "pending"
+                    else "Your account has been disabled."
+                ),
+                "account_status": st.user_status,
+            },
+        )
+    # Admin-required MFA not yet enrolled (#157) — blocked until they set it up; the
+    # MFA self-service endpoints (and gate-exempt /users/me) stay reachable to enrol.
+    if getattr(st, "mfa_setup_required", False) and not path.startswith(_SELF_SERVICE):
+        return JSONResponse(
+            status_code=403,
+            content={
+                "detail": "Your administrator requires two-factor authentication — set it up to continue.",
+                "mfa_setup_required": True,
+            },
+        )
+    # MFA entry gate (the user has MFA on but this request lacks a valid session).
+    if not getattr(st, "mfa_ok", True) and not path.startswith(_SELF_SERVICE):
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "Two-factor verification required.", "mfa_required": True},
+        )
+    # Read-only roles (viewer/child) may only issue safe methods.
+    if (
+        request.method not in _SAFE_METHODS
+        and not auth_service.can_write(st.user_role)
+        and not path.startswith(_SELF_SERVICE)
+    ):
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "Your role is read-only and cannot make changes."},
+        )
+    # Child role: confined to its own allowance view (defence in depth — the nav
+    # also hides everything else, but the API must not rely on the client).
+    if st.user_role == "child" and not path.startswith(_CHILD_ALLOWED_PREFIXES):
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "This area isn't available for your account."},
+        )
+    # Per-user blocked pages (#108): the owner can restrict an individual non-admin
+    # user from specific pages — enforced here, not just hidden in the sidebar.
+    if any(path.startswith(prefix) for prefix in getattr(st, "user_blocked_prefixes", ())):
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "This area isn't available for your account."},
+        )
+    return None
+
+
 @app.middleware("http")
 async def _auth_guard(request: Request, call_next):
     """Resolve the current user (HA ingress identity → User) and enforce access
@@ -153,60 +215,19 @@ async def _auth_guard(request: Request, call_next):
         request.state.user_name = user.display_name
         # Per-user blocked pages (#108): API prefixes this user may not reach.
         request.state.user_blocked_prefixes = auth_service.blocked_api_prefixes(user)
-        # MFA presence for the entry gate (only matters if the user enabled it).
-        mfa_ok = not user.mfa_enabled or mfa_service.has_valid_session(
+        # Admin-required MFA not yet enrolled (#157) → blocked until they set it up.
+        request.state.mfa_setup_required = user.mfa_policy == "required" and not user.mfa_enabled
+        # MFA entry-gate state (only matters if the user enabled it).
+        request.state.mfa_ok = not user.mfa_enabled or mfa_service.has_valid_session(
             db, user.id, request.headers.get(auth_service.SESSION_HEADER)
         )
 
     if path.startswith(_GATE_EXEMPT):
         return await call_next(request)
 
-    if request.state.user_status != "approved":
-        return JSONResponse(
-            status_code=403,
-            content={
-                "detail": (
-                    "Your account is awaiting approval by an administrator."
-                    if request.state.user_status == "pending"
-                    else "Your account has been disabled."
-                ),
-                "account_status": request.state.user_status,
-            },
-        )
-
-    if not mfa_ok and not path.startswith(_SELF_SERVICE):
-        return JSONResponse(
-            status_code=403,
-            content={"detail": "Two-factor verification required.", "mfa_required": True},
-        )
-
-    if (
-        request.method not in _SAFE_METHODS
-        and not auth_service.can_write(request.state.user_role)
-        and not path.startswith(_SELF_SERVICE)
-    ):
-        return JSONResponse(
-            status_code=403,
-            content={"detail": "Your role is read-only and cannot make changes."},
-        )
-
-    # Child role: confined to its own allowance view (defence in depth — the nav
-    # also hides everything else, but the API must not rely on the client).
-    if request.state.user_role == "child" and not path.startswith(_CHILD_ALLOWED_PREFIXES):
-        return JSONResponse(
-            status_code=403,
-            content={"detail": "This area isn't available for your account."},
-        )
-
-    # Per-user blocked pages (#108): the owner can restrict an individual non-admin
-    # user from specific pages — enforced here, not just hidden in the sidebar.
-    blocked = getattr(request.state, "user_blocked_prefixes", ())
-    if any(path.startswith(prefix) for prefix in blocked):
-        return JSONResponse(
-            status_code=403,
-            content={"detail": "This area isn't available for your account."},
-        )
-
+    denied = _access_denied(request, path)
+    if denied is not None:
+        return denied
     return await call_next(request)
 
 

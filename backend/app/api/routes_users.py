@@ -38,7 +38,10 @@ def get_me(
         can_manage_settings=auth_service.can_manage_settings(user),
         blocked_nav_keys=user.blocked_nav_keys,
         mfa_enabled=user.mfa_enabled,
+        mfa_scope=user.mfa_scope,
+        mfa_policy=user.mfa_policy,
         mfa_required=mfa_required,
+        mfa_setup_required=user.mfa_policy == "required" and not user.mfa_enabled,
     )
 
 
@@ -87,6 +90,7 @@ def update_user(
             email=payload.email,
             can_manage_settings=payload.can_manage_settings,
             blocked_nav_keys=payload.blocked_nav_keys,
+            mfa_policy=payload.mfa_policy,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

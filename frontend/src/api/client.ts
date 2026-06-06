@@ -2063,7 +2063,10 @@ export interface Me {
   can_manage_settings: boolean;
   blocked_nav_keys: string[]; // pages this user is restricted from (#108)
   mfa_enabled: boolean;
+  mfa_scope: string; // app | app_admin — what MFA gates (#157)
+  mfa_policy: string; // optional | required (admin-set, #157)
   mfa_required: boolean;
+  mfa_setup_required: boolean; // admin requires MFA but the user hasn't enrolled (#157)
 }
 
 export interface User {
@@ -2075,6 +2078,8 @@ export interface User {
   is_active: boolean;
   can_manage_settings: boolean;
   blocked_nav_keys: string[]; // pages this user is restricted from (#108)
+  mfa_enabled: boolean;
+  mfa_policy: string; // optional | required (admin-set, #157)
   external_id: string | null;
   last_seen_at: string | null;
   created_at: string;
@@ -2108,6 +2113,7 @@ export function updateUser(
     email?: string;
     can_manage_settings?: boolean;
     blocked_nav_keys?: string[];
+    mfa_policy?: string;
   },
 ): Promise<User> {
   return fetchJson<User>(`api/users/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
@@ -2132,8 +2138,8 @@ export function mfaSetup(): Promise<MfaSetup> {
   return fetchJson<MfaSetup>("api/auth/mfa/setup", { method: "POST" });
 }
 
-export function mfaEnable(code: string): Promise<{ status: string }> {
-  return fetchJson("api/auth/mfa/enable", { method: "POST", body: JSON.stringify({ code }) });
+export function mfaEnable(code: string, scope?: string): Promise<{ status: string; mfa_scope: string }> {
+  return fetchJson("api/auth/mfa/enable", { method: "POST", body: JSON.stringify({ code, scope }) });
 }
 
 export function mfaDisable(code: string): Promise<{ status: string }> {

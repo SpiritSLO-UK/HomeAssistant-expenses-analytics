@@ -107,6 +107,58 @@ def test_admin_action_requires_recent_step_up(client):
     assert client.post(f"/api/users/{zoe_id}/approve", headers=sess).status_code == 200
 
 
+def _member(client, uid: str, name: str) -> tuple[int, dict]:
+    hdr = {"X-Remote-User-Id": uid, "X-Remote-User-Display-Name": name}
+    client.get("/api/users/me")  # owner bootstraps
+    client.get("/api/users/me", headers=hdr)
+    mid = next(u["id"] for u in client.get("/api/users").json() if u["external_id"] == uid)
+    client.patch(f"/api/users/{mid}", json={"role": "member", "status": "approved"})
+    return mid, hdr
+
+
+def test_app_scope_skips_admin_step_up(client):
+    # Enable MFA with the entry-only scope (#157).
+    secret = client.post("/api/auth/mfa/setup").json()["secret"]
+    client.post("/api/auth/mfa/enable", json={"code": totp.current_code(secret), "scope": "app"})
+    token = client.post("/api/auth/mfa/verify", json={"code": totp.current_code(secret)}).json()["token"]
+    sess = {"X-HAFI-Session": token}
+    assert client.get("/api/users/me", headers=sess).json()["mfa_scope"] == "app"
+
+    client.get("/api/users/me", headers={"X-Remote-User-Id": "ha-zoe", "X-Remote-User-Display-Name": "Zoe"})
+    zoe_id = next(u["id"] for u in client.get("/api/users", headers=sess).json() if u["external_id"] == "ha-zoe")
+
+    # Even with a stale step-up, an admin action succeeds — 'app' scope = no step-up.
+    with SessionLocal() as db:
+        row = db.query(UserSession).one()
+        row.last_step_up_at = datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=1)
+        db.commit()
+    assert client.post(f"/api/users/{zoe_id}/approve", headers=sess).status_code == 200
+
+
+def test_admin_can_require_mfa(client):
+    bob_id, bob = _member(client, "ha-bob", "Bob")
+    assert client.get("/api/transactions", headers=bob).status_code == 200  # before
+
+    r = client.patch(f"/api/users/{bob_id}", json={"mfa_policy": "required"})
+    assert r.status_code == 200 and r.json()["mfa_policy"] == "required"
+
+    # Blocked until enrolled — but /me + the MFA self-service stay reachable.
+    blocked = client.get("/api/transactions", headers=bob)
+    assert blocked.status_code == 403 and blocked.json()["mfa_setup_required"] is True
+    assert client.get("/api/users/me", headers=bob).json()["mfa_setup_required"] is True
+
+    secret = client.post("/api/auth/mfa/setup", headers=bob).json()["secret"]
+    assert client.post("/api/auth/mfa/enable", json={"code": totp.current_code(secret)}, headers=bob).status_code == 200
+    # Enrolled → past the setup gate; now it's the normal entry gate (verify to get in).
+    token = client.post("/api/auth/mfa/verify", json={"code": totp.current_code(secret)}, headers=bob).json()["token"]
+    assert client.get("/api/transactions", headers={**bob, "X-HAFI-Session": token}).status_code == 200
+
+
+def test_set_mfa_policy_invalid_400(client):
+    bob_id, _bob = _member(client, "ha-bob", "Bob")
+    assert client.patch(f"/api/users/{bob_id}", json={"mfa_policy": "bogus"}).status_code == 400
+
+
 def test_totp_roundtrip_and_skew():
     secret = totp.generate_secret()
     assert totp.verify(secret, totp.current_code(secret))

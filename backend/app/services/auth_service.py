@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models import Account, User
-from app.models.user import ADMIN_ROLES, ROLES, STATUSES, WRITE_ROLES
+from app.models.user import ADMIN_ROLES, MFA_POLICIES, ROLES, STATUSES, WRITE_ROLES
 from app.services import audit_service
 from app.services.household_service import get_or_create_default_household
 
@@ -294,9 +294,10 @@ def require_owner_step_up(
     user: User = Depends(require_owner),
 ) -> User:
     """Owner endpoints that also need a recent MFA step-up when the owner has MFA
-    enabled (backlog #124 — "re-enter for admin stuff"). A no-op for owners
-    without MFA. Signals ``step_up_required`` so the UI can prompt for a code."""
-    if user.mfa_enabled:
+    enabled **and** their MFA scope covers admin actions (backlog #124, #157 —
+    "re-enter for admin stuff"). A no-op for owners without MFA, or whose scope is
+    entry-only (``app``). Signals ``step_up_required`` so the UI can prompt."""
+    if user.mfa_enabled and user.mfa_scope == "app_admin":
         from app.services import mfa_service
 
         token = request.headers.get(SESSION_HEADER)
@@ -374,9 +375,10 @@ def _apply_user_changes(
     email: str | None,
     can_manage_settings: bool | None,
     blocked_nav_keys: list[str] | None = None,
+    mfa_policy: str | None = None,
 ) -> dict:
     """Apply the supplied fields to ``target`` and return the audited before/after
-    changes (role/status/can_manage_settings/blocked_nav_keys are audited)."""
+    changes (role/status/can_manage_settings/blocked_nav_keys/mfa_policy are audited)."""
     changes: dict = {}
     if role is not None and role != target.role:
         changes["role"] = [target.role, role]
@@ -398,6 +400,9 @@ def _apply_user_changes(
         if new_val != target.blocked_nav:
             changes["blocked_nav_keys"] = [target.blocked_nav_keys, normalised]
             target.blocked_nav = new_val
+    if mfa_policy is not None and mfa_policy != target.mfa_policy:
+        changes["mfa_policy"] = [target.mfa_policy, mfa_policy]
+        target.mfa_policy = mfa_policy
     return changes
 
 
@@ -412,6 +417,7 @@ def update_user(
     email: str | None = None,
     can_manage_settings: bool | None = None,
     blocked_nav_keys: list[str] | None = None,
+    mfa_policy: str | None = None,
 ) -> User:
     """Apply an owner-initiated change to ``target``. Raises ``ValueError`` on a
     bad value or if the change would strip the household's last active owner."""
@@ -422,6 +428,8 @@ def update_user(
         unknown = [k for k in blocked_nav_keys if k not in BLOCKABLE_NAV]
         if unknown:
             raise ValueError(f"Unknown page(s) to restrict: {', '.join(sorted(unknown))}")
+    if mfa_policy is not None and mfa_policy not in MFA_POLICIES:
+        raise ValueError(f"Unknown MFA policy. One of: {sorted(MFA_POLICIES)}")
 
     changes = _apply_user_changes(
         target,
@@ -431,6 +439,7 @@ def update_user(
         email=email,
         can_manage_settings=can_manage_settings,
         blocked_nav_keys=blocked_nav_keys,
+        mfa_policy=mfa_policy,
     )
 
     audit_service.record(

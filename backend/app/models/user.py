@@ -28,6 +28,16 @@ ADMIN_ROLES = ("owner",)  # may manage users / system
 # Account lifecycle (backlog #126: a new user is pending until approved).
 STATUSES = ("pending", "approved", "disabled")
 
+# MFA scope (#157) — what a user's two-factor gates:
+#   app        — a code only when opening the app (entry challenge)
+#   app_admin  — entry challenge AND a step-up to confirm admin actions (default;
+#                preserves the original behaviour)
+MFA_SCOPES = ("app", "app_admin")
+# MFA policy (#157) — admin enforcement per user:
+#   optional   — the user chooses (default)
+#   required   — the user is blocked from the app until they enrol in MFA
+MFA_POLICIES = ("optional", "required")
+
 
 class User(Base, TimestampMixin):
     __tablename__ = "users"
@@ -55,6 +65,9 @@ class User(Base, TimestampMixin):
     # seed; ``mfa_enabled`` flips true only after the user confirms a code.
     mfa_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
     mfa_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # What MFA gates for this user + whether an admin requires it (backlog #157).
+    mfa_scope: Mapped[str] = mapped_column(String(16), nullable=False, default="app_admin")
+    mfa_policy: Mapped[str] = mapped_column(String(16), nullable=False, default="optional")
     # Owner-set list of app pages this (non-admin) user may NOT reach (backlog #108),
     # JSON array of nav-page keys (e.g. ["budgets","investments"]). NULL/empty =
     # unrestricted. Enforced server-side by the auth guard + hidden in the sidebar.

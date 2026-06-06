@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models import User
-from app.schemas.auth import CodeIn, SetupOut, VerifyOut
+from app.schemas.auth import CodeIn, EnableIn, SetupOut, VerifyOut
 from app.services import audit_service, auth_service, mfa_service
 from app.services.auth_service import get_current_user
 
@@ -32,13 +32,13 @@ def setup(db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends
 
 @router.post("/enable", responses={400: {"description": "Bad request"}})
 def enable(
-    payload: CodeIn, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(get_current_user)]
+    payload: EnableIn, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(get_current_user)]
 ) -> dict:
-    if not mfa_service.enable(db, user, payload.code):
+    if not mfa_service.enable(db, user, payload.code, payload.scope):
         raise HTTPException(status_code=400, detail=_BAD_CODE)
     audit_service.record(db, actor=user.display_name, action="mfa_enabled", entity_type="user", entity_id=user.id)
     db.commit()
-    return {"status": "enabled"}
+    return {"status": "enabled", "mfa_scope": user.mfa_scope}
 
 
 @router.post("/disable", responses={400: {"description": "Bad request"}})

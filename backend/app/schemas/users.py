@@ -18,6 +18,8 @@ class UserOut(BaseModel):
     is_active: bool
     can_manage_settings: bool
     blocked_nav_keys: list[str] = []  # pages this user is restricted from (#108)
+    mfa_enabled: bool = False
+    mfa_policy: str = "optional"  # optional | required (admin-set, #157)
     external_id: str | None
     last_seen_at: datetime | None
     created_at: datetime
@@ -37,9 +39,14 @@ class MeOut(BaseModel):
     can_manage_settings: bool
     blocked_nav_keys: list[str] = []  # pages this user is restricted from (#108)
     mfa_enabled: bool
+    mfa_scope: str = "app_admin"  # app | app_admin — what MFA gates (#157)
+    mfa_policy: str = "optional"  # optional | required (admin-set, #157)
     # True when the user has MFA on but this request lacks a valid session — the
     # frontend then shows the MFA entry gate.
     mfa_required: bool
+    # True when an admin requires MFA but the user hasn't enrolled yet (#157) — the
+    # frontend then shows the "set up MFA" gate.
+    mfa_setup_required: bool = False
 
 
 class MemberOut(BaseModel):
@@ -59,3 +66,4 @@ class UserUpdate(BaseModel):
     email: str | None = None
     can_manage_settings: bool | None = None
     blocked_nav_keys: list[str] | None = None  # pages to restrict this user from (#108)
+    mfa_policy: str | None = None  # optional | required (admin enforces MFA, #157)
