@@ -104,7 +104,12 @@ export default function Import() {
           <input
             ref={fileInput}
             type="file"
-            accept=".csv,text/csv,.pdf,application/pdf,image/*"
+            // Broad accept so mobile file pickers don't grey out a bank CSV: phones
+            // match by the OS-reported MIME, and a downloaded CSV is often
+            // application/octet-stream / vnd.ms-excel / text/plain rather than
+            // text/csv. List the realistic CSV aliases (+ octet-stream) alongside
+            // PDF/images; the backend validates the actual content on upload.
+            accept=".csv,.tsv,.txt,text/csv,text/plain,text/comma-separated-values,application/csv,application/vnd.ms-excel,application/octet-stream,.pdf,application/pdf,image/*"
             onChange={(e) => {
               setFile(e.target.files?.[0] ?? null);
               setPreview(null);
