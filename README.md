@@ -11,6 +11,13 @@ them across categories, track projects, budgets and subscriptions, scan receipts
 Assistant over MQTT — with **optional, opt-in** local/cloud AI to suggest
 categories. All privacy-first, with **strict local mode as the default**.
 
+<p align="center">
+  <a href="docs/screenshots.md">
+    <img src="docs/screenshots/capture-dashboard-1.PNG" alt="HA Finance Intelligence dashboard" width="900">
+  </a>
+  <br><em>The dashboard, on the built-in demo data — <a href="docs/screenshots.md">see more screenshots →</a></em>
+</p>
+
 Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md)
 (the build-status section at the top tracks progress).
 
@@ -55,6 +62,16 @@ Docker volume. Set your base currency and other options in
 **Settings → Demo data → Load demo data** to explore. See the [CHANGELOG](CHANGELOG.md)
 for what's in this release. _Provided "as is", no warranty, not financial advice — keep
 your own backups._
+
+## 📸 Screenshots
+
+A quick look (on demo data) — the full tour is in **[docs/screenshots.md](docs/screenshots.md)**.
+
+| | |
+|---|---|
+| <img src="docs/screenshots/capture-dashboard-2.PNG" width="420" alt="Spending by category and a location map"><br>**Dashboard** — trends, categories, vendors & a spend map | <img src="docs/screenshots/capture-transactions-1.PNG" width="420" alt="Transactions list with an expanded row"><br>**Transactions** — filter + edit any row inline |
+| <img src="docs/screenshots/capture-receipts-1.PNG" width="420" alt="Receipt OCR and matching"><br>**Receipts** — local OCR + auto-match | <img src="docs/screenshots/capture-investments-1.PNG" width="420" alt="Investments and pensions"><br>**Investments** — holdings & value over time |
+| <img src="docs/screenshots/capture-settings-1.PNG" width="420" alt="Settings: services and storage stats"><br>**Settings** — services + storage stats, AI off by default | <img src="docs/screenshots/capture-logs-1.PNG" width="420" alt="Audit log with decisions grouped"><br>**Logs** — an audit trail, decisions grouped |
 
 ## Status
 

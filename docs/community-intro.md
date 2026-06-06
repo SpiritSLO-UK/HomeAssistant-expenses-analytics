@@ -64,17 +64,35 @@ Happy to answer anything. Thanks for taking a look! 🙏
 
 ---
 
-## Screenshots checklist (attach 4–6)
+## Screenshots
 
-Grab these from your own instance (the demo data is fine — `Settings → Load demo data`), and **blur anything real**:
+Captured on the built-in demo data (`Settings → Load demo data`). When posting to
+the forum, **attach the image files** (drag them into the post) — the relative links
+below render here on GitHub but won't resolve once pasted to the forum. Full set:
+[docs/screenshots.md](screenshots.md).
 
-- [ ] **Dashboard** — the headline cards + a spending-by-category chart
-- [ ] **Transactions** — a categorised list (show the ✨ suggest on a row)
-- [ ] **Import** — the preview/review step of a statement upload
-- [ ] **Budgets** — a couple of budgets with progress bars
-- [ ] **MQTT** — the HA *Devices → MQTT* page showing the `Finance *` sensors (proves the HA integration)
-- [ ] **Energy** — the energy-cost-offset card/page (optional, if you have solar)
-- [ ] _(optional)_ **Receipts** — a matched receipt
-- [ ] _(optional)_ the add-on **store/install** screen
+**Dashboard** — monthly totals, a heads-up feed, trends, spending by category and a spend-by-location map:
 
-> Tip: a short screen-recording GIF of "drop a CSV → see it categorised on the dashboard" tends to land well on the forum.
+![Dashboard](screenshots/capture-dashboard-1.PNG)
+![Dashboard — categories & map](screenshots/capture-dashboard-2.PNG)
+
+**Transactions** — filter by anything, expand a row to categorise/split/tag it (with rules or ✨ AI):
+
+![Transactions](screenshots/capture-transactions-1.PNG)
+
+**Receipts** — local OCR reads the merchant/date/total and matches to a transaction:
+
+![Receipts](screenshots/capture-receipts-1.PNG)
+
+**Settings** — local-first by design: AI off by default, services panel, storage stats:
+
+![Settings](screenshots/capture-settings-1.PNG)
+
+**Logs** — an audit trail with AI & privacy decisions grouped separately:
+
+![Logs](screenshots/capture-logs-1.PNG)
+
+> Optional extras worth attaching: **Import**, **Budgets**, **Investments**, the
+> **HA → Devices → MQTT** page (proves the integration), and the **Energy** offset
+> card if you have solar. A short GIF of "drop a CSV → see it categorised on the
+> dashboard" lands well too.
