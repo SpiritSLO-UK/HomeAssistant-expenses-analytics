@@ -227,6 +227,28 @@ def test_apply_suggestions_endpoint(client):
     assert client.get(f"/api/transactions/{txn_id}").json()["category_id"] == groceries
 
 
+def test_apply_suggestions_resolves_review_item(client):
+    """A bulk apply clears the unknown-category review item for the row, like the
+    per-row categorise does (so the Review Queue's review tab stays coherent)."""
+    from app.models import ReviewItem
+    from app.services import review_service
+
+    txn_id = _import_txn(client)
+    groceries = next(c["id"] for c in client.get("/api/categories").json() if c["name"] == "Groceries")
+    with SessionLocal() as db:
+        review_service.add(
+            db, item_type="transaction", item_id=txn_id, reason="unknown_category",
+            severity="info", suggested_action="Categorise this transaction.",
+        )
+        db.commit()
+    client.post("/api/ai/apply", json={"items": [{"transaction_id": txn_id, "category_id": groceries}]})
+    with SessionLocal() as db:
+        still_open = db.scalars(
+            select(ReviewItem).where(ReviewItem.item_id == txn_id, ReviewItem.status == "open")
+        ).all()
+        assert still_open == []
+
+
 # --- re-process (scope=recheck): re-run AI over auto-categorised rows, never manual ---
 
 def test_apply_suggestions_never_overwrites_manual(client):

@@ -22,6 +22,13 @@ _TMP = Path(tempfile.mkdtemp(prefix="hafi-test-"))
 os.environ["HAFI_DATABASE_PATH"] = str(_TMP / "test.db")
 os.environ.setdefault("HAFI_MQTT_ENABLED", "false")
 
+# Hermetic AI/secret config: a developer's local backend/.env (e.g. a real AI key
+# for the demo) is auto-loaded by pydantic-settings from the test CWD and would
+# otherwise flip test defaults (privacy_mode, api key). Force AI off + no key so
+# tests never depend on — or transmit — a local secret. (env vars beat .env.)
+os.environ["HAFI_PRIVACY_MODE"] = "strict_local"
+os.environ["HAFI_AI_API_KEY"] = ""
+
 if "hafi-test-" not in os.environ["HAFI_DATABASE_PATH"]:
     raise RuntimeError(
         "Refusing to run tests against a non-temporary database: "

@@ -600,6 +600,10 @@ def apply_suggestions(db: Session, items: list[dict]) -> int:
             continue
         txn.category_id = category.id
         txn.confidence_score = 1.0
+        # Categorising clears the queue items a missing category caused, so a bulk
+        # apply resolves them just like the per-row "categorise" action does.
+        review_service.resolve_for(db, item_type="transaction", item_id=txn.id, reason="unknown_category")
+        review_service.resolve_for(db, item_type="transaction", item_id=txn.id, reason="unknown_vendor")
         applied += 1
     db.commit()
     return applied
