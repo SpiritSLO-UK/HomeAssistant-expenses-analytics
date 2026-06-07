@@ -184,6 +184,63 @@ def test_match_requires_total(client):
     assert client.post(f"/api/receipts/{rid}/match").status_code == 400
 
 
+# --- recommend a transaction for an unmatched receipt (user ask) ---
+
+def test_recommendation_for_unmatched_receipt(client):
+    """An unmatched receipt with a total recommends a pre-filled transaction; the
+    existing create endpoint adds it in one click and the recommendation clears."""
+    rid = _upload(client).json()["id"]
+    client.patch(f"/api/receipts/{rid}", json={
+        "merchant_raw": "Corner Shop", "receipt_date": "2026-05-05", "total_amount": "42.18",
+    })
+    # No transactions exist → unmatched.
+    assert client.post(f"/api/receipts/{rid}/match").json()["status"] == "unmatched"
+    rec = client.get(f"/api/receipts/{rid}").json()["recommended_transaction"]
+    assert rec is not None
+    assert rec["merchant"] == "Corner Shop"
+    assert rec["transaction_date"] == "2026-05-05"
+    assert rec["amount"] == "-42.18"  # purchase = money out
+    assert rec["currency"] == "GBP"
+    # One-click add (the recommendation) → receipt becomes matched → no more rec.
+    res = client.post(f"/api/receipts/{rid}/create-transaction", json={"new_account": True})
+    assert res.status_code == 200, res.text
+    assert res.json()["receipt"]["recommended_transaction"] is None
+
+
+def test_recommendation_absent_without_total(client):
+    rid = _upload(client).json()["id"]
+    assert client.get(f"/api/receipts/{rid}").json()["recommended_transaction"] is None
+
+
+def test_recommendation_uses_ai_category(client):
+    """The recommended transaction carries the receipt's AI-suggested category."""
+    rid = _upload(client).json()["id"]
+    client.patch(f"/api/receipts/{rid}", json={"merchant_raw": "ZZQ", "total_amount": "9.99"})
+    with SessionLocal() as db:
+        cat = Category(name="RecCat", is_active=True)
+        db.add(cat)
+        db.flush()
+        cat_id = cat.id
+        db.get(Receipt, rid).ai_category_id = cat_id
+        db.commit()
+    rec = client.get(f"/api/receipts/{rid}").json()["recommended_transaction"]
+    assert rec["category_id"] == cat_id
+    assert rec["category_name"] == "RecCat"
+
+
+def test_recommendation_absent_once_matched(client):
+    """A receipt with a suggested/confirmed match doesn't recommend a new txn."""
+    _import(client, _curve([("2026-05-02", "TESCO STORES 3142", "-42.18")]))
+    txn = _txn(client, "TESCO STORES 3142")
+    rid = _upload(client).json()["id"]
+    client.patch(f"/api/receipts/{rid}", json={
+        "merchant_raw": "TESCO", "receipt_date": "2026-05-02", "total_amount": "42.18",
+    })
+    client.post(f"/api/receipts/{rid}/match")  # finds the imported txn → suggested
+    client.post(f"/api/receipts/{rid}/confirm-match", json={"transaction_id": txn["id"]})
+    assert client.get(f"/api/receipts/{rid}").json()["recommended_transaction"] is None
+
+
 def test_upload_is_deduplicated(client):
     first = _upload(client, content=b"same-bytes").json()
     second = _upload(client, content=b"same-bytes").json()

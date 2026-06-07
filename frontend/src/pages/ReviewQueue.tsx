@@ -3,10 +3,12 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   categoriseTransaction,
+  createTransactionFromReceipt,
   createVendorFromTransaction,
   getAiStatus,
   getReviewCount,
   listCategories,
+  listReceipts,
   listReviewItems,
   listTransactions,
   setReviewStatus,
@@ -150,6 +152,24 @@ function ReviewRow({
     },
   });
 
+  // Unmatched receipts: surface the recommended transaction + add it in one click
+  // (to a dedicated "Cash & receipts" account). Shared ["receipts"] cache → one fetch.
+  const receipts = useQuery({ queryKey: ["receipts"], queryFn: listReceipts, enabled: isReceipt });
+  const receipt = isReceipt ? receipts.data?.find((x) => x.id === item.item_id) : undefined;
+  const rec = receipt?.recommended_transaction ?? null;
+  const addTxn = useMutation({
+    mutationFn: () => createTransactionFromReceipt(item.item_id as number, { new_account: true }),
+    onSuccess: () => {
+      // create_transaction_from_receipt attaches the receipt, which resolves the
+      // receipt_unmatched item server-side; refresh the affected views.
+      qc.invalidateQueries({ queryKey: ["review"] });
+      qc.invalidateQueries({ queryKey: ["receipts"] });
+      qc.invalidateQueries({ queryKey: ["transactions"] });
+      qc.invalidateQueries({ queryKey: ["accounts"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+
   async function onSuggest() {
     if (item.item_id == null) return;
     try {
@@ -177,6 +197,13 @@ function ReviewRow({
         </span>{" "}
         <span className="muted">{item.item_type}{item.item_id == null ? "" : ` #${item.item_id}`}</span>
         {item.suggested_action && <div style={{ marginTop: 4 }}>{item.suggested_action}</div>}
+        {isReceipt && rec && (
+          <div className="muted" style={{ marginTop: 4, fontSize: "0.85rem" }}>
+            💡 Recommended: <strong>{rec.merchant}</strong> · {rec.transaction_date} ·{" "}
+            <span className="amt--neg">{rec.amount} {rec.currency}</span>
+            {rec.category_name ? ` · ${rec.category_name}` : ""}
+          </div>
+        )}
       </div>
       <div style={{ display: "flex", gap: 6, flexShrink: 0, alignItems: "center", flexWrap: "wrap" }}>
         {/* Fix-in-place: categorise the transaction without leaving the queue. */}
@@ -203,8 +230,19 @@ function ReviewRow({
             Open transaction →
           </Link>
         )}
-        {/* Unmatched / low-confidence receipts are actioned on the Receipts page
-            (find match, extract with AI, edit fields) — link straight to it. */}
+        {/* Unmatched receipt: add the recommended transaction in one click (to a
+            "Cash & receipts" account), or open the receipt to pick another account
+            / find a match / edit fields. */}
+        {isReceipt && rec && !showResolved && (
+          <button
+            className="btn"
+            disabled={addTxn.isPending}
+            title={`Add ${rec.merchant} ${rec.amount} ${rec.currency} to a "Cash & receipts" account`}
+            onClick={() => addTxn.mutate()}
+          >
+            {addTxn.isPending ? "Adding…" : "➕ Add transaction"}
+          </button>
+        )}
         {isReceipt && (
           <Link className="btn btn--ghost" to={`/receipts?focus=${item.item_id}`}>
             Open receipt →
