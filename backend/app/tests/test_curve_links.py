@@ -145,3 +145,33 @@ def test_curve_after_bank_skips_marked_match(client):
     confirm = client.post(f"/api/imports/{preview['import_id']}/confirm").json()
     assert confirm["report"]["new"] == 1
     assert confirm["report"]["duplicates"] == 1
+
+
+def test_real_barclaycard_crv_rows_dedup_against_curve(client):
+    """End-to-end: a real Barclaycard export (Crv* rows) imported after Curve,
+    with the funding card linked, skips the Curve-marked duplicates."""
+    curve = _make_account(client, "Curve")
+    bcard = _make_account(client, "Barclaycard", "credit_card")
+    # Curve export funded by "Credit Card ••1006" with a Lidl spend.
+    curve_export = (
+        b"Export Format,Date (YYYY-MM-DD as UTC),Time,Merchant,"
+        b"Txn Amount (Funding Card),Txn Currency (Funding Card),"
+        b"Txn Amount (Foreign Spend),Txn Currency (Foreign Spend),Card Name,"
+        b"Card Last 4 Digits,Type,Category\n"
+        b"CSV,2025-07-20,12:00:00,Lidl,7.56,GBP,,,Credit Card,1006,Personal,Groceries\n"
+    )
+    _import(client, "curve.csv", curve_export, curve)
+    client.put("/api/imports/funding-links", json={"label": CURVE_LABEL, "account_id": bcard})
+
+    # Barclaycard statement (tab-separated, no header): the Crv*Lidl row is the
+    # same spend; a payment + an unrelated purchase are not.
+    bcard_csv = (
+        b"21-Jul-25\t Crv*Lidl GB, London \tVisa\tMR A\tGroceries\t\t7.56\n"
+        b"22-Jul-25\t Amazon Marketplace \tVisa\tMR A\tShopping\t\t10.00\n"
+        b"20-Jul-25\t Payment, Thank You \tn/a\tMR A\t\t-100.00\t\n"
+    )
+    preview = _upload(client, "barclaycard.csv", bcard_csv, bcard, parser_id="barclaycard_csv").json()
+    assert preview["detected_parser"] == "barclaycard_csv"
+    confirm = client.post(f"/api/imports/{preview['import_id']}/confirm").json()
+    assert confirm["report"]["duplicates"] == 1  # Crv*Lidl skipped
+    assert confirm["report"]["new"] == 2  # Amazon + the bill payment

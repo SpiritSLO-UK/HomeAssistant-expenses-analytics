@@ -25,6 +25,10 @@ _DATE_FORMATS = (
     "%d %b %Y",
     "%d %B %Y",
     "%Y/%m/%d",
+    # Barclaycard exports use e.g. "05 Jun 26" / "05-Jun-26" (2- or 4-digit year).
+    "%d %b %y",
+    "%d-%b-%Y",
+    "%d-%b-%y",
 )
 
 

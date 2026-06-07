@@ -8,6 +8,7 @@ from decimal import Decimal
 import pytest
 
 from app.parsers import detect_parser, get_parser
+from app.parsers.barclaycard_csv import BarclaycardCsvParser
 from app.parsers.barclays_csv import BarclaysCsvParser
 from app.parsers.base import parse_amount, parse_date
 from app.parsers.curve_csv import CurveCsvParser
@@ -147,6 +148,74 @@ def test_barclays_parser():
     assert txns[0].currency == "GBP"
 
 
+# --- Barclaycard (tab-separated, no header, debit/credit split) ---
+
+def test_barclaycard_parser():
+    content = (
+        b"05-Jun-26\t Payment, Thank You \tn/a\tMR A\t\t-1,751.92\t\n"
+        b"03-Jun-26\t Crv*Lidl GB, London \tVisa\tMR A\tGroceries\t\t7.56\n"
+        b"02-Jun-26\t Crv*TfL Travel Charge, London \tVisa\tMR A\tTravel\t\t0.10\n"
+    )
+    txns = BarclaycardCsvParser().parse("statement.csv", content)
+    assert len(txns) == 3
+    # Bill payment (Credit column, signed negative) -> money in.
+    assert txns[0].transaction_date == date(2026, 6, 5)
+    assert txns[0].amount == Decimal("1751.92")
+    assert txns[0].direction == "credit"
+    # Purchases (Debit column, positive) -> money out; "Crv*" kept for dedup.
+    assert txns[1].amount == Decimal("-7.56")
+    assert txns[1].direction == "debit"
+    assert txns[1].description_raw.startswith("Crv*Lidl")
+    assert txns[1].category_hint == "Groceries"
+    assert txns[1].currency == "GBP"
+    assert txns[2].amount == Decimal("-0.10")
+
+
+def test_barclaycard_comma_delimited():
+    """The saved .csv is comma-separated with the comma-bearing fields quoted
+    (a spreadsheet copy-paste is tab-separated) — both must parse."""
+    content = (
+        b'05-Jun-26,"Payment, Thank You",n/a,MR A,,"-1,751.92",\n'
+        b'03-Jun-26,"Crv*Lidl GB, London",Visa,MR A,Groceries,,7.56\n'
+    )
+    txns = BarclaycardCsvParser().parse("barclaycard.csv", content)
+    assert len(txns) == 2
+    assert txns[0].amount == Decimal("1751.92")  # bill payment -> money in
+    assert txns[0].direction == "credit"
+    assert txns[1].amount == Decimal("-7.56")  # purchase -> money out
+    assert txns[1].description_raw == "Crv*Lidl GB, London"
+    assert txns[1].category_hint == "Groceries"
+
+
+def test_barclaycard_detected_by_content():
+    """Headerless tab-separated + a DD-Mon-YY first column routes to barclaycard."""
+    content = b"03-Jun-26\t Crv*Lidl GB, London \tVisa\tMR A\tGroceries\t\t7.56\n"
+    assert isinstance(detect_parser("export.csv", content), BarclaycardCsvParser)
+
+
+def test_barclaycard_detected_by_content_comma():
+    """A comma-separated headerless DD-Mon-YY file also routes to barclaycard."""
+    content = b'03-Jun-26,"Crv*Lidl GB, London",Visa,MR A,Groceries,,7.56\n'
+    assert isinstance(detect_parser("export.csv", content), BarclaycardCsvParser)
+
+
+def test_barclaycard_space_date():
+    """The saved file dates the rows "05 Jun 26" (spaces, 2-digit year)."""
+    content = b'05 Jun 26,"Payment, Thank You",n/a,MR A,,"-150.00",\n02 Jun 26,Crv*TfL,Visa,MR A,Travel,,0.10\n'
+    txns = BarclaycardCsvParser().parse("barclaycard.csv", content)
+    assert txns[0].transaction_date == date(2026, 6, 5)
+    assert txns[0].amount == Decimal("150.00")
+    assert txns[1].transaction_date == date(2026, 6, 2)
+    assert txns[1].amount == Decimal("-0.10")
+    assert isinstance(detect_parser("export.csv", content), BarclaycardCsvParser)
+
+
+def test_barclaycard_does_not_claim_curve_csv():
+    """A comma CSV (Curve) must not be mis-detected as Barclaycard."""
+    content = b"Date,Description,Amount,Currency,Card\n2026-05-02,TESCO,-1.00,GBP,Visa\n"
+    assert not BarclaycardCsvParser().can_parse("x.csv", content)
+
+
 # --- Lloyds (separate debit/credit columns) ---
 
 def test_lloyds_parser_debit_and_credit():
@@ -232,6 +301,7 @@ def test_get_parser_unknown_returns_none():
         ("curve-sample.csv", "curve_csv"),
         ("curve-app-export-sample.csv", "curve_csv"),
         ("barclays-sample.csv", "barclays_csv"),
+        ("barclaycard-sample.csv", "barclaycard_csv"),
         ("lloyds-sample.csv", "lloyds_csv"),
         ("monzo-sample.csv", "monzo_csv"),
         ("generic-sample.csv", "generic_csv"),
