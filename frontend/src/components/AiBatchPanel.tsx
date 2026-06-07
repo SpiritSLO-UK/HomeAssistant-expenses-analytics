@@ -37,6 +37,10 @@ export default function AiBatchPanel({ base, onClose }: Readonly<{ base: string;
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ["transactions"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
+      // Also refresh the Review Queue (used there too): categorised rows leave the
+      // uncategorised list and their review items resolve.
+      qc.invalidateQueries({ queryKey: ["review"] });
+      qc.invalidateQueries({ queryKey: ["uncategorised"] });
       setMsg(`Applied ${res.applied} categor${res.applied === 1 ? "y" : "ies"}.`);
       setSuggestions(null);
     },

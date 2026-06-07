@@ -7,6 +7,7 @@ import {
   createVendorFromTransaction,
   getAiStatus,
   getReviewCount,
+  getSettings,
   listCategories,
   listReceipts,
   listReviewItems,
@@ -16,6 +17,8 @@ import {
   type ReviewItem,
   type Transaction,
 } from "../api/client";
+import AiBatchPanel from "../components/AiBatchPanel";
+import CloudAiBatchPanel from "../components/CloudAiBatchPanel";
 import { suggestForTransaction } from "../lib/aiSuggest";
 
 const PAGE = 25;
@@ -53,11 +56,21 @@ export default function ReviewQueue() {
     queryFn: () => listTransactions({ uncategorised: true, limit: 1 }),
   });
 
+  // Bulk "AI suggest + categorise" — reuses the same batch panels as Transactions,
+  // surfaced here so you can clear many uncategorised rows at once (from either
+  // tab). Local mode runs straight through; cloud mode previews + you approve.
+  const aiStatus = useQuery({ queryKey: ["ai-status"], queryFn: getAiStatus });
+  const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
+  const base = settings.data?.base_currency ?? "GBP";
+  const [showAiBatch, setShowAiBatch] = useState(false);
+  const [showCloudBatch, setShowCloudBatch] = useState(false);
+  const aiOn = aiStatus.data?.enabled ?? false;
+
   return (
     <div className="page">
       <h1 className="page__title">Review Queue</h1>
 
-      <div className="form-row" style={{ gap: 6, marginBottom: 4 }}>
+      <div className="form-row" style={{ gap: 6, marginBottom: 4, flexWrap: "wrap", alignItems: "center" }}>
         <button
           className={"btn btn--sm" + (tab === "review" ? "" : " btn--ghost")}
           onClick={() => setTab("review")}
@@ -70,7 +83,20 @@ export default function ReviewQueue() {
         >
           Uncategorised{uncatCount.data ? ` (${uncatCount.data.total})` : ""}
         </button>
+        {aiOn && aiStatus.data?.privacy_mode === "local_llm" && (
+          <button className="btn btn--sm btn--ghost" style={{ marginLeft: "auto" }} onClick={() => setShowAiBatch((v) => !v)}>
+            {showAiBatch ? "Hide AI categorise" : "✨ Suggest + categorise all…"}
+          </button>
+        )}
+        {aiOn && aiStatus.data?.is_cloud && (
+          <button className="btn btn--sm btn--ghost" style={{ marginLeft: "auto" }} onClick={() => setShowCloudBatch((v) => !v)}>
+            {showCloudBatch ? "Hide cloud AI" : "☁️ Suggest + categorise all (cloud)…"}
+          </button>
+        )}
       </div>
+
+      {showAiBatch && <AiBatchPanel base={base} onClose={() => setShowAiBatch(false)} />}
+      {showCloudBatch && <CloudAiBatchPanel base={base} onClose={() => setShowCloudBatch(false)} />}
 
       {tab === "review" ? <ReviewTab /> : <UncategorisedTab />}
     </div>
