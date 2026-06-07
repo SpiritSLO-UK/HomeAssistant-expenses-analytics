@@ -72,6 +72,12 @@ class Transaction(Base, TimestampMixin):
     # sha256(account|date|amount|currency|description|posted_date) — spec §14.5
     source_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
+    # The underlying funding card a Curve (overlay) row was charged to, as
+    # labelled in the Curve export (e.g. "Credit Card ••1006"). NULL for ordinary
+    # statements. Maps (via CurveFundingLink) to the real account, so the same
+    # spend on that card's own statement can be deduped (curve_link_service).
+    funding_source: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+
     # Multi-currency (backlog #29): the transaction's amount converted to the
     # household base currency. base_amount is NULL + needs_rate=True when a
     # foreign-currency transaction has no FX rate yet. Same-currency rows get

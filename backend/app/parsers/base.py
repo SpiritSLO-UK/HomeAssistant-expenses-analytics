@@ -44,6 +44,11 @@ class StandardTransaction:
     account_hint: str | None = None
     category_hint: str | None = None
     card_hint: str | None = None
+    # The underlying funding card this row was charged to, as labelled by the
+    # source (e.g. Curve's "Card Name ••1234"). Used for cross-account dedup of
+    # overlay/pass-through cards like Curve, where the same spend also lands on
+    # the funding card's own statement. None for ordinary statements.
+    funding_source: str | None = None
     # Set by low-confidence parsers (e.g. PDF) so the import flags the row for
     # the user to verify (spec §11 review-heavy import).
     needs_review: bool = False

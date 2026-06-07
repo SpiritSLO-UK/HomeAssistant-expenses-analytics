@@ -597,6 +597,16 @@ button.sidebar__link:disabled {
   color: #8a4f00;
 }
 
+/* possible cross-account (Curve) duplicate — kept but flagged for review */
+.tag--warn {
+  background: #fff8e1;
+  color: #7a5c00;
+}
+
+.row--warn {
+  background: #fffdf5;
+}
+
 /* --- modal dialog (native <dialog>, opened via showModal) --- */
 dialog.modal-dialog {
   border: none;

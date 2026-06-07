@@ -8,10 +8,14 @@ import {
   aiExtractImport,
   confirmImport,
   getAiStatus,
+  listAccounts,
   listParsers,
+  setFundingLink,
   uploadImport,
   uploadReceipt,
   type ConfirmResponse,
+  type FundingLabel,
+  type PreviewRow,
   type UploadResponse,
 } from "../api/client";
 
@@ -195,6 +199,9 @@ export default function Import() {
               ⚠ {w}
             </p>
           ))}
+          {preview.funding_labels.length > 0 && (
+            <FundingLinkPanel labels={preview.funding_labels} onChanged={() => upload.mutate()} />
+          )}
           <PreviewTable rows={preview.preview} />
           <div className="form-row">
             <button
@@ -293,6 +300,76 @@ function ReceiptImportPanel() {
   );
 }
 
+// Map each Curve "Card Name" to the real account behind it. Curve forwards every
+// payment to an underlying card, so the same purchase also lands on that card's
+// own statement; linking the two lets us skip the duplicate across accounts.
+function FundingLinkPanel({
+  labels,
+  onChanged,
+}: Readonly<{ labels: FundingLabel[]; onChanged: () => void }>) {
+  const queryClient = useQueryClient();
+  const { data: accounts } = useQuery({ queryKey: ["accounts"], queryFn: listAccounts });
+  const save = useMutation({
+    mutationFn: (vars: { label: string; accountId: number | null }) =>
+      setFundingLink(vars.label, vars.accountId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["funding-links"] });
+      onChanged(); // re-preview so cross-account duplicates refresh
+    },
+  });
+
+  return (
+    <div className="card" style={{ background: "var(--surface)" }}>
+      <h2 className="card__title">💳 Curve funding cards</h2>
+      <p className="muted">
+        Curve is a <strong>pass-through</strong> card: each payment is charged to one of your real
+        cards, so the same purchase also appears on that card's own statement. Tell us which account
+        each card is and we'll skip the duplicates when you import both. Leave a card{" "}
+        <em>unmapped</em> (e.g. Curve Cash) to import it normally.
+      </p>
+      <div className="table-wrap">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Card (from Curve)</th>
+              <th className="num">Rows</th>
+              <th>Is really…</th>
+            </tr>
+          </thead>
+          <tbody>
+            {labels.map((l) => (
+              <tr key={l.label}>
+                <td>{l.label}</td>
+                <td className="num">{l.count}</td>
+                <td>
+                  <select
+                    value={l.account_id ?? ""}
+                    disabled={save.isPending}
+                    onChange={(e) =>
+                      save.mutate({
+                        label: l.label,
+                        accountId: e.target.value ? Number(e.target.value) : null,
+                      })
+                    }
+                  >
+                    <option value="">— not linked —</option>
+                    {accounts?.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name}
+                      </option>
+                    ))}
+                  </select>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {save.isError && <p className="status status--error">{String(save.error)}</p>}
+    </div>
+  );
+}
+
 function PreviewTable({ rows }: Readonly<{ rows: UploadResponse["preview"] }>) {
   return (
     <div className="table-wrap">
@@ -309,7 +386,7 @@ function PreviewTable({ rows }: Readonly<{ rows: UploadResponse["preview"] }>) {
         </thead>
         <tbody>
           {rows.map((r, i) => (
-            <tr key={i} className={r.is_duplicate ? "row--dup" : ""}>
+            <tr key={i} className={rowClass(r)}>
               <td>{r.transaction_date}</td>
               <td>{r.description_raw}</td>
               <td className={"num " + (r.direction === "credit" ? "amt--pos" : "amt--neg")}>
@@ -317,11 +394,39 @@ function PreviewTable({ rows }: Readonly<{ rows: UploadResponse["preview"] }>) {
               </td>
               <td>{r.currency}</td>
               <td className="muted">{r.category_hint ?? ""}</td>
-              <td>{r.is_duplicate ? <span className="tag tag--dup">dup</span> : ""}</td>
+              <td>
+                <DupBadge row={r} />
+              </td>
             </tr>
           ))}
         </tbody>
       </table>
     </div>
   );
+}
+
+function rowClass(r: PreviewRow): string {
+  if (r.is_duplicate) return "row--dup";
+  if (r.warning) return "row--warn";
+  return "";
+}
+
+// Per-row status badge: a same-account/cross-account duplicate (skipped), or a
+// possible cross-account Curve match that's kept but flagged.
+function DupBadge({ row }: Readonly<{ row: PreviewRow }>) {
+  if (row.is_duplicate) {
+    return (
+      <span className="tag tag--dup" title={row.dup_reason ?? undefined}>
+        {row.dup_reason ?? "dup"}
+      </span>
+    );
+  }
+  if (row.warning) {
+    return (
+      <span className="tag tag--warn" title={row.warning}>
+        ⚠ {row.warning}
+      </span>
+    );
+  }
+  return null;
 }

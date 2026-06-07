@@ -29,6 +29,7 @@ from app.parsers.base import ParseError
 from app.parsers.generic_csv import GenericCsvParser
 from app.services import (
     category_service,
+    curve_link_service,
     fx_service,
     rule_service,
     settings_service,
@@ -149,20 +150,34 @@ def create_import(
         if h is not None
     }
 
+    # Cross-account dedup for Curve (overlay card): the same spend also lands on
+    # the underlying funding card's own statement (curve_link_service). A
+    # Curve-marked match is skipped like a duplicate; an unmarked amount+date
+    # match is surfaced as a *possible* duplicate but kept.
+    links = curve_link_service.link_map(db)
+    cross = curve_link_service.detect_cross_account(
+        db, target_account_id=account.id, parsed_rows=parsed, links=links
+    )
+
     new_count = 0
     dup_count = 0
     seen: set[str] = set()
     preview: list[dict] = []
-    for txn in parsed:
+    for idx, txn in enumerate(parsed):
         h = source_hash(account.id, txn)
-        is_dup = h in existing_hashes or h in seen
+        same_dup = h in existing_hashes or h in seen
+        seen.add(h)
+        match = cross.get(idx)
+        cross_skip = match is not None and match.confidence == "high"
+        is_dup = same_dup or cross_skip
         if is_dup:
             dup_count += 1
         else:
             new_count += 1
-            seen.add(h)
+        dup_reason = match.reason if cross_skip else None
+        warning = match.reason if (match is not None and not cross_skip and not same_dup) else None
         if len(preview) < preview_limit:
-            preview.append(_preview_row(txn, is_dup))
+            preview.append(_preview_row(txn, is_dup, dup_reason=dup_reason, warning=warning))
 
     statement = Statement(
         account_id=account.id,
@@ -203,6 +218,7 @@ def create_import(
         "report": report.as_dict(),
         "preview": preview,
         "warnings": warnings,
+        "funding_labels": curve_link_service.funding_labels_for_rows(db, parsed),
     }
 
 
@@ -283,16 +299,22 @@ def _persist_parsed_transaction(
     existing_hashes: set[str],
     base_currency: str,
     fx_mode: str,
+    review_reason: str | None = None,
 ) -> tuple[int, int, int]:
     """Persist one parsed transaction, skipping exact duplicates.
 
     Returns ``(new, categorised, needs_rate)`` deltas (each 0 or 1) and mutates
-    ``existing_hashes`` so duplicates within the same statement are caught."""
+    ``existing_hashes`` so duplicates within the same statement are caught.
+    ``review_reason`` flags a kept row for review (e.g. a possible cross-account
+    Curve duplicate that wasn't auto-skipped)."""
     h = source_hash(account_id, txn)
     if h in existing_hashes:
         return 0, 0, 0  # duplicate
     existing_hashes.add(h)
     row = _to_transaction(txn, household_id, account_id, statement_id, h)
+    if review_reason and not row.needs_review:
+        row.needs_review = True
+        row.review_reason = review_reason
     db.add(row)
     db.flush()
     categorised = 1 if auto_categorise(db, row) else 0
@@ -350,11 +372,23 @@ def confirm_import(db: Session, import_id: int) -> dict:
         if h is not None
     }
 
+    # Same cross-account Curve dedup as the preview (curve_link_service): skip a
+    # Curve-marked match, keep-but-flag an unmarked possible match.
+    links = curve_link_service.link_map(db)
+    cross = curve_link_service.detect_cross_account(
+        db, target_account_id=account.id, parsed_rows=parsed, links=links
+    )
+
     new_count = 0
     dup_count = 0
     categorised = 0
     needs_rate = 0
-    for txn in parsed:
+    for idx, txn in enumerate(parsed):
+        match = cross.get(idx)
+        if match is not None and match.confidence == "high":
+            dup_count += 1  # also on the linked funding account → skip
+            continue
+        flag = "possible_duplicate" if (match is not None and match.confidence == "low") else None
         new_delta, cat_delta, rate_delta = _persist_parsed_transaction(
             db,
             txn,
@@ -364,6 +398,7 @@ def confirm_import(db: Session, import_id: int) -> dict:
             existing_hashes=existing_hashes,
             base_currency=base_currency,
             fx_mode=fx_mode,
+            review_reason=flag,
         )
         if not new_delta:
             dup_count += 1
@@ -437,6 +472,7 @@ def _to_transaction(
         currency=txn.currency,
         direction=txn.direction,
         source_hash=h,
+        funding_source=txn.funding_source,
         needs_review=txn.needs_review,
         review_reason="pdf_unverified" if txn.needs_review else None,
     )
@@ -483,7 +519,13 @@ def auto_categorise(db: Session, txn: Transaction) -> bool:
     return False
 
 
-def _preview_row(txn: StandardTransaction, is_duplicate: bool) -> dict:
+def _preview_row(
+    txn: StandardTransaction,
+    is_duplicate: bool,
+    *,
+    dup_reason: str | None = None,
+    warning: str | None = None,
+) -> dict:
     return {
         "transaction_date": txn.transaction_date.isoformat(),
         "description_raw": txn.description_raw,
@@ -493,4 +535,8 @@ def _preview_row(txn: StandardTransaction, is_duplicate: bool) -> dict:
         "direction": txn.direction,
         "category_hint": txn.category_hint,
         "is_duplicate": is_duplicate,
+        # Set when the duplicate is a cross-account Curve match (vs a plain
+        # same-account dupe); `warning` marks a kept-but-possible cross match.
+        "dup_reason": dup_reason,
+        "warning": warning,
     }

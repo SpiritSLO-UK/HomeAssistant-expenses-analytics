@@ -15,11 +15,19 @@ from app.parsers import available_parsers
 from app.parsers.base import ParseError, StandardTransaction, parse_amount, parse_date
 from app.schemas.imports import (
     ConfirmResponse,
+    FundingLinkOut,
+    FundingLinkUpdate,
     ImportListItem,
     ParserInfo,
     UploadResponse,
 )
-from app.services import ai_service, audit_service, import_service, settings_service
+from app.services import (
+    ai_service,
+    audit_service,
+    curve_link_service,
+    import_service,
+    settings_service,
+)
 from app.services.ai_provider import AIError
 from app.services.ai_service import AIDisabled
 from app.services.auth_service import get_current_user
@@ -118,6 +126,40 @@ async def ai_extract(
     return import_service.create_import_from_rows(
         db, name, content, rows, account_id=account_id, institution="AI-extracted", fmt=fmt
     )
+
+
+@router.get("/funding-links", response_model=list[FundingLinkOut])
+def list_funding_links(db: Annotated[Session, Depends(get_db)]) -> list:
+    """Curve funding-card → account mappings (used for cross-account dedup)."""
+    return curve_link_service.list_links(db)
+
+
+@router.put(
+    "/funding-links",
+    response_model=list[FundingLinkOut],
+    responses={400: {"description": "Bad request"}},
+)
+def set_funding_link(
+    payload: FundingLinkUpdate,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> list:
+    """Map a Curve ``Card Name`` to a real account (or clear it with a null
+    ``account_id``). Returns the full updated list."""
+    try:
+        curve_link_service.set_link(db, payload.label, payload.account_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    audit_service.record(
+        db,
+        actor=user.display_name,
+        action="set_curve_funding_link",
+        entity_type="curve_funding_link",
+        entity_id=None,
+        details={"label": payload.label, "account_id": payload.account_id},
+    )
+    db.commit()
+    return curve_link_service.list_links(db)
 
 
 @router.get("", response_model=list[ImportListItem])

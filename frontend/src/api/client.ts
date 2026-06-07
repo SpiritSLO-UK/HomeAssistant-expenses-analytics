@@ -121,6 +121,24 @@ export interface PreviewRow {
   direction: string;
   category_hint: string | null;
   is_duplicate: boolean;
+  // Set when a duplicate is a cross-account Curve match (vs a plain same-account
+  // dupe); `warning` flags a kept-but-possible cross match.
+  dup_reason: string | null;
+  warning: string | null;
+}
+
+// A Curve funding-card label found in an upload + its current account mapping.
+export interface FundingLabel {
+  label: string;
+  count: number;
+  account_id: number | null;
+  account_name: string | null;
+}
+
+export interface FundingLink {
+  id: number;
+  label: string;
+  account_id: number;
 }
 
 export interface UploadResponse {
@@ -132,6 +150,7 @@ export interface UploadResponse {
   report: ImportReport;
   preview: PreviewRow[];
   warnings: string[];
+  funding_labels: FundingLabel[];
 }
 
 export interface ConfirmResponse {
@@ -159,6 +178,20 @@ export async function uploadImport(file: File, parserId?: string): Promise<Uploa
 
 export function confirmImport(importId: number): Promise<ConfirmResponse> {
   return fetchJson<ConfirmResponse>(`api/imports/${importId}/confirm`, { method: "POST" });
+}
+
+// Curve funding-card → account mappings (cross-account dedup of the overlay card).
+export function listFundingLinks(): Promise<FundingLink[]> {
+  return fetchJson<FundingLink[]>("api/imports/funding-links");
+}
+
+// Map a Curve "Card Name" to a real account (accountId null clears it). Returns
+// the full updated list.
+export function setFundingLink(label: string, accountId: number | null): Promise<FundingLink[]> {
+  return fetchJson<FundingLink[]>("api/imports/funding-links", {
+    method: "PUT",
+    body: JSON.stringify({ label, account_id: accountId }),
+  });
 }
 
 // Opt-in vision-AI fallback: extract transactions from a statement image OCR
