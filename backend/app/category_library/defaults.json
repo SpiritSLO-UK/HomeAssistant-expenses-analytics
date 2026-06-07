@@ -3,6 +3,7 @@
   "name": "Default Category Library",
   "categories": [
     { "id": "income", "name": "Income", "parent_id": null, "icon": "mdi:cash-plus", "colour": "#2E7D32", "privacy_sensitivity": "sensitive", "is_budgetable": false, "keywords": ["salary", "payroll", "wages", "interest"] },
+    { "id": "income.cashback", "name": "Cashback", "parent_id": "income", "icon": "mdi:cash-refund", "colour": "#43A047", "privacy_sensitivity": "sensitive", "is_budgetable": false, "keywords": ["cashback", "curve cash", "reward"] },
     { "id": "transfers", "name": "Transfers", "parent_id": null, "icon": "mdi:bank-transfer", "colour": "#607D8B", "privacy_sensitivity": "sensitive", "is_budgetable": false, "keywords": ["transfer", "payment to", "standing order"] },
     { "id": "housing", "name": "Housing", "parent_id": null, "icon": "mdi:home", "colour": "#5D4037", "privacy_sensitivity": "sensitive", "is_budgetable": true, "keywords": ["mortgage", "rent", "council tax"] },
     { "id": "bills", "name": "Bills", "parent_id": null, "icon": "mdi:receipt", "colour": "#455A64", "privacy_sensitivity": "normal", "is_budgetable": true, "keywords": ["electric", "gas", "water", "broadband", "internet", "mobile", "phone"] },

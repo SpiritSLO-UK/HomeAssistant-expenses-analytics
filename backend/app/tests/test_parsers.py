@@ -62,12 +62,12 @@ def test_curve_parser():
 def test_curve_app_export_parser():
     """The real Curve app statement export (different headers, positive=spend)."""
     content = (
-        b"Export For,Date (YYYY-MM-DD as UTC),Time (HH:MM:SS as UTC),Merchant,"
+        b"Export Format,Date (YYYY-MM-DD as UTC),Time (HH:MM:SS as UTC),Merchant,"
         b"Txn Amount (Funding Card),Txn Currency (Funding Card),"
-        b"Txn Amount (Merchant),Txn Currency (Merchant),Card Name,"
+        b"Txn Amount (Foreign Spend),Txn Currency (Foreign Spend),Card Name,"
         b"Card Last 4 Digits,Type,Category,Notes,Fees\n"
-        b"CSV,2025-07-20,21:14:46,Kwik Save,3.69,GBP,3.69,GBP,Credit Card,1006,Personal,Groceries,,\n"
-        b"CSV,2025-07-22,10:00:00,Refund Store,-5.00,GBP,-5.00,GBP,Credit Card,1006,Personal,Shopping,,\n"
+        b"CSV,2025-07-20,21:14:46,Kwik Save,3.69,GBP,,,Credit Card,1006,Personal,Groceries,,\n"
+        b"CSV,2025-07-22,10:00:00,Refund Store,-5.00,GBP,,,Credit Card,1006,Personal,Shopping,,\n"
     )
     txns = CurveCsvParser().parse("curve.csv", content)
     assert len(txns) == 2
@@ -95,6 +95,43 @@ def test_curve_app_export_detected_by_content():
         b"CSV,2025-07-20,21:14:46,Kwik Save,3.69,GBP,Credit Card,Groceries\n"
     )
     assert isinstance(detect_parser("statement-export.csv", content), CurveCsvParser)
+
+
+def test_curve_cash_earned_is_income():
+    """Earned Curve Cash (Merchant 'Curve Cash: …', CPT only) -> Cashback income."""
+    content = (
+        b"Export Format,Date (YYYY-MM-DD as UTC),Time,Merchant,"
+        b"Txn Amount (Funding Card),Txn Currency (Funding Card),"
+        b"Txn Amount (Foreign Spend),Txn Currency (Foreign Spend),Card Name,"
+        b"Card Last 4 Digits,Type,Category\n"
+        b"CSV,2025-07-24,12:23:09,Curve Cash: Lidl,50,CPT,,,Curve Cash,,,\n"
+    )
+    txn = CurveCsvParser().parse("curve.csv", content)[0]
+    assert txn.amount == Decimal("0.50")  # 50 CPT = £0.50, money in
+    assert txn.direction == "credit"
+    assert txn.currency == "GBP"
+    assert txn.is_income is True
+    assert txn.category_library_id == "income.cashback"
+    assert txn.merchant_raw == "Lidl"
+    assert txn.funding_source is None  # rewards wallet, not an underlying card
+
+
+def test_curve_cash_redeemed_is_spend():
+    """Redeemed Curve Cash (real merchant, GBP Foreign Spend) -> a normal spend."""
+    content = (
+        b"Export Format,Date (YYYY-MM-DD as UTC),Time,Merchant,"
+        b"Txn Amount (Funding Card),Txn Currency (Funding Card),"
+        b"Txn Amount (Foreign Spend),Txn Currency (Foreign Spend),Card Name,"
+        b"Card Last 4 Digits,Type,Category\n"
+        b"CSV,2025-08-03,11:44:54,Bexley Ringo Ecom,180,CPT,1.8,GBP,Curve Cash,,Personal,Travel\n"
+    )
+    txn = CurveCsvParser().parse("curve.csv", content)[0]
+    assert txn.amount == Decimal("-1.80")  # paid £1.80 from the wallet (money out)
+    assert txn.direction == "debit"
+    assert txn.currency == "GBP"
+    assert txn.is_income is False
+    assert txn.category_hint == "Travel"
+    assert txn.funding_source is None
 
 
 # --- Barclays ---

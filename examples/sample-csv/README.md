@@ -6,7 +6,7 @@ tests (spec §32.3). **No real bank data** — every value here is made up.
 | File | Parser | Notes |
 |------|--------|-------|
 | `curve-sample.csv` | `curve_csv` | Simplified: Date, Description, Amount, Currency, Card, Category |
-| `curve-app-export-sample.csv` | `curve_csv` | Real Curve app export: `Txn Amount (Funding Card)` is **positive for a spend** (negated on import); refunds are negative |
+| `curve-app-export-sample.csv` | `curve_csv` | Real Curve app export: `Txn Amount (Funding Card)` is **positive for a spend** (negated on import); refunds are negative. Includes **Curve Cash** rows (CPT rewards): `Curve Cash: <merchant>` = earned cashback → Cashback income; a real merchant funded by Curve Cash (with a GBP Foreign Spend) = a spend |
 | `barclays-sample.csv` | `barclays_csv` | Number, Date, Account, Amount, Subcategory, Memo |
 | `lloyds-sample.csv` | `lloyds_csv` | Separate Debit/Credit columns |
 | `monzo-sample.csv` | `monzo_csv` | Wide export; signed Amount |

@@ -101,6 +101,45 @@ def ensure_default_categories(db: Session) -> None:
         import_library(db)
 
 
+def resolve_library_category(db: Session, library_id: str) -> int | None:
+    """Return the DB id for a library category, creating it (and any missing
+    parent) from the bundled defaults if it isn't seeded yet.
+
+    Used to force a specific category on synthetic rows (e.g. earned Curve Cash →
+    ``income.cashback``) without re-running the whole library import — so it also
+    works on an existing DB that predates a newly-added library category.
+    """
+    existing = db.scalars(
+        select(Category).where(Category.library_id == library_id)
+    ).first()
+    if existing is not None:
+        return existing.id
+    entry = next(
+        (c for c in load_library().get("categories", []) if c["id"] == library_id), None
+    )
+    if entry is None:
+        return None
+    household = get_or_create_default_household(db)
+    parent_id = None
+    if entry.get("parent_id"):
+        parent_id = resolve_library_category(db, entry["parent_id"])
+    category = Category(
+        library_id=library_id,
+        household_id=household.id,
+        is_system=True,
+        name=entry["name"],
+        path=entry["name"],
+        parent_id=parent_id,
+        icon=entry.get("icon"),
+        colour=entry.get("colour"),
+        privacy_sensitivity=entry.get("privacy_sensitivity", "normal"),
+        is_budgetable=entry.get("is_budgetable", True),
+    )
+    db.add(category)
+    db.flush()
+    return category.id
+
+
 def list_categories(db: Session, include_inactive: bool = False) -> list[Category]:
     stmt = select(Category)
     if not include_inactive:

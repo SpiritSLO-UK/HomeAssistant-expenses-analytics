@@ -318,6 +318,13 @@ def _persist_parsed_transaction(
     db.add(row)
     db.flush()
     categorised = 1 if auto_categorise(db, row) else 0
+    # A parser may force a specific library category (e.g. earned Curve Cash →
+    # Cashback), which must win over the keyword guess on its merchant text.
+    if txn.category_library_id:
+        forced = category_service.resolve_library_category(db, txn.category_library_id)
+        if forced is not None:
+            row.category_id = forced
+            categorised = 1
     # Convert to base currency (backlog #29). In manual mode, foreign rows
     # with no cached rate are flagged needs_rate for later backfill.
     needs_rate = 0 if fx_service.convert_transaction(
@@ -473,6 +480,7 @@ def _to_transaction(
         direction=txn.direction,
         source_hash=h,
         funding_source=txn.funding_source,
+        is_income=txn.is_income,
         needs_review=txn.needs_review,
         review_reason="pdf_unverified" if txn.needs_review else None,
     )

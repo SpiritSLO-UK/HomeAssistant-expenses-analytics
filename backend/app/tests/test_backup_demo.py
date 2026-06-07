@@ -189,7 +189,7 @@ def test_demo_remove_returns_clean_db(client):
     roles = {u["role"] for u in client.get("/api/users").json()}
     assert "member" not in roles and "child" not in roles
     # The default category library is not demo data — it stays.
-    assert len(client.get("/api/categories").json()) == 22
+    assert len(client.get("/api/categories").json()) == 23
     # Logging is reset from the demo's DEBUG default.
     assert client.get("/api/settings").json()["log_level"] != "DEBUG"
     # Nothing left to remove.
@@ -262,7 +262,7 @@ def test_restore_rejects_non_sqlite(client):
 
 def test_config_export_and_import(client):
     export = client.get("/api/backup/config").json()
-    assert len(export["categories"]) == 22  # seeded library
+    assert len(export["categories"]) == 23  # seeded library
     # Re-importing the same export is a no-op (everything already present).
     same = client.post(
         "/api/backup/config",
