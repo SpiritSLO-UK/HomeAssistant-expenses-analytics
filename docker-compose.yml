@@ -18,16 +18,24 @@ services:
     image: ha-finance-intelligence:1.0.1
     container_name: ha-finance
     restart: unless-stopped
+    # Settings live in a .env file: `cp .env.example .env`, edit, then `up`.
+    # Every HAFI_* in .env is passed into the container. `required: false` keeps
+    # `docker compose up` working with no .env file (needs Compose v2.24+; on
+    # older Compose, set the vars in the `environment:` block below instead).
+    # Anything in `environment:` wins over the .env file.
+    env_file:
+      - path: .env
+        required: false
     environment:
+      # Forced to the persistent /data volume regardless of .env.
       HAFI_DATABASE_PATH: /data/finance.db
-      HAFI_CURRENCY: GBP                # your base currency (e.g. GBP, USD, EUR)
-      HAFI_PRIVACY_MODE: strict_local   # AI is off by default — no external calls
-      HAFI_MQTT_ENABLED: "false"        # MQTT/HA sensors are a later release
-      HAFI_LOG_LEVEL: INFO
-      # Optional: pull documents from your own Paperless-ngx instance into receipts
-      # (one-directional — we only request from Paperless, never expose your data).
-      # HAFI_PAPERLESS_URL: http://paperless:8000
-      # HAFI_PAPERLESS_TOKEN: your-paperless-api-token
+      # Common knobs — set these in .env (preferred), or uncomment to pin here.
+      #HAFI_CURRENCY: GBP               # your base currency (e.g. GBP, USD, EUR)
+      #HAFI_PRIVACY_MODE: strict_local  # AI is off by default — no external calls
+      #HAFI_MQTT_ENABLED: "false"       # MQTT/HA sensors are a later release
+      #HAFI_LOG_LEVEL: INFO
+      # Pull documents from your own Paperless-ngx into receipts (one-directional)
+      # and opt-in AI/price keys also go in .env — see .env.example.
     volumes:
       - finance_data:/data
     ports:
