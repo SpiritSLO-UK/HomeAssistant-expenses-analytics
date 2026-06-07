@@ -171,9 +171,31 @@ def test_barclaycard_parser():
     assert txns[2].amount == Decimal("-0.10")
 
 
+def test_barclaycard_comma_delimited():
+    """The saved .csv is comma-separated with the comma-bearing fields quoted
+    (a spreadsheet copy-paste is tab-separated) — both must parse."""
+    content = (
+        b'05-Jun-26,"Payment, Thank You",n/a,MR A,,"-1,751.92",\n'
+        b'03-Jun-26,"Crv*Lidl GB, London",Visa,MR A,Groceries,,7.56\n'
+    )
+    txns = BarclaycardCsvParser().parse("barclaycard.csv", content)
+    assert len(txns) == 2
+    assert txns[0].amount == Decimal("1751.92")  # bill payment -> money in
+    assert txns[0].direction == "credit"
+    assert txns[1].amount == Decimal("-7.56")  # purchase -> money out
+    assert txns[1].description_raw == "Crv*Lidl GB, London"
+    assert txns[1].category_hint == "Groceries"
+
+
 def test_barclaycard_detected_by_content():
     """Headerless tab-separated + a DD-Mon-YY first column routes to barclaycard."""
     content = b"03-Jun-26\t Crv*Lidl GB, London \tVisa\tMR A\tGroceries\t\t7.56\n"
+    assert isinstance(detect_parser("export.csv", content), BarclaycardCsvParser)
+
+
+def test_barclaycard_detected_by_content_comma():
+    """A comma-separated headerless DD-Mon-YY file also routes to barclaycard."""
+    content = b'03-Jun-26,"Crv*Lidl GB, London",Visa,MR A,Groceries,,7.56\n'
     assert isinstance(detect_parser("export.csv", content), BarclaycardCsvParser)
 
 

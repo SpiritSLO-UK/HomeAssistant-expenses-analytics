@@ -53,7 +53,12 @@ class BarclaycardCsvParser(BaseStatementParser):
     @staticmethod
     def _rows(content: bytes) -> list[list[str]]:
         text = content.decode("utf-8-sig", errors="replace")
-        reader = csv.reader(io.StringIO(text), delimiter="\t")
+        # The saved file is comma-separated (with the comma-containing description
+        # and "1,234.56" amounts quoted); a copy-paste out of a spreadsheet is
+        # tab-separated. Sniff the first non-empty line so either works.
+        first = next((ln for ln in text.splitlines() if ln.strip()), "")
+        delimiter = "\t" if "\t" in first else ","
+        reader = csv.reader(io.StringIO(text), delimiter=delimiter)
         return [row for row in reader if any((c or "").strip() for c in row)]
 
     def can_parse(self, filename: str, content: bytes) -> bool:
@@ -63,7 +68,8 @@ class BarclaycardCsvParser(BaseStatementParser):
             rows = self._rows(content)
         except Exception:
             return False
-        # Headerless + tab-separated + a DD-Mon-YY first column is the signature.
+        # Headerless + a DD-Mon-YY first column is the signature (no header row to
+        # match on). Comma or tab delimited.
         return bool(rows) and len(rows[0]) >= 6 and bool(_DATE_RE.match(_col(rows[0], _COL_DATE)))
 
     def parse(self, filename: str, content: bytes) -> list[StandardTransaction]:
