@@ -10,12 +10,12 @@ from __future__ import annotations
 
 # Real Curve app export: positive funding-card amounts (spend), Card Name column.
 CURVE_EXPORT = (
-    "Export For,Date (YYYY-MM-DD as UTC),Time (HH:MM:SS as UTC),Merchant,"
-    "Txn Amount (Funding Card),Txn Currency (Funding Card),Card Name,"
-    "Card Last 4 Digits,Type,Category\n"
-    "CSV,2025-07-20,21:14:46,Kwik Save,3.69,GBP,Credit Card,1006,Personal,Groceries\n"
-    "CSV,2025-07-21,08:12:30,Costa Coffee,3.85,GBP,Credit Card,1006,Personal,Eating Out\n"
-).encode()
+    b"Export For,Date (YYYY-MM-DD as UTC),Time (HH:MM:SS as UTC),Merchant,"
+    b"Txn Amount (Funding Card),Txn Currency (Funding Card),Card Name,"
+    b"Card Last 4 Digits,Type,Category\n"
+    b"CSV,2025-07-20,21:14:46,Kwik Save,3.69,GBP,Credit Card,1006,Personal,Groceries\n"
+    b"CSV,2025-07-21,08:12:30,Costa Coffee,3.85,GBP,Credit Card,1006,Personal,Eating Out\n"
+)
 
 CURVE_LABEL = "Credit Card ••1006"
 
@@ -87,10 +87,10 @@ def test_bank_after_curve_skips_marked_match(client):
     # Barclays statement (own parser → no funding_source): one Curve-marked row
     # (matches Kwik Save) + one unrelated row.
     bank = (
-        "Number,Date,Account,Amount,Subcategory,Memo\n"
-        "1,21/07/2025,20-11-22 12345678,-3.69,Groceries,CRV*KWIK SAVE\n"  # marked → skip
-        "2,25/07/2025,20-11-22 12345678,-12.00,Groceries,Tesco\n"          # unrelated → new
-    ).encode()
+        b"Number,Date,Account,Amount,Subcategory,Memo\n"
+        b"1,21/07/2025,20-11-22 12345678,-3.69,Groceries,CRV*KWIK SAVE\n"  # marked → skip
+        b"2,25/07/2025,20-11-22 12345678,-12.00,Groceries,Tesco\n"          # unrelated → new
+    )
     preview = _upload(client, "barclays.csv", bank, barclays, parser_id="barclays_csv").json()
     reasons = [r.get("dup_reason") for r in preview["preview"] if r["is_duplicate"]]
     assert any(r and "Curve" in r for r in reasons)
@@ -108,9 +108,9 @@ def test_bank_after_curve_keeps_unmarked_match_flagged(client):
 
     # Same amount/date as Kwik Save but NO Curve marker → possible, kept + flagged.
     bank = (
-        "Number,Date,Account,Amount,Subcategory,Memo\n"
-        "1,21/07/2025,20-11-22 12345678,-3.69,Groceries,KWIK SAVE STORES\n"
-    ).encode()
+        b"Number,Date,Account,Amount,Subcategory,Memo\n"
+        b"1,21/07/2025,20-11-22 12345678,-3.69,Groceries,KWIK SAVE STORES\n"
+    )
     preview = _upload(client, "barclays.csv", bank, barclays, parser_id="barclays_csv").json()
     row = preview["preview"][0]
     assert row["is_duplicate"] is False
@@ -132,9 +132,9 @@ def test_curve_after_bank_skips_marked_match(client):
     barclays = _make_account(client, "Barclays", "current_account")
     # Bank first, with a Curve-marked settlement matching the Kwik Save row.
     bank = (
-        "Number,Date,Account,Amount,Subcategory,Memo\n"
-        "1,20/07/2025,20-11-22 12345678,-3.69,Groceries,CRV*KWIK SAVE\n"
-    ).encode()
+        b"Number,Date,Account,Amount,Subcategory,Memo\n"
+        b"1,20/07/2025,20-11-22 12345678,-3.69,Groceries,CRV*KWIK SAVE\n"
+    )
     _import(client, "barclays.csv", bank, barclays, parser_id="barclays_csv")
     client.put("/api/imports/funding-links", json={"label": CURVE_LABEL, "account_id": barclays})
 
