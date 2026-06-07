@@ -14,6 +14,24 @@ There are three layers of configuration, in order of precedence at runtime:
 
 Defaults are chosen so the app runs **private and local with no external calls**.
 
+### Quick start: a `.env` file (standalone)
+
+Running **without** Home Assistant? Instead of editing values one by one, copy the
+ready-made template — [`.env.example`](../.env.example) — which lists **every**
+`HAFI_*` setting with its default and a comment, all commented out:
+
+```bash
+cp .env.example .env              # Windows: copy .env.example .env
+# edit .env, then:
+docker compose up -d --build      # docker-compose reads ./.env automatically
+```
+
+`docker-compose.yml` passes everything in `.env` into the container (it stays
+optional — `up` still works with no `.env`). Running from **source** instead of
+Docker? The backend reads a `.env` from its working directory, so copy it to
+`backend/.env`. `.env` is git-ignored; only the `.env.example` template is
+committed. Anything not in the file falls back to the defaults below.
+
 ---
 
 ## Environment variables (`HAFI_*`)
