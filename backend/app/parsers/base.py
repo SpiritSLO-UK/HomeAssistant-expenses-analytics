@@ -49,6 +49,13 @@ class StandardTransaction:
     # overlay/pass-through cards like Curve, where the same spend also lands on
     # the funding card's own statement. None for ordinary statements.
     funding_source: str | None = None
+    # True for money-in rows a parser can identify as income (e.g. earned Curve
+    # Cash cashback). Sets the transaction's is_income flag.
+    is_income: bool = False
+    # When set, the import forces this library category on the row (highest
+    # precedence) — for synthetic rows like earned Curve Cash → "income.cashback"
+    # whose merchant text would otherwise keyword-match the wrong category.
+    category_library_id: str | None = None
     # Set by low-confidence parsers (e.g. PDF) so the import flags the row for
     # the user to verify (spec §11 review-heavy import).
     needs_review: bool = False

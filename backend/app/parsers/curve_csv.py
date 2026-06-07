@@ -22,6 +22,8 @@ Two Curve export shapes are supported:
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from app.parsers.base import (
     BaseStatementParser,
     ParseError,
@@ -33,6 +35,12 @@ from app.parsers.base import (
     parse_optional_date,
     read_csv_rows,
 )
+
+# Curve Cash is Curve's cashback/rewards programme, denominated in CPT ("Curve
+# points"). The redemption rows show both sides (e.g. 180 CPT = £1.80), so a
+# point is a penny.
+_CPT_PER_GBP = Decimal(100)
+_CASHBACK_LIBRARY_ID = "income.cashback"
 
 
 def _field_by_prefix(row: dict[str, str], prefix: str) -> str | None:
@@ -61,6 +69,57 @@ def _funding_label(name: str | None, last4: str | None) -> str | None:
     if name and last4:
         return f"{name} ••{last4}"
     return name or None
+
+
+def _is_curve_cash(card_name: str | None, currency: str | None) -> bool:
+    """A Curve Cash (rewards wallet) row — funded in CPT, Card Name "Curve Cash"."""
+    return (card_name or "").strip().lower() == "curve cash" or (
+        currency or ""
+    ).strip().upper() == "CPT"
+
+
+def _curve_cash_row(
+    row: dict[str, str], txn_date, description: str, amount_str: str
+) -> StandardTransaction:
+    """Map a Curve Cash row, distinguishing earned cashback from a redemption.
+
+    * **Earned** — Merchant like ``Curve Cash: Lidl``, amount in CPT only (no
+      Foreign Spend) → money **in**, forced to the Cashback income category
+      (CPT/100 = GBP, since 1 CPT = 1p).
+    * **Redeemed** — a real merchant paid from the wallet, carrying a GBP
+      ``Foreign Spend`` value → a normal **spend** in that currency.
+    """
+    cpt = parse_amount(amount_str)
+    foreign_amt = _field_by_prefix(row, "txn amount (foreign")
+    foreign_cur = _field_by_prefix(row, "txn currency (foreign")
+    if description.strip().lower().startswith("curve cash:"):
+        earned = (cpt / _CPT_PER_GBP).quantize(Decimal("0.01"))
+        place = description.split(":", 1)[1].strip() or None
+        return StandardTransaction(
+            transaction_date=txn_date,
+            amount=earned,  # positive = money in (cashback earned)
+            currency="GBP",
+            description_raw=description,
+            merchant_raw=place,
+            category_hint="Cashback",
+            category_library_id=_CASHBACK_LIBRARY_ID,
+            is_income=True,
+        )
+    # Redemption: Curve Cash spent to pay for a real purchase.
+    if foreign_amt is not None:
+        spend = -abs(parse_amount(foreign_amt))
+        spend_currency = (foreign_cur or "GBP").upper()
+    else:
+        spend = -(cpt / _CPT_PER_GBP).quantize(Decimal("0.01"))
+        spend_currency = "GBP"
+    return StandardTransaction(
+        transaction_date=txn_date,
+        amount=spend,
+        currency=spend_currency,
+        description_raw=description,
+        merchant_raw=description,
+        category_hint=get_field(row, "Category"),
+    )
 
 
 class CurveCsvParser(BaseStatementParser):
@@ -93,26 +152,33 @@ class CurveCsvParser(BaseStatementParser):
             date_str = _field_by_prefix(row, "date")
             # Description is "Description" (simplified) or "Merchant" (app export).
             description = get_field(row, "Description", "Merchant")
+            card_name = get_field(row, "Card Name")
             if app_export:
                 amount_str = _field_by_prefix(row, "txn amount (funding")
                 currency = _field_by_prefix(row, "txn currency (funding")
-                funding = _funding_label(
-                    get_field(row, "Card Name"), get_field(row, "Card Last 4 Digits")
-                )
             else:
                 amount_str = get_field(row, "Amount")
                 currency = get_field(row, "Currency")
-                funding = get_field(row, "Card")
             if not date_str or amount_str is None or not description:
                 raise ParseError(f"Curve row {i}: missing date/amount/description")
+            txn_date = parse_date(date_str)
+
+            # Curve Cash (rewards wallet) rows are signed/categorised differently.
+            if app_export and _is_curve_cash(card_name, currency):
+                out.append(_curve_cash_row(row, txn_date, description, amount_str))
+                continue
+
             amount = parse_amount(amount_str)
             if app_export:
                 # Funding-card charge is positive for a spend; flip to our
                 # convention (negative = money out).
                 amount = -amount
+                funding = _funding_label(card_name, get_field(row, "Card Last 4 Digits"))
+            else:
+                funding = get_field(row, "Card")
             out.append(
                 StandardTransaction(
-                    transaction_date=parse_date(date_str),
+                    transaction_date=txn_date,
                     posted_date=parse_optional_date(get_field(row, "Completed Date")),
                     amount=amount,
                     currency=(currency or "GBP").upper(),

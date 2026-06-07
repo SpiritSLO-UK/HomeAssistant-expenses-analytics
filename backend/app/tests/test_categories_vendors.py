@@ -32,17 +32,17 @@ def _category_id(client, name: str) -> int:
 
 def test_library_seeded_on_startup(client):
     cats = client.get("/api/categories").json()
-    assert len(cats) == 22
+    assert len(cats) == 23
     names = {c["name"] for c in cats}
-    assert {"Groceries", "DIY", "Subscriptions", "Income"} <= names
+    assert {"Groceries", "DIY", "Subscriptions", "Income", "Cashback"} <= names
 
 
 def test_import_library_idempotent(db):
     first = category_service.import_library(db)
     second = category_service.import_library(db)
-    assert first == 22
+    assert first == 23
     assert second == 0  # nothing new on re-import
-    assert len(category_service.list_categories(db)) == 22
+    assert len(category_service.list_categories(db)) == 23
 
 
 # --- vendor recommendation: create + link from a transaction (suggest & confirm) ---

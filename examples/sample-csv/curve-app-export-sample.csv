@@ -1,7 +1,7 @@
-Export For,Date (YYYY-MM-DD as UTC),Time (HH:MM:SS as UTC),Merchant,Txn Amount (Funding Card),Txn Currency (Funding Card),Txn Amount (Merchant),Txn Currency (Merchant),Card Name,Card Last 4 Digits,Type,Category,Notes,Fees
-CSV,2025-07-20,19:46:03,Curve Cash: TfL,9.00,GBP,9.00,GBP,Curve Cash,,,Transport,,
-CSV,2025-07-20,21:14:46,Kwik Save,3.69,GBP,3.69,GBP,Credit Card,1006,Personal,Groceries,,
-CSV,2025-07-21,08:12:30,Costa Coffee,3.85,GBP,3.85,GBP,Credit Card,1006,Personal,Eating Out,,
-CSV,2025-07-22,17:40:09,Screwfix Direct,38.99,GBP,38.99,GBP,Credit Card,1006,Personal,Shopping,,
-CSV,2025-07-23,12:30:00,Amazon Marketplace,23.49,GBP,23.49,GBP,Credit Card,1006,Personal,Shopping,,
-CSV,2025-07-25,13:05:11,Refund Store,-5.00,GBP,-5.00,GBP,Credit Card,1006,Personal,Shopping,Returned item,
+Export Format,Date (YYYY-MM-DD as UTC),Time (HH:MM:SS as UTC),Merchant,Txn Amount (Funding Card),Txn Currency (Funding Card),Txn Amount (Foreign Spend),Txn Currency (Foreign Spend),Card Name,Card Last 4 Digits,Type,Category,Notes,Fees
+CSV,2025-07-20,19:46:03,Curve Cash: TfL,9,CPT,,,Curve Cash,,,,,
+CSV,2025-07-20,21:14:46,Kwik Save,3.69,GBP,,,Credit Card,1006,Personal,Groceries,,
+CSV,2025-07-21,08:12:30,Costa Coffee,3.85,GBP,,,Credit Card,1006,Personal,Eating Out,,
+CSV,2025-07-22,17:40:09,Screwfix Direct,38.99,GBP,,,Credit Card,1006,Personal,Shopping,,
+CSV,2025-07-23,11:44:54,Bexley Ringo Ecom,180,CPT,1.8,GBP,Curve Cash,,Personal,Travel,,
+CSV,2025-07-25,13:05:11,Refund Store,-5.00,GBP,,,Credit Card,1006,Personal,Shopping,Returned item,

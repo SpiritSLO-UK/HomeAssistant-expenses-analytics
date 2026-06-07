@@ -71,6 +71,13 @@ logs, then open an issue with the relevant lines (redact any account details).
   tag (within a few days) is kept but flagged for review so you can decide.
 - Leave a card **unmapped** (e.g. `Curve Cash`) to import its rows normally.
 
+**Curve Cash (rewards).** Curve Cash is Curve's cashback programme, in `CPT`
+points (1 CPT = 1p). Rows like `Curve Cash: Lidl` are cashback you **earned** →
+imported as **income** in the **Cashback** category. A real merchant funded by
+Curve Cash (it carries a GBP *Foreign Spend* value) is treated as a normal
+**spend** in that category. So earning books as money in and spending it books as
+money out — they net out, which is the correct accounting.
+
 ---
 
 ## Categorisation & rules
