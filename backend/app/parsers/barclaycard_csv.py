@@ -31,9 +31,9 @@ from app.parsers.base import (
     parse_date,
 )
 
-# A first column like "05-Jun-26" (or a 4-digit year) — the headerless format's
-# only reliable signature.
-_DATE_RE = re.compile(r"^\d{1,2}-[A-Za-z]{3}-\d{2,4}$")
+# A first column like "05 Jun 26" / "05-Jun-26" (2- or 4-digit year) — the
+# headerless format's only reliable signature. Separator is a space or hyphen.
+_DATE_RE = re.compile(r"^\d{1,2}[-\s][A-Za-z]{3}[-\s]\d{2,4}$")
 
 _COL_DATE = 0
 _COL_DESCRIPTION = 1

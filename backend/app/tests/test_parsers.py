@@ -199,6 +199,17 @@ def test_barclaycard_detected_by_content_comma():
     assert isinstance(detect_parser("export.csv", content), BarclaycardCsvParser)
 
 
+def test_barclaycard_space_date():
+    """The saved file dates the rows "05 Jun 26" (spaces, 2-digit year)."""
+    content = b'05 Jun 26,"Payment, Thank You",n/a,MR A,,"-150.00",\n02 Jun 26,Crv*TfL,Visa,MR A,Travel,,0.10\n'
+    txns = BarclaycardCsvParser().parse("barclaycard.csv", content)
+    assert txns[0].transaction_date == date(2026, 6, 5)
+    assert txns[0].amount == Decimal("150.00")
+    assert txns[1].transaction_date == date(2026, 6, 2)
+    assert txns[1].amount == Decimal("-0.10")
+    assert isinstance(detect_parser("export.csv", content), BarclaycardCsvParser)
+
+
 def test_barclaycard_does_not_claim_curve_csv():
     """A comma CSV (Curve) must not be mis-detected as Barclaycard."""
     content = b"Date,Description,Amount,Currency,Card\n2026-05-02,TESCO,-1.00,GBP,Visa\n"
