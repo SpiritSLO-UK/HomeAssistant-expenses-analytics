@@ -6,6 +6,7 @@ generic parser as a catch-all fallback.
 
 from __future__ import annotations
 
+from app.parsers.barclaycard_csv import BarclaycardCsvParser
 from app.parsers.barclays_csv import BarclaysCsvParser
 from app.parsers.base import BaseStatementParser, StandardTransaction
 from app.parsers.curve_csv import CurveCsvParser
@@ -18,6 +19,7 @@ from app.parsers.monzo_csv import MonzoCsvParser
 # Order matters: specific parsers before the generic fallback.
 _BANK_PARSERS: list[BaseStatementParser] = [
     CurveCsvParser(),
+    BarclaycardCsvParser(),
     BarclaysCsvParser(),
     LloydsCsvParser(),
     MonzoCsvParser(),
@@ -65,6 +67,7 @@ __all__ = [
     "StandardTransaction",
     "BaseStatementParser",
     "CurveCsvParser",
+    "BarclaycardCsvParser",
     "BarclaysCsvParser",
     "LloydsCsvParser",
     "MonzoCsvParser",
