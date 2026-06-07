@@ -12,6 +12,7 @@ from app.models.audit_log import AuditLog
 from app.models.budget import Budget
 from app.models.category import Category
 from app.models.child_allocation import ChildAllocation
+from app.models.curve_funding_link import CurveFundingLink
 from app.models.energy_snapshot import EnergySnapshot
 from app.models.fx_rate import FxRate
 from app.models.household import Household
@@ -41,6 +42,7 @@ __all__ = [
     "Category",
     "EnergySnapshot",
     "ChildAllocation",
+    "CurveFundingLink",
     "FxRate",
     "Household",
     "AccountValue",

@@ -59,6 +59,44 @@ def test_curve_parser():
     assert txns[1].direction == "credit"
 
 
+def test_curve_app_export_parser():
+    """The real Curve app statement export (different headers, positive=spend)."""
+    content = (
+        b"Export For,Date (YYYY-MM-DD as UTC),Time (HH:MM:SS as UTC),Merchant,"
+        b"Txn Amount (Funding Card),Txn Currency (Funding Card),"
+        b"Txn Amount (Merchant),Txn Currency (Merchant),Card Name,"
+        b"Card Last 4 Digits,Type,Category,Notes,Fees\n"
+        b"CSV,2025-07-20,21:14:46,Kwik Save,3.69,GBP,3.69,GBP,Credit Card,1006,Personal,Groceries,,\n"
+        b"CSV,2025-07-22,10:00:00,Refund Store,-5.00,GBP,-5.00,GBP,Credit Card,1006,Personal,Shopping,,\n"
+    )
+    txns = CurveCsvParser().parse("curve.csv", content)
+    assert len(txns) == 2
+    assert txns[0].transaction_date == date(2025, 7, 20)
+    # Funding-card charge is positive for a spend -> negated to money out.
+    assert txns[0].amount == Decimal("-3.69")
+    assert txns[0].direction == "debit"
+    assert txns[0].description_raw == "Kwik Save"
+    assert txns[0].merchant_raw == "Kwik Save"
+    assert txns[0].currency == "GBP"
+    assert txns[0].category_hint == "Groceries"
+    assert txns[0].card_hint == "Credit Card"
+    # Funding-card label (Card Name + last 4) carried for cross-account dedup.
+    assert txns[0].funding_source == "Credit Card ••1006"
+    # Curve exports refunds/credits negative -> flips to money in.
+    assert txns[1].amount == Decimal("5.00")
+    assert txns[1].direction == "credit"
+
+
+def test_curve_app_export_detected_by_content():
+    """An app export with no 'curve' in the filename still routes to curve_csv."""
+    content = (
+        b"Export For,Date (YYYY-MM-DD as UTC),Time (HH:MM:SS as UTC),Merchant,"
+        b"Txn Amount (Funding Card),Txn Currency (Funding Card),Card Name,Category\n"
+        b"CSV,2025-07-20,21:14:46,Kwik Save,3.69,GBP,Credit Card,Groceries\n"
+    )
+    assert isinstance(detect_parser("statement-export.csv", content), CurveCsvParser)
+
+
 # --- Barclays ---
 
 def test_barclays_parser():
@@ -155,6 +193,7 @@ def test_get_parser_unknown_returns_none():
     "filename,parser_id",
     [
         ("curve-sample.csv", "curve_csv"),
+        ("curve-app-export-sample.csv", "curve_csv"),
         ("barclays-sample.csv", "barclays_csv"),
         ("lloyds-sample.csv", "lloyds_csv"),
         ("monzo-sample.csv", "monzo_csv"),

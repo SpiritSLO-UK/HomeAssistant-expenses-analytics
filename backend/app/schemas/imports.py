@@ -23,6 +23,19 @@ class PreviewRow(BaseModel):
     direction: str
     category_hint: str | None = None
     is_duplicate: bool
+    # Why this row is a duplicate, when it's a cross-account Curve match (vs a
+    # plain same-account dupe). `warning` flags a kept-but-possible cross match.
+    dup_reason: str | None = None
+    warning: str | None = None
+
+
+class FundingLabel(BaseModel):
+    """A Curve funding-card label found in an upload + its current mapping."""
+
+    label: str
+    count: int
+    account_id: int | None = None
+    account_name: str | None = None
 
 
 class UploadResponse(BaseModel):
@@ -34,6 +47,23 @@ class UploadResponse(BaseModel):
     report: ImportReportSchema
     preview: list[PreviewRow]
     warnings: list[str]
+    # Distinct Curve funding-card labels in this upload (empty for ordinary
+    # statements) — drives the Import page's "map this card to an account" panel.
+    funding_labels: list[FundingLabel] = []
+
+
+class FundingLinkOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    label: str
+    account_id: int
+
+
+class FundingLinkUpdate(BaseModel):
+    label: str
+    # None clears the mapping.
+    account_id: int | None = None
 
 
 class ConfirmResponse(BaseModel):

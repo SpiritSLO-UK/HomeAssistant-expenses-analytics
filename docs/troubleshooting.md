@@ -61,6 +61,16 @@ logs, then open an issue with the relevant lines (redact any account details).
   are rasterised first; very low-quality scans may not read. Verify/fix rows in
   the review queue, or enter them manually.
 
+**Curve statements show duplicates of my other cards.**
+- Curve is a pass-through ("transient") card: each payment is charged to one of
+  your real cards, so the same purchase also appears on that card's own
+  statement. When you preview a Curve export, a **Curve funding cards** panel
+  lists each `Card Name` it found — map each one to the real account behind it.
+  After that, importing both statements skips the duplicate: a bank row tagged
+  `CURVE`/`CRV*…` is skipped automatically, and an amount+date match without that
+  tag (within a few days) is kept but flagged for review so you can decide.
+- Leave a card **unmapped** (e.g. `Curve Cash`) to import its rows normally.
+
 ---
 
 ## Categorisation & rules
