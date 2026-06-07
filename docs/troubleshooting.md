@@ -103,6 +103,13 @@ money out — they net out, which is the correct accounting.
 - A receipt that reads poorly is flagged for review; correct the merchant/date/
   total by hand and match it to a transaction.
 
+**A receipt has no matching transaction (cash, or the statement isn't imported).**
+- When nothing matches and a total is set, the app **recommends a transaction**
+  pre-filled from the receipt (merchant, date, amount, suggested category) — on
+  the receipt itself and in the **Review Queue**. Add it in one click (to a
+  chosen account, or a dedicated "Cash & receipts" account); the receipt is then
+  attached to the new transaction.
+
 ---
 
 ## Multi-currency / FX

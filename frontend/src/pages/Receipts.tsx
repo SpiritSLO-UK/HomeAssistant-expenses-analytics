@@ -256,6 +256,9 @@ function ReceiptCard({ r, onError, focused = false }: Readonly<{ r: Receipt; onE
 
   const confirmed = r.matches.find((m) => m.match_status === "confirmed" || m.match_status === "auto_confirmed");
   const suggested = r.matches.find((m) => m.match_status === "suggested");
+  const rec = r.recommended_transaction;
+  let addLabel = rec ? "Add transaction" : "Create transaction";
+  if (createTxn.isPending) addLabel = "Adding…";
 
   return (
     <div
@@ -363,22 +366,38 @@ function ReceiptCard({ r, onError, focused = false }: Readonly<{ r: Receipt; onE
       )}
 
       {/* No matching transaction (e.g. cash, or the statement isn't imported)?
-          Create one straight from the receipt. */}
+          Recommend adding one straight from the receipt — pre-filled, one click. */}
       {!confirmed && (
-        <div className="form-row" style={{ marginTop: 8, gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          <span className="muted">No matching transaction? Create one:</span>
-          <select value={acct} onChange={(e) => setAcct(e.target.value)} disabled={createTxn.isPending} aria-label="Account for the new transaction">
-            <option value="new">➕ New “Cash &amp; receipts” account</option>
-            {accounts.data?.map((a) => <option key={a.id} value={String(a.id)}>{a.name}</option>)}
-          </select>
-          <button
-            className="btn btn--ghost"
-            disabled={!total || createTxn.isPending}
-            title={total ? "Create a transaction from this receipt's merchant, date and total" : "Set the total first"}
-            onClick={() => createTxn.mutate()}
-          >
-            {createTxn.isPending ? "Creating…" : "Create transaction"}
-          </button>
+        <div
+          className="card"
+          style={{ marginTop: 8, padding: 10, background: "var(--surface)" }}
+        >
+          {rec ? (
+            <p className="muted" style={{ marginTop: 0 }}>
+              💡 <strong>No matching transaction.</strong> Add this one?{" "}
+              <strong>{rec.merchant}</strong> · {rec.transaction_date} ·{" "}
+              <span className="amt--neg">{rec.amount} {rec.currency}</span>
+              {rec.category_name ? <> · {rec.category_name}</> : null}
+            </p>
+          ) : (
+            <p className="muted" style={{ marginTop: 0 }}>
+              No matching transaction? {total ? "Create one:" : "Set the total above, then create one."}
+            </p>
+          )}
+          <div className="form-row" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <select value={acct} onChange={(e) => setAcct(e.target.value)} disabled={createTxn.isPending} aria-label="Account for the new transaction">
+              <option value="new">➕ New “Cash &amp; receipts” account</option>
+              {accounts.data?.map((a) => <option key={a.id} value={String(a.id)}>{a.name}</option>)}
+            </select>
+            <button
+              className={rec ? "btn" : "btn btn--ghost"}
+              disabled={!total || createTxn.isPending}
+              title={total ? "Create a transaction from this receipt's merchant, date and total" : "Set the total first"}
+              onClick={() => createTxn.mutate()}
+            >
+              {addLabel}
+            </button>
+          </div>
         </div>
       )}
     </div>

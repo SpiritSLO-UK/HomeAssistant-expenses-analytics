@@ -21,6 +21,7 @@ from app.config import settings
 from app.logging import get_logger
 from app.models import Account, Category, Receipt, Transaction, TransactionReceiptMatch
 from app.services import (
+    category_service,
     fx_service,
     import_service,
     ocr_service,
@@ -352,7 +353,10 @@ def match(db: Session, receipt: Receipt, mode: str | None = None) -> dict:
         status = _record_best_match(db, receipt, best_score, best_txn, mode=mode)
     else:
         receipt.needs_review = True
-        _flag(db, receipt, "receipt_unmatched", "No good transaction match — match it manually.")
+        _flag(
+            db, receipt, "receipt_unmatched",
+            "No matching transaction — add the recommended one, or match manually.",
+        )
 
     db.commit()
     return {
@@ -402,6 +406,37 @@ def delete(db: Session, receipt: Receipt) -> None:
     db.commit()
 
 
+def recommend_transaction(db: Session, receipt: Receipt) -> dict | None:
+    """A pre-filled transaction to recommend for an *unmatched* receipt — exactly
+    what :func:`create_transaction_from_receipt` would produce, surfaced so the
+    user can add it in one click (Receipts page + Review Queue). Returns None when
+    there's no amount yet to base it on.
+
+    The suggested category is the AI's pick (if any) else a keyword guess on the
+    merchant; the account is left to the caller (the UI defaults to a dedicated
+    'Cash & receipts' account)."""
+    if receipt.total_amount is None:
+        return None
+    category_id: int | None = None
+    if receipt.ai_category_id and db.get(Category, receipt.ai_category_id) is not None:
+        category_id = receipt.ai_category_id
+    else:
+        category_id, _ = category_service.categorise_text(db, receipt.merchant_raw or "")
+    category_name = None
+    if category_id is not None:
+        cat = db.get(Category, category_id)
+        category_name = cat.name if cat is not None else None
+    base = settings_service.get_base_currency(db)
+    return {
+        "merchant": receipt.merchant_raw or f"Receipt #{receipt.id}",
+        "transaction_date": (receipt.receipt_date or _now().date()).isoformat(),
+        "amount": f"{-abs(Decimal(receipt.total_amount)):.2f}",  # purchase = money out
+        "currency": (receipt.currency or base or "GBP")[:3].upper(),
+        "category_id": category_id,
+        "category_name": category_name,
+    }
+
+
 def to_dict(db: Session, receipt: Receipt) -> dict:
     matches = [
         {
@@ -412,6 +447,9 @@ def to_dict(db: Session, receipt: Receipt) -> dict:
         }
         for m in _existing_matches(db, receipt.id)
     ]
+    # Recommend a transaction only when nothing matched at all (a suggested or
+    # confirmed match means the user should review that first).
+    recommended = recommend_transaction(db, receipt) if not matches else None
     return {
         "id": receipt.id,
         "source_filename": receipt.source_filename,
@@ -425,6 +463,7 @@ def to_dict(db: Session, receipt: Receipt) -> dict:
         "needs_review": receipt.needs_review,
         "has_file": bool(receipt.storage_path),
         "matches": matches,
+        "recommended_transaction": recommended,
     }
 
 

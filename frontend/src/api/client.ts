@@ -711,6 +711,15 @@ export interface ReceiptMatch {
   matched_by: string | null;
 }
 
+export interface RecommendedTransaction {
+  merchant: string;
+  transaction_date: string;
+  amount: string; // signed (negative = money out)
+  currency: string;
+  category_id: number | null;
+  category_name: string | null;
+}
+
 export interface Receipt {
   id: number;
   source_filename: string | null;
@@ -724,6 +733,8 @@ export interface Receipt {
   needs_review: boolean;
   has_file: boolean;
   matches: ReceiptMatch[];
+  // Present when nothing matched and a total is set: a pre-filled transaction to add.
+  recommended_transaction: RecommendedTransaction | null;
   already_imported?: boolean; // set on upload when a byte-identical receipt already existed
 }
 

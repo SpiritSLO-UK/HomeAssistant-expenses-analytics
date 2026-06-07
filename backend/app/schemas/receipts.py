@@ -15,6 +15,18 @@ class ReceiptMatchOut(BaseModel):
     matched_by: str | None
 
 
+class RecommendedTransaction(BaseModel):
+    """A pre-filled transaction recommended for an unmatched receipt (the user
+    adds it in one click). Present only when nothing matched and a total is set."""
+
+    merchant: str
+    transaction_date: date
+    amount: Decimal  # signed (negative = money out)
+    currency: str
+    category_id: int | None = None
+    category_name: str | None = None
+
+
 class ReceiptOut(BaseModel):
     id: int
     source_filename: str | None
@@ -28,6 +40,8 @@ class ReceiptOut(BaseModel):
     needs_review: bool
     has_file: bool = False  # the original is still on disk (viewable), not dropped by retention
     matches: list[ReceiptMatchOut]
+    # Set when the receipt is unmatched and has a total — what to add in one click.
+    recommended_transaction: RecommendedTransaction | None = None
 
 
 class ReceiptUploadOut(ReceiptOut):
