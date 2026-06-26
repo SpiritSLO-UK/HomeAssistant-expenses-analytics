@@ -137,7 +137,7 @@ are present.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `HAFI_DB_KEY` | — | SQLCipher passphrase for at-rest DB encryption in "stored" unlock mode (so the add-on can start unattended). In "prompt" mode leave this empty and unlock via the UI each start. See [security.md](security.md). |
+| `HAFI_DB_KEY` | — | SQLCipher passphrase for at-rest DB encryption in "stored" unlock mode (so the app can start unattended). In "prompt" mode leave this empty and unlock via the UI each start. On the **Home Assistant add-on**, set the `db_key` option in the **Configuration** tab instead (it maps to this var) — see the add-on options table below. See [security.md](security.md). |
 
 ---
 
@@ -155,6 +155,7 @@ Set these in the add-on's **Configuration** tab; `run.sh` maps them to the
 | `mqtt_host` / `mqtt_port` | `core-mosquitto` / `1883` | Broker. |
 | `mqtt_username` / `mqtt_password` | — | Optional. |
 | `log_level` | `INFO` | Logging verbosity. |
+| `db_key` | — | At-rest encryption passphrase for **"stored"** unlock mode. Set it to the same passphrase you encrypted with (Settings → Database encryption) and the add-on unlocks itself on every restart. Leave blank for **"prompt"** mode (re-enter via the UI after each restart; the key is never written to disk). Stored here it lives on the device — weaker, opt-in. |
 
 Secrets used only by standalone/opt-in features (AI / investment / Paperless
 keys) are not in the add-on schema yet — set them as env vars if you run via

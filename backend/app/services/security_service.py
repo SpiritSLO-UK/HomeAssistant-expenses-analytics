@@ -186,6 +186,10 @@ def status() -> dict:
         "encryption_enabled": bool(marker and marker.get("enabled")),
         "unlock_mode": marker.get("unlock_mode") if marker else None,
         "locked": dbsession.is_locked(),
+        # True when HAFI_DB_KEY is configured (add-on option / env), i.e. the
+        # database can unlock unattended in "stored" mode. Lets the UI flag a
+        # "stored" setup whose key isn't actually wired (would lock on restart).
+        "stored_key_present": bool(settings.db_key),
         "failed_unlocks": failed_unlock_summary(),
     }
 

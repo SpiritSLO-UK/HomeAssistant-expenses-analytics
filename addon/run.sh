@@ -41,6 +41,9 @@ PY
   export HAFI_MQTT_USERNAME="$(read_option mqtt_username '')"
   export HAFI_MQTT_PASSWORD="$(read_option mqtt_password '')"
   export HAFI_LOG_LEVEL="$(read_option log_level INFO)"
+  # At-rest encryption "stored" unlock mode: when set, the app unlocks the
+  # encrypted DB unattended on startup. Empty (the default) = "prompt" mode.
+  export HAFI_DB_KEY="$(read_option db_key '')"
 else
   # --- Standalone: keep the HAFI_* env vars the user passed (don't clobber them) ---
   echo "[run.sh] No ${OPTIONS_FILE} — running standalone; honouring HAFI_* environment variables."

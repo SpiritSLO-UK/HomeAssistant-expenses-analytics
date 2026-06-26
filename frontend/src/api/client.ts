@@ -2017,6 +2017,7 @@ export interface SecurityStatus {
   encryption_enabled: boolean;
   unlock_mode: string | null;
   locked: boolean;
+  stored_key_present?: boolean;
   failed_unlocks?: FailedUnlockSummary;
 }
 
