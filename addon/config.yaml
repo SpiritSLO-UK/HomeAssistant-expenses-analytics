@@ -54,6 +54,7 @@ options:
   mqtt_username: ""
   mqtt_password: ""
   log_level: INFO
+  db_key: ""
 schema:
   database_path: str
   currency: str
@@ -70,3 +71,10 @@ schema:
   mqtt_username: str?
   mqtt_password: password?
   log_level: list(DEBUG|INFO|WARNING|ERROR)
+  # At-rest DB encryption passphrase for "stored" unlock mode (Settings →
+  # Database encryption). Set this to the SAME passphrase you encrypted with and
+  # the add-on unlocks itself on every restart — no UI prompt. Leave blank for
+  # "prompt" mode (most secure: the key is never written to disk, but you must
+  # re-enter it after each restart). Stored here it lives on the device, so it is
+  # a weaker posture — opt-in. See docs/security.md.
+  db_key: password?

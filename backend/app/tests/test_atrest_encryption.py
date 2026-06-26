@@ -76,3 +76,34 @@ def test_disable_wrong_passphrase(client, restore_plaintext):
     client.post("/api/security/enable", json={"passphrase": "right", "unlock_mode": "prompt"})
     res = client.post("/api/security/disable", json={"passphrase": "wrong"})
     assert res.status_code == 400
+
+
+def test_stored_key_unlocks_on_restart(client, restore_plaintext, monkeypatch):
+    """Stored unlock mode: a matching HAFI_DB_KEY auto-unlocks on restart, a wrong
+    one locks (rather than building a broken engine), and status reflects whether
+    the key is wired (drives the Settings warning)."""
+    client.post("/api/backup/demo")
+    total = client.get("/api/transactions").json()["total"]
+    assert total > 0
+
+    res = client.post("/api/security/enable", json={"passphrase": "hunter2", "unlock_mode": "stored"})
+    assert res.status_code == 200, res.text
+
+    # Stored mode selected but no key configured → flagged so the UI can warn.
+    monkeypatch.setattr(settings, "db_key", None)
+    s = client.get("/api/security/status").json()
+    assert s["unlock_mode"] == "stored"
+    assert s["stored_key_present"] is False
+
+    # Restart with the WRONG stored key → stays locked, data blocked.
+    monkeypatch.setattr(settings, "db_key", "wrong-key")
+    dbsession.init()
+    assert dbsession.is_locked() is True
+    assert client.get("/api/security/status").json()["stored_key_present"] is True
+    assert client.get("/api/transactions").status_code == 423
+
+    # Restart with the CORRECT stored key → unattended unlock, data served.
+    monkeypatch.setattr(settings, "db_key", "hunter2")
+    dbsession.init()
+    assert dbsession.is_locked() is False
+    assert client.get("/api/transactions").json()["total"] == total

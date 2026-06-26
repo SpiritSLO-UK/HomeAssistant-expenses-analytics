@@ -140,8 +140,15 @@ def init() -> None:
         lock()
         return
     if settings.db_key:  # stored-key mode: unattended unlock
-        configure(settings.db_key)
-        logger.info("Database unlocked from stored key.")
+        if security_service.verify_passphrase(settings.db_key):
+            configure(settings.db_key)
+            logger.info("Database unlocked from stored key.")
+            return
+        logger.error(
+            "Stored DB key (HAFI_DB_KEY) did not open the database — locking. Check it "
+            "matches your encryption passphrase, or clear it and unlock via the UI."
+        )
+        lock()
         return
     logger.info("Database is encrypted and locked; awaiting unlock.")
     lock()

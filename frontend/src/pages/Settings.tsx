@@ -1409,8 +1409,10 @@ function SecurityCard({
           </div>
           {unlockMode === "stored" && (
             <p className="muted" style={{ fontSize: "0.78rem" }}>
-              Stored mode also needs the passphrase set as the add-on’s <code>HAFI_DB_KEY</code> option
-              so it can start unattended.
+              Stored mode also needs this same passphrase set as the add-on’s <code>db_key</code> option
+              (the add-on’s <strong>Configuration</strong> tab) so it can start unattended. Standalone
+              Docker: set the <code>HAFI_DB_KEY</code> environment variable. Without it the database still
+              locks on every restart. The key then lives on the device — a weaker posture than “Prompt me”.
             </p>
           )}
         </>
@@ -1421,6 +1423,13 @@ function SecurityCard({
           <p className="status status--ok">
             🔒 Encrypted · unlock mode: {s.unlock_mode}
           </p>
+          {s.unlock_mode === "stored" && !s.stored_key_present && (
+            <p className="status status--warn">
+              ⚠️ Stored unlock mode is selected but no key is configured, so the database will lock
+              again on the next restart. Set <code>db_key</code> in the add-on’s <strong>Configuration</strong>{" "}
+              tab (or the <code>HAFI_DB_KEY</code> environment variable) to the passphrase you encrypted with.
+            </p>
+          )}
           <div className="form-row">
             <input
               type="password"

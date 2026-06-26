@@ -34,8 +34,12 @@ logs, then open an issue with the relevant lines (redact any account details).
 **"Database is locked. Unlock with your passphrase."**
 - At-rest encryption is enabled in "prompt" mode. Enter your passphrase on the
   unlock screen. There is **no recovery** if the passphrase is lost — by design.
-- To start unattended instead, use "stored" mode and set `HAFI_DB_KEY`. See
-  [security.md](security.md).
+- **Asked to unlock after every restart?** That's "prompt" mode working as designed —
+  the key is held in memory only and cleared on restart. To start unattended instead,
+  use "stored" mode: on the **Home Assistant add-on** set the `db_key` option in the
+  **Configuration** tab (standalone Docker: the `HAFI_DB_KEY` env var) to the same
+  passphrase you encrypted with. If "stored" mode is selected but the key isn't set, the
+  database still locks on restart (Settings flags this). See [security.md](security.md).
 
 **Repeated failed-unlock warnings.**
 - These are recorded (capped) and surfaced as a count. If unexpected, treat it as
