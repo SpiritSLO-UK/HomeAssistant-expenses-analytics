@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createAllocation, listCategories, listUsers, type Transaction } from "../api/client";
+import { isAmount } from "../lib/num";
 
 /**
  * Parent action on a transaction: attribute it (whole, or a part) to a child's
@@ -17,10 +18,19 @@ export default function AssignToChildButton({ txn, base }: Readonly<{ txn: Trans
   const [amount, setAmount] = useState("");
   const [catId, setCatId] = useState("");
 
+  // The select shows the first child until one is picked, so make that the
+  // explicit selected value (not value="") — otherwise the displayed child and
+  // the submitted children[0] fallback are only implicitly aligned (React warns
+  // about a controlled value with no matching option).
+  const effectiveChildId = childId || String(children[0]?.id ?? "");
+  // A blank part means "the whole purchase"; a non-blank part must be a valid
+  // positive amount before we let it submit.
+  const amountOk = amount.trim() === "" || isAmount(amount);
+
   const assign = useMutation({
     mutationFn: () =>
       createAllocation({
-        child_id: Number(childId || children[0]?.id),
+        child_id: Number(effectiveChildId),
         transaction_id: txn.id,
         amount: amount || undefined, // blank = the whole purchase
         category_id: catId ? Number(catId) : txn.category_id,
@@ -43,7 +53,7 @@ export default function AssignToChildButton({ txn, base }: Readonly<{ txn: Trans
   }
   return (
     <span style={{ display: "inline-flex", gap: 4, alignItems: "center", marginLeft: 6 }}>
-      <select value={childId} onChange={(e) => setChildId(e.target.value)}>
+      <select value={effectiveChildId} onChange={(e) => setChildId(e.target.value)}>
         {children.map((c) => <option key={c.id} value={c.id}>{c.display_name}</option>)}
       </select>
       <select value={catId} onChange={(e) => setCatId(e.target.value)} title="Category (defaults to the transaction's)">
@@ -53,11 +63,12 @@ export default function AssignToChildButton({ txn, base }: Readonly<{ txn: Trans
       <input
         placeholder={`part (${base})`}
         value={amount}
-        style={{ width: 80 }}
+        inputMode="decimal"
+        style={{ width: 80, ...(amountOk ? {} : { borderColor: "#c0392b" }) }}
         title="Leave blank to assign the whole purchase"
         onChange={(e) => setAmount(e.target.value)}
       />
-      <button className="btn btn--sm" disabled={assign.isPending} onClick={() => assign.mutate()}>
+      <button className="btn btn--sm" disabled={assign.isPending || !amountOk} onClick={() => assign.mutate()}>
         {assign.isPending ? "…" : "assign"}
       </button>
       <button className="link-btn" onClick={() => setOpen(false)}>×</button>
