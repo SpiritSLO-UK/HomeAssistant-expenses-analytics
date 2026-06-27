@@ -27,10 +27,11 @@ export default function ReceiptPreview({
       ref={ref}
       className="modal-dialog"
       aria-label={`Receipt preview: ${filename ?? "original"}`}
-      onCancel={(e) => { e.preventDefault(); onClose(); }}
-      // Click on the dialog backdrop (outside the inner card) closes it; Escape
-      // does the same (also natively via onCancel) — a keyboard equivalent for the
-      // backdrop click, which keeps the click handler accessible.
+      // Escape closes via onKeyDown below (also the keyboard equivalent of the
+      // backdrop click, keeping the click handler accessible). onCancel only
+      // prevents the native close so Escape doesn't fire onClose twice.
+      onCancel={(e) => { e.preventDefault(); }}
+      // Click on the dialog backdrop (outside the inner card) closes it.
       onClick={(e) => { if (e.target === ref.current) onClose(); }}
       onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}
     >
