@@ -287,6 +287,26 @@ def test_attach_receipt_to_transaction_keeps_original(client):
     assert "inline" in served.headers.get("content-disposition", "")
 
 
+def test_receipt_file_nosniff_and_forces_download_for_unsafe_types(client):
+    """CR-SEC-14: a safe image previews inline but always with X-Content-Type-Options:
+    nosniff; a script-capable type (e.g. SVG) is served as an opaque attachment so it
+    can't execute in our origin."""
+    rid = _upload(client, content=b"img-bytes", name="ok.png").json()["id"]
+    served = client.get(f"/api/receipts/{rid}/file")
+    assert served.headers["x-content-type-options"] == "nosniff"
+    assert "inline" in served.headers.get("content-disposition", "")
+
+    # Point the stored receipt at a script-capable filename → forced download.
+    with SessionLocal() as db:
+        receipt = db.get(Receipt, rid)
+        receipt.source_filename = "evil.svg"
+        db.commit()
+    served = client.get(f"/api/receipts/{rid}/file")
+    assert "attachment" in served.headers.get("content-disposition", "")
+    assert served.headers["content-type"].startswith("application/octet-stream")
+    assert served.headers["x-content-type-options"] == "nosniff"
+
+
 def test_attach_receipt_validation(client):
     _import(client, _curve([("2026-05-02", "BP CONNECT", "-59.80")]))
     txn = _txn(client, "BP CONNECT")
