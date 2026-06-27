@@ -19,7 +19,7 @@ from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.models import AIRequest, Category, Receipt, Statement, Transaction, Vendor
 from app.services import geo, settings_service, split_service
@@ -100,7 +100,8 @@ def category_breakdown(db: Session, ref: date, *, account_ids: set[int] | None =
     """
     start, end = month_bounds(ref)
     txns = db.scalars(
-        select(Transaction).where(
+        select(Transaction)
+        .where(
             Transaction.transaction_date >= start,
             Transaction.transaction_date < end,
             Transaction.base_amount < 0,  # spend only (money out)
@@ -108,6 +109,9 @@ def category_breakdown(db: Session, ref: date, *, account_ids: set[int] | None =
             *account_scope_condition(account_ids),
             *archived_condition(),
         )
+        # Eager-load splits so the split-aware loop below doesn't fire one
+        # lazy SELECT per split transaction (N+1) — see CR-FEAT-5.
+        .options(selectinload(Transaction.splits))
     ).all()
 
     totals: dict[int | None, Decimal] = defaultdict(lambda: Decimal("0.00"))
