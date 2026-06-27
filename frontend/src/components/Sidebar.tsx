@@ -5,7 +5,8 @@ import { NAV_ITEMS, navKey } from "../nav";
 import { getAiStatus } from "../api/client";
 import { getHiddenNavKeys, getNavOrder, setHiddenNavKeys, setNavOrder } from "../prefs";
 
-const VERSION = "1.0.1";
+// Injected at build time from package.json (vite define) so it can't drift.
+const VERSION = __APP_VERSION__;
 
 // The footer badge reflects the live privacy posture: "Local-first" only holds
 // while AI is off or on-device. A cloud AI mode sends data off the box, so the
