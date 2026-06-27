@@ -91,6 +91,24 @@ def test_no_price_means_zero_saving(db):
     assert out["saving"] == "0.00"
 
 
+def test_last_saving_derives_from_latest_snapshot(db):
+    """SR-5: the MQTT saving comes from the latest persisted production snapshot ×
+    the current unit price — not a cross-request module-global mutated by offset()."""
+    energy_service.validate_and_save(db, {"source": "ha_api", "tariff_per_kwh": "0.30"})
+    # No snapshot yet → zero (no global carrying a stale value).
+    assert energy_service.last_saving(db) == Decimal("0.00")
+
+    # The LATEST snapshot (by captured_at) drives it — an older one doesn't win a race.
+    db.add(EnergySnapshot(captured_at=datetime(2026, 6, 1, 10), produced=Decimal("40"), source="ha_api"))
+    db.add(EnergySnapshot(captured_at=datetime(2026, 6, 2, 10), produced=Decimal("50"), source="ha_api"))
+    db.commit()
+    assert energy_service.last_saving(db) == Decimal("15.00")  # 50 * 0.30
+
+    # Energy off → zero regardless of any snapshots.
+    energy_service.validate_and_save(db, {"source": "off"})
+    assert energy_service.last_saving(db) == Decimal("0.00")
+
+
 # --- config validation ------------------------------------------------------
 
 
