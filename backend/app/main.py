@@ -104,6 +104,11 @@ _LOCK_EXEMPT = (_HEALTH, "/api/security")
 # routes, and ``/api/users/me`` (so a pending user can learn they're pending).
 _GATE_EXEMPT = (_HEALTH, "/api/security", "/api/users/me")
 
+# A DISABLED account keeps no access beyond seeing its own status — not even the
+# otherwise gate-exempt /api/security, so a disabled owner can't use their retained
+# admin role to manage the system (SR-6). Pending accounts are unaffected here.
+_DISABLED_ALLOWED = (_HEALTH, "/api/users/me")
+
 # Self-service account endpoints (MFA enrol/verify/disable): a user must reach
 # these to satisfy the MFA gate or manage their own factor, so they bypass the
 # MFA-presence and read-only gates (still approval-gated).
@@ -220,6 +225,15 @@ async def _auth_guard(request: Request, call_next):
         # MFA entry-gate state (only matters if the user enabled it).
         request.state.mfa_ok = not user.mfa_enabled or mfa_service.has_valid_session(
             db, user.id, request.headers.get(auth_service.SESSION_HEADER)
+        )
+
+    # A disabled account is blocked everywhere except seeing its own status, even on
+    # the otherwise gate-exempt paths (e.g. /api/security) — closes the disabled-owner
+    # bypass where the retained admin role still granted access (SR-6).
+    if request.state.user_status == "disabled" and not path.startswith(_DISABLED_ALLOWED):
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "Your account has been disabled.", "account_status": "disabled"},
         )
 
     if path.startswith(_GATE_EXEMPT):

@@ -262,8 +262,21 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     return user
 
 
+def _ensure_active(user: User) -> None:
+    """Defence-in-depth: a disabled account exercises NO privilege, even if a request
+    somehow reaches a route without the middleware access gate having blocked it. A
+    disabled owner keeps the ``owner`` role (so re-enabling restores them) but that
+    role must not grant access while disabled (SR-6)."""
+    if not user.is_active or user.status == "disabled":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account has been disabled.",
+        )
+
+
 def require_owner(user: User = Depends(get_current_user)) -> User:
     """Gate admin-only endpoints (user management, system actions)."""
+    _ensure_active(user)
     if not is_admin(user.role):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -280,6 +293,7 @@ def can_manage_settings(user: User) -> bool:
 
 def require_settings_manager(user: User = Depends(get_current_user)) -> User:
     """Gate settings-management endpoints to the owner or a granted member."""
+    _ensure_active(user)
     if not can_manage_settings(user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
