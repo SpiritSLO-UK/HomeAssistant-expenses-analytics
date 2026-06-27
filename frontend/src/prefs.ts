@@ -19,19 +19,25 @@ function writeString(key: string, value: string | null): void {
   }
 }
 
+// Parse a JSON string-array preference; returns [] on missing/invalid input.
+// Shared by the array + Set readers below (a Set is just `new Set(...)` of this).
+function readStringArray(key: string): string[] {
+  const raw = readString(key);
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
 // --- Dashboard card show/hide (backlog #86) ---
 
 const HIDDEN_CARDS_KEY = "hafi_dashboard_hidden";
 
 export function getHiddenDashboardCards(): Set<string> {
-  const raw = readString(HIDDEN_CARDS_KEY);
-  if (!raw) return new Set();
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? new Set(parsed.map(String)) : new Set();
-  } catch {
-    return new Set();
-  }
+  return new Set(readStringArray(HIDDEN_CARDS_KEY));
 }
 
 export function setHiddenDashboardCards(hidden: Set<string>): void {
@@ -43,14 +49,7 @@ export function setHiddenDashboardCards(hidden: Set<string>): void {
 const CARD_ORDER_KEY = "hafi_dashboard_order";
 
 export function getDashboardCardOrder(): string[] {
-  const raw = readString(CARD_ORDER_KEY);
-  if (!raw) return [];
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.map(String) : [];
-  } catch {
-    return [];
-  }
+  return readStringArray(CARD_ORDER_KEY);
 }
 
 export function setDashboardCardOrder(order: string[]): void {
@@ -88,14 +87,7 @@ export function setColumnWidths(tableKey: string, widths: Record<string, number>
 const HIDDEN_NAV_KEY = "hafi_nav_hidden";
 
 export function getHiddenNavKeys(): Set<string> {
-  const raw = readString(HIDDEN_NAV_KEY);
-  if (!raw) return new Set();
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? new Set(parsed.map(String)) : new Set();
-  } catch {
-    return new Set();
-  }
+  return new Set(readStringArray(HIDDEN_NAV_KEY));
 }
 
 export function setHiddenNavKeys(hidden: Set<string>): void {
@@ -107,14 +99,7 @@ export function setHiddenNavKeys(hidden: Set<string>): void {
 const NAV_ORDER_KEY = "hafi_nav_order";
 
 export function getNavOrder(): string[] {
-  const raw = readString(NAV_ORDER_KEY);
-  if (!raw) return [];
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.map(String) : [];
-  } catch {
-    return [];
-  }
+  return readStringArray(NAV_ORDER_KEY);
 }
 
 export function setNavOrder(order: string[]): void {
@@ -193,4 +178,21 @@ export function isImageAiWarningDismissed(): boolean {
 
 export function setImageAiWarningDismissed(): void {
   writeString(IMAGE_AI_WARN_KEY, "1");
+}
+
+// --- Reset all UI preferences ---
+// Every preference key uses the `hafi_` prefix, so we can clear them all (card
+// layout, nav, column widths, theme, dismissed warnings) without touching anything
+// else in localStorage. Powers the "Reset UI preferences" button in Settings.
+export function clearAllPrefs(): void {
+  try {
+    const toRemove: string[] = [];
+    for (let i = 0; i < globalThis.localStorage.length; i++) {
+      const key = globalThis.localStorage.key(i);
+      if (key?.startsWith("hafi_")) toRemove.push(key);
+    }
+    for (const key of toRemove) globalThis.localStorage.removeItem(key);
+  } catch {
+    /* localStorage unavailable — nothing to clear */
+  }
 }
