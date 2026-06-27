@@ -29,6 +29,26 @@ def test_failed_unlock_tracking():
     assert security_service.failed_unlock_summary()["recent"] == 0
 
 
+def test_concurrent_failed_unlocks_are_not_lost():
+    """SR-7: the read-modify-write is locked and the file written atomically, so
+    concurrent failed-unlock records can't lose updates — the brute-force counter the
+    security panel relies on must not *under*count. 30 concurrent records → exactly 30
+    stored, and the file is still valid JSON afterwards."""
+    import threading
+
+    _normalise_unlocks()  # start from a clean streak
+    n = 30  # < _MAX_STORED_UNLOCK_EVENTS, so nothing is capped away
+    threads = [threading.Thread(target=security_service.record_failed_unlock) for _ in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    events = security_service._read_events()  # valid JSON ⇒ atomic write held
+    assert len(events.get("failed_unlocks", [])) == n  # none lost ⇒ locked RMW held
+    security_service.record_successful_unlock()  # cleanup for other tests
+
+
 def test_health_flags_missing_mfa_and_dismiss(client):
     _normalise_unlocks()
     health = client.get("/api/security/health").json()
