@@ -60,6 +60,16 @@ export default function Vendors() {
   const catName = (id: number | null) =>
     categories.data?.find((c) => c.id === id)?.name ?? "—";
 
+  // Deleting a vendor drops its aliases + unlinks its transactions, so confirm
+  // first (the action is otherwise immediate and irreversible).
+  const confirmDelete = (v: Vendor) => {
+    const linked = v.transaction_count
+      ? ` ${v.transaction_count} linked transaction(s) keep their data but lose the vendor link.`
+      : "";
+    if (globalThis.confirm(`Delete the vendor "${v.canonical_name}"? Its aliases are removed too.${linked}`))
+      remove.mutate(v.id);
+  };
+
   return (
     <div className="page">
       <h1 className="page__title">Vendors</h1>
@@ -145,7 +155,7 @@ export default function Vendors() {
                     </td>
                     <td className="num">{money(Math.abs(Number(v.total_amount)))}</td>
                     <td>
-                      <button className="btn btn--ghost" onClick={() => remove.mutate(v.id)}>
+                      <button className="btn btn--ghost" onClick={() => confirmDelete(v)}>
                         Delete
                       </button>
                     </td>
