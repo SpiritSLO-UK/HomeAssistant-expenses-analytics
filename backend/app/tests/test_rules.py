@@ -154,6 +154,35 @@ def test_create_rule_from_correction(client):
     assert _by_desc(client)["ZZQ DEPOT"]["category_id"] == groceries
 
 
+def test_noop_rule_does_not_block_lower_priority(client):
+    # A higher-priority set_category rule with a non-numeric action_value is a
+    # no-op (it can't set a category). It must NOT consume the set_category slot,
+    # so a valid lower-priority set_category rule still applies (SR-A4).
+    groceries = _cat(client, "Groceries")
+    client.post(
+        "/api/rules",
+        json={
+            "condition_type": "description_contains",
+            "condition_value": "ZZQ",
+            "action_type": "set_category",
+            "action_value": "",  # no-op: not a category id
+            "priority": 300,
+        },
+    )
+    client.post(
+        "/api/rules",
+        json={
+            "condition_type": "description_contains",
+            "condition_value": "ZZQ",
+            "action_type": "set_category",
+            "action_value": str(groceries),
+            "priority": 100,
+        },
+    )
+    _import(client, _curve([("2026-05-04", "ZZQ MARKET", "-12.00")]))
+    assert _by_desc(client)["ZZQ MARKET"]["category_id"] == groceries
+
+
 def test_rule_test_endpoint(client):
     _import(client, _curve([("2026-05-02", "TESCO STORES 3142", "-42.18"),
                             ("2026-05-03", "COSTA COFFEE", "-3.85")]))
