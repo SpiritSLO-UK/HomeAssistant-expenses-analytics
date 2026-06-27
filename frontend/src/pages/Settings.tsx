@@ -54,7 +54,7 @@ import {
   type RetentionTypePlan,
   type BackupTrim,
 } from "../api/client";
-import { getThemePref, isCloudAiAcknowledged, setCloudAiAcknowledged } from "../prefs";
+import { clearAllPrefs, getThemePref, isCloudAiAcknowledged, setCloudAiAcknowledged } from "../prefs";
 import { setTheme, type ThemePref } from "../theme";
 import CloudAiDisclaimerDialog from "../components/CloudAiDisclaimerDialog";
 import CountrySelect from "../components/CountrySelect";
@@ -91,6 +91,14 @@ function AppearanceCard() {
           </button>
         ))}
       </div>
+      <hr style={{ border: "none", borderTop: "1px solid var(--border)", margin: "12px 0" }} />
+      <p className="muted" style={{ marginTop: 0, fontSize: "0.85rem" }}>
+        Reset this device's UI preferences — theme, dashboard card layout, hidden/ordered nav
+        tabs and column widths — back to defaults. Doesn't touch your data.
+      </p>
+      <button className="btn btn--sm btn--ghost" onClick={() => { clearAllPrefs(); globalThis.location.reload(); }}>
+        Reset UI preferences
+      </button>
     </div>
   );
 }
