@@ -278,14 +278,29 @@ def categorise_text(db: Session, description: str) -> tuple[int | None, float | 
         for c in db.scalars(select(Category).where(Category.library_id.is_not(None))).all()
     }
 
+    # Choose the best matching keyword deterministically, not the first in file order
+    # (which let an arbitrary early keyword shadow a better one). Rank by (earliest
+    # match position, then longest keyword): a bank description leads with the merchant
+    # ("TfL TRAVEL CHARGE", "NETFLIX.COM"), so the earliest match is the strongest
+    # signal — this keeps "tfl" → Transport rather than a later, longer generic word
+    # ("travel") winning — and a tie at the same position prefers the more specific
+    # keyword ("cafe nero" over "cafe").
+    best_id: int | None = None
+    best_rank: tuple[int, int] | None = None  # (start, -len); lower is better
     for entry in library.get("categories", []):
+        db_id = lib_rows.get(entry["id"])
+        if db_id is None:  # library category not seeded → can't be suggested
+            continue
         for kw in entry.get("keywords") or []:
             # Match at a word boundary so short keywords like "tfl" don't match
             # mid-word (e.g. inside "neTFLix"). Allows prefixes so "sainsbury"
             # still matches "sainsburys".
-            if re.search(r"\b" + re.escape(kw.lower()), text):
-                db_id = lib_rows.get(entry["id"])
-                if db_id is not None:
-                    return db_id, KEYWORD_CONFIDENCE
-                break
+            match = re.search(r"\b" + re.escape(kw.lower()), text)
+            if match is None:
+                continue
+            rank = (match.start(), -len(kw))
+            if best_rank is None or rank < best_rank:
+                best_id, best_rank = db_id, rank
+    if best_id is not None:
+        return best_id, KEYWORD_CONFIDENCE
     return None, None

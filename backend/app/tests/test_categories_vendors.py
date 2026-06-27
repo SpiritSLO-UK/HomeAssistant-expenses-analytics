@@ -152,6 +152,27 @@ def test_category_merge_repoints_category_equals_rule_conditions(db):
     assert matches.condition_value == str(eating.id)  # the category_equals condition (SR-4 fix)
 
 
+def test_categorise_text_prefers_longest_keyword(db, monkeypatch):
+    """The longest (most specific) matching keyword wins, not the first in file order —
+    a generic 'cafe' must not shadow a specific 'cafe nero' in another category."""
+    generic = category_service.create_category(db, {"name": "Drinks"})
+    specific = category_service.create_category(db, {"name": "Coffee Shops"})
+    generic.library_id = "test_generic"
+    specific.library_id = "test_specific"
+    db.commit()
+
+    # The generic keyword is listed FIRST — old (first-match) code returned it.
+    monkeypatch.setattr(category_service, "load_library", lambda: {"categories": [
+        {"id": "test_generic", "keywords": ["cafe"]},
+        {"id": "test_specific", "keywords": ["cafe nero"]},
+    ]})
+    cid, conf = category_service.categorise_text(db, "CAFE NERO LONDON")
+    assert cid == specific.id  # longest keyword wins
+    assert conf == category_service.KEYWORD_CONFIDENCE
+    # A description matching only the generic keyword still resolves to it.
+    assert category_service.categorise_text(db, "THE LOCAL CAFE")[0] == generic.id
+
+
 def test_category_merge_validation(client):
     """Merging into itself is a 400; an unknown source or target is a 404."""
     a = client.post("/api/categories", json={"name": "X"}).json()["id"]
