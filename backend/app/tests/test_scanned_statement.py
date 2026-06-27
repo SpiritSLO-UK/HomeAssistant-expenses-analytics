@@ -89,3 +89,45 @@ def test_ocr_pdf_pages_empty_without_rasteriser(monkeypatch):
 
 def test_status_reports_pdf_ocr_capability():
     assert "pdf_ocr" in ocr_service.status()
+
+
+# --- embedded-text trust requires a money amount (don't block the OCR fallback) ----
+
+class _FakePage:
+    def __init__(self, text: str) -> None:
+        self._text = text
+
+    def extract_text(self) -> str:
+        return self._text
+
+
+class _FakeReader:
+    def __init__(self, *pages: _FakePage) -> None:
+        self.pages = list(pages)
+
+
+def test_money_signal_distinguishes_amounts_from_scraps():
+    assert ocr_service._MONEY_RE.search("TOTAL 42.18")
+    assert ocr_service._MONEY_RE.search("Balance 1,234.56")
+    assert not ocr_service._MONEY_RE.search("Page 1 of 3")
+    assert not ocr_service._MONEY_RE.search("Dated 01.05.2026")  # a dotted date, not money
+
+
+def test_pdf_text_trusts_embedded_only_with_money(monkeypatch, tmp_path):
+    """A tiny embedded text layer with no money amount (an image-only PDF) must fall
+    through to OCR, not return a high-confidence empty parse."""
+    import pypdf
+
+    pdf = tmp_path / "x.pdf"
+    pdf.write_bytes(b"%PDF-1.4")
+    monkeypatch.setattr(ocr_service, "ocr_pdf_pages", lambda *a, **k: "01/05/2026 CAFE 3.50")
+
+    # Embedded text WITH a money amount → trusted at 0.95 (OCR not used).
+    monkeypatch.setattr(pypdf, "PdfReader", lambda _p: _FakeReader(_FakePage("ACME LTD\nTOTAL 42.18\n")))
+    text, conf = ocr_service._pdf_text(pdf)
+    assert conf == pytest.approx(0.95) and "42.18" in text
+
+    # A no-money text scrap → falls through to rasterise + OCR (0.5).
+    monkeypatch.setattr(pypdf, "PdfReader", lambda _p: _FakeReader(_FakePage("Page 1 of 3")))
+    text, conf = ocr_service._pdf_text(pdf)
+    assert conf == pytest.approx(0.5) and "CAFE" in text
