@@ -19,6 +19,9 @@ from app.schemas.imports import (
     FundingLinkOut,
     FundingLinkUpdate,
     ImportListItem,
+    ImportProfileIn,
+    ImportProfileOut,
+    InspectResponse,
     ParserInfo,
     UploadResponse,
 )
@@ -26,6 +29,7 @@ from app.services import (
     ai_service,
     audit_service,
     curve_link_service,
+    import_profile_service,
     import_service,
     settings_service,
 )
@@ -161,6 +165,64 @@ def set_funding_link(
     )
     db.commit()
     return curve_link_service.list_links(db)
+
+
+# --- Custom CSV mapping + saved import profiles (declared before /{import_id}) ---
+
+
+@router.post("/inspect", response_model=InspectResponse, responses={400: {"description": "Bad request"}})
+async def inspect_csv(file: Annotated[UploadFile, File()]) -> dict:
+    """Return a CSV's headers + a few sample rows + a heuristic column mapping, so
+    the user can map columns in the UI before importing (no data is stored)."""
+    content = await uploads.read_capped(file, uploads.IMPORT_MAX, label="CSV")
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty file")
+    try:
+        return import_profile_service.inspect_csv(content)
+    except (ValueError, ParseError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/profiles", response_model=list[ImportProfileOut])
+def list_import_profiles(db: Annotated[Session, Depends(get_db)]) -> list[dict]:
+    """Saved CSV column-mapping profiles."""
+    return import_profile_service.list_profiles(db)
+
+
+@router.post("/profiles", response_model=ImportProfileOut, responses={400: {"description": "Bad request"}})
+def create_import_profile(payload: ImportProfileIn, db: Annotated[Session, Depends(get_db)]) -> dict:
+    try:
+        return import_profile_service.create_profile(
+            db, name=payload.name, mapping=payload.mapping, default_currency=payload.default_currency
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.put(
+    "/profiles/{profile_id}",
+    response_model=ImportProfileOut,
+    responses={400: {"description": "Bad request"}, 404: {"description": "Not found"}},
+)
+def update_import_profile(
+    profile_id: int, payload: ImportProfileIn, db: Annotated[Session, Depends(get_db)]
+) -> dict:
+    try:
+        result = import_profile_service.update_profile(
+            db, profile_id, name=payload.name, mapping=payload.mapping, default_currency=payload.default_currency
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if result is None:
+        raise HTTPException(status_code=404, detail="Import profile not found")
+    return result
+
+
+@router.delete("/profiles/{profile_id}", responses={404: {"description": "Not found"}})
+def delete_import_profile(profile_id: int, db: Annotated[Session, Depends(get_db)]) -> dict:
+    if not import_profile_service.delete_profile(db, profile_id):
+        raise HTTPException(status_code=404, detail="Import profile not found")
+    return {"status": "deleted"}
 
 
 @router.get("", response_model=list[ImportListItem])

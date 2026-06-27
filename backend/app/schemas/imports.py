@@ -90,3 +90,36 @@ class ImportListItem(BaseModel):
 class ParserInfo(BaseModel):
     parser_id: str
     institution: str
+
+
+# --- Custom CSV column mapping + saved import profiles ---
+
+
+class InspectField(BaseModel):
+    """A logical field the user can map a CSV column to."""
+
+    key: str
+    label: str
+    required: bool = False
+
+
+class InspectResponse(BaseModel):
+    """Detected columns + a heuristic mapping, to drive the column-mapping UI."""
+
+    headers: list[str]
+    sample_rows: list[dict[str, str]]
+    suggested_mapping: dict[str, str]
+    fields: list[InspectField]
+
+
+class ImportProfileIn(BaseModel):
+    name: str
+    mapping: dict[str, str]
+    default_currency: str = "GBP"
+
+
+class ImportProfileOut(BaseModel):
+    id: int
+    name: str
+    mapping: dict[str, str]
+    default_currency: str
