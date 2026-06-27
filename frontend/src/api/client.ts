@@ -2469,12 +2469,19 @@ export function runRetention(): Promise<RetentionRunResult> {
 // Fetched (not a plain <a download>) so the MFA session header travels with the
 // request; the response is turned into a blob and downloaded client-side.
 
+// Sanitise a server-provided download filename: strip path separators and clamp the
+// length so it can't traverse paths or be absurdly long (CR-FEAT-13).
+function sanitizeFilename(name: string | undefined, fallback: string): string {
+  const cleaned = (name ?? "").replace(/[\\/]/g, "").trim().slice(0, 100);
+  return cleaned || fallback;
+}
+
 async function downloadCsv(endpoint: string, fallbackName: string): Promise<void> {
   const res = await fetchRaw(endpoint);
   const blob = await res.blob();
   const disposition = res.headers.get("Content-Disposition") ?? "";
   const match = /filename="?([^"]+)"?/.exec(disposition);
-  const name = match?.[1] ?? fallbackName;
+  const name = sanitizeFilename(match?.[1], fallbackName);
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
