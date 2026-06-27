@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -202,6 +203,11 @@ def status() -> dict:
 
 _MAX_STORED_UNLOCK_EVENTS = 50
 
+# Serialises read-modify-write of the events file so concurrent failed-unlock records
+# can't lose updates — the brute-force counter it feeds must never *under*count (SR-7).
+# Sync routes run in a threadpool, so two unlock attempts really can race here.
+_events_lock = threading.Lock()
+
 
 def _events_path() -> Path:
     return settings.database_file.parent / "security_events.json"
@@ -218,7 +224,12 @@ def _read_events() -> dict:
 
 
 def _write_events(data: dict) -> None:
-    _events_path().write_text(json.dumps(data), encoding="utf-8")
+    # Atomic: write a temp file then os.replace, so a crash or a concurrent reader
+    # never sees a truncated/half-written file (SR-7).
+    path = _events_path()
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(data), encoding="utf-8")
+    os.replace(tmp, path)
 
 
 def _now() -> datetime:
@@ -227,11 +238,12 @@ def _now() -> datetime:
 
 def record_failed_unlock() -> int:
     """Record a failed unlock; returns the number of failures in the recent window."""
-    events = _read_events()
-    attempts = events.get("failed_unlocks", [])
-    attempts.append(_now().isoformat())
-    events["failed_unlocks"] = attempts[-_MAX_STORED_UNLOCK_EVENTS:]
-    _write_events(events)
+    with _events_lock:  # the whole read-modify-write is serialised (SR-7)
+        events = _read_events()
+        attempts = events.get("failed_unlocks", [])
+        attempts.append(_now().isoformat())
+        events["failed_unlocks"] = attempts[-_MAX_STORED_UNLOCK_EVENTS:]
+        _write_events(events)
     recent = failed_unlock_summary()["recent"]
     logger.warning("Failed database unlock attempt (%d recent).", recent)
     return recent
@@ -239,29 +251,31 @@ def record_failed_unlock() -> int:
 
 def record_successful_unlock() -> None:
     """Clear the failed-attempt streak and note the successful unlock time."""
-    events = _read_events()
-    events["failed_unlocks"] = []
-    events["last_unlock_at"] = _now().isoformat()
-    _write_events(events)
+    with _events_lock:
+        events = _read_events()
+        events["failed_unlocks"] = []
+        events["last_unlock_at"] = _now().isoformat()
+        _write_events(events)
 
 
 def prune_failed_unlocks(older_than_days: int) -> int:
     """Drop recorded failed-unlock timestamps older than the cutoff (retention,
     backlog #78). Returns the number removed. Unparseable rows are dropped too."""
-    events = _read_events()
-    stored = events.get("failed_unlocks", [])
     cutoff = _now() - timedelta(days=older_than_days)
-    kept: list[str] = []
-    for value in stored:
-        try:
-            if datetime.fromisoformat(value) >= cutoff:
-                kept.append(value)
-        except (ValueError, TypeError):  # pragma: no cover - bad row → drop it
-            continue
-    removed = len(stored) - len(kept)
-    if removed:
-        events["failed_unlocks"] = kept
-        _write_events(events)
+    with _events_lock:
+        events = _read_events()
+        stored = events.get("failed_unlocks", [])
+        kept: list[str] = []
+        for value in stored:
+            try:
+                if datetime.fromisoformat(value) >= cutoff:
+                    kept.append(value)
+            except (ValueError, TypeError):  # pragma: no cover - bad row → drop it
+                continue
+        removed = len(stored) - len(kept)
+        if removed:
+            events["failed_unlocks"] = kept
+            _write_events(events)
     return removed
 
 
