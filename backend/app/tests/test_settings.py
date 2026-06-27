@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import logging
 
+import pytest
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+
 
 def test_set_log_level_applies_and_round_trips(client):
     r = client.put("/api/settings", json={"log_level": "DEBUG"})
@@ -56,6 +60,27 @@ def test_default_vendor_country_set_validate_clear(client):
     cleared = client.put("/api/settings", json={"default_vendor_country": ""})
     assert cleared.status_code == 200
     assert cleared.json()["default_vendor_country"] == ""
+
+
+def test_setting_key_is_unique(client):
+    """SR-2: ``settings.key`` is the row identity, so a value can never be silently
+    shadowed by a duplicate row. ``set_value`` upserts in place, and a raw duplicate
+    insert is rejected by the unique index."""
+    from app.db.session import SessionLocal
+    from app.models import Setting
+    from app.services import settings_service
+
+    with SessionLocal() as db:
+        settings_service.set_value(db, "sr2_probe", "one")
+        settings_service.set_value(db, "sr2_probe", "two")  # upsert — not a 2nd row
+        assert settings_service.get(db, "sr2_probe") == "two"
+        rows = db.scalars(select(Setting).where(Setting.key == "sr2_probe")).all()
+        assert len(rows) == 1
+
+        db.add(Setting(key="sr2_probe", value="dup"))  # raw duplicate → rejected
+        with pytest.raises(IntegrityError):
+            db.commit()
+        db.rollback()
 
 
 def test_base_currency_must_be_supported(client):
