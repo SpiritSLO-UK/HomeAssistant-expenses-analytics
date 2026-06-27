@@ -21,6 +21,7 @@ import {
   type InvestmentAccount,
   type PriceSyncResult,
 } from "../api/client";
+import { isAmount, parseAmount } from "../lib/num";
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -364,12 +365,12 @@ function HoldingsSection({
       <form
         className="form-row"
         style={{ marginTop: 6, flexWrap: "wrap", gap: 6 }}
-        onSubmit={(e) => { e.preventDefault(); if (symbol && units) add.mutate(); }}
+        onSubmit={(e) => { e.preventDefault(); if (symbol && isAmount(units) && (avgCost === "" || isAmount(avgCost))) add.mutate(); }}
       >
         <input placeholder="Ticker (AAPL)" value={symbol} style={{ width: 110 }} onChange={(e) => setSymbol(e.target.value)} />
-        <input placeholder="# of shares" value={units} style={{ width: 100 }} onChange={(e) => setUnits(e.target.value)} />
-        <input placeholder="Cost per share" value={avgCost} style={{ width: 120 }} onChange={(e) => setAvgCost(e.target.value)} />
-        <button className="btn btn--sm" type="submit" disabled={!symbol || !units || add.isPending}>
+        <input inputMode="decimal" placeholder="# of shares" value={units} style={{ width: 100 }} onChange={(e) => setUnits(e.target.value)} />
+        <input inputMode="decimal" placeholder="Cost per share" value={avgCost} style={{ width: 120 }} onChange={(e) => setAvgCost(e.target.value)} />
+        <button className="btn btn--sm" type="submit" disabled={!symbol || !isAmount(units) || (avgCost !== "" && !isAmount(avgCost)) || add.isPending}>
           {add.isPending ? "Adding…" : "＋ Add holding"}
         </button>
       </form>
@@ -474,8 +475,8 @@ function ValueSection({
   });
 
   function doAdjust(direction: "contribution" | "withdrawal") {
-    const amt = Number(delta);
-    if (!amt) return;
+    const amt = parseAmount(delta);
+    if (amt == null || amt === 0) return;
     adjust.mutate(direction);
   }
 
@@ -498,11 +499,11 @@ function ValueSection({
       <p className="muted" style={{ margin: "0 0 6px", fontSize: "0.82rem" }}>{note}</p>
 
       <div className="form-row" style={{ alignItems: "center", gap: 6 }}>
-        <input placeholder={`Amount (${base})`} value={delta} style={{ width: 120 }} onChange={(e) => setDelta(e.target.value)} />
-        <button className="btn btn--sm" disabled={!delta || adjust.isPending} onClick={() => doAdjust("contribution")}>
+        <input inputMode="decimal" placeholder={`Amount (${base})`} value={delta} style={{ width: 120 }} onChange={(e) => setDelta(e.target.value)} />
+        <button className="btn btn--sm" disabled={!isAmount(delta) || adjust.isPending} onClick={() => doAdjust("contribution")}>
           ＋ Contribution
         </button>
-        <button className="btn btn--sm btn--ghost" disabled={!delta || adjust.isPending} onClick={() => doAdjust("withdrawal")}>
+        <button className="btn btn--sm btn--ghost" disabled={!isAmount(delta) || adjust.isPending} onClick={() => doAdjust("withdrawal")}>
           － Withdrawal
         </button>
       </div>
@@ -510,11 +511,11 @@ function ValueSection({
       <form
         className="form-row"
         style={{ marginTop: 6 }}
-        onSubmit={(e) => { e.preventDefault(); if (value) setValueM.mutate(); }}
+        onSubmit={(e) => { e.preventDefault(); if (isAmount(value)) setValueM.mutate(); }}
       >
         <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-        <input placeholder={`Set value (${base})`} value={value} style={{ width: 150 }} onChange={(e) => setValue(e.target.value)} />
-        <button className="btn btn--sm btn--ghost" type="submit" disabled={!value || setValueM.isPending}>
+        <input inputMode="decimal" placeholder={`Set value (${base})`} value={value} style={{ width: 150 }} onChange={(e) => setValue(e.target.value)} />
+        <button className="btn btn--sm btn--ghost" type="submit" disabled={!isAmount(value) || setValueM.isPending}>
           {setValueM.isPending ? "Saving…" : "Set from statement"}
         </button>
       </form>

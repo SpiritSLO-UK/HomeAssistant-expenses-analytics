@@ -13,6 +13,7 @@ import {
   type AllowanceSummary,
   type ChildBudgetStatus,
 } from "../api/client";
+import { isAmount } from "../lib/num";
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -270,15 +271,15 @@ function ParentManager({ canManage }: Readonly<{ canManage: boolean }>) {
         <form
           className="form-row"
           style={{ flexWrap: "wrap", gap: 8 }}
-          onSubmit={(e) => { e.preventDefault(); if (bName && bAmount) addBudget.mutate(); }}
+          onSubmit={(e) => { e.preventDefault(); if (bName && isAmount(bAmount)) addBudget.mutate(); }}
         >
           <input placeholder="Name (e.g. Candy)" value={bName} onChange={(e) => setBName(e.target.value)} />
-          <input placeholder={`Amount/month (${base})`} value={bAmount} style={{ width: 140 }} onChange={(e) => setBAmount(e.target.value)} />
+          <input inputMode="decimal" placeholder={`Amount/month (${base})`} value={bAmount} style={{ width: 140 }} onChange={(e) => setBAmount(e.target.value)} />
           <select value={bCat} onChange={(e) => setBCat(e.target.value)}>
             <option value="">All categories</option>
             {categories.data?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
-          <button className="btn" type="submit" disabled={!bName || !bAmount || addBudget.isPending}>
+          <button className="btn" type="submit" disabled={!bName || !isAmount(bAmount) || addBudget.isPending}>
             {addBudget.isPending ? "Adding…" : "Add budget"}
           </button>
         </form>
@@ -289,15 +290,15 @@ function ParentManager({ canManage }: Readonly<{ canManage: boolean }>) {
         <form
           className="form-row"
           style={{ flexWrap: "wrap", gap: 8 }}
-          onSubmit={(e) => { e.preventDefault(); if (amount) addItem.mutate(); }}
+          onSubmit={(e) => { e.preventDefault(); if (isAmount(amount)) addItem.mutate(); }}
         >
           <input placeholder="Description (e.g. Pocket money)" value={description} onChange={(e) => setDescription(e.target.value)} />
-          <input placeholder={`Amount (${base})`} value={amount} style={{ width: 120 }} onChange={(e) => setAmount(e.target.value)} />
+          <input inputMode="decimal" placeholder={`Amount (${base})`} value={amount} style={{ width: 120 }} onChange={(e) => setAmount(e.target.value)} />
           <select value={catId} onChange={(e) => setCatId(e.target.value)}>
             <option value="">No category</option>
             {categories.data?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
-          <button className="btn" type="submit" disabled={!amount || addItem.isPending}>
+          <button className="btn" type="submit" disabled={!isAmount(amount) || addItem.isPending}>
             {addItem.isPending ? "Adding…" : "Add item"}
           </button>
         </form>

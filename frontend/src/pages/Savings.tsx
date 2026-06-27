@@ -16,6 +16,7 @@ import {
   type SavingsAccount,
   type SavingsGoal,
 } from "../api/client";
+import { isAmount, parseAmount } from "../lib/num";
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -145,8 +146,8 @@ function AccountCard({
 
   // Confirm a deposit/withdraw, showing the resulting balance, before applying.
   function doAdjust(direction: "deposit" | "withdraw") {
-    const amt = Number(delta);
-    if (!amt) return;
+    const amt = parseAmount(delta);
+    if (amt == null || amt === 0) return;
     const current = Number(account.latest_balance ?? 0);
     const next = direction === "deposit" ? current + amt : current - amt;
     const verb = direction === "deposit" ? "Deposit" : "Withdraw";
@@ -183,6 +184,7 @@ function AccountCard({
           {/* Deposit / withdraw — adjusts the latest balance (confirmed). */}
           <div className="form-row" style={{ alignItems: "center", gap: 6 }}>
             <input
+              inputMode="decimal"
               placeholder={`Amount (${base})`}
               value={delta}
               style={{ width: 120 }}
@@ -209,7 +211,7 @@ function AccountCard({
               />{" "}
               %
             </label>
-            <button className="btn btn--sm btn--ghost" disabled={saveRate.isPending} onClick={() => saveRate.mutate()}>
+            <button className="btn btn--sm btn--ghost" disabled={(rate.trim() !== "" && !isAmount(rate)) || saveRate.isPending} onClick={() => saveRate.mutate()}>
               Save rate
             </button>
             {account.interest_rate && account.projected_annual_interest && (
@@ -223,10 +225,11 @@ function AccountCard({
           <form
             className="form-row"
             style={{ marginTop: 6 }}
-            onSubmit={(e) => { e.preventDefault(); if (amount) setBalance.mutate(); }}
+            onSubmit={(e) => { e.preventDefault(); if (isAmount(amount)) setBalance.mutate(); }}
           >
             <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
             <input
+              inputMode="decimal"
               placeholder={`Set balance (${base})`}
               value={amount}
               style={{ width: 150 }}
