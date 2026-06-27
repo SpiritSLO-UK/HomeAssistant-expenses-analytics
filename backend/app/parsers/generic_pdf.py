@@ -21,6 +21,7 @@ from app.parsers.base import (
     BaseStatementParser,
     ParseError,
     StandardTransaction,
+    detect_month_first,
     parse_amount,
     parse_date,
 )
@@ -55,13 +56,18 @@ def parse_statement_text(text: str, default_currency: str = "GBP") -> list[Stand
     text between them is the description. ``CR`` / leading ``+`` means money in;
     otherwise it's treated as money out (debit). Every row is flagged for review.
     """
+    lines = text.splitlines()
+    # Detect the date order once across the whole statement (US MM/DD vs UK DD/MM).
+    leading = (m.group(1) for m in (_DATE_AT_START.match(line) for line in lines) if m)
+    month_first = detect_month_first(leading)
+
     out: list[StandardTransaction] = []
-    for line in text.splitlines():
+    for line in lines:
         dm = _DATE_AT_START.match(line)
         if not dm:
             continue
         try:
-            txn_date = parse_date(dm.group(1))
+            txn_date = parse_date(dm.group(1), month_first=month_first)
         except ParseError:
             continue
         money = list(_MONEY.finditer(line, dm.end()))

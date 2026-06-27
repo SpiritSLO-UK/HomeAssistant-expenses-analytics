@@ -13,6 +13,7 @@ from app.parsers.base import (
     BaseStatementParser,
     ParseError,
     StandardTransaction,
+    detect_month_first,
     parse_amount,
     parse_date,
     parse_optional_date,
@@ -68,14 +69,15 @@ def _mapped(row: dict[str, str], m: dict[str, str], field: str) -> str | None:
 
 
 def _build_transaction(
-    row: dict[str, str], m: dict[str, str], amount: Decimal, default_currency: str
+    row: dict[str, str], m: dict[str, str], amount: Decimal, default_currency: str,
+    *, month_first: bool = False,
 ) -> StandardTransaction:
     """Assemble one StandardTransaction from a mapped row (amount already resolved)."""
     description = _mapped(row, m, "description") or _mapped(row, m, "merchant") or "(no description)"
     currency = _mapped(row, m, "currency") or default_currency
     return StandardTransaction(
-        transaction_date=parse_date(row[m["date"]]),
-        posted_date=parse_optional_date(_mapped(row, m, "posted_date")),
+        transaction_date=parse_date(row[m["date"]], month_first=month_first),
+        posted_date=parse_optional_date(_mapped(row, m, "posted_date"), month_first=month_first),
         amount=amount,
         currency=currency.upper(),
         description_raw=description,
@@ -131,13 +133,17 @@ class GenericCsvParser(BaseStatementParser):
         if not ({"amount", "debit", "credit"} & m.keys()):
             raise ParseError("Generic CSV: could not identify an amount column")
 
+        # Detect the date order once for the whole file (US MM/DD vs UK DD/MM) so an
+        # ambiguous-but-consistent statement imports with the right dates (SR / US-format).
+        month_first = detect_month_first(row.get(m["date"], "") for row in rows)
+
         out: list[StandardTransaction] = []
         for i, row in enumerate(rows, start=1):
             date_str = row.get(m["date"])
             if not date_str:
                 raise ParseError(f"Generic row {i}: missing date")
             amount = self._row_amount(row, m, i)
-            out.append(_build_transaction(row, m, amount, self.default_currency))
+            out.append(_build_transaction(row, m, amount, self.default_currency, month_first=month_first))
         return out
 
     def _row_amount(self, row: dict[str, str], m: dict[str, str], i: int) -> Decimal:
