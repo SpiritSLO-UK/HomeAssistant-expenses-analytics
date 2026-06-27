@@ -78,6 +78,11 @@ def _set_sqlite_pragma(dbapi_connection, _connection_record) -> None:
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA foreign_keys=ON")
     cursor.execute("PRAGMA journal_mode=WAL")
+    # Wait up to 5s for a lock instead of erroring immediately with "database is
+    # locked" under concurrent writers (CR-FEAT-3); NORMAL is the safe pairing
+    # with WAL (durable on app crash, only loses on OS/power loss).
+    cursor.execute("PRAGMA busy_timeout=5000")
+    cursor.execute("PRAGMA synchronous=NORMAL")
     cursor.close()
 
 
@@ -103,6 +108,11 @@ def _build_encrypted_engine(passphrase: str) -> Engine:
         conn = sqlcipher3.connect(db_path, check_same_thread=False)
         conn.execute(f"PRAGMA key='{safe}'")
         conn.execute("PRAGMA foreign_keys=ON")
+        # Match the plaintext engine's pragmas (this path previously diverged — no
+        # WAL, no busy_timeout): WAL for concurrency, a 5s lock wait, NORMAL sync.
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=5000")
+        conn.execute("PRAGMA synchronous=NORMAL")
         return conn
 
     return create_engine("sqlite://", creator=_creator, future=True)
