@@ -16,6 +16,11 @@ from sqlalchemy.orm import Session
 from app.models import ReviewItem
 from app.services.household_service import get_or_create_default_household
 
+# The only statuses a review item may hold. A typo'd status would be invisible
+# to list_items(status="open") / open_count, so reject it at the service boundary
+# (SR-F9). The API schema re-exports this so the two can't drift.
+VALID_STATUSES = {"open", "resolved", "ignored"}
+
 
 def add(
     db: Session,
@@ -77,6 +82,8 @@ def list_items(db: Session, status: str | None = "open") -> list[ReviewItem]:
 
 
 def set_status(db: Session, item: ReviewItem, status: str) -> ReviewItem:
+    if status not in VALID_STATUSES:
+        raise ValueError(f"Unknown review status {status!r}. One of: {sorted(VALID_STATUSES)}")
     item.status = status
     item.resolved_at = datetime.now(UTC) if status != "open" else None
     db.commit()

@@ -57,3 +57,16 @@ def test_confirming_match_resolves_review(client):
     client.post(f"/api/receipts/{rid}/confirm-match", json={"transaction_id": txn["id"]})
     open_reasons = {i["reason"] for i in client.get("/api/review?status=open").json()}
     assert "receipt_unmatched" not in open_reasons
+
+
+def test_set_status_rejects_unknown_status_at_service_level(db):
+    # Defense-in-depth: even bypassing the route, the service refuses a status
+    # that list_items/open_count couldn't see (SR-F9).
+    import pytest
+
+    from app.services import review_service
+
+    item = review_service.add(db, item_type="vendor", item_id=1, reason="unknown_vendor")
+    db.commit()
+    with pytest.raises(ValueError, match="Unknown review status"):
+        review_service.set_status(db, item, "nonsense")

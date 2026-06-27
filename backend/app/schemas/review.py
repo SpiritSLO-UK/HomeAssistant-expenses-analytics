@@ -6,7 +6,9 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
-STATUSES = {"open", "resolved", "ignored"}
+from app.services.review_service import VALID_STATUSES as STATUSES
+
+__all__ = ["STATUSES", "ReviewItemOut", "ReviewStatusUpdate"]
 
 
 class ReviewItemOut(BaseModel):
