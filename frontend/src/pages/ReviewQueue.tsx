@@ -159,10 +159,16 @@ function ReviewRow({
   const qc = useQueryClient();
   const isTxn = item.item_type === "transaction" && item.item_id != null;
   const isReceipt = item.item_type === "receipt" && item.item_id != null;
+  const [err, setErr] = useState<string | null>(null);
+  const fail = (e: unknown) => setErr(String(e instanceof Error ? e.message : e));
 
   const update = useMutation({
     mutationFn: (newStatus: string) => setReviewStatus(item.id, newStatus),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["review"] }),
+    onSuccess: () => {
+      setErr(null);
+      qc.invalidateQueries({ queryKey: ["review"] });
+    },
+    onError: fail,
   });
 
   // Categorising the transaction is the fix for an uncategorised/unknown-vendor
@@ -170,12 +176,14 @@ function ReviewRow({
   const categorise = useMutation({
     mutationFn: (categoryId: number) => categoriseTransaction(item.item_id as number, categoryId),
     onSuccess: async () => {
+      setErr(null);
       await setReviewStatus(item.id, "resolved");
       qc.invalidateQueries({ queryKey: ["review"] });
       qc.invalidateQueries({ queryKey: ["uncategorised"] });
       qc.invalidateQueries({ queryKey: ["transactions"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
     },
+    onError: fail,
   });
 
   // Unmatched receipts: surface the recommended transaction + add it in one click
@@ -188,16 +196,19 @@ function ReviewRow({
     onSuccess: () => {
       // create_transaction_from_receipt attaches the receipt, which resolves the
       // receipt_unmatched item server-side; refresh the affected views.
+      setErr(null);
       qc.invalidateQueries({ queryKey: ["review"] });
       qc.invalidateQueries({ queryKey: ["receipts"] });
       qc.invalidateQueries({ queryKey: ["transactions"] });
       qc.invalidateQueries({ queryKey: ["accounts"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
     },
+    onError: fail,
   });
 
   async function onSuggest() {
     if (item.item_id == null) return;
+    setErr(null);
     try {
       const s = await suggestForTransaction(item.item_id);
       if (!s) return;
@@ -209,7 +220,7 @@ function ReviewRow({
       if (s.categoryId != null) categorise.mutate(s.categoryId); // resolves item + invalidates
       else qc.invalidateQueries({ queryKey: ["transactions"] }); // category-less change
     } catch (e) {
-      globalThis.alert(String(e instanceof Error ? e.message : e));
+      fail(e);
     }
   }
 
@@ -281,6 +292,7 @@ function ReviewRow({
           </>
         )}
       </div>
+      {err && <p className="status status--error" style={{ flexBasis: "100%", margin: "4px 0 0" }}>{err}</p>}
     </div>
   );
 }
@@ -348,14 +360,21 @@ function UncategorisedRow({
   aiEnabled,
   onDone,
 }: Readonly<{ txn: Transaction; categories: { id: number; name: string }[]; aiEnabled: boolean; onDone: () => void }>) {
+  const [err, setErr] = useState<string | null>(null);
+  const fail = (e: unknown) => setErr(String(e instanceof Error ? e.message : e));
   const set = useMutation({
     mutationFn: (categoryId: number) => categoriseTransaction(txn.id, categoryId),
-    onSuccess: onDone,
+    onSuccess: () => {
+      setErr(null);
+      onDone();
+    },
+    onError: fail,
   });
 
   // Same ✨ suggest as the "To review" tab + the Transactions list: category (+
   // country/vendor when the AI infers them). Applying the category drops the row.
   async function onSuggest() {
+    setErr(null);
     try {
       const s = await suggestForTransaction(txn.id);
       if (!s) return;
@@ -364,12 +383,12 @@ function UncategorisedRow({
       if (s.categoryId != null) set.mutate(s.categoryId);
       else onDone();
     } catch (e) {
-      globalThis.alert(String(e instanceof Error ? e.message : e));
+      fail(e);
     }
   }
 
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "10px 0", borderBottom: "1px solid rgba(127,127,127,0.2)" }}>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", padding: "10px 0", borderBottom: "1px solid rgba(127,127,127,0.2)" }}>
       <div style={{ minWidth: 0 }}>
         <span className="muted">{txn.transaction_date}</span>{" "}
         <Link to={`/transactions?focus=${txn.id}`}>{txn.description_raw}</Link>
@@ -390,6 +409,7 @@ function UncategorisedRow({
           </button>
         )}
       </div>
+      {err && <p className="status status--error" style={{ flexBasis: "100%", margin: "4px 0 0" }}>{err}</p>}
     </div>
   );
 }
