@@ -36,7 +36,18 @@ def get_or_create(db: Session, name: str, colour: str | None = None) -> Tag:
 
 def update_tag(db: Session, tag: Tag, *, name: str | None = None, colour: str | None = None) -> Tag:
     if name is not None:
-        tag.name = name.strip()
+        new_name = name.strip()
+        if not new_name:
+            raise ValueError("Tag name cannot be empty")
+        # Honour the same case-insensitive uniqueness as get_or_create — renaming
+        # onto another tag's name (any case) would otherwise create a duplicate
+        # the matcher can't tell apart (SR-B8).
+        clash = db.scalars(
+            select(Tag).where(func.lower(Tag.name) == new_name.lower(), Tag.id != tag.id)
+        ).first()
+        if clash is not None:
+            raise ValueError(f"A tag named {new_name!r} already exists")
+        tag.name = new_name
     if colour is not None:
         tag.colour = colour
     db.commit()
@@ -51,13 +62,33 @@ def delete_tag(db: Session, tag: Tag) -> None:
 
 def set_transaction_tags(db: Session, txn: Transaction, names: list[str]) -> Transaction:
     """Replace a transaction's tags with the given names (creating any new ones)."""
-    seen: dict[str, Tag] = {}
+    # Normalise + dedupe case-insensitively, keeping the first-seen display form.
+    wanted: dict[str, str] = {}
     for raw in names:
         name = raw.strip()
-        if not name or name.lower() in seen:
-            continue
-        seen[name.lower()] = get_or_create(db, name)
-    txn.tags = list(seen.values())
+        if name and name.lower() not in wanted:
+            wanted[name.lower()] = name
+
+    # One query for every existing tag instead of a SELECT per name (SR-B8).
+    existing = {
+        t.name.lower(): t
+        for t in db.scalars(select(Tag).where(func.lower(Tag.name).in_(list(wanted)))).all()
+    } if wanted else {}
+
+    household = None
+    tags: list[Tag] = []
+    for low, display in wanted.items():
+        tag = existing.get(low)
+        if tag is None:
+            if household is None:
+                household = get_or_create_default_household(db)
+            tag = Tag(name=display, household_id=household.id)
+            db.add(tag)
+            db.flush()
+            existing[low] = tag
+        tags.append(tag)
+
+    txn.tags = tags
     db.commit()
     db.refresh(txn)
     return txn

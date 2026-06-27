@@ -46,6 +46,23 @@ def test_tag_get_or_create_is_case_insensitive(client):
     assert "work" not in names  # the original casing is kept
 
 
+def test_rename_to_existing_name_is_rejected_case_insensitively(client):
+    # Renaming a tag onto another tag's name (any case) would create a duplicate
+    # the matcher can't distinguish — reject it (SR-B8).
+    client.post("/api/tags", json={"name": "Work"})
+    other = client.post("/api/tags", json={"name": "Personal"}).json()["id"]
+    res = client.patch(f"/api/tags/{other}", json={"name": "work"})
+    assert res.status_code == 400
+    assert "already exists" in res.json()["detail"]
+    # Renaming to a genuinely new name still works, and renaming a tag to its own
+    # name (different case) is allowed.
+    assert client.patch(f"/api/tags/{other}", json={"name": "Household"}).status_code == 200
+
+
+def test_create_empty_tag_is_rejected(client):
+    assert client.post("/api/tags", json={"name": "  "}).status_code == 400
+
+
 # --- assignment ---
 
 def test_set_and_show_transaction_tags(client):
