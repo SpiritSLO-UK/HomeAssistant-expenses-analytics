@@ -6,25 +6,33 @@ export default function Sparkline({
   color = "#6aa9ff",
   width = 132,
   height = 34,
+  label,
 }: Readonly<{
   values: number[];
   color?: string;
   width?: number;
   height?: number;
+  label?: string;
 }>) {
   const pad = 3;
-  if (values.length < 2) return <svg width={width} height={height} aria-hidden />;
+  // When a label is given the chart is meaningful (role="img"); otherwise it's
+  // decorative next to the figures it illustrates (aria-hidden).
+  const a11y = label ? { role: "img" as const, "aria-label": label } : { "aria-hidden": true };
+  if (values.length < 2) return <svg width={width} height={height} {...a11y} />;
   const min = Math.min(...values);
   const max = Math.max(...values);
-  const span = max - min || 1;
+  const flat = max === min;
+  const span = flat ? 1 : max - min;
   const xy = (v: number, i: number): [number, number] => [
     pad + (i / (values.length - 1)) * (width - 2 * pad),
-    height - pad - ((v - min) / span) * (height - 2 * pad),
+    // A flat (all-equal) series draws through the vertical middle so it reads as
+    // "steady" rather than being glued to the bottom (a 0 fraction).
+    height - pad - (flat ? 0.5 : (v - min) / span) * (height - 2 * pad),
   ];
   const pts = values.map((v, i) => xy(v, i).map((n) => n.toFixed(1)).join(",")).join(" ");
   const [lx, ly] = xy(values[values.length - 1], values.length - 1);
   return (
-    <svg width={width} height={height} aria-hidden style={{ display: "block" }}>
+    <svg width={width} height={height} {...a11y} style={{ display: "block" }}>
       <polyline points={pts} fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round" />
       <circle cx={lx} cy={ly} r={2.5} fill={color} />
     </svg>
