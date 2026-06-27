@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -224,12 +225,18 @@ def _read_events() -> dict:
 
 
 def _write_events(data: dict) -> None:
-    # Atomic: write a temp file then os.replace, so a crash or a concurrent reader
-    # never sees a truncated/half-written file (SR-7).
+    # Atomic: write a temp file in the same directory then os.replace, so a crash or a
+    # concurrent reader never sees a truncated/half-written file (SR-7). mkstemp gives a
+    # safe, unique temp path (no hand-built filename).
     path = _events_path()
-    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
-    tmp.write_text(json.dumps(data), encoding="utf-8")
-    os.replace(tmp, path)
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".security_events_", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(data))
+        os.replace(tmp, path)
+    except Exception:  # pragma: no cover - clean up the temp file on any write failure
+        Path(tmp).unlink(missing_ok=True)
+        raise
 
 
 def _now() -> datetime:
