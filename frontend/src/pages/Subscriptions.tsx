@@ -12,6 +12,14 @@ import {
   type Subscription,
 } from "../api/client";
 
+// "due in null day(s)" guard: days_until can be null when the next date is
+// unknown — show a soft label instead.
+function dueLabel(days: number | null): string {
+  if (days == null) return "due soon";
+  if (days <= 0) return "due now";
+  return `due in ${days} day(s)`;
+}
+
 const STATUS_LABEL: Record<string, string> = {
   active: "active",
   possible: "possible",
@@ -94,7 +102,7 @@ export default function Subscriptions() {
               <li key={`u-${s.id}`}>
                 🔔 <strong>{s.name}</strong>{" "}
                 <span className="muted">
-                  {s.days_until != null && s.days_until <= 0 ? "due now" : `due in ${s.days_until} day(s)`}
+                  {dueLabel(s.days_until)}
                   {" "}({s.next_expected_date}) — {s.amount} {base}
                 </span>
               </li>
