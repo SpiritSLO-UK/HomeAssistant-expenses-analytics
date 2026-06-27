@@ -47,6 +47,16 @@ def test_member_cannot_manage_or_self_promote(client):
     assert client.get("/api/users/me", headers=h).json()["role"] == "member"
 
 
+def test_cors_uses_explicit_method_and_header_allowlists():
+    """CR-SEC-12: CORS scopes methods + headers to an explicit allowlist rather than
+    '*' with credentials (which is over-broad). Pins it so it can't regress to '*'."""
+    from app import main
+
+    assert "*" not in main._CORS_METHODS and "*" not in main._CORS_HEADERS
+    assert {"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"} == set(main._CORS_METHODS)
+    assert "Content-Type" in main._CORS_HEADERS and "X-HAFI-Session" in main._CORS_HEADERS
+
+
 def test_member_cannot_change_encryption_state(client):
     """Encryption enable/disable are owner-only (follow-up to #214) — a member is 403'd
     *before* any encryption logic runs, so this holds regardless of the SQLCipher driver."""
