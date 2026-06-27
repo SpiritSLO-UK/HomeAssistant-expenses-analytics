@@ -17,6 +17,7 @@ import {
   type SavingsGoal,
 } from "../api/client";
 import { isAmount, parseAmount } from "../lib/num";
+import { useServerState } from "../lib/useServerState";
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -120,7 +121,7 @@ function AccountCard({
   const [date, setDate] = useState(today());
   const [amount, setAmount] = useState("");   // absolute "set balance" (from statement)
   const [delta, setDelta] = useState("");     // deposit / withdraw amount
-  const [rate, setRate] = useState(account.interest_rate ?? "");
+  const [rate, setRate] = useServerState(account.interest_rate ?? "");
 
   const refresh = () => {
     onChange();

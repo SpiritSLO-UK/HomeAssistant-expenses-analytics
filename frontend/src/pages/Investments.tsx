@@ -22,6 +22,7 @@ import {
   type PriceSyncResult,
 } from "../api/client";
 import { isAmount, parseAmount } from "../lib/num";
+import { useServerState } from "../lib/useServerState";
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -387,8 +388,8 @@ function HoldingRow({
   onChange: () => void;
   onError: (e: unknown) => void;
 }>) {
-  const [units, setUnits] = useState(holding.units);
-  const [avgCost, setAvgCost] = useState(holding.avg_cost ?? "");
+  const [units, setUnits] = useServerState(holding.units);
+  const [avgCost, setAvgCost] = useServerState(holding.avg_cost ?? "");
 
   const save = useMutation({
     mutationFn: () =>

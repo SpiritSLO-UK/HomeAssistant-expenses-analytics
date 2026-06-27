@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Sparkline from "../components/Sparkline";
 import {
@@ -217,10 +217,13 @@ function EnergyConfigCard() {
   const [categoryId, setCategoryId] = useState("");
   const [semantics, setSemantics] = useState("cumulative");
 
-  // Seed the form from the saved config once it loads.
+  // Seed the form from the saved config once, when it first loads — never on later
+  // refetches, which would wipe edits in progress (FE-7).
+  const seeded = useRef(false);
   useEffect(() => {
     const s = status.data;
-    if (!s) return;
+    if (!s || seeded.current) return;
+    seeded.current = true;
     setSource(s.source);
     setEntities(s.production_entities.join("\n"));
     setTopics(s.production_topics.join("\n"));
