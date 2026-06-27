@@ -31,7 +31,12 @@ export default function Assets() {
   const assets = useQuery({ queryKey: ["assets"], queryFn: () => listAssets() });
   const [showNew, setShowNew] = useState(false);
   const qc = useQueryClient();
-  const invalidate = () => qc.invalidateQueries({ queryKey: ["assets"] });
+  // The success callback passed to child cards — clearing the error here drops a
+  // stale banner after a later success (FE-3).
+  const invalidate = () => {
+    setErr(null);
+    qc.invalidateQueries({ queryKey: ["assets"] });
+  };
   const fail = (e: unknown) => setErr(String(e));
 
   return (

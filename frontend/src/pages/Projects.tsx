@@ -28,7 +28,10 @@ export default function Projects() {
 
   const remove = useMutation({
     mutationFn: (id: number) => deleteProject(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["dashboard-projects"] }),
+    onSuccess: () => {
+      setErr(null);
+      qc.invalidateQueries({ queryKey: ["dashboard-projects"] });
+    },
     onError: (e) => setErr(String(e)),
   });
 
