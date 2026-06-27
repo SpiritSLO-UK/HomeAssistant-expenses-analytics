@@ -24,7 +24,9 @@ export default function OverTimeChart({
   const values = points.map((m) => Number(m.total));
   const cur = series?.currency ?? "GBP";
   const total = values.reduce((a, b) => a + b, 0);
-  const hasData = values.length >= 2 && values.some((v) => v !== 0);
+  // Two or more months IS history — a genuinely all-zero stretch is real data
+  // (now drawn as a centred flat line), not "not enough history".
+  const hasData = values.length >= 2;
   return (
     <div className="card">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
@@ -33,7 +35,7 @@ export default function OverTimeChart({
       </div>
       {hasData ? (
         <>
-          <Sparkline values={values} color={color} width={560} height={120} />
+          <Sparkline values={values} color={color} width={560} height={120} label={`${title} over time`} />
           <p className="muted" style={{ marginBottom: 0 }}>
             {points[0].month} – {points[points.length - 1].month} · total{" "}
             {cur} {total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
