@@ -255,24 +255,32 @@ def learn_vendor_category(
     vendor, _ = match_vendor(db, description)
     if vendor is None:
         signature = (merchant_raw or derive_vendor_signature(description)).strip()
-        canonical = signature.title() if signature.isupper() else signature
-        household = get_or_create_default_household(db)
-        vendor = Vendor(
-            household_id=household.id,
-            canonical_name=canonical or description[:60],
-            display_name=canonical or description[:60],
-            created_by="user",
-        )
-        db.add(vendor)
-        db.flush()
-        db.add(
-            VendorAlias(
-                vendor_id=vendor.id,
-                alias=signature or description,
-                match_type="contains",
-                source="user",
+        canonical = (signature.title() if signature.isupper() else signature) or description[:60]
+        # Reuse an existing vendor with this canonical name before creating a new one,
+        # so a manual correction can't spawn a duplicate when the alias just didn't match
+        # (mirrors create_from_transaction; previously this always created a new vendor).
+        vendor = db.scalars(
+            select(Vendor).where(func.lower(Vendor.canonical_name) == canonical.lower())
+        ).first()
+        if vendor is None:
+            vendor = Vendor(
+                household_id=get_or_create_default_household(db).id,
+                canonical_name=canonical,
+                display_name=canonical,
+                created_by="user",
             )
-        )
+            db.add(vendor)
+            db.flush()
+        # Add a contains alias for this description if the vendor lacks one, so the next
+        # import of the same merchant matches it.
+        alias_text = (signature or description).strip()
+        if alias_text and not db.scalars(
+            select(VendorAlias).where(
+                VendorAlias.vendor_id == vendor.id,
+                func.lower(VendorAlias.alias) == alias_text.lower(),
+            )
+        ).first():
+            db.add(VendorAlias(vendor_id=vendor.id, alias=alias_text, match_type="contains", source="user"))
     vendor.default_category_id = category_id
     db.commit()
     db.refresh(vendor)
