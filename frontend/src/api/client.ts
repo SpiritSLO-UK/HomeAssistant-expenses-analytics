@@ -346,14 +346,22 @@ export interface TransactionFilters {
   offset?: number;
 }
 
-export function listTransactions(filters: TransactionFilters = {}): Promise<TransactionListResponse> {
+// Serialise a filter object to a query string, dropping empty values. Shared by the
+// transactions list and the CSV export so the two can't diverge — the list used to
+// keep `null` (serialising it as the string "null") while the export dropped it, so
+// the list and its CSV could return different rows.
+function toQuery(filters: Record<string, unknown>): string {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(filters)) {
-    if (value !== undefined && value !== "" && value !== false) {
+    if (value !== undefined && value !== null && value !== "" && value !== false) {
       params.append(key, String(value));
     }
   }
-  const qs = params.toString();
+  return params.toString();
+}
+
+export function listTransactions(filters: TransactionFilters = {}): Promise<TransactionListResponse> {
+  const qs = toQuery(filters as Record<string, unknown>);
   return fetchJson<TransactionListResponse>(qs ? `api/transactions?${qs}` : "api/transactions");
 }
 
@@ -391,7 +399,7 @@ export function unarchiveTransaction(id: number): Promise<Transaction> {
 // name defaults to the OCR/parsed merchant signature; pass `name` to override
 // (e.g. an AI-suggested vendor). Returns the updated transaction.
 export function createVendorFromTransaction(id: number, name?: string): Promise<Transaction> {
-  return fetchJson<Transaction>(`api/transactions/${encodeURIComponent(id)}/create-vendor`, {
+  return fetchJson<Transaction>(`api/transactions/${id}/create-vendor`, {
     method: "POST",
     body: JSON.stringify(name ? { name } : {}),
   });
@@ -957,16 +965,16 @@ function aiPost(path: string): Promise<ClassifyResult> {
 }
 
 export function classifyWithAi(transactionId: number): Promise<ClassifyResult> {
-  return aiPost(`api/ai/classify/${encodeURIComponent(transactionId)}`);
+  return aiPost(`api/ai/classify/${transactionId}`);
 }
 
 // Approve a pending cloud request (cloud_manual): sends it and returns the suggestion.
 export function approveAiRequest(requestId: number): Promise<ClassifyResult> {
-  return aiPost(`api/ai/requests/${encodeURIComponent(requestId)}/approve`);
+  return aiPost(`api/ai/requests/${requestId}/approve`);
 }
 
 export function rejectAiRequest(requestId: number): Promise<void> {
-  return fetchJson<void>(`api/ai/requests/${encodeURIComponent(requestId)}/reject`, { method: "POST" });
+  return fetchJson<void>(`api/ai/requests/${requestId}/reject`, { method: "POST" });
 }
 
 export function listAiRequests(opts?: { includeArchived?: boolean }): Promise<AIRequestRow[]> {
@@ -1936,10 +1944,6 @@ export function getMissingFx(): Promise<{ needs_rate: number }> {
   return fetchJson("api/fx/missing");
 }
 
-export function fxMissing(): Promise<{ needs_rate: number }> {
-  return fetchJson("api/fx/missing");
-}
-
 // --- Rules (spec §24.7) ---
 
 export interface Rule {
@@ -2482,13 +2486,7 @@ async function downloadCsv(endpoint: string, fallbackName: string): Promise<void
 }
 
 function exportParams(filters: Record<string, unknown>): string {
-  const params = new URLSearchParams();
-  for (const [key, value] of Object.entries(filters)) {
-    if (value !== undefined && value !== null && value !== "" && value !== false) {
-      params.append(key, String(value));
-    }
-  }
-  const qs = params.toString();
+  const qs = toQuery(filters);
   return qs ? `?${qs}` : "";
 }
 
