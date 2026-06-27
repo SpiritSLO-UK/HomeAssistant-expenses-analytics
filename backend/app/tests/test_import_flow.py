@@ -99,3 +99,19 @@ def test_delete_pending_import(client, samples_dir):
     import_id = body["import_id"]
     assert client.delete(f"/api/imports/{import_id}").status_code == 204
     assert client.get(f"/api/imports/{import_id}").status_code == 404
+
+
+def test_statement_config_tolerates_malformed_notes():
+    # confirm/delete read the parser config from statement.notes; a non-JSON or
+    # non-dict value must degrade to {} rather than crash (SR-A1).
+    from types import SimpleNamespace
+
+    from app.services import import_service as imp
+
+    assert imp._statement_config(SimpleNamespace(notes=None)) == {}
+    assert imp._statement_config(SimpleNamespace(notes="")) == {}
+    assert imp._statement_config(SimpleNamespace(notes="legacy free text")) == {}
+    assert imp._statement_config(SimpleNamespace(notes='["a", "list"]')) == {}  # JSON, not a dict
+    assert imp._statement_config(SimpleNamespace(notes='{"parser_id": "curve_csv"}')) == {
+        "parser_id": "curve_csv"
+    }
