@@ -301,8 +301,8 @@ def test_config_import_only_allowlisted_settings(client):
         "settings": [
             {"key": "fx_mode", "value": "frankfurter"},                      # allowlisted + valid → applied
             {"key": "privacy_mode", "value": "cloud_auto"},                  # cloud flip → rejected
-            {"key": "ai_base_url", "value": "http://169.254.169.254/latest"},  # SSRF → rejected
-            {"key": "paperless_url", "value": "http://10.0.0.1"},            # SSRF → rejected
+            {"key": "ai_base_url", "value": "http://attacker.example/v1"},   # SSRF vector → rejected
+            {"key": "paperless_url", "value": "http://internal.example:8000"},  # SSRF vector → rejected
             {"key": "base_currency", "value": "USD"},                        # recompute side-effect → rejected
             {"key": "investment_price_source", "value": "not-a-source"},     # allowlisted but invalid → rejected
             {"key": "totally_unknown_key", "value": "x"},                    # unknown → rejected
