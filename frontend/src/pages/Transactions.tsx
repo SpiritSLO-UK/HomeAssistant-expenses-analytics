@@ -956,7 +956,7 @@ function ResizableTh({
   return (
     <th className={className}>
       {children}
-      <span className="col-resize" title="Drag to resize" onMouseDown={(e) => cols.startResize(col, e)} />
+      <span className="col-resize" title="Drag to resize" onMouseDown={(e) => cols.startResize(col, e)} onTouchStart={(e) => cols.startResize(col, e)} />
     </th>
   );
 }
