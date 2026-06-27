@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
 import AiImageWarningDialog from "../components/AiImageWarningDialog";
 import CameraCaptureButton from "../components/CameraCaptureButton";
+import CsvMappingPanel from "../components/CsvMappingPanel";
 import { isImageAiWarningDismissed, setImageAiWarningDismissed } from "../prefs";
 import {
   aiExtractImport,
@@ -28,6 +29,7 @@ export default function Import() {
   const [preview, setPreview] = useState<UploadResponse | null>(null);
   const [confirmed, setConfirmed] = useState<ConfirmResponse | null>(null);
   const [showAiWarn, setShowAiWarn] = useState(false);
+  const [showMapper, setShowMapper] = useState(false);
 
   const { data: parsers } = useQuery({ queryKey: ["parsers"], queryFn: listParsers });
   const aiStatus = useQuery({ queryKey: ["ai-status"], queryFn: getAiStatus });
@@ -77,6 +79,7 @@ export default function Import() {
     setParserId("");
     setPreview(null);
     setConfirmed(null);
+    setShowMapper(false);
     upload.reset();
     confirm.reset();
     if (fileInput.current) fileInput.current.value = "";
@@ -118,11 +121,12 @@ export default function Import() {
               setFile(e.target.files?.[0] ?? null);
               setPreview(null);
               setConfirmed(null);
+              setShowMapper(false);
             }}
           />
           <CameraCaptureButton
             label="📷 Take photo"
-            onCapture={(f) => { setFile(f); setPreview(null); setConfirmed(null); }}
+            onCapture={(f) => { setFile(f); setPreview(null); setConfirmed(null); setShowMapper(false); }}
           />
           <select value={parserId} onChange={(e) => setParserId(e.target.value)}>
             <option value="">Auto-detect</option>
@@ -139,6 +143,11 @@ export default function Import() {
           >
             {upload.isPending ? "Uploading…" : "Preview"}
           </button>
+          {file && (
+            <button className="btn btn--ghost" onClick={() => setShowMapper((v) => !v)}>
+              {showMapper ? "Hide column mapping" : "⚙ Map columns (custom CSV)"}
+            </button>
+          )}
           {(preview || confirmed) && (
             <button className="btn btn--ghost" onClick={reset}>
               Start over
@@ -147,6 +156,12 @@ export default function Import() {
         </div>
         {file && !preview && !confirmed && (
           <p className="muted" style={{ marginTop: 6, fontSize: "0.85rem" }}>Selected: {file.name}</p>
+        )}
+        {showMapper && file && (
+          <CsvMappingPanel
+            file={file}
+            onPreview={(data) => { setPreview(data); setConfirmed(null); }}
+          />
         )}
         {upload.isError && !isReceiptish && (
           <p className="status status--error">{String(upload.error)}</p>

@@ -163,10 +163,15 @@ export function listParsers(): Promise<ParserInfo[]> {
   return fetchJson<ParserInfo[]>("api/imports/parsers");
 }
 
-export async function uploadImport(file: File, parserId?: string): Promise<UploadResponse> {
+export async function uploadImport(
+  file: File,
+  parserId?: string,
+  mapping?: Record<string, string>,
+): Promise<UploadResponse> {
   const form = new FormData();
   form.append("file", file);
   if (parserId) form.append("parser_id", parserId);
+  if (mapping) form.append("mapping", JSON.stringify(mapping));
   // No Content-Type header: the browser sets the multipart boundary.
   const res = await fetch(apiUrl("api/imports/upload"), { method: "POST", body: form });
   if (!res.ok) {
@@ -174,6 +179,57 @@ export async function uploadImport(file: File, parserId?: string): Promise<Uploa
     throw new Error(detail.detail || `Upload failed: ${res.status}`);
   }
   return (await res.json()) as UploadResponse;
+}
+
+// --- Custom CSV column mapping + saved import profiles ---
+
+export interface InspectField {
+  key: string;
+  label: string;
+  required: boolean;
+}
+
+export interface InspectResponse {
+  headers: string[];
+  sample_rows: Record<string, string>[];
+  suggested_mapping: Record<string, string>;
+  fields: InspectField[];
+}
+
+export async function inspectCsv(file: File): Promise<InspectResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(apiUrl("api/imports/inspect"), { method: "POST", body: form });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error(detail.detail || `Inspect failed: ${res.status}`);
+  }
+  return (await res.json()) as InspectResponse;
+}
+
+export interface ImportProfile {
+  id: number;
+  name: string;
+  mapping: Record<string, string>;
+  default_currency: string;
+}
+
+export interface ImportProfileInput {
+  name: string;
+  mapping: Record<string, string>;
+  default_currency: string;
+}
+
+export function listImportProfiles(): Promise<ImportProfile[]> {
+  return fetchJson<ImportProfile[]>("api/imports/profiles");
+}
+
+export function createImportProfile(body: ImportProfileInput): Promise<ImportProfile> {
+  return fetchJson<ImportProfile>("api/imports/profiles", { method: "POST", body: JSON.stringify(body) });
+}
+
+export function deleteImportProfile(id: number): Promise<void> {
+  return fetchJson<void>(`api/imports/profiles/${id}`, { method: "DELETE" });
 }
 
 export function confirmImport(importId: number): Promise<ConfirmResponse> {
