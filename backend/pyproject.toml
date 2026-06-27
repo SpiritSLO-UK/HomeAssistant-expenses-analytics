@@ -1,6 +1,9 @@
 [project]
 name = "ha-finance-intelligence"
-version = "0.1.0"
+# Single source of truth: app.__version__ (kept in lockstep with addon/config.yaml
+# + the published image tag at release). Avoids the packaging version drifting
+# from the shipped app version (CR-BUG-4).
+dynamic = ["version"]
 description = "Local-first, Home Assistant-first personal finance app"
 requires-python = ">=3.12"
 authors = [{ name = "Blaz Peternel" }]
@@ -60,6 +63,9 @@ encryption = [
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.dynamic]
+version = { attr = "app.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["."]
