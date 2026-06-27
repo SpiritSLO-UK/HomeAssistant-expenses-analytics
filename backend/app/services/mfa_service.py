@@ -49,6 +49,7 @@ def start_enrolment(db: Session, user: User) -> dict:
     secret = totp.generate_secret()
     user.mfa_secret = secret
     user.mfa_enabled = False
+    user.mfa_last_counter = None  # new secret → its own timeline (CR-SEC-5)
     db.commit()
     return {
         "secret": secret,
@@ -85,11 +86,21 @@ def disable(db: Session, user: User, code: str) -> bool:
 
 
 def verify_and_open(db: Session, user: User, code: str) -> str | None:
-    """Verify a code and mint a per-device session token (returns the raw token)."""
+    """Verify a code and mint a per-device session token (returns the raw token).
+
+    Enforces one-time use on this entry path (CR-SEC-5): a code whose timestep was
+    already consumed is refused, so a sniffed code can't be replayed to mint a
+    second session. (Step-up/disable operate on an already-valid session and may
+    reuse the current in-period code, which the user legitimately does in one go.)
+    """
     if not user.mfa_enabled or not user.mfa_secret:
         return None
-    if not totp.verify(user.mfa_secret, code):
+    counter = totp.matched_counter(user.mfa_secret, code)
+    if counter is None:
         return None
+    if user.mfa_last_counter is not None and counter <= user.mfa_last_counter:
+        return None  # replay — this timestep was already used to open a session
+    user.mfa_last_counter = counter
     # Tidy expired sessions for this user while we're here.
     db.execute(
         delete(UserSession).where(

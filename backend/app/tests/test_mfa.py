@@ -68,6 +68,18 @@ def test_verify_rejects_wrong_code(client):
     assert client.post("/api/auth/mfa/verify", json={"code": bad}).status_code == 400
 
 
+def test_verify_code_is_single_use(client):
+    """CR-SEC-5: a TOTP code can't be replayed on the entry path — the second
+    use of the same (still-in-period) code is refused, so a sniffed code can't
+    mint a second session."""
+    secret = _enable_mfa(client)
+    code = totp.current_code(secret)
+    assert client.post("/api/auth/mfa/verify", json={"code": code}).status_code == 200
+    # Same code again, within its validity window → rejected (already consumed).
+    replay = client.post("/api/auth/mfa/verify", json={"code": code})
+    assert replay.status_code == 400
+
+
 def test_disable_clears_mfa_and_sessions(client):
     secret = _enable_mfa(client)
     token = client.post("/api/auth/mfa/verify", json={"code": totp.current_code(secret)}).json()["token"]
@@ -157,6 +169,15 @@ def test_admin_can_require_mfa(client):
 def test_set_mfa_policy_invalid_400(client):
     bob_id, _bob = _member(client, "ha-bob", "Bob")
     assert client.patch(f"/api/users/{bob_id}", json={"mfa_policy": "bogus"}).status_code == 400
+
+
+def test_matched_counter_tracks_timestep():
+    secret = totp.generate_secret()
+    # The matched counter is floor(time / period); used for one-time-use checks.
+    assert totp.matched_counter(secret, totp.current_code(secret, now=90), now=90) == 3
+    # A code from the previous period still matches (skew) but at the older counter.
+    assert totp.matched_counter(secret, totp.current_code(secret, now=0), now=30) == 0
+    assert totp.matched_counter(secret, "000000", now=10_000) is None
 
 
 def test_totp_roundtrip_and_skew():

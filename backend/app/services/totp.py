@@ -35,6 +35,30 @@ def _hotp(secret_b32: str, counter: int, digits: int = DIGITS) -> str:
     return str(code % (10**digits)).zfill(digits)
 
 
+def matched_counter(
+    secret_b32: str,
+    code: str,
+    *,
+    period: int = PERIOD,
+    digits: int = DIGITS,
+    window: int = 1,
+    now: float | None = None,
+) -> int | None:
+    """The timestep counter that ``code`` matches within ±``window`` periods, or
+    ``None`` if it doesn't match. The counter lets callers enforce one-time use
+    (reject a code at a counter already consumed — CR-SEC-5)."""
+    if not secret_b32 or not code:
+        return None
+    code = code.strip().replace(" ", "")
+    if not code.isdigit():
+        return None
+    counter = int((now if now is not None else time.time()) // period)
+    for drift in range(-window, window + 1):
+        if hmac.compare_digest(_hotp(secret_b32, counter + drift, digits), code):
+            return counter + drift
+    return None
+
+
 def verify(
     secret_b32: str,
     code: str,
@@ -45,16 +69,7 @@ def verify(
     now: float | None = None,
 ) -> bool:
     """True if ``code`` matches the secret within ±``window`` periods (clock skew)."""
-    if not secret_b32 or not code:
-        return False
-    code = code.strip().replace(" ", "")
-    if not code.isdigit():
-        return False
-    counter = int((now if now is not None else time.time()) // period)
-    for drift in range(-window, window + 1):
-        if hmac.compare_digest(_hotp(secret_b32, counter + drift, digits), code):
-            return True
-    return False
+    return matched_counter(secret_b32, code, period=period, digits=digits, window=window, now=now) is not None
 
 
 def current_code(
