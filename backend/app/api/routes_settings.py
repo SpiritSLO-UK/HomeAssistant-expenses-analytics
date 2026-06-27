@@ -161,7 +161,10 @@ def _apply_ai_settings(db: Session, payload: SettingsUpdate) -> None:
         settings_service.set_value(db, settings_service.AI_PROVIDER, payload.ai_provider)
 
     if payload.ai_base_url is not None:
-        settings_service.set_value(db, settings_service.AI_BASE_URL, payload.ai_base_url.strip())
+        ai_url = payload.ai_base_url.strip()
+        if ai_url and not ai_url.startswith(("http://", "https://")):
+            raise HTTPException(status_code=400, detail="ai_base_url must start with http:// or https://")
+        settings_service.set_value(db, settings_service.AI_BASE_URL, ai_url)
 
     if payload.ai_model is not None:
         settings_service.set_value(db, settings_service.AI_MODEL, payload.ai_model.strip())

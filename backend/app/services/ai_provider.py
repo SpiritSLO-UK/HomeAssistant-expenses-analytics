@@ -81,11 +81,23 @@ class OpenAICompatibleProvider(AIProvider):
 
     name = "openai_compatible"
 
-    def __init__(self, base_url: str, model: str, api_key: str | None = None, timeout: float = 30.0):
+    def __init__(
+        self,
+        base_url: str,
+        model: str,
+        api_key: str | None = None,
+        timeout: float = 30.0,
+        require_public_host: bool = False,
+    ):
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.api_key = api_key
         self.timeout = timeout
+        # SSRF guard (CR-SEC-3): when set (cloud AI modes) the endpoint must
+        # resolve to a public host, so a private/internal URL can't be used to
+        # proxy internal requests or leak the API key. Off for local_llm, where
+        # the endpoint is legitimately on localhost/LAN.
+        self.require_public_host = require_public_host
 
     def available(self) -> bool:
         return bool(self.base_url and self.model)
@@ -94,12 +106,26 @@ class OpenAICompatibleProvider(AIProvider):
         """POST a chat-completions request and return the message content."""
         import httpx
 
+        from app.services import net_guard
+
+        # SSRF guard (CR-SEC-3): in cloud modes refuse a non-public endpoint
+        # before sending anything — so the bearer API key never leaves for an
+        # internal/attacker host and the server can't be used as an SSRF proxy.
+        if self.require_public_host and not net_guard.url_is_public(self.base_url):
+            raise AIError(
+                "AI endpoint must be a public host in a cloud privacy mode "
+                "(the configured URL resolves to a private/loopback/unresolvable "
+                "address) — refusing to send the request."
+            )
+
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         body = {"model": self.model, "messages": messages, "temperature": 0, "stream": False}
         try:
-            with httpx.Client(timeout=self.timeout) as client:
+            # follow_redirects stays False (httpx default, set explicitly) so a
+            # redirect can't bounce the request — and the API key — to another host.
+            with httpx.Client(timeout=self.timeout, follow_redirects=False) as client:
                 resp = client.post(f"{self.base_url}/chat/completions", headers=headers, json=body)
             resp.raise_for_status()
             return resp.json()["choices"][0]["message"]["content"]

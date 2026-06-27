@@ -51,7 +51,13 @@ def get_provider(db: Session) -> AIProvider:
     if not base or not model:
         return NoAIProvider()
     return OpenAICompatibleProvider(
-        base, model, api_key=env_settings.ai_api_key, timeout=env_settings.ai_timeout_seconds
+        base,
+        model,
+        api_key=env_settings.ai_api_key,
+        timeout=env_settings.ai_timeout_seconds,
+        # Cloud modes must talk to a public endpoint (SSRF / key-leak guard,
+        # CR-SEC-3); local_llm may legitimately be on localhost/LAN.
+        require_public_host=mode in CLOUD_MODES,
     )
 
 
