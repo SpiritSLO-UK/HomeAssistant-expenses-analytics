@@ -102,7 +102,7 @@ export default function FamilySetup() {
                   <tr key={u.id} style={{ opacity: u.status === "disabled" ? 0.55 : 1 }}>
                     <td>{u.display_name}{u.id === me.data?.id && <span className="muted"> (you)</span>}</td>
                     <td>
-                      <select value={u.role} disabled={u.id === me.data?.id} onChange={(e) => role.mutate({ id: u.id, role: e.target.value })}>
+                      <select value={u.role} disabled={u.id === me.data?.id || role.isPending} onChange={(e) => role.mutate({ id: u.id, role: e.target.value })}>
                         {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
                       </select>
                     </td>
@@ -141,6 +141,7 @@ export default function FamilySetup() {
                     <td>
                       <select
                         value={a.is_shared ? "shared" : "private"}
+                        disabled={account.isPending}
                         onChange={(e) => account.mutate({ id: a.id, patch: { is_shared: e.target.value === "shared" } })}
                       >
                         <option value="shared">Shared</option>
@@ -150,6 +151,7 @@ export default function FamilySetup() {
                     <td>
                       <select
                         value={a.owner_user_id ?? ""}
+                        disabled={account.isPending}
                         onChange={(e) => account.mutate({ id: a.id, patch: { owner_user_id: e.target.value ? Number(e.target.value) : null } })}
                       >
                         <option value="">— household —</option>
