@@ -220,7 +220,11 @@ async def _auth_guard(request: Request, call_next):
 
     with dbsession.SessionLocal() as db:
         user = auth_service.resolve_current_user(db, request)
-        db.commit()
+        # Only commit when the guard actually changed something (new user, a
+        # throttled last_seen refresh, or an external-id/display update). Most GETs
+        # leave the session clean and shouldn't pay for a write (CR-FEAT-4).
+        if db.new or db.dirty or db.deleted:
+            db.commit()
         request.state.user_id = user.id
         request.state.user_role = user.role
         request.state.user_status = user.status

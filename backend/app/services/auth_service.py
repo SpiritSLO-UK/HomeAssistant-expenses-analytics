@@ -130,7 +130,12 @@ def resolve_current_user(db: Session, request: Request) -> User:
         if display and user.display_name != display and ext_id != LOCAL_EXTERNAL_ID:
             user.display_name = display
 
-    user.last_seen_at = _now()
+    # Throttle last_seen_at: refresh at most once a minute, so a burst of GETs from
+    # one user doesn't dirty the row (and force a commit) on every request — the
+    # auth guard only commits when the session is actually dirty (CR-FEAT-4).
+    now = _now()
+    if user.last_seen_at is None or (now - user.last_seen_at).total_seconds() >= 60:
+        user.last_seen_at = now
     return user
 
 
