@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models import User
-from app.schemas.auth import CodeIn, EnableIn, SetupOut, VerifyOut
+from app.schemas.auth import CodeIn, EnableIn, SetupIn, SetupOut, VerifyOut
 from app.services import audit_service, auth_service, mfa_service
 from app.services.auth_service import get_current_user
 
@@ -46,9 +46,24 @@ def _bad_code(db: Session, user: User, detail: str) -> NoReturn:
     raise HTTPException(status_code=400, detail=detail)
 
 
-@router.post("/setup")
-def setup(db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(get_current_user)]) -> SetupOut:
-    data = mfa_service.start_enrolment(db, user)
+@router.post("/setup", responses={400: {"description": "Bad request"}})
+def setup(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+    payload: SetupIn | None = None,
+) -> SetupOut:
+    # Re-enrolling an already-enabled user requires the current code (SR-1): without
+    # it, start_enrolment refuses and we treat it as a failed code check (throttle +
+    # audit), so an authenticated-but-unverified caller can't reset the factor. A
+    # fresh enrolment (no live factor to protect) always succeeds and needs no code.
+    reenrol = user.mfa_enabled
+    if reenrol:
+        _ensure_not_locked(user)
+    data = mfa_service.start_enrolment(db, user, payload.code if payload else None)
+    if data is None:
+        _bad_code(db, user, "Enter your current authenticator code to change MFA.")
+    if reenrol:
+        mfa_service.clear_mfa_failures(user.id)
     return SetupOut(**data)
 
 

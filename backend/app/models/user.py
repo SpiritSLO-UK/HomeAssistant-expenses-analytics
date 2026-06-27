@@ -64,6 +64,11 @@ class User(Base, TimestampMixin):
     # Optional app-level MFA (TOTP, backlog #124). ``mfa_secret`` is the base32
     # seed; ``mfa_enabled`` flips true only after the user confirms a code.
     mfa_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # A not-yet-confirmed secret held during (re-)enrolment. The live ``mfa_secret``
+    # and ``mfa_enabled`` stay untouched until a code for this pending secret is
+    # confirmed via ``enable`` — so starting enrolment can never silently downgrade
+    # an already-active factor (SR-1).
+    mfa_pending_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
     mfa_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # What MFA gates for this user + whether an admin requires it (backlog #157).
     mfa_scope: Mapped[str] = mapped_column(String(16), nullable=False, default="app_admin")

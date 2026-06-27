@@ -112,6 +112,38 @@ def test_verify_code_is_single_use(client):
     assert replay.status_code == 400
 
 
+def test_reenrolment_requires_current_code_and_keeps_factor_live(client):
+    """SR-1: once MFA is enabled, hitting /setup can't silently downgrade it.
+
+    A re-enrolment with no code (or a wrong code) is refused, and the live factor
+    stays enabled. A re-enrolment with the *current* code issues a new pending
+    secret but leaves the old secret active until the new one is confirmed via
+    /enable — so the second factor is never off in between.
+    """
+    secret = _enable_mfa(client)
+
+    # No code → refused; MFA stays on.
+    assert client.post("/api/auth/mfa/setup").status_code == 400
+    assert client.get("/api/users/me").json()["mfa_enabled"] is True
+
+    # Wrong code → refused; MFA stays on.
+    bad = _wrong(totp.current_code(secret))
+    assert client.post("/api/auth/mfa/setup", json={"code": bad}).status_code == 400
+    assert client.get("/api/users/me").json()["mfa_enabled"] is True
+
+    # Correct current code → a new pending secret is issued, but the OLD secret is
+    # still live (MFA enabled, and a verify with the old secret still works).
+    new_secret = client.post("/api/auth/mfa/setup", json={"code": totp.current_code(secret)}).json()["secret"]
+    assert new_secret != secret
+    me = client.get("/api/users/me").json()
+    assert me["mfa_enabled"] is True
+    assert client.post("/api/auth/mfa/verify", json={"code": totp.current_code(secret)}).status_code == 200
+
+    # Confirming a code for the NEW secret promotes it; the old secret no longer works.
+    assert client.post("/api/auth/mfa/enable", json={"code": totp.current_code(new_secret)}).status_code == 200
+    assert client.post("/api/auth/mfa/verify", json={"code": totp.current_code(new_secret)}).status_code == 200
+
+
 def test_disable_clears_mfa_and_sessions(client):
     secret = _enable_mfa(client)
     token = client.post("/api/auth/mfa/verify", json={"code": totp.current_code(secret)}).json()["token"]

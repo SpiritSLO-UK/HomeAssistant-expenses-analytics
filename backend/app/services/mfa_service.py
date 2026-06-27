@@ -91,12 +91,19 @@ def reset_throttle() -> None:
 # --- Enrolment ---------------------------------------------------------------
 
 
-def start_enrolment(db: Session, user: User) -> dict:
-    """Generate (or regenerate, if not yet confirmed) a secret for ``user``."""
+def start_enrolment(db: Session, user: User, code: str | None = None) -> dict | None:
+    """Begin (or restart) enrolment: stash a *pending* secret without touching the
+    live factor. ``enable`` promotes it once the user confirms a code (SR-1).
+
+    For an already-enabled user this is a re-enrolment and requires a valid
+    *current* code first — otherwise an authenticated-but-unverified caller could
+    reset the second factor. Returns the new secret + otpauth URI, or ``None`` when
+    a required re-enrolment code is missing/invalid (the route maps that to 400).
+    """
+    if user.mfa_enabled and (not code or not user.mfa_secret or not totp.verify(user.mfa_secret, code)):
+        return None
     secret = totp.generate_secret()
-    user.mfa_secret = secret
-    user.mfa_enabled = False
-    user.mfa_last_counter = None  # new secret → its own timeline (CR-SEC-5)
+    user.mfa_pending_secret = secret
     db.commit()
     return {
         "secret": secret,
@@ -105,13 +112,18 @@ def start_enrolment(db: Session, user: User) -> dict:
 
 
 def enable(db: Session, user: User, code: str, scope: str | None = None) -> bool:
-    """Confirm enrolment: verify a code against the pending secret, then turn on.
-    ``scope`` (#157) sets what MFA gates — ``app`` (entry only) or ``app_admin``
-    (entry + admin step-up); an unknown/None value keeps ``app_admin``."""
-    if not user.mfa_secret or not totp.verify(user.mfa_secret, code):
+    """Confirm enrolment: verify a code against the *pending* secret, then promote
+    it to the live secret and turn MFA on. ``scope`` (#157) sets what MFA gates —
+    ``app`` (entry only) or ``app_admin`` (entry + admin step-up); an unknown/None
+    value keeps ``app_admin``."""
+    pending = user.mfa_pending_secret
+    if not pending or not totp.verify(pending, code):
         return False
+    user.mfa_secret = pending
+    user.mfa_pending_secret = None
     user.mfa_enabled = True
     user.mfa_scope = scope if scope in MFA_SCOPES else "app_admin"
+    user.mfa_last_counter = None  # new secret → its own timeline (CR-SEC-5)
     db.commit()
     return True
 
@@ -124,6 +136,7 @@ def disable(db: Session, user: User, code: str) -> bool:
         return False
     user.mfa_enabled = False
     user.mfa_secret = None
+    user.mfa_pending_secret = None
     db.execute(delete(UserSession).where(UserSession.user_id == user.id))
     db.commit()
     return True
