@@ -28,6 +28,15 @@ def test_search_by_amount(client):
     assert any(abs(float(t["amount"])) == pytest.approx(875.00) for t in txns)
 
 
+def test_search_by_amount_strips_currency_symbols(client):
+    client.post("/api/backup/demo")
+    # The same mortgage as above, but typed with a currency symbol — the symbol
+    # is stripped before parsing (SR-B4: not just £, also $/€).
+    for q in ("£875.00", "$875.00", "€875"):
+        txns = client.get("/api/search", params={"q": q}).json()["transactions"]
+        assert any(abs(float(t["amount"])) == pytest.approx(875.00) for t in txns), q
+
+
 def test_search_short_query_returns_empty(client):
     client.post("/api/backup/demo")
     r = client.get("/api/search", params={"q": "a"}).json()

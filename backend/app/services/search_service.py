@@ -18,9 +18,13 @@ from app.services.scope import account_scope_condition, archived_condition
 MIN_QUERY = 2
 
 
+# Currency symbols (and thousands commas) a user might type around an amount.
+_AMOUNT_STRIP = str.maketrans("", "", "£$€,")
+
+
 def _amount(q: str) -> Decimal | None:
     try:
-        return abs(Decimal(q.replace(",", "").replace("£", "").strip()))
+        return abs(Decimal(q.translate(_AMOUNT_STRIP).strip()))
     except (InvalidOperation, ValueError):
         return None
 
@@ -44,7 +48,11 @@ def search(db: Session, query: str, *, account_ids: set[int] | None, limit: int 
         ]
     amount = _amount(q)
     if amount is not None:
+        # Match either the original-currency amount (as seen on the statement) or
+        # the base-currency amount (as seen on the dashboard) — base_amount is NULL
+        # for needs-rate rows, which simply won't match.
         txn_match.append(func.abs(Transaction.amount) == amount)
+        txn_match.append(func.abs(Transaction.base_amount) == amount)
 
     txns = db.scalars(
         select(Transaction)
