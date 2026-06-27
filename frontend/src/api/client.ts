@@ -1796,7 +1796,13 @@ export async function exportConfig(): Promise<void> {
 
 export async function importConfig(
   file: File,
-): Promise<{ categories_added: number; vendors_added: number; settings_set: number }> {
+): Promise<{
+  categories_added: number;
+  vendors_added: number;
+  settings_set: number;
+  settings_skipped?: number;
+  skipped_setting_keys?: string[];
+}> {
   const form = new FormData();
   form.append("file", file);
   const res = await fetch(apiUrl("api/backup/config"), { method: "POST", body: form });

@@ -218,7 +218,7 @@ def import_config(db: Session, data: dict) -> dict:
     from app.services.household_service import get_or_create_default_household
 
     household = get_or_create_default_household(db)
-    cats_added = vendors_added = settings_set = 0
+    cats_added = vendors_added = 0
 
     existing_cats = {c.name: c for c in db.scalars(select(Category)).all()}
     for entry in data.get("categories", []):
@@ -265,14 +265,16 @@ def import_config(db: Session, data: dict) -> dict:
             )
         vendors_added += 1
 
-    existing_settings = {s.key: s for s in db.scalars(select(Setting)).all()}
-    for entry in data.get("settings", []):
-        row = existing_settings.get(entry["key"])
-        if row is None:
-            db.add(Setting(household_id=household.id, key=entry["key"], value=entry.get("value")))
-        else:
-            row.value = entry.get("value")
-        settings_set += 1
+    # Settings: only allowlisted, validated keys are applied (CR-SEC-2). An import
+    # must not be able to flip privacy_mode, set an internal AI/Paperless URL, or
+    # write arbitrary keys — see settings_service.IMPORTABLE_SETTINGS.
+    settings_result = settings_service.apply_imported_settings(db, data.get("settings", []))
 
     db.commit()
-    return {"categories_added": cats_added, "vendors_added": vendors_added, "settings_set": settings_set}
+    return {
+        "categories_added": cats_added,
+        "vendors_added": vendors_added,
+        "settings_set": settings_result["settings_set"],
+        "settings_skipped": settings_result["settings_skipped"],
+        "skipped_setting_keys": settings_result["skipped_setting_keys"],
+    }

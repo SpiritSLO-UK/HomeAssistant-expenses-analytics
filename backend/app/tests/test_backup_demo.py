@@ -276,7 +276,7 @@ def test_config_export_and_import(client):
         "vendors": [
             {"canonical_name": "Octopus Energy", "aliases": [{"alias": "OCTOPUS", "match_type": "contains"}]}
         ],
-        "settings": [{"key": "demo_setting", "value": "1"}],
+        "settings": [{"key": "fx_mode", "value": "frankfurter"}],  # allowlisted + valid
     }
     added = client.post(
         "/api/backup/config",
@@ -289,3 +289,36 @@ def test_config_export_and_import(client):
     names = {c["name"] for c in client.get("/api/categories").json()}
     assert "Holiday Fund" in names
     assert any(v["canonical_name"] == "Octopus Energy" for v in client.get("/api/vendors").json())
+    assert client.get("/api/settings").json()["fx_mode"] == "frankfurter"  # applied
+
+
+def test_config_import_only_allowlisted_settings(client):
+    """CR-SEC-2: a config import may set only allowlisted, validated settings — it
+    must never flip privacy_mode to a cloud mode, point AI/Paperless at an internal
+    host (SSRF), change the base currency, or write arbitrary/invalid keys (it
+    bypassed every PUT /api/settings validator before)."""
+    cfg = {
+        "settings": [
+            {"key": "fx_mode", "value": "frankfurter"},                      # allowlisted + valid → applied
+            {"key": "privacy_mode", "value": "cloud_auto"},                  # cloud flip → rejected
+            {"key": "ai_base_url", "value": "http://attacker.example/v1"},   # SSRF vector → rejected
+            {"key": "paperless_url", "value": "http://internal.example:8000"},  # SSRF vector → rejected
+            {"key": "base_currency", "value": "USD"},                        # recompute side-effect → rejected
+            {"key": "investment_price_source", "value": "not-a-source"},     # allowlisted but invalid → rejected
+            {"key": "totally_unknown_key", "value": "x"},                    # unknown → rejected
+        ],
+    }
+    res = client.post(
+        "/api/backup/config",
+        files={"file": ("config.json", json.dumps(cfg).encode(), "application/json")},
+    ).json()
+    assert res["settings_set"] == 1  # only fx_mode
+    assert {"privacy_mode", "ai_base_url", "paperless_url", "base_currency",
+            "investment_price_source", "totally_unknown_key"} <= set(res["skipped_setting_keys"])
+
+    s = client.get("/api/settings").json()
+    assert s["fx_mode"] == "frankfurter"        # the safe one was applied
+    assert s["privacy_mode"] == "strict_local"  # NOT flipped to cloud
+    assert s["ai_base_url"] == ""               # NOT pointed at the internal host
+    assert s["paperless_url"] == ""             # NOT set
+    assert s["base_currency"] == "GBP"          # unchanged

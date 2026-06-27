@@ -194,7 +194,11 @@ export default function Settings() {
   const importCfg = useMutation({
     mutationFn: (f: File) => importConfig(f),
     onSuccess: (r) =>
-      ok(`Imported config: ${r.categories_added} categories, ${r.vendors_added} vendors added.`),
+      ok(
+        `Imported config: ${r.categories_added} categories, ${r.vendors_added} vendors, ` +
+          `${r.settings_set} settings added.` +
+          (r.settings_skipped ? ` (${r.settings_skipped} setting(s) skipped — not importable.)` : ""),
+      ),
     onError: fail,
   });
 
