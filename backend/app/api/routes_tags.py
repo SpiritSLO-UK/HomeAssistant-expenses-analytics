@@ -22,18 +22,28 @@ def list_tags(db: Annotated[Session, Depends(get_db)]) -> list[Tag]:
 
 @router.post("", response_model=TagOut, status_code=201)
 def create_tag(payload: TagIn, db: Annotated[Session, Depends(get_db)]) -> Tag:
-    tag = tag_service.get_or_create(db, payload.name, payload.colour)
+    try:
+        tag = tag_service.get_or_create(db, payload.name, payload.colour)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     db.commit()
     db.refresh(tag)
     return tag
 
 
-@router.patch("/{tag_id}", response_model=TagOut, responses={404: {"description": "Not found"}})
+@router.patch(
+    "/{tag_id}",
+    response_model=TagOut,
+    responses={400: {"description": "Bad request"}, 404: {"description": "Not found"}},
+)
 def update_tag(tag_id: int, payload: TagUpdate, db: Annotated[Session, Depends(get_db)]) -> Tag:
     tag = db.get(Tag, tag_id)
     if tag is None:
         raise HTTPException(status_code=404, detail="Tag not found")
-    return tag_service.update_tag(db, tag, name=payload.name, colour=payload.colour)
+    try:
+        return tag_service.update_tag(db, tag, name=payload.name, colour=payload.colour)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.delete("/{tag_id}", status_code=204, responses={404: {"description": "Not found"}})
