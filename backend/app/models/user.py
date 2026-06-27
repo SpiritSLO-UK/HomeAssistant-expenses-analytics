@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin
@@ -68,6 +68,10 @@ class User(Base, TimestampMixin):
     # What MFA gates for this user + whether an admin requires it (backlog #157).
     mfa_scope: Mapped[str] = mapped_column(String(16), nullable=False, default="app_admin")
     mfa_policy: Mapped[str] = mapped_column(String(16), nullable=False, default="optional")
+    # Highest TOTP timestep already accepted for app-entry, for one-time-use /
+    # anti-replay (CR-SEC-5): a code at a counter <= this is a replay and refused.
+    # Reset on (re-)enrolment since a new secret has its own timeline.
+    mfa_last_counter: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     # Owner-set list of app pages this (non-admin) user may NOT reach (backlog #108),
     # JSON array of nav-page keys (e.g. ["budgets","investments"]). NULL/empty =
     # unrestricted. Enforced server-side by the auth guard + hidden in the sidebar.
