@@ -79,4 +79,11 @@ RUN chmod +x /run.sh
 
 EXPOSE 8099
 
+# Report container health from the unauthenticated /api/health endpoint so
+# orchestrators (Docker / compose / HA) can detect a wedged process (CR-FEAT-2).
+# Generous start period to cover first-run migrations on slow hardware (e.g. a Pi).
+# `docker compose` inherits this image HEALTHCHECK, so both run paths are covered.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+  CMD ["python", "-c", "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8099/api/health', timeout=4).status == 200 else 1)"]
+
 CMD ["/run.sh"]
