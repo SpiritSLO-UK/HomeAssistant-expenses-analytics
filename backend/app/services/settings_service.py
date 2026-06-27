@@ -150,14 +150,16 @@ def get_all(db: Session) -> dict[str, str]:
 
 
 def get(db: Session, key: str) -> str | None:
-    row = db.scalars(select(Setting).where(Setting.key == key)).first()
+    # one_or_none: ``key`` is unique (SR-2), so this is at most one row — and a
+    # surprise duplicate raises loudly rather than silently shadowing a value.
+    row = db.scalars(select(Setting).where(Setting.key == key)).one_or_none()
     if row is not None and row.value is not None:
         return row.value
     return _defaults().get(key)
 
 
 def set_value(db: Session, key: str, value: str) -> None:
-    row = db.scalars(select(Setting).where(Setting.key == key)).first()
+    row = db.scalars(select(Setting).where(Setting.key == key)).one_or_none()
     if row is None:
         db.add(Setting(key=key, value=value))
     else:
@@ -239,7 +241,7 @@ def apply_imported_settings(db: Session, entries: list[dict]) -> dict:
         if normalised is None:
             skipped.add(str(key))
             continue
-        row = db.scalars(select(Setting).where(Setting.key == key)).first()
+        row = db.scalars(select(Setting).where(Setting.key == key)).one_or_none()
         if row is None:
             db.add(Setting(key=key, value=normalised))
         else:
