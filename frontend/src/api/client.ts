@@ -47,7 +47,7 @@ export function setSessionToken(token: string | null): void {
   }
 }
 
-/** Error thrown by fetchJson on a non-2xx response, carrying the parsed body. */
+/** Error thrown by the fetch helpers on a non-2xx response, carrying the parsed body. */
 export class ApiError extends Error {
   status: number;
   body: Record<string, unknown> | null;
@@ -63,28 +63,67 @@ export function isStepUpError(e: unknown): boolean {
   return e instanceof ApiError && e.status === 403 && e.body?.detail === "step_up_required";
 }
 
-export async function fetchJson<T>(endpoint: string, init?: RequestInit): Promise<T> {
+// The MFA session header (#124), sent on EVERY authenticated request. Centralised
+// so multipart uploads + blob downloads carry it too: those used to use raw fetch
+// without it, so every import / receipt-upload / restore / export 403'd under MFA (FE-1).
+function sessionHeaders(): Record<string, string> {
   const token = getSessionToken();
+  return token ? { "X-HAFI-Session": token } : {};
+}
+
+// Turn a non-2xx Response into a typed ApiError carrying status + parsed body, so
+// callers (and isStepUpError) can branch on it instead of a plain Error (FE-2).
+async function toApiError(res: Response, endpoint: string): Promise<ApiError> {
+  let body: Record<string, unknown> | null = null;
+  try {
+    body = await res.json();
+  } catch {
+    /* non-JSON error body */
+  }
+  const detail = typeof body?.detail === "string" ? body.detail : `${res.status} ${res.statusText}`;
+  return new ApiError(res.status, body, `API ${endpoint} failed: ${detail}`);
+}
+
+export async function fetchJson<T>(endpoint: string, init?: RequestInit): Promise<T> {
   const res = await fetch(apiUrl(endpoint), {
+    ...init,
     headers: {
       "Content-Type": "application/json",
-      ...(token ? { "X-HAFI-Session": token } : {}),
+      ...sessionHeaders(),
       ...(init?.headers ?? {}),
     },
-    ...init,
   });
-  if (!res.ok) {
-    let body: Record<string, unknown> | null = null;
-    try {
-      body = await res.json();
-    } catch {
-      /* non-JSON error body */
-    }
-    const detail = typeof body?.detail === "string" ? body.detail : `${res.status} ${res.statusText}`;
-    throw new ApiError(res.status, body, `API ${endpoint} failed: ${detail}`);
-  }
+  if (!res.ok) throw await toApiError(res, endpoint);
   if (res.status === 204) return undefined as T; // no content (e.g. DELETE)
   return (await res.json()) as T;
+}
+
+// Multipart upload through the same auth + error path as fetchJson. Deliberately
+// sets NO Content-Type — the browser must set the multipart boundary itself. Fixes
+// FE-1 (uploads omitted the session header → 403 under MFA) + FE-2 (raw fetch threw
+// untyped errors, so isStepUpError could never fire). Defaults to POST.
+export async function fetchForm<T>(endpoint: string, form: FormData, init?: RequestInit): Promise<T> {
+  const res = await fetch(apiUrl(endpoint), {
+    method: "POST",
+    ...init,
+    body: form,
+    headers: { ...sessionHeaders(), ...(init?.headers ?? {}) },
+  });
+  if (!res.ok) throw await toApiError(res, endpoint);
+  if (res.status === 204) return undefined as T;
+  return (await res.json()) as T;
+}
+
+// Auth'd fetch that returns the raw Response — for blob/file downloads that can't be
+// parsed as JSON. Still carries the session header + throws ApiError on failure, so
+// backup/config downloads no longer 403 under MFA either (same FE-1 root cause).
+async function fetchRaw(endpoint: string, init?: RequestInit): Promise<Response> {
+  const res = await fetch(apiUrl(endpoint), {
+    ...init,
+    headers: { ...sessionHeaders(), ...(init?.headers ?? {}) },
+  });
+  if (!res.ok) throw await toApiError(res, endpoint);
+  return res;
 }
 
 export interface HealthResponse {
@@ -172,13 +211,7 @@ export async function uploadImport(
   form.append("file", file);
   if (parserId) form.append("parser_id", parserId);
   if (mapping) form.append("mapping", JSON.stringify(mapping));
-  // No Content-Type header: the browser sets the multipart boundary.
-  const res = await fetch(apiUrl("api/imports/upload"), { method: "POST", body: form });
-  if (!res.ok) {
-    const detail = await res.json().catch(() => ({}));
-    throw new Error(detail.detail || `Upload failed: ${res.status}`);
-  }
-  return (await res.json()) as UploadResponse;
+  return fetchForm<UploadResponse>("api/imports/upload", form);
 }
 
 // --- Custom CSV column mapping + saved import profiles ---
@@ -199,12 +232,7 @@ export interface InspectResponse {
 export async function inspectCsv(file: File): Promise<InspectResponse> {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch(apiUrl("api/imports/inspect"), { method: "POST", body: form });
-  if (!res.ok) {
-    const detail = await res.json().catch(() => ({}));
-    throw new Error(detail.detail || `Inspect failed: ${res.status}`);
-  }
-  return (await res.json()) as InspectResponse;
+  return fetchForm<InspectResponse>("api/imports/inspect", form);
 }
 
 export interface ImportProfile {
@@ -257,12 +285,7 @@ export async function aiExtractImport(file: File, accountId?: number): Promise<U
   const form = new FormData();
   form.append("file", file);
   if (accountId != null) form.append("account_id", String(accountId));
-  const res = await fetch(apiUrl("api/imports/ai-extract"), { method: "POST", body: form });
-  if (!res.ok) {
-    const detail = await res.json().catch(() => ({}));
-    throw new Error(detail.detail || `AI extract failed: ${res.status}`);
-  }
-  return (await res.json()) as UploadResponse;
+  return fetchForm<UploadResponse>("api/imports/ai-extract", form);
 }
 
 // --- Transactions (spec §24.4) ---
@@ -356,17 +379,8 @@ export function recategorise(onlyUncategorised = true): Promise<{ recategorised:
   });
 }
 
-export async function updateTransaction(id: number, patch: Record<string, unknown>): Promise<Transaction> {
-  const res = await fetch(apiUrl(`api/transactions/${id}`), {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(patch),
-  });
-  if (!res.ok) {
-    const detail = await res.json().catch(() => ({}));
-    throw new Error(detail.detail || `Update failed: ${res.status}`);
-  }
-  return res.json();
+export function updateTransaction(id: number, patch: Record<string, unknown>): Promise<Transaction> {
+  return fetchJson<Transaction>(`api/transactions/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
 }
 
 export function unarchiveTransaction(id: number): Promise<Transaction> {
@@ -444,17 +458,11 @@ export function getSplits(id: number): Promise<SplitsResponse> {
   return fetchJson<SplitsResponse>(`api/transactions/${id}/splits`);
 }
 
-export async function setSplits(id: number, splits: SplitInput[]): Promise<SplitsResponse> {
-  const res = await fetch(apiUrl(`api/transactions/${id}/split`), {
+export function setSplits(id: number, splits: SplitInput[]): Promise<SplitsResponse> {
+  return fetchJson<SplitsResponse>(`api/transactions/${id}/split`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ splits }),
   });
-  if (!res.ok) {
-    const detail = await res.json().catch(() => ({}));
-    throw new Error(detail.detail || `Split failed: ${res.status}`);
-  }
-  return res.json();
 }
 
 export function clearSplits(id: number): Promise<SplitsResponse> {
@@ -527,26 +535,16 @@ export function getBudgetTransactions(
   return fetchJson<BudgetTxn[]>(qs ? `${path}?${qs}` : path);
 }
 
-export async function createBudget(data: Record<string, unknown>): Promise<Budget> {
-  const res = await fetch(apiUrl("api/budgets"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) {
-    const detail = await res.json().catch(() => ({}));
-    throw new Error(detail.detail || `Create budget failed: ${res.status}`);
-  }
-  return res.json();
+export function createBudget(data: Record<string, unknown>): Promise<Budget> {
+  return fetchJson<Budget>("api/budgets", { method: "POST", body: JSON.stringify(data) });
 }
 
 export function updateBudget(id: number, data: Record<string, unknown>): Promise<Budget> {
   return fetchJson<Budget>(`api/budgets/${id}`, { method: "PATCH", body: JSON.stringify(data) });
 }
 
-export async function deleteBudget(id: number): Promise<void> {
-  const res = await fetch(apiUrl(`api/budgets/${id}`), { method: "DELETE" });
-  if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
+export function deleteBudget(id: number): Promise<void> {
+  return fetchJson<void>(`api/budgets/${id}`, { method: "DELETE" });
 }
 
 // --- MQTT / Home Assistant sensors (spec §27) ---
@@ -565,13 +563,8 @@ export function getMqttStatus(): Promise<MqttStatus> {
   return fetchJson<MqttStatus>("api/mqtt/status");
 }
 
-export async function publishMqtt(): Promise<{ enabled: boolean; published: number; sensors?: number }> {
-  const res = await fetch(apiUrl("api/mqtt/publish"), { method: "POST" });
-  if (!res.ok) {
-    const detail = await res.json().catch(() => ({}));
-    throw new Error(detail.detail || `Publish failed: ${res.status}`);
-  }
-  return res.json();
+export function publishMqtt(): Promise<{ enabled: boolean; published: number; sensors?: number }> {
+  return fetchJson("api/mqtt/publish", { method: "POST" });
 }
 
 // Choose what gets published to MQTT (per-group + per-sensor).
@@ -653,26 +646,16 @@ export function getProjectSummary(id: number): Promise<ProjectSummary> {
   return fetchJson<ProjectSummary>(`api/projects/${id}/summary`);
 }
 
-export async function createProject(data: Record<string, unknown>): Promise<Project> {
-  const res = await fetch(apiUrl("api/projects"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) {
-    const detail = await res.json().catch(() => ({}));
-    throw new Error(detail.detail || `Create project failed: ${res.status}`);
-  }
-  return res.json();
+export function createProject(data: Record<string, unknown>): Promise<Project> {
+  return fetchJson<Project>("api/projects", { method: "POST", body: JSON.stringify(data) });
 }
 
 export function updateProject(id: number, data: Record<string, unknown>): Promise<Project> {
   return fetchJson<Project>(`api/projects/${id}`, { method: "PATCH", body: JSON.stringify(data) });
 }
 
-export async function deleteProject(id: number): Promise<void> {
-  const res = await fetch(apiUrl(`api/projects/${id}`), { method: "DELETE" });
-  if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
+export function deleteProject(id: number): Promise<void> {
+  return fetchJson<void>(`api/projects/${id}`, { method: "DELETE" });
 }
 
 export function getDashboardProjects(memberId?: number): Promise<ProjectTotal[]> {
@@ -731,9 +714,8 @@ export function updateSubscription(id: number, patch: Record<string, unknown>): 
   return fetchJson<Subscription>(`api/subscriptions/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
 }
 
-export async function deleteSubscription(id: number): Promise<void> {
-  const res = await fetch(apiUrl(`api/subscriptions/${id}`), { method: "DELETE" });
-  if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
+export function deleteSubscription(id: number): Promise<void> {
+  return fetchJson<void>(`api/subscriptions/${id}`, { method: "DELETE" });
 }
 
 export function getDashboardSubscriptions(memberId?: number): Promise<DashboardSubscriptions> {
@@ -827,12 +809,7 @@ export function listReceipts(): Promise<Receipt[]> {
 export async function uploadReceipt(file: File): Promise<Receipt> {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch(apiUrl("api/receipts/upload"), { method: "POST", body: form });
-  if (!res.ok) {
-    const detail = await res.json().catch(() => ({}));
-    throw new Error(detail.detail || `Upload failed: ${res.status}`);
-  }
-  return res.json();
+  return fetchForm<Receipt>("api/receipts/upload", form);
 }
 
 export function updateReceipt(id: number, fields: Record<string, unknown>): Promise<Receipt> {
@@ -856,9 +833,8 @@ export function confirmReceiptMatch(id: number, transactionId: number): Promise<
   });
 }
 
-export async function deleteReceipt(id: number): Promise<void> {
-  const res = await fetch(apiUrl(`api/receipts/${id}`), { method: "DELETE" });
-  if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
+export function deleteReceipt(id: number): Promise<void> {
+  return fetchJson<void>(`api/receipts/${id}`, { method: "DELETE" });
 }
 
 export interface CreateTransactionResult {
@@ -891,12 +867,7 @@ export function listTransactionReceipts(transactionId: number): Promise<Receipt[
 export async function attachTransactionReceipt(transactionId: number, file: File): Promise<Receipt> {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch(apiUrl(`api/transactions/${transactionId}/receipts`), { method: "POST", body: form });
-  if (!res.ok) {
-    const detail = await res.json().catch(() => ({}));
-    throw new Error(detail.detail || `Attach failed: ${res.status}`);
-  }
-  return res.json();
+  return fetchForm<Receipt>(`api/transactions/${transactionId}/receipts`, form);
 }
 
 // --- Review queue (spec §23) ---
@@ -981,13 +952,8 @@ export interface AIRequestRow {
   completed_at: string | null;
 }
 
-async function aiPost(path: string): Promise<ClassifyResult> {
-  const res = await fetch(apiUrl(path), { method: "POST" });
-  if (!res.ok) {
-    const detail = await res.json().catch(() => ({}));
-    throw new Error(detail.detail || `AI request failed: ${res.status}`);
-  }
-  return res.json();
+function aiPost(path: string): Promise<ClassifyResult> {
+  return fetchJson<ClassifyResult>(path, { method: "POST" });
 }
 
 export function classifyWithAi(transactionId: number): Promise<ClassifyResult> {
@@ -999,9 +965,8 @@ export function approveAiRequest(requestId: number): Promise<ClassifyResult> {
   return aiPost(`api/ai/requests/${encodeURIComponent(requestId)}/approve`);
 }
 
-export async function rejectAiRequest(requestId: number): Promise<void> {
-  const res = await fetch(apiUrl(`api/ai/requests/${encodeURIComponent(requestId)}/reject`), { method: "POST" });
-  if (!res.ok) throw new Error(`Reject failed: ${res.status}`);
+export function rejectAiRequest(requestId: number): Promise<void> {
+  return fetchJson<void>(`api/ai/requests/${encodeURIComponent(requestId)}/reject`, { method: "POST" });
 }
 
 export function listAiRequests(opts?: { includeArchived?: boolean }): Promise<AIRequestRow[]> {
@@ -1028,13 +993,8 @@ export interface BatchResult {
 
 export type BatchScope = "uncategorised" | "recheck";
 
-export async function classifyBatch(limit = 25, scope: BatchScope = "uncategorised"): Promise<BatchResult> {
-  const res = await fetch(apiUrl(`api/ai/classify-batch?limit=${limit}&scope=${scope}`), { method: "POST" });
-  if (!res.ok) {
-    const detail = await res.json().catch(() => ({}));
-    throw new Error(detail.detail || `Batch AI failed: ${res.status}`);
-  }
-  return res.json();
+export function classifyBatch(limit = 25, scope: BatchScope = "uncategorised"): Promise<BatchResult> {
+  return fetchJson<BatchResult>(`api/ai/classify-batch?limit=${limit}&scope=${scope}`, { method: "POST" });
 }
 
 export function applyAiCategories(
@@ -1112,9 +1072,8 @@ export function updateCategory(id: number, data: Partial<Category>): Promise<Cat
   return fetchJson<Category>(`api/categories/${id}`, { method: "PATCH", body: JSON.stringify(data) });
 }
 
-export async function deleteCategory(id: number): Promise<void> {
-  const res = await fetch(apiUrl(`api/categories/${id}`), { method: "DELETE" });
-  if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
+export function deleteCategory(id: number): Promise<void> {
+  return fetchJson<void>(`api/categories/${id}`, { method: "DELETE" });
 }
 
 export function mergeCategory(id: number, targetId: number): Promise<Category> {
@@ -1183,9 +1142,8 @@ export function setVendorDefaultCategory(id: number, categoryId: number | null):
   });
 }
 
-export async function deleteVendor(id: number): Promise<void> {
-  const res = await fetch(apiUrl(`api/vendors/${id}`), { method: "DELETE" });
-  if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
+export function deleteVendor(id: number): Promise<void> {
+  return fetchJson<void>(`api/vendors/${id}`, { method: "DELETE" });
 }
 
 // --- Dashboard (spec §24.12) ---
@@ -1807,27 +1765,20 @@ function triggerDownload(blob: Blob, filename: string) {
 }
 
 export async function downloadDatabaseBackup(): Promise<void> {
-  const res = await fetch(apiUrl("api/backup/database"));
-  if (!res.ok) throw new Error(`Backup failed: ${res.status}`);
+  const res = await fetchRaw("api/backup/database");
   triggerDownload(await res.blob(), "ha-finance-backup.db");
 }
 
 export async function restoreDatabase(file: File): Promise<{ status: string }> {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch(apiUrl("api/backup/restore"), { method: "POST", body: form });
-  if (!res.ok) {
-    const detail = await res.json().catch(() => ({}));
-    throw new Error(detail.detail || `Restore failed: ${res.status}`);
-  }
-  return res.json();
+  return fetchForm<{ status: string }>("api/backup/restore", form);
 }
 
 export async function downloadEncryptedBackup(passphrase: string): Promise<void> {
   const form = new FormData();
   form.append("passphrase", passphrase);
-  const res = await fetch(apiUrl("api/backup/database/encrypted"), { method: "POST", body: form });
-  if (!res.ok) throw new Error(`Encrypted backup failed: ${res.status}`);
+  const res = await fetchRaw("api/backup/database/encrypted", { method: "POST", body: form });
   triggerDownload(await res.blob(), "ha-finance-backup.db.enc");
 }
 
@@ -1835,17 +1786,11 @@ export async function restoreEncryptedDatabase(file: File, passphrase: string): 
   const form = new FormData();
   form.append("file", file);
   form.append("passphrase", passphrase);
-  const res = await fetch(apiUrl("api/backup/restore/encrypted"), { method: "POST", body: form });
-  if (!res.ok) {
-    const detail = await res.json().catch(() => ({}));
-    throw new Error(detail.detail || `Restore failed: ${res.status}`);
-  }
-  return res.json();
+  return fetchForm<{ status: string }>("api/backup/restore/encrypted", form);
 }
 
 export async function exportConfig(): Promise<void> {
-  const res = await fetch(apiUrl("api/backup/config"));
-  if (!res.ok) throw new Error(`Export failed: ${res.status}`);
+  const res = await fetchRaw("api/backup/config");
   const data = await res.json();
   triggerDownload(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }), "ha-finance-config.json");
 }
@@ -1861,12 +1806,7 @@ export async function importConfig(
 }> {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch(apiUrl("api/backup/config"), { method: "POST", body: form });
-  if (!res.ok) {
-    const detail = await res.json().catch(() => ({}));
-    throw new Error(detail.detail || `Import failed: ${res.status}`);
-  }
-  return res.json();
+  return fetchForm("api/backup/config", form);
 }
 
 // --- Settings + FX (spec §24.2; backlog #29) ---
@@ -2048,9 +1988,8 @@ export function updateRule(id: number, data: Record<string, unknown>): Promise<R
   return fetchJson<Rule>(`api/rules/${id}`, { method: "PATCH", body: JSON.stringify(data) });
 }
 
-export async function deleteRule(id: number): Promise<void> {
-  const res = await fetch(apiUrl(`api/rules/${id}`), { method: "DELETE" });
-  if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
+export function deleteRule(id: number): Promise<void> {
+  return fetchJson<void>(`api/rules/${id}`, { method: "DELETE" });
 }
 
 export interface RuleTestResult {
@@ -2527,20 +2466,7 @@ export function runRetention(): Promise<RetentionRunResult> {
 // request; the response is turned into a blob and downloaded client-side.
 
 async function downloadCsv(endpoint: string, fallbackName: string): Promise<void> {
-  const token = getSessionToken();
-  const res = await fetch(apiUrl(endpoint), {
-    headers: { ...(token ? { "X-HAFI-Session": token } : {}) },
-  });
-  if (!res.ok) {
-    let body: Record<string, unknown> | null = null;
-    try {
-      body = await res.json();
-    } catch {
-      /* non-JSON error body */
-    }
-    const detail = typeof body?.detail === "string" ? body.detail : `${res.status} ${res.statusText}`;
-    throw new ApiError(res.status, body, `Export failed: ${detail}`);
-  }
+  const res = await fetchRaw(endpoint);
   const blob = await res.blob();
   const disposition = res.headers.get("Content-Disposition") ?? "";
   const match = /filename="?([^"]+)"?/.exec(disposition);
