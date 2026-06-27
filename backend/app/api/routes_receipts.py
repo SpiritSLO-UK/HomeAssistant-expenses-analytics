@@ -88,6 +88,14 @@ def get_receipt(receipt_id: int, db: Annotated[Session, Depends(get_db)]) -> dic
     return receipt_service.to_dict(db, _get(db, receipt_id))
 
 
+# Media types we're willing to render INLINE in the browser / in-app viewer.
+# Deliberately raster-image + PDF only: image/svg+xml is excluded because an SVG can
+# carry <script>, and serving it inline would run in our origin (CR-SEC-14 / L2).
+_INLINE_SAFE_TYPES = {
+    "image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp", "application/pdf",
+}
+
+
 @router.get("/{receipt_id}/file", responses={404: {"description": "Not found"}})
 def get_receipt_file(receipt_id: int, db: Annotated[Session, Depends(get_db)]) -> FileResponse:
     """Serve the stored original (image/PDF) so an attached receipt can be viewed.
@@ -96,15 +104,20 @@ def get_receipt_file(receipt_id: int, db: Annotated[Session, Depends(get_db)]) -
     path = Path(receipt.storage_path) if receipt.storage_path else None
     if path is None or not path.exists():
         raise HTTPException(status_code=404, detail="Receipt original is not available")
-    media_type = mimetypes.guess_type(receipt.source_filename or path.name)[0] or "application/octet-stream"
-    # Serve inline (not as an attachment) so the image/PDF previews in the in-app
-    # viewer / browser tab instead of forcing a download. `filename` is kept as the
-    # suggested name if the user does choose to save it.
+    guessed = mimetypes.guess_type(receipt.source_filename or path.name)[0]
+    # Preview a known-safe image/PDF inline; serve anything else (SVG, an unexpected
+    # or unknown type) as an opaque download so it can't execute in our origin.
+    # X-Content-Type-Options: nosniff stops the browser MIME-sniffing past the type.
+    if guessed in _INLINE_SAFE_TYPES:
+        media_type, disposition = guessed, "inline"
+    else:
+        media_type, disposition = "application/octet-stream", "attachment"
     return FileResponse(
         path,
         media_type=media_type,
         filename=receipt.source_filename or path.name,
-        content_disposition_type="inline",
+        content_disposition_type=disposition,
+        headers={"X-Content-Type-Options": "nosniff"},
     )
 
 
