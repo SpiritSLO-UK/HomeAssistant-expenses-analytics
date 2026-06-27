@@ -132,3 +132,21 @@ def test_all_mutating_api_calls_are_audited(client):
     assert all(e["details"]["method"] != "GET" for e in log)
     # The label shows up in the action-filter list.
     assert "api_call" in client.get("/api/logs/actions").json()
+
+
+def test_recent_action_prefix_escapes_like_metacharacters(db):
+    # A prefix containing LIKE wildcards must filter literally, not as a pattern
+    # (SR-E8). "api" must not match via the "_" wildcard etc.
+    from app.services import audit_service
+
+    audit_service.record(db, action="user_update")
+    audit_service.record(db, action="user%update")
+    audit_service.record(db, action="userXupdate")
+    db.commit()
+
+    # "user_" literally matches only "user_update" (not "userXupdate" via _ wildcard).
+    underscore = {e.action for e in audit_service.recent(db, action_prefix="user_")}
+    assert underscore == {"user_update"}
+    # "user%" literally matches only "user%update" (not the others via % wildcard).
+    percent = {e.action for e in audit_service.recent(db, action_prefix="user%")}
+    assert percent == {"user%update"}

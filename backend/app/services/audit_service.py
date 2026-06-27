@@ -115,7 +115,10 @@ def recent(
     unless ``include_archived`` is set."""
     stmt = select(AuditLog).order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
     if action_prefix:
-        stmt = stmt.where(AuditLog.action.like(f"{action_prefix}%"))
+        # Escape LIKE metacharacters so an action prefix containing % or _ filters
+        # literally rather than as a wildcard (SR-E8).
+        escaped = action_prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        stmt = stmt.where(AuditLog.action.like(f"{escaped}%", escape="\\"))
     if not include_archived:
         stmt = stmt.where(AuditLog.archived_at.is_(None))
     return list(db.scalars(stmt.limit(limit)).all())
