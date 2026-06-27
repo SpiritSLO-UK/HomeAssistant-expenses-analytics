@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api import uploads
 from app.db.session import get_db
 from app.models import Statement, User
 from app.parsers import available_parsers
@@ -49,7 +50,7 @@ async def upload(
     account_id: Annotated[int | None, Form()] = None,
     mapping: Annotated[str | None, Form()] = None,
 ) -> dict:
-    content = await file.read()
+    content = await uploads.read_capped(file, uploads.IMPORT_MAX, label="Statement")
     if not content:
         raise HTTPException(status_code=400, detail="Empty file")
     mapping_dict = None
@@ -106,7 +107,7 @@ async def ai_extract(
     the OCR parser couldn't read, and stage them as a normal import to review +
     confirm. The frontend warns before calling this (the image is sent to the AI,
     and an image can't be redacted)."""
-    content = await file.read()
+    content = await uploads.read_capped(file, uploads.AI_IMAGE_MAX, label="Image")
     if not content:
         raise HTTPException(status_code=400, detail="Empty file")
     mime = file.content_type or "image/jpeg"
