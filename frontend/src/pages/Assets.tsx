@@ -11,6 +11,7 @@ import {
   type AssetLog,
 } from "../api/client";
 import { money } from "../lib/money";
+import { isAmount, roundStr } from "../lib/num";
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -215,15 +216,17 @@ function ReadingForm({ assetId, onAdded, onError }: Readonly<{ assetId: number; 
   const [unit, setUnit] = useState("kWh");
   const [cost, setCost] = useState("");
 
+  // Reading must be numeric; cost optional but numeric if given.
+  const valid = isAmount(reading) && (cost === "" || isAmount(cost));
   const add = useMutation({
     mutationFn: () =>
       addAssetLog(assetId, {
         log_date: date,
         kind: "reading",
         meter,
-        reading,
+        reading: roundStr(Number(reading), 3),
         unit: unit || undefined,
-        cost: cost || undefined,
+        cost: cost ? roundStr(Number(cost)) : undefined,
       }),
     onSuccess: () => { setReading(""); setCost(""); onAdded(); },
     onError,
@@ -233,7 +236,7 @@ function ReadingForm({ assetId, onAdded, onError }: Readonly<{ assetId: number; 
     <form
       className="form-row"
       style={{ flexWrap: "wrap", gap: 6, marginBottom: 8 }}
-      onSubmit={(e) => { e.preventDefault(); if (reading) add.mutate(); }}
+      onSubmit={(e) => { e.preventDefault(); if (valid) add.mutate(); }}
     >
       <strong style={{ alignSelf: "center", fontSize: "0.85rem" }}>📊 Reading:</strong>
       <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
@@ -246,10 +249,10 @@ function ReadingForm({ assetId, onAdded, onError }: Readonly<{ assetId: number; 
         <option value="water">Water</option>
         <option value="other">Other</option>
       </select>
-      <input placeholder="Reading" value={reading} style={{ width: 110 }} onChange={(e) => setReading(e.target.value)} />
+      <input inputMode="decimal" placeholder="Reading" value={reading} style={{ width: 110 }} onChange={(e) => setReading(e.target.value)} />
       <input placeholder="Unit" value={unit} style={{ width: 70 }} onChange={(e) => setUnit(e.target.value)} />
-      <input placeholder="Cost" value={cost} style={{ width: 80 }} onChange={(e) => setCost(e.target.value)} />
-      <button className="btn btn--sm" type="submit" disabled={!reading || add.isPending}>
+      <input inputMode="decimal" placeholder="Cost" value={cost} style={{ width: 80 }} onChange={(e) => setCost(e.target.value)} />
+      <button className="btn btn--sm" type="submit" disabled={!valid || add.isPending}>
         {add.isPending ? "…" : "Add"}
       </button>
     </form>
@@ -266,15 +269,18 @@ function RefuelForm({ assetId, unit, onAdded, onError }: Readonly<{
   const [cost, setCost] = useState("");
   const [fullTank, setFullTank] = useState(true);
 
+  // Require valid non-negative numbers; cost is optional but must be numeric if given.
+  const valid = isAmount(odometer) && isAmount(fuel) && (cost === "" || isAmount(cost));
   const add = useMutation({
     mutationFn: () =>
       addAssetLog(assetId, {
         log_date: date,
         kind: "refuel",
-        odometer,
+        odometer: roundStr(Number(odometer), 3),
         // Stored canonically in litres; convert from gallons for imperial cars.
-        litres: imperial ? String(Number(fuel) * IMP_GALLON) : fuel,
-        cost: cost || undefined,
+        // Rounded so we never post float noise like "22.730450000000002".
+        litres: roundStr(imperial ? Number(fuel) * IMP_GALLON : Number(fuel), 3),
+        cost: cost ? roundStr(Number(cost)) : undefined,
         is_full_tank: fullTank,
       }),
     onSuccess: () => { setOdometer(""); setFuel(""); setCost(""); onAdded(); },
@@ -285,17 +291,17 @@ function RefuelForm({ assetId, unit, onAdded, onError }: Readonly<{
     <form
       className="form-row"
       style={{ flexWrap: "wrap", gap: 6, marginBottom: 8 }}
-      onSubmit={(e) => { e.preventDefault(); if (odometer && fuel) add.mutate(); }}
+      onSubmit={(e) => { e.preventDefault(); if (valid) add.mutate(); }}
     >
       <strong style={{ alignSelf: "center", fontSize: "0.85rem" }}>⛽ Refuel:</strong>
       <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-      <input placeholder={`Odometer (${unit})`} value={odometer} style={{ width: 120 }} onChange={(e) => setOdometer(e.target.value)} />
-      <input placeholder={imperial ? "Gallons" : "Litres"} value={fuel} style={{ width: 80 }} onChange={(e) => setFuel(e.target.value)} />
-      <input placeholder="Cost" value={cost} style={{ width: 80 }} onChange={(e) => setCost(e.target.value)} />
+      <input inputMode="decimal" placeholder={`Odometer (${unit})`} value={odometer} style={{ width: 120 }} onChange={(e) => setOdometer(e.target.value)} />
+      <input inputMode="decimal" placeholder={imperial ? "Gallons" : "Litres"} value={fuel} style={{ width: 80 }} onChange={(e) => setFuel(e.target.value)} />
+      <input inputMode="decimal" placeholder="Cost" value={cost} style={{ width: 80 }} onChange={(e) => setCost(e.target.value)} />
       <label className="muted" style={{ fontSize: "0.82rem", display: "flex", alignItems: "center", gap: 4 }}>
         <input type="checkbox" checked={fullTank} onChange={(e) => setFullTank(e.target.checked)} /> full tank
       </label>
-      <button className="btn btn--sm" type="submit" disabled={!odometer || !fuel || add.isPending}>
+      <button className="btn btn--sm" type="submit" disabled={!valid || add.isPending}>
         {add.isPending ? "…" : "Add"}
       </button>
     </form>
@@ -308,8 +314,10 @@ function EntryForm({ assetId, onAdded, onError }: Readonly<{ assetId: number; on
   const [cost, setCost] = useState("");
   const [note, setNote] = useState("");
 
+  // A note-only entry is allowed; if a cost is given it must be a valid amount.
+  const valid = cost === "" ? note.trim() !== "" : isAmount(cost);
   const add = useMutation({
-    mutationFn: () => addAssetLog(assetId, { log_date: date, kind, cost: cost || undefined, note: note || undefined }),
+    mutationFn: () => addAssetLog(assetId, { log_date: date, kind, cost: cost ? roundStr(Number(cost)) : undefined, note: note || undefined }),
     onSuccess: () => { setCost(""); setNote(""); onAdded(); },
     onError,
   });
@@ -318,7 +326,7 @@ function EntryForm({ assetId, onAdded, onError }: Readonly<{ assetId: number; on
     <form
       className="form-row"
       style={{ flexWrap: "wrap", gap: 6, marginBottom: 8 }}
-      onSubmit={(e) => { e.preventDefault(); if (cost || note) add.mutate(); }}
+      onSubmit={(e) => { e.preventDefault(); if (valid) add.mutate(); }}
     >
       <strong style={{ alignSelf: "center", fontSize: "0.85rem" }}>🔧 Entry:</strong>
       <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
@@ -327,9 +335,9 @@ function EntryForm({ assetId, onAdded, onError }: Readonly<{ assetId: number; on
         <option value="service">Service</option>
         <option value="note">Note</option>
       </select>
-      <input placeholder="Cost" value={cost} style={{ width: 80 }} onChange={(e) => setCost(e.target.value)} />
+      <input inputMode="decimal" placeholder="Cost" value={cost} style={{ width: 80 }} onChange={(e) => setCost(e.target.value)} />
       <input placeholder="Note" value={note} style={{ flex: 1, minWidth: 140 }} onChange={(e) => setNote(e.target.value)} />
-      <button className="btn btn--sm btn--ghost" type="submit" disabled={(!cost && !note) || add.isPending}>
+      <button className="btn btn--sm btn--ghost" type="submit" disabled={!valid || add.isPending}>
         {add.isPending ? "…" : "Add"}
       </button>
     </form>
