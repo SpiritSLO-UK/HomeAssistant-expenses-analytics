@@ -142,7 +142,12 @@ def list_transactions(
     if conditions:
         base = base.where(*conditions)
 
-    total = db.scalar(select(func.count()).select_from(base.subquery())) or 0
+    # Count with the same filters directly, rather than wrapping the full row-select
+    # in a subquery (which re-applied the predicates over every selected column) — CR-FEAT-6.
+    count_stmt = select(func.count(Transaction.id))
+    if conditions:
+        count_stmt = count_stmt.where(*conditions)
+    total = db.scalar(count_stmt) or 0
     rows = db.scalars(
         base.options(selectinload(Transaction.tags))  # eager-load tags (no N+1)
         .order_by(Transaction.transaction_date.desc(), Transaction.id.desc())
