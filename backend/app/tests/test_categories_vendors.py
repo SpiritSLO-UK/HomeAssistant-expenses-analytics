@@ -173,6 +173,27 @@ def test_categorise_text_prefers_longest_keyword(db, monkeypatch):
     assert category_service.categorise_text(db, "THE LOCAL CAFE")[0] == generic.id
 
 
+def test_learn_vendor_category_reuses_existing_vendor(db):
+    """A manual category correction reuses a vendor with the same canonical name instead
+    of creating a duplicate when no alias happened to match the description."""
+    from sqlalchemy import func, select
+
+    from app.models import Vendor
+
+    cat = category_service.create_category(db, {"name": "Groceries"})
+    existing = vendor_service.create_vendor(db, {"canonical_name": "Tesco"})
+
+    # A description matching no alias, but whose merchant_raw resolves to the same canonical.
+    vendor = vendor_service.learn_vendor_category(db, "QWERTY SHOP 99", "Tesco", cat.id)
+
+    assert vendor.id == existing.id  # reused, not duplicated
+    assert vendor.default_category_id == cat.id
+    count = db.scalar(
+        select(func.count()).select_from(Vendor).where(func.lower(Vendor.canonical_name) == "tesco")
+    )
+    assert count == 1
+
+
 def test_category_merge_validation(client):
     """Merging into itself is a 400; an unknown source or target is a 404."""
     a = client.post("/api/categories", json={"name": "X"}).json()["id"]
