@@ -30,6 +30,7 @@ _CENTS = Decimal("0.01")
 # --- rate cache ---
 
 def get_cached_rate(db: Session, on: date, base: str, quote: str) -> Decimal | None:
+    base, quote = base.upper(), quote.upper()
     row = db.scalars(
         select(FxRate).where(
             FxRate.rate_date == on, FxRate.base == base, FxRate.quote == quote
@@ -39,6 +40,10 @@ def get_cached_rate(db: Session, on: date, base: str, quote: str) -> Decimal | N
 
 
 def upsert_rate(db: Session, on: date, base: str, quote: str, rate: Decimal, source: str) -> FxRate:
+    # Normalise the currency codes so every caller (parser, online fetch, manual)
+    # keys the same row — otherwise a lowercase code makes a duplicate that
+    # set_manual_rate's uppercase lookup would miss (SR-A6).
+    base, quote = base.upper(), quote.upper()
     row = db.scalars(
         select(FxRate).where(
             FxRate.rate_date == on, FxRate.base == base, FxRate.quote == quote
@@ -54,13 +59,14 @@ def upsert_rate(db: Session, on: date, base: str, quote: str, rate: Decimal, sou
 
 
 def set_manual_rate(db: Session, on: date, base: str, quote: str, rate: Decimal) -> FxRate:
+    base, quote = base.upper(), quote.upper()
     row = db.scalars(
         select(FxRate).where(
             FxRate.rate_date == on, FxRate.base == base, FxRate.quote == quote
         )
     ).first()
     if row is None:
-        row = FxRate(rate_date=on, base=base.upper(), quote=quote.upper(), rate=rate, source="manual")
+        row = FxRate(rate_date=on, base=base, quote=quote, rate=rate, source="manual")
         db.add(row)
     else:
         row.rate = rate  # an explicit manual entry may correct a value
