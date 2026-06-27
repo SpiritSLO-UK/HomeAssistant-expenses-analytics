@@ -45,6 +45,19 @@ def test_import_library_idempotent(db):
     assert len(category_service.list_categories(db)) == 23
 
 
+def test_update_category_ignores_unknown_fields_and_syncs_path(db):
+    # A rename keeps the mirrored path in sync; managed columns can't be set via
+    # a blind setattr (SR-A2).
+    cat = category_service.create_category(db, {"name": "Coffee"})
+    assert cat.path == "Coffee" and cat.is_system is False
+    updated = category_service.update_category(
+        db, cat.id, {"name": "Cafe", "is_system": True, "household_id": 999}
+    )
+    assert updated.name == "Cafe"
+    assert updated.path == "Cafe"        # path mirrored the old name → synced
+    assert updated.is_system is False    # protected field unchanged
+
+
 # --- vendor recommendation: create + link from a transaction (suggest & confirm) ---
 
 def test_create_vendor_from_transaction_derives_signature(client, samples_dir):

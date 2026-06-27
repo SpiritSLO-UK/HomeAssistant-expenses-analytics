@@ -192,13 +192,23 @@ def set_all_privacy(db: Session, level: str) -> int:
     return dml_rowcount(result) or 0
 
 
+# Fields a PATCH may change. Excludes managed columns (id/household_id/is_system/
+# path) so a blind setattr can't overwrite them (SR-A2).
+_UPDATABLE_FIELDS = frozenset(
+    {"name", "description", "icon", "colour", "is_budgetable", "parent_id", "privacy_sensitivity"}
+)
+
+
 def update_category(db: Session, category_id: int, data: dict) -> Category | None:
     category = db.get(Category, category_id)
     if category is None:
         return None
+    old_name = category.name
     for field, value in data.items():
-        setattr(category, field, value)
-    if "name" in data and category.path == category.name:
+        if field in _UPDATABLE_FIELDS:
+            setattr(category, field, value)
+    # Keep the path in sync only when it mirrored the (old) name.
+    if "name" in data and category.path == old_name:
         category.path = data["name"]
     db.commit()
     db.refresh(category)
