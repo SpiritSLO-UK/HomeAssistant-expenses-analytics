@@ -25,6 +25,13 @@ logger = get_logger("app.ocr")
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff", ".gif"}
 PDF_SUFFIXES = {".pdf"}
 
+# DoS caps for PDF text extraction (CR-SEC-9): a receipt/invoice is a handful of
+# pages, so read at most this many and clamp the extracted text so a "text bomb"
+# PDF can't blow up memory. (Image decompression bombs are caught by Pillow's
+# default Image.MAX_IMAGE_PIXELS guard, which we don't disable.)
+_MAX_PDF_PAGES = 200
+_MAX_TEXT_CHARS = 5_000_000
+
 
 class OcrUnavailable(RuntimeError):
     """No OCR engine is available for this file type on this install."""
@@ -134,7 +141,11 @@ def _pdf_text(path: Path) -> tuple[str, float | None]:
     import pypdf
 
     reader = pypdf.PdfReader(str(path))
-    text = "\n".join((page.extract_text() or "") for page in reader.pages).strip()
+    # Best-effort: read at most _MAX_PDF_PAGES (a receipt is a few pages) and clamp
+    # the text — DoS guard (CR-SEC-9).
+    text = "\n".join((page.extract_text() or "") for page in reader.pages[:_MAX_PDF_PAGES]).strip()
+    if len(text) > _MAX_TEXT_CHARS:
+        text = text[:_MAX_TEXT_CHARS]
     if len(text) > 20:
         return text, 0.95  # embedded (digital) text is exact
     # Scanned / image-only PDF returns ~nothing → fall back to rasterise + OCR.
