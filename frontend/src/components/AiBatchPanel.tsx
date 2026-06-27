@@ -54,7 +54,10 @@ export default function AiBatchPanel({ base, onClose }: Readonly<{ base: string;
       return next;
     });
 
-  function applyThreshold(t: number) {
+  function applyThreshold(raw: number) {
+    // Clamp to [0,1] (and guard NaN from a cleared field) — the min/max attrs
+    // don't constrain manually typed values in every browser.
+    const t = Number.isFinite(raw) ? Math.min(1, Math.max(0, raw)) : 0;
     setThreshold(t);
     if (suggestions) {
       setPicked(new Set(suggestions.filter((s) => (s.confidence ?? 0) >= t).map((s) => s.transaction_id)));
