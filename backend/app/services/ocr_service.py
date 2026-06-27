@@ -15,6 +15,7 @@ The image→text step lives here; turning text into fields is ``receipt_parser``
 
 from __future__ import annotations
 
+import re
 from functools import lru_cache
 from pathlib import Path
 
@@ -31,6 +32,12 @@ PDF_SUFFIXES = {".pdf"}
 # default Image.MAX_IMAGE_PIXELS guard, which we don't disable.)
 _MAX_PDF_PAGES = 200
 _MAX_TEXT_CHARS = 5_000_000
+
+# A monetary amount (e.g. 12.34 or 1,234.56). Embedded PDF text is only trusted as a
+# real digital statement when it contains one — otherwise a stray text layer on an
+# image-only PDF (a page number / watermark) would block the rasterise+OCR fallback.
+# The trailing (?!\.\d) rejects a dotted-date fragment like 01.05.2026 ("01.05" → no).
+_MONEY_RE = re.compile(r"\d[\d,]*\.\d{2}\b(?!\.\d)")
 
 
 class OcrUnavailable(RuntimeError):
@@ -146,9 +153,13 @@ def _pdf_text(path: Path) -> tuple[str, float | None]:
     text = "\n".join((page.extract_text() or "") for page in reader.pages[:_MAX_PDF_PAGES]).strip()
     if len(text) > _MAX_TEXT_CHARS:
         text = text[:_MAX_TEXT_CHARS]
-    if len(text) > 20:
+    # Trust embedded text as a real digital statement only if it actually contains a
+    # monetary amount. A tiny text layer on an image-only PDF (a page number, header or
+    # watermark) previously returned 0.95 confidence and blocked the OCR fallback — an
+    # empty-but-high-confidence parse. No amount ⇒ fall through to rasterise + OCR.
+    if _MONEY_RE.search(text):
         return text, 0.95  # embedded (digital) text is exact
-    # Scanned / image-only PDF returns ~nothing → fall back to rasterise + OCR.
+    # Scanned / image-only PDF (or a no-amount text scrap) → rasterise + OCR.
     ocr_text = ocr_pdf_pages(path)
     if ocr_text:
         return ocr_text, 0.5  # OCR'd — unverified, flagged for review downstream
