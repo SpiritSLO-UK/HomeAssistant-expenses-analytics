@@ -12,6 +12,7 @@ import {
   type Account,
   type User,
 } from "../api/client";
+import { useServerState } from "../lib/useServerState";
 
 function badge(a: Account): { label: string; colour: string } {
   if (a.owner_user_id === null) return { label: "Shared · household", colour: "#3aa55a" };
@@ -133,7 +134,7 @@ function AccountRow({ account, isAdmin, meId, users, accounts }: Readonly<{
   const canEdit = isAdmin || account.owner_user_id === meId;
   const b = badge(account);
   const [renaming, setRenaming] = useState(false);
-  const [newName, setNewName] = useState(account.name);
+  const [newName, setNewName] = useServerState(account.name);
 
   const patch = useMutation({
     mutationFn: (p: { name?: string; is_shared?: boolean; owner_user_id?: number | null }) =>
