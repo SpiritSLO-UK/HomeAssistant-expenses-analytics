@@ -52,7 +52,8 @@ export default function Travel() {
     onSuccess: (r) => {
       setErr(null);
       setMsg(`Created project “${r.name}” and assigned the trip's transactions to it.`);
-      qc.invalidateQueries({ queryKey: ["projects"] });
+      qc.invalidateQueries({ queryKey: ["projects"] });            // Transactions project filter
+      qc.invalidateQueries({ queryKey: ["dashboard-projects"] });  // Projects page + dashboard card
       qc.invalidateQueries({ queryKey: ["transactions"] });
       qc.invalidateQueries({ queryKey: ["travel-trips"] });
     },

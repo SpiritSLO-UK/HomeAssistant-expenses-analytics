@@ -203,7 +203,10 @@ export default function Transactions() {
   const setCategory = useMutation({
     mutationFn: (v: { id: number; categoryId: number | null }) =>
       categoriseTransaction(v.id, v.categoryId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["transactions"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["transactions"] });
+      qc.invalidateQueries({ queryKey: ["dash-categories"] }); // dashboard breakdown depends on categories
+    },
   });
 
   // "Make rule": keep this category AND create a rule so similar future
@@ -215,13 +218,17 @@ export default function Transactions() {
       setRuleMsg("✓ Rule saved — similar transactions will auto-categorise from now on (see the Rules page).");
       qc.invalidateQueries({ queryKey: ["transactions"] });
       qc.invalidateQueries({ queryKey: ["rules"] });
+      qc.invalidateQueries({ queryKey: ["dash-categories"] });
     },
     onError: (e) => setRuleMsg(`Couldn't save rule: ${e instanceof Error ? e.message : e}`),
   });
 
   const recat = useMutation({
     mutationFn: () => recategorise(true),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["transactions"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["transactions"] });
+      qc.invalidateQueries({ queryKey: ["dash-categories"] });
+    },
   });
 
   const unarchive = useMutation({
