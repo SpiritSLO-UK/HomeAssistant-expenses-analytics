@@ -333,6 +333,17 @@ def _persist_parsed_transaction(
     return 1, categorised, needs_rate
 
 
+def _statement_config(statement: Statement) -> dict:
+    """Parse the JSON config stashed in ``statement.notes`` (parser id, stored
+    path, staged AI rows). Tolerates non-JSON / legacy free-text notes → {} so
+    confirm/delete never crash on a malformed value (SR-A1)."""
+    try:
+        config = json.loads(statement.notes or "{}")
+    except (ValueError, TypeError):
+        return {}
+    return config if isinstance(config, dict) else {}
+
+
 def confirm_import(db: Session, import_id: int) -> dict:
     """Persist the transactions for a pending statement, skipping exact
     duplicates (spec §14.5)."""
@@ -342,7 +353,7 @@ def confirm_import(db: Session, import_id: int) -> dict:
     if statement.status == "imported":
         raise ImportFailed(f"Import {import_id} was already confirmed")
 
-    config = json.loads(statement.notes or "{}")
+    config = _statement_config(statement)
     ai_rows = config.get("ai_rows")
     if ai_rows is not None:
         # AI image-extract: rebuild the rows staged at upload — the stored image
@@ -454,7 +465,7 @@ def delete_import(db: Session, import_id: int) -> None:
     statement = db.get(Statement, import_id)
     if statement is None:
         raise ImportFailed(f"Import {import_id} not found")
-    config = json.loads(statement.notes or "{}")
+    config = _statement_config(statement)
     stored = config.get("stored_path")
     if stored:
         Path(stored).unlink(missing_ok=True)
