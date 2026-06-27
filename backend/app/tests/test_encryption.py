@@ -40,6 +40,13 @@ def test_empty_passphrase_rejected():
         crypto_service.encrypt(b"data", "")
 
 
+def test_truncated_blob_rejected():
+    # A blob with the magic header but too short to hold salt/nonce/tag must fail
+    # clearly, not slice into empty fields (SR-E4).
+    with pytest.raises(DecryptError, match="truncated or corrupted"):
+        crypto_service.decrypt(crypto_service.MAGIC + b"\x00\x01\x02", "pw")
+
+
 # --- API roundtrip ---
 
 def test_encrypted_backup_download_and_restore(client):
