@@ -5,8 +5,10 @@
 # ---- Stage 1: build frontend ----
 FROM node:22-slim AS frontend
 WORKDIR /build/frontend
-COPY frontend/package.json frontend/package-lock.json* ./
-RUN npm install
+# Copy the lockfile explicitly (no glob) so a missing lock fails the build loudly,
+# and use `npm ci` for a clean, reproducible install of the locked, CI-verified tree.
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
 COPY frontend/ ./
 RUN npm run build
 
