@@ -11,25 +11,52 @@ import re
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
-# A money amount, optionally currency-prefixed: £12.34, 1,234.56, 12.34
-_AMOUNT = r"(?:[£$€]\s?)?(\d{1,3}(?:,\d{3})+(?:\.\d{2})?|\d+\.\d{2})"
+# A money amount, optionally currency-prefixed. Captures thousands-grouped numbers
+# (1,234 / 1,234.56 / 1.234,56) and plain decimals using EITHER separator with 1–2
+# decimal places (12.34, 12,50, 45.5) — so EU comma-decimals and short decimals are
+# no longer dropped. Bare integers are deliberately not matched (avoids treating
+# quantities / years as money). _to_decimal works out which separator is the point.
+_AMOUNT = r"(?:[£$€]\s?)?(\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{1,2})?|\d+[.,]\d{1,2})"
 _AMOUNT_RE = re.compile(_AMOUNT)
 _CURRENCY_SYMBOL = {"£": "GBP", "$": "USD", "€": "EUR"}
 
-# Date patterns -> strptime formats.
+# Date patterns -> the strptime formats to try in order. The numeric d/m/y forms are
+# ambiguous, so we try day-first (the app's default) then month-first — a US receipt's
+# 09/15/2024 then parses as 2024-09-15 instead of being silently dropped.
 _DATE_PATTERNS = [
-    (re.compile(r"\b(\d{4}-\d{2}-\d{2})\b"), "%Y-%m-%d"),
-    (re.compile(r"\b(\d{2}/\d{2}/\d{4})\b"), "%d/%m/%Y"),
-    (re.compile(r"\b(\d{2}-\d{2}-\d{4})\b"), "%d-%m-%Y"),
-    (re.compile(r"\b(\d{2}\.\d{2}\.\d{4})\b"), "%d.%m.%Y"),
-    (re.compile(r"\b(\d{2}/\d{2}/\d{2})\b"), "%d/%m/%y"),
-    (re.compile(r"\b(\d{1,2} [A-Za-z]{3,9} \d{4})\b"), "%d %b %Y"),
+    (re.compile(r"\b(\d{4}-\d{2}-\d{2})\b"), ["%Y-%m-%d"]),
+    (re.compile(r"\b(\d{1,2}/\d{1,2}/\d{4})\b"), ["%d/%m/%Y", "%m/%d/%Y"]),
+    (re.compile(r"\b(\d{1,2}-\d{1,2}-\d{4})\b"), ["%d-%m-%Y", "%m-%d-%Y"]),
+    (re.compile(r"\b(\d{1,2}\.\d{1,2}\.\d{4})\b"), ["%d.%m.%Y", "%m.%d.%Y"]),
+    (re.compile(r"\b(\d{1,2}/\d{1,2}/\d{2})\b"), ["%d/%m/%y", "%m/%d/%y"]),
+    (re.compile(r"\b(\d{1,2} [A-Za-z]{3,9} \d{4})\b"), ["%d %b %Y"]),
 ]
 
 
+def _normalise_single_sep(raw: str, sep: str) -> str:
+    """Normalise a number that uses only ``sep``: multiple separators, or a single one
+    with exactly 3 trailing digits, are thousands grouping (1,234 / 1.234 / 1,234,567
+    → drop them); 1–2 trailing digits is the decimal point (12,50 → 12.50, 45.5)."""
+    parts = raw.split(sep)
+    if len(parts) > 2 or len(parts[-1]) == 3:
+        return raw.replace(sep, "")
+    return raw.replace(sep, ".")
+
+
 def _to_decimal(raw: str) -> Decimal | None:
+    raw = raw.strip()
+    if "." in raw and "," in raw:
+        # Both present: the LAST separator is the decimal point, the other is thousands.
+        dec = "." if raw.rfind(".") > raw.rfind(",") else ","
+        norm = raw.replace("," if dec == "." else ".", "").replace(dec, ".")
+    elif "," in raw:
+        norm = _normalise_single_sep(raw, ",")
+    elif "." in raw:
+        norm = _normalise_single_sep(raw, ".")
+    else:
+        norm = raw
     try:
-        return Decimal(raw.replace(",", "")).quantize(Decimal("0.01"))
+        return Decimal(norm).quantize(Decimal("0.01"))
     except (InvalidOperation, ValueError):
         return None
 
@@ -52,15 +79,16 @@ def detect_currency(text: str) -> str | None:
 
 
 def detect_date(text: str) -> date | None:
-    for pattern, fmt in _DATE_PATTERNS:
+    for pattern, fmts in _DATE_PATTERNS:
         for m in pattern.finditer(text):
-            try:
-                parsed = datetime.strptime(m.group(1), fmt).date()
-            except ValueError:
-                continue
-            # Reject implausible dates (e.g. OCR noise far in the future/past).
-            if 2000 <= parsed.year <= 2100:
-                return parsed
+            for fmt in fmts:  # day-first, then month-first for ambiguous numeric dates
+                try:
+                    parsed = datetime.strptime(m.group(1), fmt).date()
+                except ValueError:
+                    continue
+                # Reject implausible dates (e.g. OCR noise far in the future/past).
+                if 2000 <= parsed.year <= 2100:
+                    return parsed
     return None
 
 

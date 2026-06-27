@@ -43,6 +43,23 @@ def test_parser_total_falls_back_to_largest_amount():
     assert str(f["total_amount"]) == "9.99"
 
 
+def test_parser_handles_eu_and_short_decimal_totals():
+    """EU comma-decimals and 1-decimal / grouped totals are no longer dropped."""
+    assert receipt_parser.detect_total("TOTAL 12,50") == Decimal("12.50")  # EU comma decimal
+    assert receipt_parser.detect_total("TOTAL 45.5") == Decimal("45.50")   # single decimal place
+    assert receipt_parser.detect_total("TOTAL 1.234,56") == Decimal("1234.56")  # EU grouped
+    assert receipt_parser.detect_total("TOTAL 1,234.56") == Decimal("1234.56")  # UK/US grouped
+    assert receipt_parser.detect_total("TOTAL €1.299,00") == Decimal("1299.00")
+
+
+def test_parser_handles_us_and_ambiguous_dates():
+    """US month-first dates parse via fallback; day-first is preferred when both work."""
+    assert receipt_parser.detect_date("Date: 09/15/2024").isoformat() == "2024-09-15"  # US, day-first invalid
+    assert receipt_parser.detect_date("Date: 15/09/2024").isoformat() == "2024-09-15"  # day-first
+    assert receipt_parser.detect_date("Date: 05/06/2024").isoformat() == "2024-06-05"  # ambiguous → day-first
+    assert receipt_parser.detect_date("Date: 12.31.2024").isoformat() == "2024-12-31"  # US, dotted
+
+
 # Real card-payment slip a user uploaded — OCR collapsed it to one long line of
 # terminal/transaction boilerplate. The merchant heuristic must NOT dump that into
 # the merchant field (backlog: receipt-OCR merchant gibberish, 2026-06-06).
