@@ -32,6 +32,12 @@ _DATE_FORMATS = (
 )
 
 
+# A real statement is at most a few thousand rows; cap to bound memory + import
+# work against a maliciously huge CSV (DoS — CR-SEC-9). The upload byte cap
+# (CR-SEC-8) already bounds the file size; this bounds the parsed row count.
+MAX_CSV_ROWS = 100_000
+
+
 class ParseError(ValueError):
     """Raised when a row cannot be parsed into a StandardTransaction."""
 
@@ -135,6 +141,8 @@ def read_csv_rows(content: bytes) -> tuple[list[str], list[dict[str, str]]]:
         row = {(k or "").strip(): (v or "").strip() for k, v in raw.items()}
         if any(row.values()):
             rows.append(row)
+            if len(rows) > MAX_CSV_ROWS:
+                raise ParseError(f"CSV has too many rows (limit {MAX_CSV_ROWS:,}).")
     return headers, rows
 
 

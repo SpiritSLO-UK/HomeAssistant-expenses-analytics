@@ -25,6 +25,12 @@ from app.parsers.base import (
     parse_date,
 )
 
+# DoS caps (CR-SEC-9): a real statement is tens of pages; refuse an absurd page
+# count, and clamp the extracted text so a single-page "text bomb" can't blow up
+# memory. The OCR-rasterise fallback caps pages separately (ocr_service).
+_MAX_PDF_PAGES = 200
+_MAX_TEXT_CHARS = 5_000_000
+
 # A date at the start of a line (the common statement layout).
 _DATE_AT_START = re.compile(
     r"^\s*(\d{2}[/.-]\d{2}[/.-]\d{2,4}|\d{4}-\d{2}-\d{2}|\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})\b"
@@ -119,9 +125,15 @@ class GenericPdfParser(BaseStatementParser):
             ) from exc
         try:
             reader = pypdf.PdfReader(io.BytesIO(content))
+            if len(reader.pages) > _MAX_PDF_PAGES:
+                raise ParseError(f"PDF has too many pages ({len(reader.pages)}; limit {_MAX_PDF_PAGES}).")
             text = "\n".join((page.extract_text() or "") for page in reader.pages)
+        except ParseError:
+            raise
         except Exception as exc:
             raise ParseError(f"Could not read the PDF: {exc}") from exc
+        if len(text) > _MAX_TEXT_CHARS:
+            text = text[:_MAX_TEXT_CHARS]
         if text.strip():
             return text
         # No embedded text → a scanned / image-only PDF. Rasterise + OCR it.
