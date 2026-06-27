@@ -204,7 +204,7 @@ export default function Rules() {
                       <input type="number" style={{ width: 60 }} defaultValue={r.priority}
                         onBlur={(e) => { const p = Number(e.target.value); if (p !== r.priority) setPrio.mutate({ id: r.id, priority: p }); }} />
                     </td>
-                    <td><button className="btn btn--ghost" onClick={() => remove.mutate(r.id)}>Delete</button></td>
+                    <td><button className="btn btn--ghost" onClick={() => { if (globalThis.confirm(`Delete the rule “${r.name}”? This can't be undone (existing transactions keep their current categories).`)) remove.mutate(r.id); }}>Delete</button></td>
                   </tr>
                 ))}
               </tbody>
