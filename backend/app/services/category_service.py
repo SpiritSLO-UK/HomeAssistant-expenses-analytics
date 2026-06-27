@@ -243,10 +243,17 @@ def merge_category(db: Session, source_id: int, target_id: int) -> Category | No
         update(Category).where(Category.parent_id == source_id)
         .values(parent_id=target_id).execution_options(**opts)
     )
-    # Rules that set this category hold the id as a string in ``action_value``.
+    # Rules that *set* this category hold the id as a string in ``action_value``.
     db.execute(
         update(Rule).where(Rule.action_type == "set_category", Rule.action_value == str(source_id))
         .values(action_value=str(target_id)).execution_options(**opts)
+    )
+    # ...and rules that *match on* this category (category_equals) hold the id in
+    # ``condition_value``; re-point them too, or they'd silently stop matching once
+    # the source category is deleted (SR-4).
+    db.execute(
+        update(Rule).where(Rule.condition_type == "category_equals", Rule.condition_value == str(source_id))
+        .values(condition_value=str(target_id)).execution_options(**opts)
     )
 
     db.delete(source)
