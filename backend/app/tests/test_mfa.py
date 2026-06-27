@@ -68,6 +68,38 @@ def test_verify_rejects_wrong_code(client):
     assert client.post("/api/auth/mfa/verify", json={"code": bad}).status_code == 400
 
 
+def test_mfa_verify_locks_out_after_repeated_failures(client):
+    """CR-SEC-6: repeated bad codes throttle the endpoint — after the limit, even
+    a correct code is refused (429) until the lockout window passes. A sniffed/
+    brute-forced TOTP can't be hammered."""
+    from app.services import mfa_service
+
+    secret = _enable_mfa(client)
+    bad = _wrong(totp.current_code(secret))
+    for _ in range(mfa_service.MFA_MAX_FAILED):
+        assert client.post("/api/auth/mfa/verify", json={"code": bad}).status_code == 400
+    # Locked out now — a correct code is still refused with 429 + Retry-After.
+    blocked = client.post("/api/auth/mfa/verify", json={"code": totp.current_code(secret)})
+    assert blocked.status_code == 429
+    assert "Retry-After" in blocked.headers
+
+
+def test_mfa_success_clears_failure_streak(client):
+    """A successful verification resets the throttle, so earlier near-misses don't
+    accumulate toward a lockout."""
+    from app.services import mfa_service
+
+    secret = _enable_mfa(client)
+    bad = _wrong(totp.current_code(secret))
+    for _ in range(mfa_service.MFA_MAX_FAILED - 1):  # one short of lockout
+        assert client.post("/api/auth/mfa/verify", json={"code": bad}).status_code == 400
+    # A good code succeeds and clears the streak...
+    assert client.post("/api/auth/mfa/verify", json={"code": totp.current_code(secret)}).status_code == 200
+    # ...so the same number of misses again still doesn't lock out.
+    for _ in range(mfa_service.MFA_MAX_FAILED - 1):
+        assert client.post("/api/auth/mfa/verify", json={"code": bad}).status_code == 400
+
+
 def test_verify_code_is_single_use(client):
     """CR-SEC-5: a TOTP code can't be replayed on the entry path — the second
     use of the same (still-in-period) code is refused, so a sniffed code can't
