@@ -286,6 +286,10 @@ export default function Settings() {
         </div>
       </div>
 
+      {/* Backup/restore + config import-export are owner-only (server enforces
+          require_owner; restoring an arbitrary DB or importing config = takeover). */}
+      {me.data?.is_admin && (
+      <>
       <div className="card">
         <h2 className="card__title">Backup &amp; restore</h2>
         <p className="muted">Download a full copy of your database, or restore one. Your data never leaves your device.</p>
@@ -372,6 +376,8 @@ export default function Settings() {
           <button className="btn btn--ghost" onClick={() => configInput.current?.click()}>⬆ Import config…</button>
         </div>
       </div>
+      </>
+      )}
 
       <div className="card">
         <h2 className="card__title">About &amp; source</h2>
