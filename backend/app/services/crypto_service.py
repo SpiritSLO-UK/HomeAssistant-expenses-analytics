@@ -25,6 +25,10 @@ MAGIC = b"HAFIENC1"
 _SALT_LEN = 16
 _NONCE_LEN = 12
 _KEY_LEN = 32
+_GCM_TAG_LEN = 16
+# Shortest possible valid container: header + salt + nonce + the GCM tag (an
+# empty plaintext still carries a 16-byte tag).
+_MIN_LEN = len(MAGIC) + _SALT_LEN + _NONCE_LEN + _GCM_TAG_LEN
 # scrypt cost parameters (interactive-strength; tune up if needed).
 _SCRYPT_N = 2**15
 _SCRYPT_R = 8
@@ -57,6 +61,10 @@ def is_encrypted(blob: bytes) -> bool:
 def decrypt(blob: bytes, passphrase: str) -> bytes:
     if not is_encrypted(blob):
         raise DecryptError("Not an encrypted HA Finance backup.")
+    if len(blob) < _MIN_LEN:
+        # Explicit guard so a truncated file fails clearly instead of slicing into
+        # empty salt/nonce and surfacing as a misleading "wrong passphrase" (SR-E4).
+        raise DecryptError("Encrypted backup is truncated or corrupted.")
     header = len(MAGIC)
     salt = blob[header : header + _SALT_LEN]
     nonce = blob[header + _SALT_LEN : header + _SALT_LEN + _NONCE_LEN]
