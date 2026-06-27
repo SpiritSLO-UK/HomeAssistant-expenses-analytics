@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 
+from app.api import uploads
 from app.db.session import get_db
 from app.models import User
 from app.services import audit_service, backup_service, crypto_service, demo_service
@@ -43,7 +44,7 @@ async def restore_database(
     """Restore the database from an uploaded snapshot (destructive). Owner-only —
     an attacker-crafted but valid DB could otherwise grant itself owner access.
     The POST is recorded by the api_call audit middleware (into the restored DB)."""
-    content = await file.read()
+    content = await uploads.read_capped(file, uploads.RESTORE_MAX, label="Backup")
     # Release this request's DB connection (opened by the owner-gate) before the
     # service swaps the file out — a live handle blocks deleting the WAL on Windows.
     db.close()
@@ -87,7 +88,7 @@ async def restore_encrypted_database(
 ) -> dict:
     """Decrypt an encrypted backup with the passphrase and restore it. Owner-only
     (destructive); recorded by the api_call audit middleware."""
-    content = await file.read()
+    content = await uploads.read_capped(file, uploads.RESTORE_MAX, label="Backup")
     try:
         plaintext = crypto_service.decrypt(content, passphrase)
     except DecryptError as exc:
@@ -119,7 +120,7 @@ async def import_config(
 ) -> dict:
     """Import a config export (settings + library). Owner-only — it writes
     arbitrary settings, so a non-owner must never reach it."""
-    content = await file.read()
+    content = await uploads.read_capped(file, uploads.CONFIG_MAX, label="Config")
     try:
         data = json.loads(content)
     except json.JSONDecodeError as exc:
