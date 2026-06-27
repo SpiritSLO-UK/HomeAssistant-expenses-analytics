@@ -131,7 +131,8 @@ def _split_matches(split, budget: Budget) -> bool:
 def _status(spent: Decimal, amount: Decimal, threshold: int | None) -> str:
     if amount <= 0:
         return "ok"
-    if spent > amount:
+    if spent >= amount:
+        # Spending the full budget (100%) is over the limit, not merely "warn".
         return "over"
     pct = (spent / amount) * 100
     if threshold is not None and pct >= threshold:

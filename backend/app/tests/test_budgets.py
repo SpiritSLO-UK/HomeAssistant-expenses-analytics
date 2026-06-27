@@ -96,6 +96,16 @@ def test_budget_warn_and_over(client):
     assert s["status"] == "over"
     assert s["remaining"] == "-50.00"
 
+    # Spending exactly 100% of the budget is "over", not merely "warn" (SR-B6).
+    exact = client.post(
+        "/api/budgets",
+        json={"name": "Exact", "amount": "250.00", "category_id": groceries, "alert_threshold_percent": 80},
+    ).json()["id"]
+    es = _summary(client, "2026-05-01")[exact]
+    assert es["percent"] == pytest.approx(100.0)
+    assert es["status"] == "over"
+    assert es["remaining"] == "0.00"
+
 
 def test_total_budget_counts_all_spend(client):
     _import(client, _curve([("2026-05-02", "TESCO STORES", "-120.00"),
