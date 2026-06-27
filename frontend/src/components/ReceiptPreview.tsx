@@ -49,7 +49,7 @@ export default function ReceiptPreview({
         </div>
         <div style={{ marginTop: 10 }}>
           {isPdf ? (
-            <iframe src={url} title="Receipt PDF" style={{ width: "82vw", height: "78vh", border: "none" }} />
+            <iframe src={url} title="Receipt PDF" sandbox="allow-same-origin" style={{ width: "82vw", height: "78vh", border: "none" }} />
           ) : (
             <img
               src={url}
