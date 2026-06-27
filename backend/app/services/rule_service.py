@@ -98,49 +98,66 @@ def _int_action_value(av: str | None) -> int | None:
     return int(av) if av and av.isdigit() else None
 
 
-def _apply_set_category(txn: Transaction, av: str | None) -> None:
+def _apply_set_category(txn: Transaction, av: str | None) -> bool:
     # Don't override a manual choice (spec §15.1: manual > rule).
     if txn.confidence_score is not None and txn.confidence_score >= MANUAL_CONFIDENCE:
-        return
+        return False
     value = _int_action_value(av)
-    if value is not None:
-        txn.category_id = value
-        txn.confidence_score = RULE_CONFIDENCE
+    if value is None:
+        return False
+    txn.category_id = value
+    txn.confidence_score = RULE_CONFIDENCE
+    return True
 
 
-def _apply_set_country(txn: Transaction, av: str | None) -> None:
+def _apply_set_country(txn: Transaction, av: str | None) -> bool:
     """Tag the transaction's spend location (ISO alpha-2). Normalised exactly like
     the manual/bulk country edits (upper, first two chars; blank clears) so the
     spend-by-location map sees a consistent code (#79/#107/#109)."""
     code = (av or "").strip().upper()[:2]
     txn.country = code or None
+    return True
 
 
-def apply_action(rule: Rule, txn: Transaction) -> None:
+def apply_action(rule: Rule, txn: Transaction) -> bool:
+    """Apply a single rule's action. Returns ``True`` when the action actually
+    took effect, ``False`` when it was a no-op (e.g. ``set_category`` skipped
+    because a manual choice already wins, or a value-setting action with an
+    unparseable value). The caller uses this so a no-op rule doesn't consume the
+    one-per-action-type slot and block a lower-priority rule that *would* apply
+    (SR-A4)."""
     at = rule.action_type
     av = rule.action_value
 
     if at == "set_category":
-        _apply_set_category(txn, av)
+        return _apply_set_category(txn, av)
     elif at == "set_vendor":
         value = _int_action_value(av)
-        if value is not None:
-            txn.merchant_id = value
+        if value is None:
+            return False
+        txn.merchant_id = value
+        return True
     elif at == "set_project":
         value = _int_action_value(av)
-        if value is not None:
-            txn.project_id = value
+        if value is None:
+            return False
+        txn.project_id = value
+        return True
     elif at == "set_country":
-        _apply_set_country(txn, av)
+        return _apply_set_country(txn, av)
     elif at == "mark_transfer":
         txn.is_transfer = True
+        return True
     elif at == "mark_income":
         txn.is_income = True
+        return True
     elif at == "require_review":
         txn.needs_review = True
         txn.review_reason = txn.review_reason or "rule"
+        return True
     # mark_subscription and block_cloud_ai are recorded intent honoured by later
     # stages (Stage 6 subscriptions / Stage 10 AI gateway).
+    return True
 
 
 def apply_rules(db: Session, txn: Transaction) -> list[int]:
@@ -155,8 +172,9 @@ def apply_rules(db: Session, txn: Transaction) -> list[int]:
     for rule in rules:
         if rule.action_type in used_actions:
             continue
-        if matches(rule, txn):
-            apply_action(rule, txn)
+        if matches(rule, txn) and apply_action(rule, txn):
+            # Only a rule that actually applied claims its action slot and is
+            # reported as fired — a no-op leaves the slot open for the next rule.
             used_actions.add(rule.action_type)
             fired.append(rule.id)
     return fired
