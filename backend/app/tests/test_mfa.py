@@ -251,3 +251,11 @@ def test_totp_roundtrip_and_skew():
     prev = totp.current_code(secret, now=0)
     assert totp.verify(secret, prev, now=30)
     assert not totp.verify(secret, "000000", now=10_000)
+
+
+def test_verify_window_is_clamped():
+    # An absurd window can't widen acceptance beyond ±2 periods (SR-E3).
+    secret = totp.generate_secret()
+    old = totp.current_code(secret, now=0)  # counter 0
+    assert not totp.verify(secret, old, now=5 * totp.PERIOD, window=999)  # 5 periods → rejected
+    assert totp.verify(secret, old, now=2 * totp.PERIOD, window=999)      # within ±2 → accepted

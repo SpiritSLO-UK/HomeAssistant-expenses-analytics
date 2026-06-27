@@ -19,6 +19,9 @@ from urllib.parse import quote, urlencode
 PERIOD = 30
 DIGITS = 6
 ALGORITHM = "SHA1"
+# Hard cap on the clock-skew window any caller can request (±2 periods = ±60s),
+# so a code can't be made to verify over an unboundedly wide interval (SR-E3).
+_MAX_WINDOW = 2
 
 
 def generate_secret(num_bytes: int = 20) -> str:
@@ -52,6 +55,9 @@ def matched_counter(
     code = code.strip().replace(" ", "")
     if not code.isdigit():
         return None
+    # Clamp the skew window so a caller can never widen the acceptance interval
+    # far enough to weaken the one-time code (SR-E3). ±2 periods = ±60s.
+    window = max(0, min(window, _MAX_WINDOW))
     counter = int((now if now is not None else time.time()) // period)
     for drift in range(-window, window + 1):
         if hmac.compare_digest(_hotp(secret_b32, counter + drift, digits), code):
