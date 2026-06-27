@@ -54,8 +54,8 @@ import {
   type RetentionTypePlan,
   type BackupTrim,
 } from "../api/client";
-import { getThemePref, isCloudAiAcknowledged, setCloudAiAcknowledged, setThemePref } from "../prefs";
-import { applyTheme, type ThemePref } from "../theme";
+import { getThemePref, isCloudAiAcknowledged, setCloudAiAcknowledged } from "../prefs";
+import { setTheme, type ThemePref } from "../theme";
 import CloudAiDisclaimerDialog from "../components/CloudAiDisclaimerDialog";
 import CountrySelect from "../components/CountrySelect";
 import PaperlessSetupNote from "../components/PaperlessSetupNote";
@@ -72,8 +72,7 @@ function AppearanceCard() {
   const [pref, setPref] = useState<ThemePref>(getThemePref());
   function choose(value: ThemePref) {
     setPref(value);
-    setThemePref(value);
-    applyTheme(value);
+    setTheme(value);
   }
   return (
     <div className="card">
