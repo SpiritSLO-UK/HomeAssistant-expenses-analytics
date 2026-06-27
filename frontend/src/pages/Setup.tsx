@@ -72,9 +72,14 @@ function SoloSetup({ onBack }: Readonly<{ onBack: () => void }>) {
   const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
   const currencies = useQuery({ queryKey: ["currencies"], queryFn: getSupportedCurrencies });
   const base = settings.data?.base_currency ?? "GBP";
+  const [err, setErr] = useState<string | null>(null);
   const save = useMutation({
     mutationFn: (code: string) => updateSettings({ base_currency: code }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["settings"] }),
+    onSuccess: () => {
+      setErr(null);
+      qc.invalidateQueries({ queryKey: ["settings"] });
+    },
+    onError: (e) => setErr(String(e)),
   });
   return (
     <div className="card">
@@ -89,6 +94,7 @@ function SoloSetup({ onBack }: Readonly<{ onBack: () => void }>) {
               ))}
             </select>
             {save.isPending && <span className="muted"> saving…</span>}
+            {err && <p className="status status--error">{err}</p>}
           </div>
         </li>
         <li>

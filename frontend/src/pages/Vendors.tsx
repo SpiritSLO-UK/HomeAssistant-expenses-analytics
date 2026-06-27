@@ -21,7 +21,13 @@ export default function Vendors() {
   const [name, setName] = useState("");
   const [alias, setAlias] = useState("");
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ["vendors"] });
+  const [err, setErr] = useState<string | null>(null);
+  const fail = (e: unknown) => setErr(String(e));
+  // Cleared on success too, so a stale banner doesn't outlive a later success (FE-3).
+  const invalidate = () => {
+    setErr(null);
+    qc.invalidateQueries({ queryKey: ["vendors"] });
+  };
 
   const create = useMutation({
     mutationFn: () => createVendor({ canonical_name: name, alias: alias || undefined }),
@@ -30,21 +36,25 @@ export default function Vendors() {
       setAlias("");
       invalidate();
     },
+    onError: fail,
   });
   const addAlias = useMutation({
     mutationFn: (v: { id: number; alias: string }) => addVendorAlias(v.id, v.alias),
     onSuccess: invalidate,
+    onError: fail,
   });
   const setCategory = useMutation({
     mutationFn: (v: { id: number; categoryId: number | null }) =>
       setVendorDefaultCategory(v.id, v.categoryId),
     onSuccess: invalidate,
+    onError: fail,
   });
   const setCountry = useMutation({
     mutationFn: (v: { id: number; country: string | null }) => updateVendor(v.id, { country: v.country }),
     onSuccess: invalidate,
+    onError: fail,
   });
-  const remove = useMutation({ mutationFn: (id: number) => deleteVendor(id), onSuccess: invalidate });
+  const remove = useMutation({ mutationFn: (id: number) => deleteVendor(id), onSuccess: invalidate, onError: fail });
 
   const catName = (id: number | null) =>
     categories.data?.find((c) => c.id === id)?.name ?? "—";
@@ -52,6 +62,7 @@ export default function Vendors() {
   return (
     <div className="page">
       <h1 className="page__title">Vendors</h1>
+      {err && <p className="status status--error">{err}</p>}
 
       <div className="card">
         <h2 className="card__title">Add a vendor</h2>

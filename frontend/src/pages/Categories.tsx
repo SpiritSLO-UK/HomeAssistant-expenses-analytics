@@ -28,6 +28,8 @@ export default function Categories() {
   const [mergeSource, setMergeSource] = useState("");
   const [mergeTarget, setMergeTarget] = useState("");
   const [advanced, setAdvanced] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const fail = (e: unknown) => setErr(String(e));
 
   // Who's looking? Cloud-AI privacy is a settings concern (owner / settings-manager);
   // merge + delete are structural (owner only). Hide those controls otherwise — the
@@ -49,22 +51,30 @@ export default function Categories() {
   const applyPrivacy = useMutation({
     mutationFn: (level: string) => setAllCategoryPrivacy(level),
     onSuccess: () => {
+      setErr(null);
       qc.invalidateQueries({ queryKey: ["categories"] });
       qc.invalidateQueries({ queryKey: ["category-privacy"] });
     },
+    onError: fail,
   });
 
   const create = useMutation({
     mutationFn: () => createCategory({ name, colour }),
     onSuccess: () => {
+      setErr(null);
       setName("");
       qc.invalidateQueries({ queryKey: ["categories"] });
     },
+    onError: fail,
   });
 
   const remove = useMutation({
     mutationFn: (id: number) => deleteCategory(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["categories"] }),
+    onSuccess: () => {
+      setErr(null);
+      qc.invalidateQueries({ queryKey: ["categories"] });
+    },
+    onError: fail,
   });
 
   // Merge changes category assignments across transactions/budgets/etc, so refresh
@@ -72,17 +82,23 @@ export default function Categories() {
   const merge = useMutation({
     mutationFn: (v: { source: number; target: number }) => mergeCategory(v.source, v.target),
     onSuccess: () => {
+      setErr(null);
       setMergeSource("");
       setMergeTarget("");
       qc.invalidateQueries();
     },
+    onError: fail,
   });
 
   // Let the user choose what each category may send to cloud AI (#28).
   const setPrivacy = useMutation({
     mutationFn: (v: { id: number; level: string }) =>
       updateCategory(v.id, { privacy_sensitivity: v.level }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["categories"] }),
+    onSuccess: () => {
+      setErr(null);
+      qc.invalidateQueries({ queryKey: ["categories"] });
+    },
+    onError: fail,
   });
 
   const cats = data ?? [];
@@ -111,6 +127,7 @@ export default function Categories() {
   return (
     <div className="page">
       <h1 className="page__title">Categories</h1>
+      {err && <p className="status status--error">{err}</p>}
 
       {/* 1. The library itself — the main thing you look at — with inline add. */}
       <div className="card">

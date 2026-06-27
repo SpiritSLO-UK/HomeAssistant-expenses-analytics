@@ -36,7 +36,11 @@ export default function Rules() {
   const [test, setTest] = useState<RuleTestResult | null>(null);
   const [help, setHelp] = useState(false);
 
+  const [err, setErr] = useState<string | null>(null);
+  const fail = (e: unknown) => setErr(String(e));
+  // Cleared on success too, so a stale banner doesn't outlive a later success (FE-3).
   const invalidate = () => {
+    setErr(null);
     qc.invalidateQueries({ queryKey: ["rules"] });
     qc.invalidateQueries({ queryKey: ["transactions"] });
   };
@@ -56,20 +60,27 @@ export default function Rules() {
       setTest(null);
       invalidate();
     },
+    onError: fail,
   });
 
   const toggle = useMutation({
     mutationFn: (v: { id: number; enabled: boolean }) => updateRule(v.id, { enabled: v.enabled }),
     onSuccess: invalidate,
+    onError: fail,
   });
   const setPrio = useMutation({
     mutationFn: (v: { id: number; priority: number }) => updateRule(v.id, { priority: v.priority }),
     onSuccess: invalidate,
+    onError: fail,
   });
-  const remove = useMutation({ mutationFn: (id: number) => deleteRule(id), onSuccess: invalidate });
+  const remove = useMutation({ mutationFn: (id: number) => deleteRule(id), onSuccess: invalidate, onError: fail });
   const runTest = useMutation({
     mutationFn: () => testRule(conditionType, conditionValue),
-    onSuccess: setTest,
+    onSuccess: (r) => {
+      setErr(null);
+      setTest(r);
+    },
+    onError: fail,
   });
 
   const catName = (id: string | null) =>
@@ -93,6 +104,7 @@ export default function Rules() {
           {help ? "Hide help" : "❔ How rules work"}
         </button>
       </div>
+      {err && <p className="status status--error">{err}</p>}
 
       {help && <RulesHelp />}
 
