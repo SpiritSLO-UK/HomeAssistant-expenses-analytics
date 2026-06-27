@@ -82,13 +82,20 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# CORS is only active for an explicitly configured cross-origin frontend (local dev;
+# empty in production, where the UI is served same-origin). Even then, scope methods +
+# headers to what the app actually uses rather than "*" with credentials — the wildcards
+# were over-broad (CR-SEC-12). The frontend only sends Content-Type + the session header.
+_CORS_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+_CORS_HEADERS = ["Content-Type", "X-HAFI-Session"]  # the MFA session header (auth_service.SESSION_HEADER)
+
 if settings.cors_origins:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=_CORS_METHODS,
+        allow_headers=_CORS_HEADERS,
     )
 
 
