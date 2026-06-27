@@ -2,6 +2,32 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+
+from app.models import Transaction, TransactionSplit
+from app.services import split_service
+
+
+def test_split_base_amounts_sum_to_parent_base():
+    # A foreign transaction whose per-part rounding would otherwise drift a cent:
+    # -10.00 EUR @ 0.855 = -8.55 base, but -3.33/-3.33/-3.34 each round to -2.85/-2.85/-2.86
+    # = -8.56. The distributed amounts must instead sum to the parent's -8.55 (SR-A5).
+    txn = Transaction(amount=Decimal("-10.00"), fx_rate=Decimal("0.855"), base_amount=Decimal("-8.55"))
+    txn.splits = [
+        TransactionSplit(amount=Decimal("-3.33")),
+        TransactionSplit(amount=Decimal("-3.33")),
+        TransactionSplit(amount=Decimal("-3.34")),
+    ]
+    bases = [split_service.split_base_amount(txn, s) for s in txn.splits]
+    assert sum(bases) == txn.base_amount
+    assert all(b is not None for b in bases)
+
+
+def test_split_base_amount_none_without_rate():
+    txn = Transaction(amount=Decimal("-10.00"), fx_rate=None, base_amount=None)
+    txn.splits = [TransactionSplit(amount=Decimal("-5.00")), TransactionSplit(amount=Decimal("-5.00"))]
+    assert split_service.split_base_amount(txn, txn.splits[0]) is None
+
 
 def _curve(rows: list[tuple[str, str, str]]) -> bytes:
     head = "Date,Description,Amount,Currency,Card,Category\n"

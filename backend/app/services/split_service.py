@@ -135,15 +135,47 @@ def clear_splits(db: Session, txn: Transaction) -> Transaction:
     return txn
 
 
+def _distributed_base_amounts(txn: Transaction) -> dict[int, Decimal] | None:
+    """Base-currency contribution of each of ``txn``'s splits, keyed by the
+    split's Python ``id()``, distributed so the parts sum **exactly** to the
+    transaction's stored ``base_amount`` (no penny drift — SR-A5).
+
+    Each part is ``split.amount * fx_rate`` quantised to the penny, which can
+    accumulate a cent of rounding error against the parent total. We compute the
+    drift versus the parent's ``base_amount`` (the source of truth ``summary``
+    uses) and hand out the odd pennies to the parts that were rounded furthest,
+    so the category breakdown / budgets / projects agree with the summary.
+    Returns ``None`` when the transaction has no rate yet (``needs_rate``).
+    """
+    if txn.fx_rate is None:
+        return None
+    raws = [(s, s.amount * txn.fx_rate) for s in txn.splits]
+    rounded = {id(s): raw.quantize(TWO_DP) for s, raw in raws}
+    target = txn.base_amount
+    if target is None or not raws:
+        return rounded
+    drift = target - sum(rounded.values())
+    if drift != 0:
+        steps = int(abs(drift) / TWO_DP)
+        step = TWO_DP if drift > 0 else -TWO_DP
+        # Give the odd pennies to the parts rounded furthest in the drift's
+        # direction (largest residual first), so the adjustment is least visible.
+        order = sorted(raws, key=lambda sr: sr[1] - rounded[id(sr[0])], reverse=drift > 0)
+        for s, _ in order[:steps]:
+            rounded[id(s)] += step
+    return rounded
+
+
 def split_base_amount(txn: Transaction, split: TransactionSplit) -> Decimal | None:
     """The split's contribution in the household base currency (spec §37.4).
 
     A split carries only its original-currency ``amount``; we reuse the parent
     transaction's FX rate (1.0 for same-currency rows). Returns ``None`` when the
     transaction has no rate yet (``needs_rate``), so callers can exclude it the
-    same way they exclude the parent (backlog #29). Penny rounding across parts
-    may differ from the transaction's stored ``base_amount`` by a cent.
+    same way they exclude the parent (backlog #29). The amount is penny-exact
+    against the parent's stored ``base_amount`` (see ``_distributed_base_amounts``).
     """
-    if txn.fx_rate is None:
+    amounts = _distributed_base_amounts(txn)
+    if amounts is None:
         return None
-    return (split.amount * txn.fx_rate).quantize(TWO_DP)
+    return amounts.get(id(split))
