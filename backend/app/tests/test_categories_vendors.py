@@ -130,6 +130,28 @@ def test_category_merge_reassigns_references(db):
     assert budget.category_id == eating.id
 
 
+def test_category_merge_repoints_category_equals_rule_conditions(db):
+    """SR-4: merging also re-points rules that *match on* the source category
+    (`category_equals`), not just rules that *set* it — otherwise those rules would
+    silently stop matching once the source category is deleted."""
+    from app.models import Rule
+
+    coffee = category_service.create_category(db, {"name": "Coffee"})
+    eating = category_service.create_category(db, {"name": "Eating Out"})
+    sets = Rule(name="set", condition_type="merchant_contains", condition_value="cafe",
+                action_type="set_category", action_value=str(coffee.id))
+    matches = Rule(name="match", condition_type="category_equals", condition_value=str(coffee.id),
+                   action_type="require_review", action_value=None)
+    db.add_all([sets, matches])
+    db.commit()
+
+    category_service.merge_category(db, coffee.id, eating.id)
+    db.refresh(sets)
+    db.refresh(matches)
+    assert sets.action_value == str(eating.id)        # the set_category action (already worked)
+    assert matches.condition_value == str(eating.id)  # the category_equals condition (SR-4 fix)
+
+
 def test_category_merge_validation(client):
     """Merging into itself is a 400; an unknown source or target is a 404."""
     a = client.post("/api/categories", json={"name": "X"}).json()["id"]
