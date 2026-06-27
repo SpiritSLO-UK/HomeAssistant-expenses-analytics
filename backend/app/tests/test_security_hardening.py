@@ -90,6 +90,30 @@ def test_child_role_is_confined_to_allowance(client):
     assert client.post("/api/tags", json={"name": "x"}, headers=_hdr("ha-kid")).status_code == 403
 
 
+def test_backup_routes_require_owner(client):
+    """CR-SEC-1: DB download/restore and config export/import are owner-only. A
+    non-owner member must get 403 on all six — restoring an attacker-crafted DB is
+    a full takeover, and downloading the DB/config is full data exfiltration."""
+    _make_member(client, "ha-eve")
+    h = _hdr("ha-eve")
+    db_file = ("x.db", b"not-a-db", "application/octet-stream")
+    enc_file = ("x.db.enc", b"x", "application/octet-stream")
+    cfg_file = ("c.json", b"{}", "application/json")
+
+    assert client.get("/api/backup/database", headers=h).status_code == 403
+    assert client.post("/api/backup/restore", headers=h, files={"file": db_file}).status_code == 403
+    assert client.post("/api/backup/database/encrypted", headers=h, data={"passphrase": "x"}).status_code == 403
+    assert client.post(
+        "/api/backup/restore/encrypted", headers=h, files={"file": enc_file}, data={"passphrase": "x"}
+    ).status_code == 403
+    assert client.get("/api/backup/config", headers=h).status_code == 403
+    assert client.post("/api/backup/config", headers=h, files={"file": cfg_file}).status_code == 403
+
+    # The owner (local identity, no header) is still allowed through the gate.
+    assert client.get("/api/backup/database").status_code == 200
+    assert client.get("/api/backup/config").status_code == 200
+
+
 def test_garbage_mfa_token_is_rejected(client):
     _enable_mfa(client)  # local owner turns MFA on
     blocked = client.get("/api/transactions", headers={"X-HAFI-Session": "not-a-real-token"})
