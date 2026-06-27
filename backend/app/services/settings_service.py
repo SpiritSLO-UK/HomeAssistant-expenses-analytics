@@ -165,6 +165,89 @@ def set_value(db: Session, key: str, value: str) -> None:
     db.commit()
 
 
+# --- Config-import allowlist (backlog CR-SEC-2) -----------------------------
+#
+# `backup_service.import_config` used to write ANY key/value from an uploaded JSON
+# straight into the settings table, bypassing every `PUT /api/settings` validator.
+# A malicious or careless export could then flip `privacy_mode` to a cloud mode,
+# point `ai_base_url`/`paperless_url` at an internal host (SSRF), or pollute the
+# table with arbitrary keys. We now accept ONLY this allowlist of side-effect-free,
+# non-sensitive settings, each validated. Deliberately EXCLUDED:
+#   - privacy_mode, ai_provider/ai_base_url/ai_model, paperless_url — security /
+#     network / cloud vectors; must be set deliberately per instance, never bulk-
+#     imported (validating the value doesn't make a valid `cloud_auto` safe to
+#     silently apply, nor an internal URL safe — exclude them outright);
+#   - base_currency — its re-conversion side-effect isn't run here (set it in
+#     Settings, which recomputes);
+#   - all secrets / internal state / infra keys (retention, backups, demo manifest,
+#     MQTT/energy config, …).
+# Each validator returns a normalised value, or None to reject (→ skipped).
+
+
+def _imp_choice(allowed: set[str]):
+    def check(value: str) -> str | None:
+        v = str(value).strip()
+        return v if v in allowed else None
+
+    return check
+
+
+def _imp_log_level(value: str) -> str | None:
+    v = str(value).strip().upper()
+    return v if v in LOG_LEVELS else None
+
+
+def _imp_bool(value: str) -> str | None:
+    v = str(value).strip().lower()
+    return v if v in {"true", "false"} else None
+
+
+def _imp_country(value: str) -> str | None:
+    from app.services import geo
+
+    v = str(value).strip().upper()
+    if v == "":
+        return ""  # clearing the default is allowed
+    return v if (v != "EU" and v in geo.COUNTRY_NAMES) else None
+
+
+IMPORTABLE_SETTINGS = {
+    FX_MODE: _imp_choice(FX_MODES),
+    RECEIPT_MATCH_MODE: _imp_choice(RECEIPT_MATCH_MODES),
+    INVESTMENT_PRICE_SOURCE: _imp_choice(INVESTMENT_PRICE_SOURCES),
+    DEFAULT_VENDOR_COUNTRY: _imp_country,
+    LOG_LEVEL: _imp_log_level,
+    OCR_ENABLED: _imp_bool,
+}
+
+
+def apply_imported_settings(db: Session, entries: list[dict]) -> dict:
+    """Apply the ``settings`` section of a config import, accepting only allowlisted,
+    validated keys (CR-SEC-2). Unknown, disallowed or invalid entries are skipped and
+    reported. Upserts in place (household_id NULL, matching ``set_value``) and does
+    NOT commit — it joins the caller's transaction."""
+    set_count = 0
+    skipped: set[str] = set()
+    for entry in entries or []:
+        key = entry.get("key")
+        validator = IMPORTABLE_SETTINGS.get(key)
+        if validator is None:
+            if key:
+                skipped.add(str(key))
+            continue
+        normalised = validator(entry.get("value") or "")
+        if normalised is None:
+            skipped.add(str(key))
+            continue
+        row = db.scalars(select(Setting).where(Setting.key == key)).first()
+        if row is None:
+            db.add(Setting(key=key, value=normalised))
+        else:
+            row.value = normalised
+        set_count += 1
+    return {"settings_set": set_count, "settings_skipped": len(skipped), "skipped_setting_keys": sorted(skipped)}
+
+
 def get_base_currency(db: Session) -> str:
     return (get(db, BASE_CURRENCY) or env_settings.currency).upper()
 
