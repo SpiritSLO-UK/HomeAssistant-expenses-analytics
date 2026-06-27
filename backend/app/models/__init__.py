@@ -16,6 +16,7 @@ from app.models.curve_funding_link import CurveFundingLink
 from app.models.energy_snapshot import EnergySnapshot
 from app.models.fx_rate import FxRate
 from app.models.household import Household
+from app.models.import_profile import ImportProfile
 from app.models.investment import AccountValue, Holding, HoldingPrice
 from app.models.project import Project
 from app.models.receipt import Receipt, ReceiptItem, TransactionReceiptMatch
@@ -45,6 +46,7 @@ __all__ = [
     "CurveFundingLink",
     "FxRate",
     "Household",
+    "ImportProfile",
     "AccountValue",
     "Holding",
     "HoldingPrice",

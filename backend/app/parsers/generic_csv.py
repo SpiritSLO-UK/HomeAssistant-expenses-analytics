@@ -19,6 +19,21 @@ from app.parsers.base import (
     read_csv_rows,
 )
 
+# Logical fields the user can map a CSV column to, in UI order. The minimum to
+# import is a date AND (amount OR debit/credit) — enforced in the mapping UI.
+LOGICAL_FIELDS: list[dict[str, object]] = [
+    {"key": "date", "label": "Date", "required": True},
+    {"key": "amount", "label": "Amount (signed)", "required": False},
+    {"key": "debit", "label": "Debit / money out", "required": False},
+    {"key": "credit", "label": "Credit / money in", "required": False},
+    {"key": "description", "label": "Description", "required": False},
+    {"key": "merchant", "label": "Merchant / payee", "required": False},
+    {"key": "currency", "label": "Currency", "required": False},
+    {"key": "category", "label": "Category", "required": False},
+    {"key": "external_id", "label": "Transaction ID", "required": False},
+    {"key": "posted_date", "label": "Posted date", "required": False},
+]
+
 # Logical field -> candidate header names (lowercase) for heuristic mapping.
 _HEURISTICS: dict[str, tuple[str, ...]] = {
     "date": ("date", "transaction date", "started date", "posted date"),
@@ -32,6 +47,19 @@ _HEURISTICS: dict[str, tuple[str, ...]] = {
     "category": ("category", "subcategory"),
     "external_id": ("transaction id", "id", "reference"),
 }
+
+
+def suggest_mapping(headers: list[str]) -> dict[str, str]:
+    """Best-effort {logical_field: header} guess from common header names — the
+    starting point the user adjusts in the mapping UI."""
+    lowered = {h.lower(): h for h in headers}
+    resolved: dict[str, str] = {}
+    for field, candidates in _HEURISTICS.items():
+        for cand in candidates:
+            if cand in lowered:
+                resolved[field] = lowered[cand]
+                break
+    return resolved
 
 
 def _mapped(row: dict[str, str], m: dict[str, str], field: str) -> str | None:
@@ -93,14 +121,7 @@ class GenericCsvParser(BaseStatementParser):
                 for field, header in self.mapping.items()
                 if header and header.lower() in present
             }
-        lowered = {h.lower(): h for h in headers}
-        resolved: dict[str, str] = {}
-        for field, candidates in _HEURISTICS.items():
-            for cand in candidates:
-                if cand in lowered:
-                    resolved[field] = lowered[cand]
-                    break
-        return resolved
+        return suggest_mapping(headers)
 
     def parse(self, filename: str, content: bytes) -> list[StandardTransaction]:
         headers, rows = read_csv_rows(content)
