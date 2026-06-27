@@ -84,7 +84,10 @@ def _get(db: Session, path: str, **kwargs):
 
     base = _require_config(db)
     headers = {"Authorization": f"Token {env_settings.paperless_token}"}
-    resp = httpx.get(f"{base}{path}", headers=headers, timeout=_TIMEOUT, **kwargs)
+    # follow_redirects=False (CR-SEC-3): a self-hosted Paperless is legitimately on
+    # the LAN, so we don't block private hosts — but we must never follow a redirect,
+    # which could bounce our API token to a different (attacker) host.
+    resp = httpx.get(f"{base}{path}", headers=headers, timeout=_TIMEOUT, follow_redirects=False, **kwargs)
     resp.raise_for_status()
     return resp
 
