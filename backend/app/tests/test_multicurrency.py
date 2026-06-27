@@ -150,3 +150,25 @@ def test_frankfurter_mode_auto_fetches(client, monkeypatch):
     # The fetched rate was cached.
     rates = client.get("/api/fx/rates").json()
     assert any(r["source"] == "frankfurter" and r["quote"] == "EUR" for r in rates)
+
+
+def test_upsert_rate_normalises_currency_case(db):
+    # A lowercase upsert then an uppercase manual entry must hit the SAME row,
+    # not create a duplicate (SR-A6).
+    from datetime import date
+
+    from sqlalchemy import select
+
+    from app.models import FxRate
+
+    on = date(2026, 5, 1)
+    fx_service.upsert_rate(db, on, "gbp", "eur", Decimal("0.85"), "frankfurter")
+    db.commit()
+    fx_service.set_manual_rate(db, on, "GBP", "EUR", Decimal("0.88"))
+
+    rows = db.scalars(select(FxRate).where(FxRate.rate_date == on)).all()
+    assert len(rows) == 1
+    assert rows[0].base == "GBP" and rows[0].quote == "EUR"
+    assert rows[0].rate == Decimal("0.88")  # manual correction applied to the same row
+    # And it's findable case-insensitively.
+    assert fx_service.get_cached_rate(db, on, "gbp", "eur") == Decimal("0.88")
