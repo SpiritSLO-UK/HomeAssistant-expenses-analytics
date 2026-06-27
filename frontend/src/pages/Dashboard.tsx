@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import Sparkline from "../components/Sparkline";
 import WorldMap, { colorForIndex, type MapPlot } from "../components/WorldMap";
 import CameraCaptureButton from "../components/CameraCaptureButton";
+import { money } from "../lib/money";
 import {
   type CountryBreakdownItem,
   exportCategoriesCsv,
@@ -91,10 +92,6 @@ function downloadOrAlert(p: Promise<void>): void {
 function thisMonth(): string {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-}
-
-function gbp(value: string): string {
-  return "£" + Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 // Drill-down (umbrella principle): every dashboard breakdown links through to the
@@ -232,8 +229,8 @@ function EnergyCard({ monthDate }: Readonly<{ monthDate: string }>) {
       <h2 className="card__title"><Link to="/energy">⚡ Energy cost offset</Link></h2>
       <ul className="kv">
         <li><span>Produced</span><span>{o.produced_kwh} kWh</span></li>
-        <li><span>Saving</span><span><strong>{gbp(o.saving)}</strong></span></li>
-        <li><span>Net energy cost</span><span>{gbp(o.net_cost)}</span></li>
+        <li><span>Saving</span><span><strong>{money(o.saving)}</strong></span></li>
+        <li><span>Net energy cost</span><span>{money(o.net_cost)}</span></li>
       </ul>
     </div>
   );
@@ -378,9 +375,9 @@ export default function Dashboard() {
       <QuickAddCard />
 
       <div className="stat-grid">
-        <StatCard label="Spend" value={summary.data ? gbp(summary.data.spend_this_month) : "—"} tone="neg" />
-        <StatCard label="Income" value={summary.data ? gbp(summary.data.income_this_month) : "—"} tone="pos" />
-        <StatCard label="Net" value={summary.data ? gbp(summary.data.net_this_month) : "—"} />
+        <StatCard label="Spend" value={summary.data ? money(summary.data.spend_this_month) : "—"} tone="neg" />
+        <StatCard label="Income" value={summary.data ? money(summary.data.income_this_month) : "—"} tone="pos" />
+        <StatCard label="Net" value={summary.data ? money(summary.data.net_this_month) : "—"} />
         <StatCard label="Transactions" value={summary.data ? String(summary.data.total_transactions) : "—"} />
       </div>
 
@@ -458,8 +455,8 @@ function ProjectsCard({ memberId }: Readonly<{ memberId?: number }>) {
                 <span className="tag">{p.status}</span>
               </span>
               <span>
-                {gbp(p.spent)}
-                {p.budget ? <span className="muted"> / {gbp(p.budget)}{pct == null ? "" : ` · ${pct}%`}</span> : ""}
+                {money(p.spent)}
+                {p.budget ? <span className="muted"> / {money(p.budget)}{pct == null ? "" : ` · ${pct}%`}</span> : ""}
               </span>
             </li>
           );
@@ -502,7 +499,7 @@ function CategoriesCard({ monthDate, view, memberId }: Readonly<{ monthDate: str
               >
                 {c.name}
               </Link>
-              <span className="bars__value">{gbp(c.total)}</span>
+              <span className="bars__value">{money(c.total)}</span>
             </div>
             <div className="bars__track">
               <div
@@ -537,7 +534,7 @@ function VendorsCard({ monthDate, view, memberId }: Readonly<{ monthDate: string
             >
               {v.name}
             </Link>
-            <span>{gbp(v.total)} <span className="muted">· {v.count}</span></span>
+            <span>{money(v.total)} <span className="muted">· {v.count}</span></span>
           </li>
         ))}
       </ul>
@@ -577,7 +574,7 @@ function GeoCard({ monthDate, view, memberId }: Readonly<{ monthDate: string; vi
         (Vendors page), else inferred from the currency. Bubble size is the amount; click a point or
         a row to see the transactions behind it.
       </p>
-      {plots.length > 0 && <WorldMap plots={plots} maxTotal={max} money={(n) => gbp(String(n))} />}
+      {plots.length > 0 && <WorldMap plots={plots} maxTotal={max} money={(n) => money(String(n))} />}
       <ul className="bars">
         {top.map(({ item: c, color }) => (
           <li key={c.country_code ?? "unknown"}>
@@ -596,7 +593,7 @@ function GeoCard({ monthDate, view, memberId }: Readonly<{ monthDate: string; vi
                   <span className="bars__label">{c.flag} {c.name}</span>
                 )}
               </span>
-              <span className="bars__value">{gbp(c.total)} <span className="muted">· {c.count}</span></span>
+              <span className="bars__value">{money(c.total)} <span className="muted">· {c.count}</span></span>
             </div>
             <div className="bars__track">
               <div className="bars__fill" style={{ width: `${(Number(c.total) / max) * 100}%`, background: color }} />
@@ -637,7 +634,7 @@ function MemberBreakdownCard({ monthDate }: Readonly<{ monthDate: string }>) {
                   {r.role && <span className="muted"> · {r.role}</span>}
                 </Link>
               )}
-              <span className="bars__value">{gbp(r.spend)}</span>
+              <span className="bars__value">{money(r.spend)}</span>
             </div>
             <div className="bars__track">
               <div
@@ -676,7 +673,7 @@ function SavingsCard() {
     <div className="card">
       <CardHead title="Savings" to="/savings" />
       <ul className="kv">
-        <li><span>Total saved</span><span>{gbp(s.total_savings)}</span></li>
+        <li><span>Total saved</span><span>{money(s.total_savings)}</span></li>
         <li><span>Accounts</span><span>{s.accounts.length}</span></li>
         {topGoal && (
           <li><span>Top goal · {topGoal.name}</span><span>{topGoal.percent}%</span></li>
@@ -695,12 +692,12 @@ function InvestmentsCard() {
     <div className="card">
       <CardHead title="Investments" to="/investments" />
       <ul className="kv">
-        <li><span>Portfolio value</span><span>{gbp(s.total_value)}</span></li>
+        <li><span>Portfolio value</span><span>{money(s.total_value)}</span></li>
         {gain != null && (
           <li>
             <span>Unrealised gain</span>
             <span className={gain >= 0 ? "amt--pos" : "amt--neg"}>
-              {gain >= 0 ? "+" : ""}{gbp(s.total_gain!)}
+              {gain >= 0 ? "+" : ""}{money(s.total_gain!)}
               {s.total_gain_pct != null && ` · ${gain >= 0 ? "+" : ""}${s.total_gain_pct}%`}
             </span>
           </li>
@@ -725,9 +722,9 @@ function AssetsCard() {
             <span>{icon[a.kind] ?? "📦"} {a.name}</span>
             <span>
               {a.car?.avg_economy != null ? (
-                <>{a.car.avg_economy} {a.car.economy_unit} <span className="muted">· {gbp(a.total_cost)}</span></>
+                <>{a.car.avg_economy} {a.car.economy_unit} <span className="muted">· {money(a.total_cost)}</span></>
               ) : (
-                gbp(a.total_cost)
+                money(a.total_cost)
               )}
             </span>
           </li>
@@ -759,7 +756,7 @@ function BudgetsCard({ monthDate }: Readonly<{ monthDate: string }>) {
           <li key={b.budget_id}>
             <span>{b.name}</span>
             <span>
-              {gbp(b.spent)} <span className="muted">/ {gbp(b.amount)} · {b.percent}%</span>
+              {money(b.spent)} <span className="muted">/ {money(b.amount)} · {b.percent}%</span>
             </span>
           </li>
         ))}
@@ -776,8 +773,8 @@ function BusinessCard() {
     <div className="card">
       <CardHead title="Business" to="/business" />
       <ul className="kv">
-        <li><span>Business spend</span><span>{gbp(s.total)}</span></li>
-        <li><span>Reclaimable VAT</span><span>{gbp(s.vat)}</span></li>
+        <li><span>Business spend</span><span>{money(s.total)}</span></li>
+        <li><span>Reclaimable VAT</span><span>{money(s.vat)}</span></li>
         <li><span>Transactions</span><span>{s.transaction_count}</span></li>
       </ul>
     </div>
@@ -794,11 +791,11 @@ function TravelCard() {
       <CardHead title="Travel" to="/travel" />
       <ul className="kv">
         <li><span>Trips</span><span>{trips.length}</span></li>
-        <li><span>Spend abroad</span><span>{gbp(String(total))}</span></li>
+        <li><span>Spend abroad</span><span>{money(String(total))}</span></li>
         {trips.slice(0, 3).map((t) => (
           <li key={t.transaction_ids[0] ?? t.label}>
             <span>{t.label}</span>
-            <span>{gbp(t.base_total)}</span>
+            <span>{money(t.base_total)}</span>
           </li>
         ))}
       </ul>
@@ -833,7 +830,7 @@ function ChildAllowanceRow({ child }: Readonly<{ child: Member }>) {
       <span>
         {budget ? (
           <>
-            {gbp(budget.spent)} <span className="muted">/ {gbp(budget.amount)}</span>
+            {money(budget.spent)} <span className="muted">/ {money(budget.amount)}</span>
           </>
         ) : (
           fallback

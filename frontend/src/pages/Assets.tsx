@@ -10,6 +10,7 @@ import {
   type Asset,
   type AssetLog,
 } from "../api/client";
+import { money } from "../lib/money";
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -18,11 +19,6 @@ function today(): string {
 // UK/imperial gallon — fuel is stored canonically in litres; imperial cars enter
 // and display gallons, converted here so the system is never mixed.
 const IMP_GALLON = 4.54609;
-
-function gbp(value: string | null): string {
-  if (value == null) return "—";
-  return "£" + Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 
 const KIND_ICON: Record<string, string> = { car: "🚗", home: "🏠", other: "📦" };
 
@@ -138,7 +134,7 @@ function AssetCard({ asset, onChange, onError }: Readonly<{ asset: Asset; onChan
           {asset.identifier && <span className="muted"> · {asset.identifier}</span>}
           <div className="muted" style={{ fontSize: "0.85rem", marginTop: 2 }}>
             {car?.avg_economy != null ? <>≈ {car.avg_economy} {car.economy_unit} · </> : null}
-            Total cost {gbp(asset.total_cost)}
+            Total cost {money(asset.total_cost)}
             {car?.latest_odometer && <> · {car.latest_odometer} {car.distance_unit}</>}
           </div>
         </div>
@@ -176,7 +172,7 @@ function CarStatsPanel({ car }: Readonly<{ car: NonNullable<Asset["car"]> }>) {
       <Stat label="Avg economy" value={car.avg_economy == null ? "—" : `${car.avg_economy} ${eu}`} />
       <Stat label="Last fill" value={car.last_economy == null ? "—" : `${car.last_economy} ${eu}`} />
       <Stat label={`Fuel used (${car.fuel_unit})`} value={Number(car.total_fuel) > 0 ? car.total_fuel : "—"} />
-      <Stat label="Fuel cost" value={gbp(car.total_fuel_cost)} />
+      <Stat label="Fuel cost" value={money(car.total_fuel_cost)} />
     </div>
   );
 }
@@ -202,7 +198,7 @@ function HomeStatsPanel({ home }: Readonly<{ home: NonNullable<Asset["home"]> }>
           <span className="muted">
             {" "}· latest {m.latest_reading}{m.unit ? ` ${m.unit}` : ""}
             {" "}· used {m.total_usage}{m.unit ? ` ${m.unit}` : ""}
-            {" "}· {gbp(m.total_cost)}
+            {" "}· {money(m.total_cost)}
           </span>
         </div>
       ))}
@@ -252,7 +248,7 @@ function ReadingForm({ assetId, onAdded, onError }: Readonly<{ assetId: number; 
       </select>
       <input placeholder="Reading" value={reading} style={{ width: 110 }} onChange={(e) => setReading(e.target.value)} />
       <input placeholder="Unit" value={unit} style={{ width: 70 }} onChange={(e) => setUnit(e.target.value)} />
-      <input placeholder="Cost £" value={cost} style={{ width: 80 }} onChange={(e) => setCost(e.target.value)} />
+      <input placeholder="Cost" value={cost} style={{ width: 80 }} onChange={(e) => setCost(e.target.value)} />
       <button className="btn btn--sm" type="submit" disabled={!reading || add.isPending}>
         {add.isPending ? "…" : "Add"}
       </button>
@@ -295,7 +291,7 @@ function RefuelForm({ assetId, unit, onAdded, onError }: Readonly<{
       <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
       <input placeholder={`Odometer (${unit})`} value={odometer} style={{ width: 120 }} onChange={(e) => setOdometer(e.target.value)} />
       <input placeholder={imperial ? "Gallons" : "Litres"} value={fuel} style={{ width: 80 }} onChange={(e) => setFuel(e.target.value)} />
-      <input placeholder="Cost £" value={cost} style={{ width: 80 }} onChange={(e) => setCost(e.target.value)} />
+      <input placeholder="Cost" value={cost} style={{ width: 80 }} onChange={(e) => setCost(e.target.value)} />
       <label className="muted" style={{ fontSize: "0.82rem", display: "flex", alignItems: "center", gap: 4 }}>
         <input type="checkbox" checked={fullTank} onChange={(e) => setFullTank(e.target.checked)} /> full tank
       </label>
@@ -331,7 +327,7 @@ function EntryForm({ assetId, onAdded, onError }: Readonly<{ assetId: number; on
         <option value="service">Service</option>
         <option value="note">Note</option>
       </select>
-      <input placeholder="Cost £" value={cost} style={{ width: 80 }} onChange={(e) => setCost(e.target.value)} />
+      <input placeholder="Cost" value={cost} style={{ width: 80 }} onChange={(e) => setCost(e.target.value)} />
       <input placeholder="Note" value={note} style={{ flex: 1, minWidth: 140 }} onChange={(e) => setNote(e.target.value)} />
       <button className="btn btn--sm btn--ghost" type="submit" disabled={(!cost && !note) || add.isPending}>
         {add.isPending ? "…" : "Add"}
@@ -391,7 +387,7 @@ function LogHistory({ asset, logs, onChange, onError }: Readonly<{
                     detail
                   )}
                 </td>
-                <td style={{ whiteSpace: "nowrap" }}>{lg.cost == null ? "—" : gbp(lg.cost)}</td>
+                <td style={{ whiteSpace: "nowrap" }}>{lg.cost == null ? "—" : money(lg.cost)}</td>
                 <td>
                   <button className="link-btn" onClick={() => { if (globalThis.confirm("Delete this entry?")) remove.mutate(lg.id); }}>✕</button>
                 </td>

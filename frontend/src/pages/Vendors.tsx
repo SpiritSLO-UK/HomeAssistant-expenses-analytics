@@ -12,6 +12,7 @@ import {
   type Vendor,
 } from "../api/client";
 import CountrySelect from "../components/CountrySelect";
+import { money } from "../lib/money";
 
 export default function Vendors() {
   const qc = useQueryClient();
@@ -142,7 +143,7 @@ export default function Vendors() {
                         v.transaction_count
                       )}
                     </td>
-                    <td className="num">£{Math.abs(Number(v.total_amount)).toFixed(2)}</td>
+                    <td className="num">{money(Math.abs(Number(v.total_amount)))}</td>
                     <td>
                       <button className="btn btn--ghost" onClick={() => remove.mutate(v.id)}>
                         Delete

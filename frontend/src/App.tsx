@@ -28,7 +28,8 @@ import Users from "./pages/Users";
 import FamilySetup from "./pages/FamilySetup";
 import Setup from "./pages/Setup";
 import Logs from "./pages/Logs";
-import { getMe, getSecurityStatus, mfaEnable, mfaSetup, mfaVerify, unlockDatabase } from "./api/client";
+import { getMe, getSecurityStatus, getSettings, mfaEnable, mfaSetup, mfaVerify, unlockDatabase } from "./api/client";
+import { setDisplayCurrency } from "./lib/money";
 
 export default function App() {
   // If the database is encrypted and locked, gate the whole app behind unlock.
@@ -36,6 +37,16 @@ export default function App() {
   // Who is using the app (resolved from HA ingress identity). Drives the
   // approval gate and the owner-only nav.
   const me = useQuery({ queryKey: ["me"], queryFn: getMe, enabled: !status.data?.locked });
+  // Keep the app-wide display currency in sync with the configured base currency, so
+  // money() renders the right symbol everywhere (FE-5). Set during render so it's
+  // current before any child card formats — App re-renders when settings resolve or
+  // the base currency changes, cascading fresh values down.
+  const settings = useQuery({
+    queryKey: ["settings"],
+    queryFn: getSettings,
+    enabled: !status.data?.locked && me.data?.status === "approved",
+  });
+  setDisplayCurrency(settings.data?.base_currency);
 
   if (status.data?.locked) {
     return <UnlockGate failedRecent={status.data.failed_unlocks?.recent ?? 0} />;
