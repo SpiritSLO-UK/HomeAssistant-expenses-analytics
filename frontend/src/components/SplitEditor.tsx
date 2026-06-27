@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   clearSplits,
@@ -41,22 +41,27 @@ export default function SplitEditor({ txnId, amount, currency, isSplit, categori
   const [error, setError] = useState<string | null>(null);
 
   // Prefill from existing splits when editing an already-split transaction.
-  useQuery({
+  // Fetch in the query, but seed the rows in an effect that runs ONCE (ref guard)
+  // — doing it inside queryFn meant a refetch (e.g. on window focus) re-ran the
+  // setRows and wiped the user's in-progress edits.
+  const existing = useQuery({
     queryKey: ["splits", txnId],
-    queryFn: async () => {
-      const res = await getSplits(txnId);
-      if (res.splits.length > 0) {
-        setRows(
-          res.splits.map((s) =>
-            newRow(fromCents(Math.abs(toCents(s.amount))), s.category_id ? String(s.category_id) : ""),
-          ),
-        );
-      }
-      return res;
-    },
+    queryFn: () => getSplits(txnId),
     enabled: isSplit,
     staleTime: 0,
   });
+  const prefilled = useRef(false);
+  useEffect(() => {
+    if (prefilled.current || !existing.data) return;
+    if (existing.data.splits.length > 0) {
+      setRows(
+        existing.data.splits.map((s) =>
+          newRow(fromCents(Math.abs(toCents(s.amount))), s.category_id ? String(s.category_id) : ""),
+        ),
+      );
+    }
+    prefilled.current = true;
+  }, [existing.data]);
 
   const sumCents = rows.reduce((acc, r) => acc + toCents(r.amount), 0);
   const remainingCents = totalCents - sumCents;
