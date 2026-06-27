@@ -322,11 +322,17 @@ if FRONTEND_DIST.is_dir():
     def serve_index() -> FileResponse:
         return _index_response()
 
+    _DIST_ROOT = FRONTEND_DIST.resolve()
+
     @app.get("/{full_path:path}", include_in_schema=False)
     def serve_spa(full_path: str) -> FileResponse:
-        """SPA fallback: serve the requested file if present, else index.html."""
-        candidate = FRONTEND_DIST / full_path
-        if full_path and candidate.is_file():
+        """SPA fallback: serve the requested file if present (and contained within
+        the build directory), else index.html."""
+        candidate = (FRONTEND_DIST / full_path).resolve()
+        # Explicit containment guard: Starlette already strips `..`, but never
+        # serve a file resolved outside the build dir even if that changes
+        # (CR-BUG-3).
+        if full_path and candidate.is_file() and candidate.is_relative_to(_DIST_ROOT):
             return FileResponse(candidate)
         return _index_response()
 else:  # pragma: no cover - dev convenience when frontend isn't built
