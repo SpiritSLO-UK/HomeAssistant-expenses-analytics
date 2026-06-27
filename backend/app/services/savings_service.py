@@ -1,8 +1,10 @@
 """Savings accounts, balance snapshots and goals (spec §12.4; backlog #96, #91).
 
-All money is kept as ``Decimal``; totals assume a single (base) currency — a
-mixed-currency savings total would need FX conversion, which is out of scope here
-(noted for later).
+All money is kept as ``Decimal``. Totals are reported in the household base
+currency: each account's balance is converted via the cached FX rate before
+summing (SR-3), so a mixed-currency total is correct rather than added 1:1. A
+foreign balance with no available rate is left out of the base total (mirroring a
+transaction's ``needs_rate``); single-currency households are unaffected.
 """
 
 from __future__ import annotations
@@ -14,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Account, SavingsBalance, SavingsGoal
-from app.services import analytics_service, settings_service
+from app.services import analytics_service, fx_service, settings_service
 from app.services.household_service import get_or_create_default_household
 
 SAVINGS_TYPE = "savings"
@@ -115,6 +117,8 @@ def history(db: Session, *, account_ids: set[int] | None = None, months: int = 1
     snapshot of every account as of that month's end — oldest first. Powers the
     Savings over-time chart + range selector (period epic)."""
     windows = analytics_service._month_windows(date.today(), max(1, months))
+    base = settings_service.get_base_currency(db)
+    today = date.today()
     accounts = list_accounts(db, account_ids=account_ids)
     snaps = {a.id: balance_history(db, a.id) for a in accounts}
     series = []
@@ -128,9 +132,11 @@ def history(db: Session, *, account_ids: set[int] | None = None, months: int = 1
                 else:
                     break
             if as_of_balance is not None:
-                total += as_of_balance
+                converted = fx_service.convert_amount(db, as_of_balance, a.currency, base, today)
+                if converted is not None:  # skip a foreign balance with no rate
+                    total += converted
         series.append({"month": start.strftime("%Y-%m"), "total": str(total.quantize(TWO_DP))})
-    return {"currency": settings_service.get_base_currency(db), "months": series}
+    return {"currency": base, "months": series}
 
 
 def latest_balance(db: Session, account_id: int) -> Decimal | None:
@@ -146,12 +152,17 @@ def latest_balance(db: Session, account_id: int) -> Decimal | None:
 def total_savings(
     db: Session, *, owner_user_id: int | None = None, account_ids: set[int] | None = None
 ) -> Decimal:
-    """Sum of the latest snapshot of every savings account (base currency assumed)."""
+    """Sum of the latest snapshot of every savings account, converted to base (SR-3).
+    A foreign balance with no available rate is skipped."""
+    base = settings_service.get_base_currency(db)
+    today = date.today()
     total = Decimal("0.00")
     for account in list_accounts(db, owner_user_id=owner_user_id, account_ids=account_ids):
         bal = latest_balance(db, account.id)
         if bal is not None:
-            total += bal
+            converted = fx_service.convert_amount(db, bal, account.currency, base, today)
+            if converted is not None:
+                total += converted
     return total
 
 

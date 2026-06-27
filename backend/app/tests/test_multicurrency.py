@@ -66,6 +66,78 @@ def test_base_currency_change_recomputes(client, samples_dir):
     assert client.get("/api/fx/missing").json()["needs_rate"] > 0
 
 
+def test_savings_total_converts_foreign_balance_to_base(client):
+    """SR-3: a mixed-currency savings total is converted to base, not summed 1:1; a
+    foreign balance with no rate is left out until a rate exists."""
+    from datetime import date
+
+    from app.db.session import SessionLocal
+    from app.services import savings_service
+
+    with SessionLocal() as db:
+        gbp = savings_service.create_account(db, name="GBP Pot", currency="GBP")
+        eur = savings_service.create_account(db, name="EUR Pot", currency="EUR")
+        savings_service.record_balance(db, gbp.id, as_of=date.today(), balance=Decimal("100.00"))
+        savings_service.record_balance(db, eur.id, as_of=date.today(), balance=Decimal("100.00"))
+
+        # No EUR rate yet → the EUR pot is skipped; total is just the GBP pot.
+        assert savings_service.total_savings(db) == Decimal("100.00")
+
+        # 1 EUR = 0.85 GBP for today → the EUR pot converts and joins the total.
+        fx_service.set_manual_rate(db, date.today(), "GBP", "EUR", Decimal("0.85"))
+        assert savings_service.total_savings(db) == Decimal("185.00")  # 100 + 100*0.85
+        assert savings_service.summary(db)["currency"] == "GBP"
+
+
+def test_investment_summary_converts_foreign_value_to_base(client):
+    """SR-3: a portfolio's total value converts each account to base before summing."""
+    from datetime import date
+
+    from app.db.session import SessionLocal
+    from app.services import investment_service
+
+    with SessionLocal() as db:
+        gbp = investment_service.create_account(db, name="ISA", currency="GBP")
+        eur = investment_service.create_account(db, name="DE Broker", currency="EUR")
+        investment_service.record_value(db, gbp.id, as_of=date.today(), value=Decimal("1000.00"))
+        investment_service.record_value(db, eur.id, as_of=date.today(), value=Decimal("1000.00"))
+
+        # No EUR rate → the EUR account is skipped from the base total.
+        assert Decimal(investment_service.summary(db)["total_value"]) == Decimal("1000.00")
+
+        fx_service.set_manual_rate(db, date.today(), "GBP", "EUR", Decimal("0.85"))
+        summ = investment_service.summary(db)
+        assert summ["currency"] == "GBP"
+        assert Decimal(summ["total_value"]) == Decimal("1850.00")  # 1000 + 1000*0.85
+
+
+def test_vendor_stats_total_uses_base_amount(client):
+    """SR-3: a vendor's total spend sums each txn's converted base_amount, not the raw
+    amount, so a vendor billed in several currencies isn't summed 1:1."""
+    from datetime import date
+
+    from app.db.session import SessionLocal
+    from app.models import Transaction
+    from app.services import vendor_service
+
+    with SessionLocal() as db:
+        v = vendor_service.create_vendor(db, {"canonical_name": "Globex"})
+        db.add(Transaction(
+            transaction_date=date(2026, 5, 1), description_raw="gbp buy", merchant_id=v.id,
+            amount=Decimal("-10.00"), currency="GBP", direction="debit",
+            base_amount=Decimal("-10.00"), fx_rate=Decimal("1"),
+        ))
+        db.add(Transaction(  # €20 billed, converted to £17 base
+            transaction_date=date(2026, 5, 2), description_raw="eur buy", merchant_id=v.id,
+            amount=Decimal("-20.00"), currency="EUR", direction="debit",
+            base_amount=Decimal("-17.00"), fx_rate=Decimal("0.85"),
+        ))
+        db.commit()
+        stats = vendor_service.vendor_stats(db, v.id)
+        assert stats["transaction_count"] == 2
+        assert Decimal(stats["total_amount"]) == Decimal("-27.00")  # base -10 + -17, NOT raw -30
+
+
 def test_frankfurter_mode_auto_fetches(client, monkeypatch):
     # Mock the network call so the test is offline and deterministic.
     monkeypatch.setattr(fx_service, "fetch_frankfurter", lambda on, base, quote: Decimal("0.90"))

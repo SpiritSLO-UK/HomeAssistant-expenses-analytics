@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 from app.config import settings as env_settings
 from app.logging import get_logger
 from app.models import Account, AccountValue, Holding, HoldingPrice
-from app.services import price_service, settings_service
+from app.services import fx_service, price_service, settings_service
 from app.services.household_service import get_or_create_default_household
 
 logger = get_logger(__name__)
@@ -287,25 +287,41 @@ def account_to_dict(db: Session, account: Account) -> dict:
 
 def summary(db: Session, *, account_ids: set[int] | None = None) -> dict:
     accounts = [account_to_dict(db, a) for a in list_accounts(db, account_ids=account_ids)]
-    total_value = sum(
-        (Decimal(a["current_value"]) for a in accounts if a["current_value"] is not None),
-        Decimal("0"),
-    ).quantize(TWO_DP)
-    total_cost = sum(
-        (Decimal(a["cost_basis"]) for a in accounts if a["cost_basis"] is not None), Decimal("0")
-    ).quantize(TWO_DP)
-    total_gain = sum(
-        (Decimal(a["gain"]) for a in accounts if a["gain"] is not None), Decimal("0")
-    ).quantize(TWO_DP)
-    has_cost = any(a["cost_basis"] is not None for a in accounts)
+    base = settings_service.get_base_currency(db)
+    today = date.today()
 
+    # Convert each account's figures to base before summing (SR-3): a portfolio
+    # spanning currencies must not add raw values 1:1. A foreign figure with no
+    # available rate is skipped. Same-currency is a no-op (single-currency = unchanged).
+    def to_base(value: str | None, currency: str) -> Decimal | None:
+        if value is None:
+            return None
+        return fx_service.convert_amount(db, Decimal(value), currency, base, today)
+
+    total_value = Decimal("0")
+    total_cost = Decimal("0")
+    total_gain = Decimal("0")
+    has_cost = False
     by_type = {"investment": Decimal("0"), "pension": Decimal("0")}
     for a in accounts:
-        if a["current_value"] is not None:
-            by_type[a["account_type"]] += Decimal(a["current_value"])
+        cur = a["currency"]
+        value = to_base(a["current_value"], cur)
+        cost = to_base(a["cost_basis"], cur)
+        gain = to_base(a["gain"], cur)
+        if value is not None:
+            total_value += value
+            by_type[a["account_type"]] += value
+        if cost is not None:
+            total_cost += cost
+            has_cost = True
+        if gain is not None:
+            total_gain += gain
+    total_value = total_value.quantize(TWO_DP)
+    total_cost = total_cost.quantize(TWO_DP)
+    total_gain = total_gain.quantize(TWO_DP)
 
     return {
-        "currency": settings_service.get_base_currency(db),
+        "currency": base,
         "total_value": str(total_value),
         "total_cost": str(total_cost) if has_cost else None,
         "total_gain": str(total_gain) if has_cost else None,
@@ -350,12 +366,22 @@ def _account_value_as_of(db: Session, account: Account, on: date) -> Decimal | N
     return Decimal(row.value) if row else None
 
 
-def total_value_as_of(db: Session, accounts: list[Account], on: date) -> Decimal:
+def total_value_as_of(
+    db: Session, accounts: list[Account], on: date, base: str | None = None
+) -> Decimal:
+    """Total value of ``accounts`` as of ``on``, converted to base (SR-3). A foreign
+    account with no available rate is skipped. ``base`` may be passed to avoid a
+    settings lookup per call when iterating many dates."""
+    if base is None:
+        base = settings_service.get_base_currency(db)
+    today = date.today()
     total = Decimal("0")
     for account in accounts:
         value = _account_value_as_of(db, account, on)
         if value is not None:
-            total += value
+            converted = fx_service.convert_amount(db, value, account.currency, base, today)
+            if converted is not None:
+                total += converted
     return total.quantize(TWO_DP)
 
 
@@ -391,19 +417,20 @@ def history(db: Session, *, account_ids: set[int] | None = None, days: int = 365
             ).all()
         )
 
+    base = settings_service.get_base_currency(db)
     ordered = sorted(d for d in dates if d <= today)
     points = [
-        {"date": d.isoformat(), "value": str(total_value_as_of(db, accounts, d))}
+        {"date": d.isoformat(), "value": str(total_value_as_of(db, accounts, d, base))}
         for d in ordered
     ]
-    current = total_value_as_of(db, accounts, today)
+    current = total_value_as_of(db, accounts, today, base)
     return {
-        "currency": settings_service.get_base_currency(db),
+        "currency": base,
         "total_value": str(current),
         "points": points,
-        "change_day": _change(current, total_value_as_of(db, accounts, today - timedelta(days=1))),
-        "change_month": _change(current, total_value_as_of(db, accounts, today - timedelta(days=30))),
-        "change_year": _change(current, total_value_as_of(db, accounts, today - timedelta(days=365))),
+        "change_day": _change(current, total_value_as_of(db, accounts, today - timedelta(days=1), base)),
+        "change_month": _change(current, total_value_as_of(db, accounts, today - timedelta(days=30), base)),
+        "change_year": _change(current, total_value_as_of(db, accounts, today - timedelta(days=365), base)),
     }
 
 
