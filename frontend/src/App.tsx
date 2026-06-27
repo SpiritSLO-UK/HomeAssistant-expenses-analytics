@@ -30,6 +30,7 @@ import Setup from "./pages/Setup";
 import Logs from "./pages/Logs";
 import { getMe, getSecurityStatus, getSettings, mfaEnable, mfaSetup, mfaVerify, unlockDatabase } from "./api/client";
 import { setDisplayCurrency } from "./lib/money";
+import { NAV_ITEMS } from "./nav";
 
 export default function App() {
   // If the database is encrypted and locked, gate the whole app behind unlock.
@@ -65,12 +66,17 @@ export default function App() {
     return <MfaGate />;
   }
 
-  // The child role is a narrow allowance view — only that route is mounted.
+  // The child role is a narrow view: mount only the routes flagged `childVisible`
+  // in the nav config, so the sidebar (which filters by the same flag) and the
+  // router can't drift apart. `childPages` is the single place to wire a new
+  // child-visible page to its component.
   if (me.data?.role === "child") {
+    const childPages: Record<string, ReactNode> = { "/allowance": <Allowance /> };
+    const childItems = NAV_ITEMS.filter((i) => i.childVisible && childPages[i.path]);
     return (
       <AppShell role="child">
         <Routes>
-          <Route path="/allowance" element={<Allowance />} />
+          {childItems.map((i) => <Route key={i.path} path={i.path} element={childPages[i.path]} />)}
           <Route path="*" element={<Allowance />} />
         </Routes>
       </AppShell>
