@@ -135,7 +135,7 @@ export default function Subscriptions() {
                     <td>{s.next_expected_date ?? "—"}</td>
                     <td>{s.confidence_score == null ? "—" : `${Math.round(s.confidence_score * 100)}%`}</td>
                     <td>
-                      <select value={s.status} onChange={(e) => setStatus.mutate({ id: s.id, status: e.target.value })}>
+                      <select value={s.status} disabled={setStatus.isPending} onChange={(e) => setStatus.mutate({ id: s.id, status: e.target.value })}>
                         {SUBSCRIPTION_STATUSES.map((st) => (
                           <option key={st} value={st}>{STATUS_LABEL[st]}</option>
                         ))}

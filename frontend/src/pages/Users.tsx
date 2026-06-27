@@ -220,6 +220,7 @@ export default function Users() {
                         <select
                           value={u.role}
                           title={ROLE_HINT[u.role]}
+                          disabled={patch.isPending}
                           onChange={(e) => doPatch(u.id, { role: e.target.value })}
                         >
                           {ROLES.map((r) => (
@@ -230,6 +231,7 @@ export default function Users() {
                       <td>
                         <select
                           value={u.status}
+                          disabled={patch.isPending}
                           onChange={(e) => doPatch(u.id, { status: e.target.value })}
                         >
                           {STATUSES.map((s) => (
@@ -244,6 +246,7 @@ export default function Users() {
                           <input
                             type="checkbox"
                             checked={u.can_manage_settings}
+                            disabled={patch.isPending}
                             title="Allow this member to manage the general Settings + nav tabs"
                             onChange={(e) => doPatch(u.id, { can_manage_settings: e.target.checked })}
                           />
@@ -270,6 +273,7 @@ export default function Users() {
                         <select
                           value={u.mfa_policy}
                           title="Require two-factor for this user (they're blocked from the app until they enrol)"
+                          disabled={patch.isPending}
                           onChange={(e) => doPatch(u.id, { mfa_policy: e.target.value })}
                         >
                           <option value="optional">optional</option>
