@@ -1,7 +1,10 @@
 """At-rest encryption / lock API (backlog #15b).
 
-These routes must work while the database is locked, so they never depend on a
-DB session.
+``/status`` and ``/unlock`` must work while the database is locked, so they never
+depend on a DB session. ``/enable`` and ``/disable`` change the encryption state and
+are **owner-only** (they only run against an accessible DB — encrypting a plaintext
+DB or decrypting an unlocked one — so the owner check has a DB to read; backlog
+follow-up to #214: these previously had no auth at all).
 """
 
 from __future__ import annotations
@@ -53,7 +56,15 @@ def unlock(payload: Passphrase) -> dict:
 
 
 @router.post("/enable", responses={400: {"description": "Bad request"}})
-def enable(payload: EnableRequest) -> dict:
+def enable(
+    payload: EnableRequest,
+    _owner: Annotated[User, Depends(require_owner)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    # Release the session the owner check opened before swapping/reconfiguring the DB,
+    # else the encryption step operates on a connection this request still holds
+    # ("Cannot operate on a closed database" — same fix as the restore routes, CR-SEC-1).
+    db.close()
     try:
         security_service.enable_encryption(payload.passphrase, payload.unlock_mode)
     except (RuntimeError, ValueError) as exc:
@@ -62,7 +73,12 @@ def enable(payload: EnableRequest) -> dict:
 
 
 @router.post("/disable", responses={400: {"description": "Bad request"}})
-def disable(payload: Passphrase) -> dict:
+def disable(
+    payload: Passphrase,
+    _owner: Annotated[User, Depends(require_owner)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    db.close()  # release this request's session before the DB swap (see enable)
     try:
         security_service.disable_encryption(payload.passphrase)
     except (RuntimeError, ValueError) as exc:

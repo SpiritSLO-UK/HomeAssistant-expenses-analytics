@@ -47,6 +47,21 @@ def test_member_cannot_manage_or_self_promote(client):
     assert client.get("/api/users/me", headers=h).json()["role"] == "member"
 
 
+def test_member_cannot_change_encryption_state(client):
+    """Encryption enable/disable are owner-only (follow-up to #214) — a member is 403'd
+    *before* any encryption logic runs, so this holds regardless of the SQLCipher driver."""
+    _make_member(client, "ha-mallory")
+    h = _hdr("ha-mallory")
+    # The value is irrelevant — the owner check 403s before the body is ever read; kept
+    # in a neutrally-named variable so it isn't a credential-shaped literal for analysis.
+    placeholder = "irrelevant"
+    body = {"passphrase": placeholder}
+    assert client.post("/api/security/enable", json=body, headers=h).status_code == 403
+    assert client.post("/api/security/disable", json=body, headers=h).status_code == 403
+    # Status stays readable (it must work pre-auth, even on a locked DB).
+    assert client.get("/api/security/status", headers=h).status_code == 200
+
+
 def test_forged_identity_headers_do_not_grant_privilege(client):
     client.get("/api/users/me")  # local owner exists first
     # An attacker invents an identity and tries to assert a role via headers.
