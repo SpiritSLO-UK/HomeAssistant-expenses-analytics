@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   WORLD_COUNTRY_PATHS,
   WORLD_H,
@@ -150,7 +150,8 @@ export default function WorldMap({
   };
 
   // Draw smallest-last so big bubbles don't hide small ones behind them.
-  const ordered = [...plots].sort((a, b) => b.total - a.total);
+  // Memoised so dragging/zooming (which re-render on every frame) doesn't re-sort.
+  const ordered = useMemo(() => [...plots].sort((a, b) => b.total - a.total), [plots]);
   const zoomed = view.k > 1;
   let cursorClass: string | undefined;
   if (dragging) cursorClass = "is-dragging";
