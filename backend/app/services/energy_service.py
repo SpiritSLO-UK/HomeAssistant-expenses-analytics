@@ -42,11 +42,6 @@ ENERGY_SEMANTICS = settings_service.ENERGY_SEMANTICS  # {"cumulative", "interval
 # Don't snapshot more than once per this window (page loads can be frequent).
 _SNAPSHOT_MIN_GAP = timedelta(minutes=10)
 
-# Last live-computed offset, so the MQTT sensor can publish a value without doing
-# its own (potentially circular) broker/HA read during a publish. Updated whenever
-# offset(..., live=True) runs (the Energy page / GET endpoint).
-_LAST_SAVING: Decimal = Decimal("0")
-
 
 # --- config -----------------------------------------------------------------
 
@@ -240,7 +235,6 @@ def offset(
 
     ``readings`` (tests) injects produced values directly, bypassing any source.
     """
-    global _LAST_SAVING
     cfg = get_config(db)
     currency = settings_service.get_base_currency(db)
 
@@ -265,9 +259,6 @@ def offset(
     saving = (produced * unit_price).quantize(Decimal("0.01")) if unit_price is not None else Decimal("0.00")
     spend = _energy_spend(db, ref, cfg["energy_category_id"], account_ids)
     net = (spend - saving).quantize(Decimal("0.01"))
-
-    if live and cfg["source"] != "off":
-        _LAST_SAVING = saving
 
     start, _ = dashboard_service.month_bounds(ref)
     return {
@@ -296,9 +287,25 @@ def _source_available(source: str) -> bool:
     return False
 
 
-def last_saving() -> Decimal:
-    """The most recent live-computed saving — for the MQTT sensor (no live read)."""
-    return _LAST_SAVING
+def last_saving(db: Session) -> Decimal:
+    """The most recent saving — for the MQTT sensor — derived from the latest persisted
+    production snapshot × the current unit price (SR-5).
+
+    Replaces a module-global that ``offset()`` mutated as a side-effect: concurrent
+    reads could clobber it (e.g. a transient zero production read), and it carried no
+    DB context. Reading the snapshot is broker-free (so an MQTT publish never triggers
+    a topic read / recursion) and always household-wide. Returns 0 when energy is off,
+    no snapshot exists yet, or no unit price is available."""
+    cfg = get_config(db)
+    if cfg["source"] == "off":
+        return Decimal("0.00")
+    latest = db.scalars(
+        select(EnergySnapshot).order_by(EnergySnapshot.captured_at.desc()).limit(1)
+    ).first()
+    unit_price = _unit_price(db, cfg)
+    if latest is None or unit_price is None:
+        return Decimal("0.00")
+    return (Decimal(latest.produced) * unit_price).quantize(Decimal("0.01"))
 
 
 def status(db: Session) -> dict:

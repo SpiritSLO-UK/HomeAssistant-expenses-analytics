@@ -134,7 +134,7 @@ def _all_sensors(db: Session, ref: date | None = None) -> list[dict]:
 
     if energy_service.get_config(db)["source"] != "off":
         _add("energy", _money("energy_offset_this_month", "Energy Offset This Month",
-                              str(energy_service.last_saving()), currency, "mdi:solar-power"))
+                              str(energy_service.last_saving(db)), currency, "mdi:solar-power"))
     return sensors
 
 
