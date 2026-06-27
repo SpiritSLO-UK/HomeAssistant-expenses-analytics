@@ -137,6 +137,39 @@ def convert_transaction(
     return True
 
 
+def convert_amount(
+    db: Session,
+    amount: Decimal,
+    currency: str,
+    base: str,
+    on: date,
+    *,
+    mode: str | None = None,
+    allow_fetch: bool = False,
+) -> Decimal | None:
+    """Convert ``amount`` in ``currency`` to ``base`` using the rate for ``on``.
+
+    Returns the converted amount, or ``None`` when no rate is available — the caller
+    decides whether to skip it or surface it (mirrors a transaction's ``needs_rate``,
+    so a mixed-currency total never silently adds unconverted figures 1:1). Uses
+    cached rates only by default (``allow_fetch=False``), so it's safe to call from
+    aggregate read paths without triggering a network fetch per row. Same-currency is
+    a no-op, so single-currency households are unaffected.
+    """
+    currency = (currency or base).upper()
+    base = base.upper()
+    if currency == base:
+        return amount
+    if mode is None:
+        from app.services import settings_service
+
+        mode = settings_service.get_fx_mode(db)
+    rate, _ = get_rate(db, on, currency, base, mode, allow_fetch)
+    if rate is None:
+        return None
+    return (amount * rate).quantize(_CENTS, rounding=ROUND_HALF_UP)
+
+
 def backfill_missing(db: Session, base: str, mode: str) -> dict:
     """Try to convert all transactions still missing a base amount."""
     pending = db.scalars(

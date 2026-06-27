@@ -95,12 +95,17 @@ def get_vendor(db: Session, vendor_id: int) -> Vendor | None:
 
 
 def vendor_stats(db: Session, vendor_id: int) -> dict:
-    """Transaction count and total spend for a vendor."""
+    """Transaction count and total spend for a vendor, in base currency.
+
+    Sums each transaction's converted ``base_amount`` (SR-3) rather than the raw
+    ``amount``, so a vendor billed in several currencies gets a meaningful total
+    instead of figures added 1:1. Transactions still awaiting a rate (``base_amount``
+    NULL) are left out of the sum, like every other base-currency total."""
     count = db.scalar(
         select(func.count()).select_from(Transaction).where(Transaction.merchant_id == vendor_id)
     ) or 0
     total = db.scalar(
-        select(func.coalesce(func.sum(Transaction.amount), 0)).where(
+        select(func.coalesce(func.sum(Transaction.base_amount), 0)).where(
             Transaction.merchant_id == vendor_id
         )
     ) or 0
