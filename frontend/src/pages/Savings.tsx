@@ -28,7 +28,10 @@ export default function Savings() {
   const summary = useQuery({ queryKey: ["savings-summary"], queryFn: getSavingsSummary });
   const history = useQuery({ queryKey: ["savings-history-total", months], queryFn: () => getSavingsHistory(months) });
 
+  // Passed to every child card as onChange/onCreated — i.e. the success callback —
+  // so clearing the error here drops any stale banner after a later success (FE-3).
   const invalidate = () => {
+    setErr(null);
     qc.invalidateQueries({ queryKey: ["savings-summary"] });
     qc.invalidateQueries({ queryKey: ["savings-history"] });
     qc.invalidateQueries({ queryKey: ["savings-history-total"] });

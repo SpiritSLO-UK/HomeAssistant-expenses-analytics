@@ -207,7 +207,8 @@ function EnergyConfigCard() {
   const qc = useQueryClient();
   const status = useQuery({ queryKey: ["energy-status"], queryFn: getEnergyStatus });
   const cats = useQuery({ queryKey: ["categories"], queryFn: listCategories });
-  const [msg, setMsg] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);   // success notice (muted)
+  const [err, setErr] = useState<string | null>(null);   // failure notice (red) — FE-3b
 
   const [source, setSource] = useState("off");
   const [entities, setEntities] = useState("");
@@ -239,12 +240,16 @@ function EnergyConfigCard() {
         production_semantics: semantics,
       }),
     onSuccess: () => {
+      setErr(null);
       setMsg("Saved.");
       qc.invalidateQueries({ queryKey: ["energy-offset"] });
       qc.invalidateQueries({ queryKey: ["energy-status"] });
       qc.invalidateQueries({ queryKey: ["energy-production-history"] });
     },
-    onError: (e) => setMsg(String(e)),
+    onError: (e) => {
+      setMsg(null);
+      setErr(String(e));
+    },
   });
 
   const s = status.data;
@@ -337,6 +342,7 @@ function EnergyConfigCard() {
           {save.isPending ? "Saving…" : "Save"}
         </button>
         {msg && <span className="muted" style={{ marginLeft: 10 }}>{msg}</span>}
+        {err && <span className="status--error" style={{ marginLeft: 10 }}>{err}</span>}
       </div>
     </div>
   );

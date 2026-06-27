@@ -159,7 +159,12 @@ function ParentManager({ canManage }: Readonly<{ canManage: boolean }>) {
     enabled: selected != null,
   });
   const base = summary.data?.currency ?? "GBP";
-  const invalidate = () => qc.invalidateQueries({ queryKey: ["allowance", selected] });
+  // Every mutation's onSuccess calls this, so clearing the error here drops a stale
+  // banner after a later success (FE-3).
+  const invalidate = () => {
+    setErr(null);
+    qc.invalidateQueries({ queryKey: ["allowance", selected] });
+  };
   const fail = (e: unknown) => setErr(String(e instanceof Error ? e.message : e));
 
   // Manual item

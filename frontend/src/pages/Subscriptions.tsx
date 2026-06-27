@@ -29,7 +29,10 @@ export default function Subscriptions() {
   const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
   const base = settings.data?.base_currency ?? "GBP";
 
+  // Every mutation's onSuccess calls this, so clearing the error here drops a stale
+  // banner after a later success (FE-3).
   const invalidate = () => {
+    setErr(null);
     qc.invalidateQueries({ queryKey: ["subscriptions"] });
     qc.invalidateQueries({ queryKey: ["dashboard-subscriptions"] });
     qc.invalidateQueries({ queryKey: ["subscription-alerts"] });

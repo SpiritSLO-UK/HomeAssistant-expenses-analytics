@@ -49,7 +49,10 @@ export default function Budgets() {
 
   const remove = useMutation({
     mutationFn: (id: number) => deleteBudget(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["budget-summary"] }),
+    onSuccess: () => {
+      setErr(null);
+      qc.invalidateQueries({ queryKey: ["budget-summary"] });
+    },
     onError: (e) => setErr(String(e)),
   });
 

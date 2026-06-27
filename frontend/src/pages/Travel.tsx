@@ -39,7 +39,8 @@ export default function Travel() {
   const qc = useQueryClient();
   const [gapDays, setGapDays] = useState(14);
   const [months, setMonths] = useState(12);
-  const [msg, setMsg] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);   // success notice (green)
+  const [err, setErr] = useState<string | null>(null);   // failure notice (red) — FE-3b
   const [openTrip, setOpenTrip] = useState<string | null>(null);
 
   const byCurrency = useQuery({ queryKey: ["travel-by-currency"], queryFn: getTravelByCurrency });
@@ -49,12 +50,16 @@ export default function Travel() {
   const makeProject = useMutation({
     mutationFn: (v: { name: string; ids: number[] }) => createProjectFromTrip(v.name, v.ids),
     onSuccess: (r) => {
+      setErr(null);
       setMsg(`Created project “${r.name}” and assigned the trip's transactions to it.`);
       qc.invalidateQueries({ queryKey: ["projects"] });
       qc.invalidateQueries({ queryKey: ["transactions"] });
       qc.invalidateQueries({ queryKey: ["travel-trips"] });
     },
-    onError: (e) => setMsg(String(e instanceof Error ? e.message : e)),
+    onError: (e) => {
+      setMsg(null);
+      setErr(String(e instanceof Error ? e.message : e));
+    },
   });
 
   // Tag a whole trip's transactions with a country, so the spend-by-location map
@@ -63,11 +68,15 @@ export default function Travel() {
     mutationFn: (v: { ids: number[]; country: string }) =>
       bulkUpdateTransactions(v.ids, { country: v.country }),
     onSuccess: (_r, v) => {
+      setErr(null);
       setMsg(`Tagged ${v.ids.length} transaction(s) as ${v.country} — the spend-by-location map will use it.`);
       qc.invalidateQueries({ queryKey: ["dash-geo"] });
       qc.invalidateQueries({ queryKey: ["transactions"] });
     },
-    onError: (e) => setMsg(String(e instanceof Error ? e.message : e)),
+    onError: (e) => {
+      setMsg(null);
+      setErr(String(e instanceof Error ? e.message : e));
+    },
   });
 
   function createFor(trip: Trip) {
@@ -90,6 +99,7 @@ export default function Travel() {
         foreign spend — turn any trip into a project to give it a budget and the usual breakdowns.
       </p>
 
+      {err && <p className="status status--error">{err}</p>}
       {msg && <p className="status status--ok">{msg}</p>}
 
       <OverTimeChart

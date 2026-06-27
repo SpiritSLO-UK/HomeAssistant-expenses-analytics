@@ -65,7 +65,10 @@ export default function Investments() {
     queryFn: () => getInvestmentHistory(months * 31),
   });
 
+  // Passed to every child card as the success callback (onChange/onCreated), so
+  // clearing the error here drops a stale banner after a later success (FE-3).
   const invalidate = () => {
+    setErr(null);
     qc.invalidateQueries({ queryKey: ["investment-summary"] });
     qc.invalidateQueries({ queryKey: ["investment-holdings"] });
     qc.invalidateQueries({ queryKey: ["investment-values"] });
@@ -192,7 +195,10 @@ function PricesCard({ onSynced, onError }: Readonly<{ onSynced: () => void; onEr
 
   const setSource = useMutation({
     mutationFn: (source: string) => updateSettings({ investment_price_source: source }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["investment-price-status"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["investment-price-status"] });
+      onSynced(); // parent's success callback — also clears any stale error banner (FE-3)
+    },
     onError,
   });
   const sync = useMutation({
