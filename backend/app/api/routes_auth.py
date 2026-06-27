@@ -8,7 +8,7 @@ verify), but still require an approved account.
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, NoReturn
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
@@ -24,6 +24,28 @@ router = APIRouter(prefix="/auth/mfa", tags=["auth"])
 _BAD_CODE = "That code didn't match. Try again."
 
 
+def _ensure_not_locked(user: User) -> None:
+    """Refuse an MFA code check while the user is locked out (CR-SEC-6)."""
+    secs = mfa_service.mfa_lockout_seconds(user.id)
+    if secs > 0:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many incorrect codes — try again in about {max(1, secs // 60)} minute(s).",
+            headers={"Retry-After": str(secs)},
+        )
+
+
+def _bad_code(db: Session, user: User, detail: str) -> NoReturn:
+    """Record a failed MFA attempt (throttle + audit) and raise 400 (CR-SEC-6)."""
+    count = mfa_service.record_mfa_failure(user.id)
+    audit_service.record(
+        db, actor=user.display_name, action="mfa_failed",
+        entity_type="user", entity_id=user.id, details={"recent_failures": count},
+    )
+    db.commit()
+    raise HTTPException(status_code=400, detail=detail)
+
+
 @router.post("/setup")
 def setup(db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(get_current_user)]) -> SetupOut:
     data = mfa_service.start_enrolment(db, user)
@@ -34,8 +56,10 @@ def setup(db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends
 def enable(
     payload: EnableIn, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(get_current_user)]
 ) -> dict:
+    _ensure_not_locked(user)
     if not mfa_service.enable(db, user, payload.code, payload.scope):
-        raise HTTPException(status_code=400, detail=_BAD_CODE)
+        _bad_code(db, user, _BAD_CODE)
+    mfa_service.clear_mfa_failures(user.id)
     audit_service.record(db, actor=user.display_name, action="mfa_enabled", entity_type="user", entity_id=user.id)
     db.commit()
     return {"status": "enabled", "mfa_scope": user.mfa_scope}
@@ -45,8 +69,10 @@ def enable(
 def disable(
     payload: CodeIn, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(get_current_user)]
 ) -> dict:
+    _ensure_not_locked(user)
     if not mfa_service.disable(db, user, payload.code):
-        raise HTTPException(status_code=400, detail="MFA is not enabled or the code didn't match.")
+        _bad_code(db, user, "MFA is not enabled or the code didn't match.")
+    mfa_service.clear_mfa_failures(user.id)
     audit_service.record(db, actor=user.display_name, action="mfa_disabled", entity_type="user", entity_id=user.id)
     db.commit()
     return {"status": "disabled"}
@@ -56,9 +82,11 @@ def disable(
 def verify(
     payload: CodeIn, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(get_current_user)]
 ) -> VerifyOut:
+    _ensure_not_locked(user)
     token = mfa_service.verify_and_open(db, user, payload.code)
     if token is None:
-        raise HTTPException(status_code=400, detail=_BAD_CODE)
+        _bad_code(db, user, _BAD_CODE)
+    mfa_service.clear_mfa_failures(user.id)
     return VerifyOut(token=token, expires_in_seconds=int(mfa_service.SESSION_TTL.total_seconds()))
 
 
@@ -69,7 +97,9 @@ def step_up(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
 ) -> dict:
+    _ensure_not_locked(user)
     token = request.headers.get(auth_service.SESSION_HEADER)
     if not mfa_service.step_up(db, user, token, payload.code):
-        raise HTTPException(status_code=400, detail=_BAD_CODE)
+        _bad_code(db, user, _BAD_CODE)
+    mfa_service.clear_mfa_failures(user.id)
     return {"status": "verified"}

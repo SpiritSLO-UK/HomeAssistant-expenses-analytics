@@ -83,6 +83,17 @@ def db():
         session.close()
 
 
+@pytest.fixture(autouse=True)
+def _reset_mfa_throttle():
+    """Clear the process-global MFA brute-force throttle (CR-SEC-6) between tests
+    so accumulated failures for a reused user id can't leak across tests."""
+    from app.services import mfa_service
+
+    mfa_service.reset_throttle()
+    yield
+    mfa_service.reset_throttle()
+
+
 @pytest.fixture(scope="session")
 def samples_dir() -> Path:
     # backend/app/tests/ -> repo root -> examples/sample-csv

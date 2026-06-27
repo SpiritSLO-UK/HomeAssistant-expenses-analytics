@@ -32,6 +32,16 @@ SESSION_TTL = timedelta(hours=12)
 # How recently a TOTP must have been entered to perform an admin action.
 STEP_UP_TTL = timedelta(minutes=10)
 
+# Online brute-force throttle on MFA code checks (CR-SEC-6). Per-user, in memory:
+# an attacker can't restart the process, so a process-lifetime sliding window is
+# enough, and it's cleared on a successful verification. After MFA_MAX_FAILED
+# failures within MFA_LOCKOUT, further attempts are refused until the oldest ages
+# out. (The 6-digit TOTP space is small enough that an unthrottled endpoint is
+# brute-forceable over time.)
+MFA_MAX_FAILED = 5
+MFA_LOCKOUT = timedelta(minutes=5)
+_failed_mfa_attempts: dict[int, list[datetime]] = {}
+
 
 def _now() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
@@ -39,6 +49,43 @@ def _now() -> datetime:
 
 def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+# --- MFA brute-force throttle (CR-SEC-6) -------------------------------------
+
+
+def _recent_mfa_failures(user_id: int) -> list[datetime]:
+    cutoff = _now() - MFA_LOCKOUT
+    times = [t for t in _failed_mfa_attempts.get(user_id, []) if t >= cutoff]
+    if times:
+        _failed_mfa_attempts[user_id] = times
+    else:
+        _failed_mfa_attempts.pop(user_id, None)
+    return times
+
+
+def mfa_lockout_seconds(user_id: int) -> int:
+    """Seconds until ``user_id`` may try an MFA code again, or 0 if not locked out."""
+    times = _recent_mfa_failures(user_id)
+    if len(times) < MFA_MAX_FAILED:
+        return 0
+    return max(0, int((min(times) + MFA_LOCKOUT - _now()).total_seconds()))
+
+
+def record_mfa_failure(user_id: int) -> int:
+    """Note a failed MFA code check; returns the recent-failure count."""
+    _failed_mfa_attempts.setdefault(user_id, []).append(_now())
+    return len(_recent_mfa_failures(user_id))
+
+
+def clear_mfa_failures(user_id: int) -> None:
+    """Forget a user's recent MFA failures (called on a successful verification)."""
+    _failed_mfa_attempts.pop(user_id, None)
+
+
+def reset_throttle() -> None:
+    """Clear ALL throttle state — used by tests for isolation (process-global)."""
+    _failed_mfa_attempts.clear()
 
 
 # --- Enrolment ---------------------------------------------------------------
