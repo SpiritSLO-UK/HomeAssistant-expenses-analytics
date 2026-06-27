@@ -125,9 +125,9 @@ def test_pdf_text_trusts_embedded_only_with_money(monkeypatch, tmp_path):
     # Embedded text WITH a money amount → trusted at 0.95 (OCR not used).
     monkeypatch.setattr(pypdf, "PdfReader", lambda _p: _FakeReader(_FakePage("ACME LTD\nTOTAL 42.18\n")))
     text, conf = ocr_service._pdf_text(pdf)
-    assert conf == 0.95 and "42.18" in text
+    assert conf == pytest.approx(0.95) and "42.18" in text
 
     # A no-money text scrap → falls through to rasterise + OCR (0.5).
     monkeypatch.setattr(pypdf, "PdfReader", lambda _p: _FakeReader(_FakePage("Page 1 of 3")))
     text, conf = ocr_service._pdf_text(pdf)
-    assert conf == 0.5 and "CAFE" in text
+    assert conf == pytest.approx(0.5) and "CAFE" in text
