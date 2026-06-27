@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Numeric, String, Text
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Index, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin
@@ -19,6 +19,14 @@ from app.models.tag import transaction_tags
 
 class Transaction(Base, TimestampMixin):
     __tablename__ = "transactions"
+    # Composite indexes for the hot list/aggregate paths: the transactions list
+    # filters by account and orders/filters by date; aggregates exclude archived
+    # rows over a date range (CR-FEAT-6). Names match the migration so create_all
+    # (tests) and Alembic (runtime) agree.
+    __table_args__ = (
+        Index("ix_transactions_account_id_date", "account_id", "transaction_date"),
+        Index("ix_transactions_archived_at_date", "archived_at", "transaction_date"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     household_id: Mapped[int | None] = mapped_column(
