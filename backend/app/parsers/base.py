@@ -10,12 +10,16 @@ from __future__ import annotations
 
 import csv
 import io
+import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
-# Date formats tried in order. UK-first (DD/MM/YYYY) since the spec targets UK
-# banks (Curve, Barclays, Lloyds, Monzo).
+# Date formats tried in order. Day-first (DD/MM/YYYY) by default since the spec
+# targets UK banks (Curve, Barclays, Lloyds, Monzo); the numeric d/m/y forms are
+# ambiguous, so US month-first variants below are tried too (order per file —
+# see parse_date / detect_month_first).
 _DATE_FORMATS = (
     "%d/%m/%Y",
     "%Y-%m-%d",
@@ -30,6 +34,14 @@ _DATE_FORMATS = (
     "%d-%b-%Y",
     "%d-%b-%y",
 )
+
+# US month-first numeric variants (MM/DD/YYYY). Tried as a fallback by default — so a
+# lone US date doesn't hard-fail — or first when a file is detected as month-first.
+_MONTH_FIRST_FORMATS = ("%m/%d/%Y", "%m-%d-%Y", "%m.%d.%Y", "%m/%d/%y")
+
+# A purely numeric d/m/y date (the only ambiguous kind). ISO and named-month dates
+# are unambiguous and deliberately don't match, so they don't sway detection.
+_NUMERIC_DATE_RE = re.compile(r"^\s*(\d{1,2})[/.-](\d{1,2})[/.-]\d{2,4}\s*$")
 
 
 # A real statement is at most a few thousand rows; cap to bound memory + import
@@ -75,12 +87,23 @@ class StandardTransaction:
         return "credit" if self.amount >= 0 else "debit"
 
 
-def parse_date(value: str | None) -> date:
-    """Parse a date string using the known formats."""
+def parse_date(value: str | None, *, month_first: bool = False) -> date:
+    """Parse a date string using the known formats.
+
+    Numeric d/m/y dates are ambiguous; ``month_first`` (detected per file by
+    :func:`detect_month_first`) tries the US MM/DD order first. Either way the other
+    order is a fallback, so a lone US/UK date still parses rather than hard-failing.
+    The default stays day-first (DD/MM), the app's default locale.
+    """
     if value is None or not value.strip():
         raise ParseError("empty date")
     text = value.strip()
-    for fmt in _DATE_FORMATS:
+    ordered = (
+        (*_MONTH_FIRST_FORMATS, *_DATE_FORMATS)
+        if month_first
+        else (*_DATE_FORMATS, *_MONTH_FIRST_FORMATS)
+    )
+    for fmt in ordered:
         try:
             return datetime.strptime(text, fmt).date()
         except ValueError:
@@ -88,13 +111,35 @@ def parse_date(value: str | None) -> date:
     raise ParseError(f"unrecognised date: {value!r}")
 
 
-def parse_optional_date(value: str | None) -> date | None:
+def parse_optional_date(value: str | None, *, month_first: bool = False) -> date | None:
     if value is None or not value.strip():
         return None
     try:
-        return parse_date(value)
+        return parse_date(value, month_first=month_first)
     except ParseError:
         return None
+
+
+def detect_month_first(values: Iterable[str | None]) -> bool:
+    """Infer whether a column of numeric d/m/y dates is US month-first (MM/DD) rather
+    than the day-first (UK DD/MM) default — so a whole US statement imports correctly.
+
+    Flips to month-first only on positive, uncontradicted evidence: a value whose 2nd
+    component exceeds 12 can't be day-first (no month > 12), so the file is month-first
+    — unless some other value's 1st component exceeds 12 (which proves day-first). An
+    all-ambiguous, mixed/contradictory, or non-numeric column stays day-first.
+    """
+    day_first = month_first = False
+    for value in values:
+        match = _NUMERIC_DATE_RE.match(value or "")
+        if match is None:
+            continue
+        first, second = int(match.group(1)), int(match.group(2))
+        if first > 12 and second <= 12:
+            day_first = True
+        elif second > 12 and first <= 12:
+            month_first = True
+    return month_first and not day_first
 
 
 def parse_amount(value: str | None) -> Decimal:

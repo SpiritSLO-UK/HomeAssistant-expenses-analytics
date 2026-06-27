@@ -10,7 +10,7 @@ import pytest
 from app.parsers import detect_parser, get_parser
 from app.parsers.barclaycard_csv import BarclaycardCsvParser
 from app.parsers.barclays_csv import BarclaysCsvParser
-from app.parsers.base import parse_amount, parse_date
+from app.parsers.base import detect_month_first, parse_amount, parse_date
 from app.parsers.curve_csv import CurveCsvParser
 from app.parsers.generic_csv import GenericCsvParser
 from app.parsers.lloyds_csv import LloydsCsvParser
@@ -266,6 +266,50 @@ def test_generic_parser_explicit_mapping():
     txns = GenericCsvParser(mapping=mapping).parse("x.csv", content)
     assert txns[0].amount == Decimal("-3.50")
     assert txns[0].description_raw == "COFFEE"
+
+
+# --- US (month-first) date support ---
+
+def test_parse_date_month_first_and_fallback():
+    assert parse_date("15/03/2024") == date(2024, 3, 15)   # UK day-first (default)
+    assert parse_date("09/15/2024") == date(2024, 9, 15)   # US, day-first fails → fallback
+    assert parse_date("03/04/2024") == date(2024, 4, 3)    # ambiguous → day-first default
+    # Told the file is month-first, ambiguous dates resolve US-style; ISO is unaffected.
+    assert parse_date("03/04/2024", month_first=True) == date(2024, 3, 4)
+    assert parse_date("12.31.2024", month_first=True) == date(2024, 12, 31)
+    assert parse_date("2024-09-15", month_first=True) == date(2024, 9, 15)
+
+
+def test_detect_month_first():
+    assert detect_month_first(["09/15/2024", "10/03/2024"]) is True   # 2nd > 12 ⇒ month-first
+    assert detect_month_first(["15/09/2024", "03/10/2024"]) is False  # 1st > 12 ⇒ day-first
+    assert detect_month_first(["03/04/2024", "05/06/2024"]) is False  # all ambiguous ⇒ default
+    assert detect_month_first(["15/09/2024", "09/15/2024"]) is False  # contradictory ⇒ safe default
+    assert detect_month_first(["2024-09-15", "5 Jun 2024"]) is False  # unambiguous don't sway it
+
+
+def test_generic_parser_detects_us_month_first_statement():
+    """A whole US-format statement imports with the right dates — the file's order is
+    inferred from a row whose day component is > 12 (03/15 ⇒ MM/DD)."""
+    content = (
+        b"Date,Description,Amount\n"
+        b"03/04/2024,COFFEE,-3.50\n"      # ambiguous on its own
+        b"03/15/2024,GROCERIES,-42.18\n"  # day=15 > 12 ⇒ proves month-first
+    )
+    txns = GenericCsvParser().parse("us-bank.csv", content)
+    assert txns[0].transaction_date == date(2024, 3, 4)   # March 4, NOT April 3
+    assert txns[1].transaction_date == date(2024, 3, 15)
+
+
+def test_generic_parser_keeps_uk_day_first_statement():
+    content = (
+        b"Date,Description,Amount\n"
+        b"04/03/2024,COFFEE,-3.50\n"
+        b"15/03/2024,GROCERIES,-42.18\n"  # day=15 ⇒ day-first
+    )
+    txns = GenericCsvParser().parse("uk-bank.csv", content)
+    assert txns[0].transaction_date == date(2024, 3, 4)   # 4 March
+    assert txns[1].transaction_date == date(2024, 3, 15)
 
 
 # --- detection ---
