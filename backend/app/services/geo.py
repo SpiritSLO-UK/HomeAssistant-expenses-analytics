@@ -17,6 +17,10 @@ CURRENCY_COUNTRY = {
     "AUD": "AU", "CAD": "CA", "CHF": "CH", "HKD": "HK", "SGD": "SG",
     "NZD": "NZ", "SEK": "SE", "NOK": "NO", "DKK": "DK", "PLN": "PL",
     "INR": "IN", "ZAR": "ZA", "AED": "AE", "THB": "TH", "MXN": "MX",
+    # More single-country currencies travel commonly produces — so the map
+    # credits the actual country instead of "Unknown" (SR-F4).
+    "CZK": "CZ", "HUF": "HU", "TRY": "TR", "BRL": "BR", "ISK": "IS",
+    "KRW": "KR", "ILS": "IL", "MYR": "MY", "PHP": "PH", "IDR": "ID",
 }
 
 # Display names for every ISO-3166-1 alpha-2 code (generated — see
