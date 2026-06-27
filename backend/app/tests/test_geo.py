@@ -38,6 +38,15 @@ def test_flag_and_name():
     assert geo.name("ZZ") == "ZZ"                    # unknown code → echoed
 
 
+def test_more_single_country_currencies_resolve():
+    # SR-F4: currencies travel commonly produces now resolve to their country,
+    # each with a real display name (not echoed back).
+    for cur, code in {"CZK": "CZ", "HUF": "HU", "TRY": "TR", "BRL": "BR",
+                      "ISK": "IS", "KRW": "KR", "ILS": "IL"}.items():
+        assert geo.country_for(cur, None) == code, cur
+        assert geo.name(code) != code  # has a real display name
+
+
 # --- aggregation (service level) ---
 
 
