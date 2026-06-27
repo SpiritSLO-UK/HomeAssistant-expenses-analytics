@@ -385,9 +385,43 @@ def total_value_as_of(
     return total.quantize(TWO_DP)
 
 
-def _change(current: Decimal, prev: Decimal) -> dict:
-    change = (current - prev).quantize(TWO_DP)
-    pct = round(float(change / prev * 100), 1) if prev > 0 else None
+def _comparable_change(
+    db: Session, accounts: list[Account], earlier: date, later: date, base: str
+) -> dict:
+    """Value change between two dates, counting only positions valued at BOTH endpoints.
+
+    A holding (or value-snapshot account) not yet priced at ``earlier`` is excluded from
+    both totals, so a newly-added position can't masquerade as a gain — the previous code
+    compared the full current value against a prior total where unpriced holdings counted
+    as 0, giving wildly misleading % on young portfolios (SR). No comparable position ⇒
+    change 0.00, pct None.
+    """
+    today = date.today()
+    earlier_total = Decimal("0")
+    later_total = Decimal("0")
+    for account in accounts:
+        holdings = list_holdings(db, account.id)
+        legs: list[tuple[Decimal, Decimal]] = []
+        if holdings:
+            for h in holdings:
+                pe = _holding_price_as_of(db, h.id, earlier)
+                pl = _holding_price_as_of(db, h.id, later)
+                if pe is not None and pl is not None:  # priced at both ⇒ comparable
+                    units = Decimal(h.units)
+                    legs.append((units * pe, units * pl))
+        else:
+            ve = _account_value_as_of(db, account, earlier)
+            vl = _account_value_as_of(db, account, later)
+            if ve is not None and vl is not None:
+                legs.append((ve, vl))
+        for e_amt, l_amt in legs:
+            e_base = fx_service.convert_amount(db, e_amt, account.currency, base, today)
+            l_base = fx_service.convert_amount(db, l_amt, account.currency, base, today)
+            if e_base is not None and l_base is not None:
+                earlier_total += e_base
+                later_total += l_base
+    change = (later_total - earlier_total).quantize(TWO_DP)
+    pct = round(float(change / earlier_total * 100), 1) if earlier_total > 0 else None
     return {"change": str(change), "pct": pct}
 
 
@@ -428,9 +462,9 @@ def history(db: Session, *, account_ids: set[int] | None = None, days: int = 365
         "currency": base,
         "total_value": str(current),
         "points": points,
-        "change_day": _change(current, total_value_as_of(db, accounts, today - timedelta(days=1), base)),
-        "change_month": _change(current, total_value_as_of(db, accounts, today - timedelta(days=30), base)),
-        "change_year": _change(current, total_value_as_of(db, accounts, today - timedelta(days=365), base)),
+        "change_day": _comparable_change(db, accounts, today - timedelta(days=1), today, base),
+        "change_month": _comparable_change(db, accounts, today - timedelta(days=30), today, base),
+        "change_year": _comparable_change(db, accounts, today - timedelta(days=365), today, base),
     }
 
 
