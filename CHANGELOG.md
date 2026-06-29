@@ -3,6 +3,50 @@
 All notable changes to HA Finance Intelligence. This project uses date-stamped,
 human-readable entries; versions follow semantic versioning.
 
+## v1.0.2 — 2026-06-29
+
+A correctness, security-hardening and quality release on top of v1.0.1, with
+broader bank/receipt import support. Data and config carry over; database
+migrations run automatically on start.
+
+> Provided "as is", no warranty, not financial advice — keep your own backups.
+
+### Added
+- **Curve support** — imports the real Curve app export, recognises **Curve Cash**
+  (cashback) rewards, and **de-duplicates** spend that also appears on the
+  underlying funding card's own statement (kept-but-flagged when uncertain).
+- **Barclaycard** statement parser.
+- **Define-your-own CSV import** — map the columns of any bank's CSV export.
+- **Receipts → transactions** — suggests the matching transaction for an unmatched
+  receipt, with one-click *Add* from the Review Queue.
+- **Bulk AI suggest + categorise** from the Review Queue.
+
+### Improved
+- **Spending-by-location** recognises more currencies (CZK/HUF/TRY/BRL/ISK/KRW/ILS/…).
+- **More honest, more robust UI** — typed API errors with the two-factor session
+  header on every request (uploads/downloads/restore now work under MFA),
+  localised currency formatting, inline error banners, an app-wide error boundary,
+  inputs that don't lose edits on a background refresh, and confirm dialogs on
+  destructive actions.
+- Subscriptions ("due in N days" no longer shows *null*), budgets (100% spent now
+  reads as *over*), tags, savings/investment charts, and search refinements.
+
+### Fixed
+- Split transactions now total the parent **to the penny** in base currency.
+- A no-op categorisation rule no longer blocks a lower-priority rule.
+- FX rates are matched case-insensitively (no duplicate rate rows).
+- Numerous smaller correctness fixes across imports, receipts and the dashboard.
+
+### Security
+- **Owner-gated** backup / restore / config import; config-import **allow-list**;
+  **SSRF guard** on user-supplied URLs; **one-time** TOTP codes + MFA **lockout**
+  throttle; upload-size and parser **DoS caps**; tighter **CORS**; and tighter
+  handling of the at-rest encryption **stored key**.
+
+### Internal
+- Cleared the SonarCloud backlog (security findings, code smells, cognitive
+  complexity) and refreshed dependencies. No behaviour change.
+
 ## v1.0.1 — 2026-06-07
 
 A polish release from real-world testing on top of v1.0.0 — quality-of-life
@@ -125,7 +169,7 @@ release line).
 - Tests run **across all CPU cores** (`pytest-xdist`); ~405 backend tests.
 - SonarCloud quality gate green (security hotspots reviewed; code smells cleared).
 
-## v0.9.0-beta — 2026-06-07
+## v0.9.0-beta — 2026-06-03
 
 First public **beta**. A complete, privacy-first personal-finance app you can run
 **standalone** (Docker) today. Home Assistant integration (one-click add-on
@@ -146,8 +190,8 @@ Data (SQLite DB + uploads + safety backups) is kept in the `finance_data` volume
 
 ### Highlights
 
-- **Import** bank/card statements (CSV, OFX/QIF, XLSX, PDF — incl. scanned-PDF
-  OCR), with duplicate detection and an "already imported" guard.
+- **Import** bank/card statements (CSV, PDF — incl. scanned-PDF OCR — and
+  photos/scans), with duplicate detection and an "already imported" guard.
 - **Categorise** automatically (rules → vendor → keyword) with an in-app rules
   guide; **split** transactions; **projects**, **tags**, **budgets** (weekly→yearly).
 - **Dashboard**: customisable, reorderable cards — spend/income/net, trends,

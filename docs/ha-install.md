@@ -1,6 +1,6 @@
 # Install on Home Assistant
 
-HA Finance Intelligence runs on Home Assistant as a **add-on**: a single container
+HA Finance Intelligence runs on Home Assistant as an **add-on**: a single container
 served through Home Assistant **ingress** (a sidebar panel), signed in with your
 Home Assistant identity, with finance sensors published over **MQTT**. It installs
 from a **prebuilt multi-arch image** on GHCR, so Home Assistant *pulls* the image
@@ -43,7 +43,7 @@ On the add-on's **Configuration** tab:
 | `currency` | Your base currency (e.g. `GBP`, `USD`, `EUR`). | `GBP` |
 | `privacy_mode` | AI mode. `strict_local` = AI off, nothing leaves your machine. Others opt into local/cloud AI. | `strict_local` |
 | `mqtt_enabled` | Publish finance sensors to Home Assistant over MQTT discovery. | `false` |
-| `mqtt_host` / `mqtt_port` / `mqtt_username` / `mqtt_password` | Your broker (the Mosquitto add-on is `core-mosquitto`). Credentials optional. | `core-mosquitto` : `1883` |
+| `mqtt_host` / `mqtt_port` / `mqtt_username` / `mqtt_password` | **Optional overrides** — by default the add-on auto-discovers the Supervisor's MQTT broker (e.g. the Mosquitto add-on), so you usually leave these blank. Set them only to point at a different broker. | _(auto)_ |
 | `log_level` | `DEBUG` / `INFO` / `WARNING` / `ERROR`. | `INFO` |
 | `database_path` | Where the SQLite DB lives (inside the add-on's private `/data`). | `/data/finance/finance.db` |
 

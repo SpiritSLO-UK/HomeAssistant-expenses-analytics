@@ -63,10 +63,10 @@ catch-alls, so the specific one wins.
 | `vendor_equals` | the transaction's resolved vendor id equals | `42` |
 | `account_equals` | the transaction's account id equals | `3` |
 | `amount_equals` | the amount equals exactly | `9.99` |
-| `amount_between` | the amount is within an inclusive range | `10:50` (min:max) |
-| `recurring_payment` | the transaction looks like a detected recurring payment | `true` |
+| `amount_between` | the amount is within an inclusive range | `10,50` (min,max — comma- or pipe-separated) |
 | `category_equals` | the current category id equals (re-route an existing category) | `7` |
-| `source_format` | the importing parser/format matches | `monzo_csv` |
+| `recurring_payment` | _designed, not yet wired — currently never matches_ | `true` |
+| `source_format` | _designed, not yet wired — currently never matches_ | `monzo_csv` |
 
 ## Actions
 
@@ -78,9 +78,9 @@ catch-alls, so the specific one wins.
 | `set_country` | tag the spend location (for the spend-by-location map) | ISO alpha-2, e.g. `ES` |
 | `mark_transfer` | flag as a transfer (excluded from spend/income) | — |
 | `mark_income` | flag as income | — |
-| `mark_subscription` | flag as a subscription | — |
 | `require_review` | send to the review queue | — |
-| `block_cloud_ai` | never send this transaction to cloud AI | — |
+| `mark_subscription` | _designed, not yet wired — currently a no-op_ | — |
+| `block_cloud_ai` | _designed, not yet wired — use per-category privacy instead (see below)_ | — |
 
 ## Worked examples
 
@@ -91,8 +91,8 @@ catch-alls, so the specific one wins.
 
 **2 — A specific rule beating a broad one.**
 - Broad: `description_contains` = `amazon` → `set_category` *Shopping*, priority `100`.
-- Specific: `description_contains` = `amazon prime` → `set_category` *Subscriptions*
-  **and** `mark_subscription`, priority `200`.
+- Specific: `description_contains` = `amazon prime` → `set_category` *Subscriptions*,
+  priority `200`.
 - Because the specific rule has higher priority, "AMAZON PRIME" rows become
   *Subscriptions*; other Amazon rows fall through to *Shopping*.
 
@@ -105,12 +105,12 @@ catch-alls, so the specific one wins.
 - Condition: `amount_between` = `2000:5000` (or `description_contains` = `acme payroll`)
 - Action: `mark_income`
 
-**5 — Keep a sensitive merchant off cloud AI.**
-- Condition: `merchant_contains` = `clinic`
-- Action: `block_cloud_ai`
-- That transaction is never included in any cloud AI payload, regardless of the
-  global AI mode. (Category-level privacy does the same per category — see
-  [privacy.md](privacy.md).)
+**5 — Keep a sensitive category off cloud AI.**
+- The `block_cloud_ai` action above is designed but not yet wired, so use
+  **per-category privacy** instead: mark the category (e.g. *Health*) as
+  **never-cloud** in Categories → Cloud-AI privacy.
+- Transactions in a never-cloud category are never included in any cloud AI
+  payload, regardless of the global AI mode (see [privacy.md](privacy.md)).
 
 **6 — Tag a foreign vendor's country.**
 - Condition: `description_contains` = `mercadona`

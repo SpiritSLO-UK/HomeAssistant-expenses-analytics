@@ -32,7 +32,8 @@ Home Assistant backups), and pulls a prebuilt image so install is a quick downlo
 ## Setup
 
 1. Install the add-on, then on the **Configuration** tab set your **currency**
-   (and optionally enable **MQTT**, **AI**, or the **energy** options).
+   (and optionally **MQTT** / **AI** options). The **energy-cost offset** is
+   configured in-app (Settings → Energy), not on the Configuration tab.
 2. **Start** the add-on, then **Open Web UI** (enable **"Show in sidebar"** on the
    **Info** tab to pin a **Finance** entry to Home Assistant's left menu).
 3. Import a statement (or load demo data from **Settings**) and you're away.

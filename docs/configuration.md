@@ -157,9 +157,10 @@ Set these in the add-on's **Configuration** tab; `run.sh` maps them to the
 | `log_level` | `INFO` | Logging verbosity. |
 | `db_key` | — | At-rest encryption passphrase for **"stored"** unlock mode. Set it to the same passphrase you encrypted with (Settings → Database encryption) and the add-on unlocks itself on every restart. Leave blank for **"prompt"** mode (re-enter via the UI after each restart; the key is never written to disk). Stored here it lives on the device — weaker, opt-in. |
 
-Secrets used only by standalone/opt-in features (AI / investment / Paperless
-keys) are not in the add-on schema yet — set them as env vars if you run via
-Docker, or they'll be added to the add-on options as those integrations graduate.
+The cloud-AI key **is** in the add-on schema (`ai_api_key`). Secrets for the other
+opt-in features (investment price feed / Paperless) aren't in the add-on schema
+yet — set them as env vars if you run via Docker, or they'll be added to the
+add-on options as those integrations graduate.
 
 ---
 

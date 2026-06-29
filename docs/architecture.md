@@ -1,8 +1,12 @@
 # Architecture diagrams
 
 Visual companion to [`ha_finance_intelligence_spec.md`](../ha_finance_intelligence_spec.md)
-and [`docs/context.md`](context.md). Diagrams are [Mermaid](https://mermaid.js.org)
-(render on GitHub and in VS Code with a Mermaid extension). Backlog #94.
+and [`docs/context.md`](context.md). Backlog #94.
+
+> **Prefer a browser?** [**architecture.html**](architecture.html) is a
+> self-contained, styled version of these diagrams (inline SVG — renders offline,
+> light/dark, no external scripts). This Markdown file keeps the same diagrams as
+> [Mermaid](https://mermaid.js.org) so they render on GitHub and in VS Code.
 
 Dashed = optional / opt-in / later stage.
 
@@ -21,7 +25,7 @@ flowchart TB
   subgraph addon["HA Finance Intelligence add-on (one container)"]
     fe["React + TS frontend"]
     api["FastAPI backend /api"]
-    svc["Services<br/>import · categorise · rules · fx · dashboard · budgets ·<br/>projects · savings · investments · assets · receipts/OCR ·<br/>subscriptions · analytics · AI gateway · retention · backup"]
+    svc["Services<br/>import · categorise · rules · fx · dashboard · budgets ·<br/>projects · savings · investments · assets · receipts/OCR ·<br/>subscriptions · analytics · search · energy · AI gateway · retention · backup"]
     db[("SQLite<br/>/data/finance.db (private)")]
     fe --> api --> svc --> db
   end
