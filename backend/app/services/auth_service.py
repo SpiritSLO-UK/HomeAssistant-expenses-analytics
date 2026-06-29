@@ -94,6 +94,41 @@ def _identity_from_request(request: Request) -> tuple[str, str]:
     return ext_id, (display or "Home Assistant user")
 
 
+def _create_user(db: Session, ext_id: str, display: str) -> User:
+    """Create the user for a new identity: first user → owner+approved (bootstrap),
+    later users → member+pending (#126)."""
+    is_first = db.scalar(select(func.count(User.id))) == 0
+    household = get_or_create_default_household(db)
+    user = User(
+        household_id=household.id,
+        external_id=ext_id,
+        display_name=display,
+        role="owner" if is_first else "member",
+        status="approved" if is_first else "pending",
+        is_active=True,
+    )
+    db.add(user)
+    db.flush()
+    return user
+
+
+def _refresh_identity(user: User, ext_id: str, display: str) -> None:
+    """Backfill the external id on an adopted legacy row and follow HA name changes."""
+    if user.external_id is None:
+        user.external_id = ext_id
+    if display and user.display_name != display and ext_id != LOCAL_EXTERNAL_ID:
+        user.display_name = display
+
+
+def _touch_last_seen(user: User) -> None:
+    """Refresh ``last_seen_at`` at most once a minute, so a burst of GETs from one
+    user doesn't dirty the row (and force a commit) every request — the auth guard
+    only commits when the session is actually dirty (CR-FEAT-4)."""
+    now = _now()
+    if user.last_seen_at is None or (now - user.last_seen_at).total_seconds() >= 60:
+        user.last_seen_at = now
+
+
 def resolve_current_user(db: Session, request: Request) -> User:
     """Find or create the user for this request and refresh ``last_seen_at``.
 
@@ -103,39 +138,19 @@ def resolve_current_user(db: Session, request: Request) -> User:
     ext_id, display = _identity_from_request(request)
     user = db.scalars(select(User).where(User.external_id == ext_id)).first()
 
-    if user is None:
-        # Adopt a pre-existing single-user row (created before multi-user) so an
-        # upgraded install keeps its owner instead of spawning a duplicate.
-        if ext_id == LOCAL_EXTERNAL_ID:
-            user = db.scalars(
-                select(User).where(User.external_id.is_(None)).order_by(User.id).limit(1)
-            ).first()
+    # Adopt a pre-existing single-user row (created before multi-user) so an
+    # upgraded install keeps its owner instead of spawning a duplicate.
+    if user is None and ext_id == LOCAL_EXTERNAL_ID:
+        user = db.scalars(
+            select(User).where(User.external_id.is_(None)).order_by(User.id).limit(1)
+        ).first()
 
     if user is None:
-        is_first = db.scalar(select(func.count(User.id))) == 0
-        household = get_or_create_default_household(db)
-        user = User(
-            household_id=household.id,
-            external_id=ext_id,
-            display_name=display,
-            role="owner" if is_first else "member",
-            status="approved" if is_first else "pending",
-            is_active=True,
-        )
-        db.add(user)
-        db.flush()
+        user = _create_user(db, ext_id, display)
     else:
-        if user.external_id is None:
-            user.external_id = ext_id
-        if display and user.display_name != display and ext_id != LOCAL_EXTERNAL_ID:
-            user.display_name = display
+        _refresh_identity(user, ext_id, display)
 
-    # Throttle last_seen_at: refresh at most once a minute, so a burst of GETs from
-    # one user doesn't dirty the row (and force a commit) on every request — the
-    # auth guard only commits when the session is actually dirty (CR-FEAT-4).
-    now = _now()
-    if user.last_seen_at is None or (now - user.last_seen_at).total_seconds() >= 60:
-        user.last_seen_at = now
+    _touch_last_seen(user)
     return user
 
 
@@ -385,6 +400,15 @@ def _validate_user_update(
         raise ValueError("Cannot demote, disable, or remove the last active owner.")
 
 
+def _set_audited(changes: dict, target: User, field: str, new) -> None:
+    """Apply a scalar field change to ``target`` and record its before/after in
+    ``changes`` (keyed by field name) — only when ``new`` is given and differs."""
+    current = getattr(target, field)
+    if new is not None and new != current:
+        changes[field] = [current, new]
+        setattr(target, field, new)
+
+
 def _apply_user_changes(
     target: User,
     *,
@@ -399,9 +423,11 @@ def _apply_user_changes(
     """Apply the supplied fields to ``target`` and return the audited before/after
     changes (role/status/can_manage_settings/blocked_nav_keys/mfa_policy are audited)."""
     changes: dict = {}
-    if role is not None and role != target.role:
-        changes["role"] = [target.role, role]
-        target.role = role
+    # Simple audited scalar fields: record before/after + apply when changed.
+    _set_audited(changes, target, "role", role)
+    _set_audited(changes, target, "can_manage_settings", can_manage_settings)
+    _set_audited(changes, target, "mfa_policy", mfa_policy)
+    # Fields with extra side effects / normalisation stay explicit.
     if new_status is not None and new_status != target.status:
         changes["status"] = [target.status, new_status]
         target.status = new_status
@@ -410,18 +436,12 @@ def _apply_user_changes(
         target.display_name = display_name.strip()
     if email is not None:
         target.email = email.strip() or None
-    if can_manage_settings is not None and can_manage_settings != target.can_manage_settings:
-        changes["can_manage_settings"] = [target.can_manage_settings, can_manage_settings]
-        target.can_manage_settings = can_manage_settings
     if blocked_nav_keys is not None:
         normalised = sorted({k for k in blocked_nav_keys if k in BLOCKABLE_NAV})
         new_val = json.dumps(normalised) if normalised else None
         if new_val != target.blocked_nav:
             changes["blocked_nav_keys"] = [target.blocked_nav_keys, normalised]
             target.blocked_nav = new_val
-    if mfa_policy is not None and mfa_policy != target.mfa_policy:
-        changes["mfa_policy"] = [target.mfa_policy, mfa_policy]
-        target.mfa_policy = mfa_policy
     return changes
 
 

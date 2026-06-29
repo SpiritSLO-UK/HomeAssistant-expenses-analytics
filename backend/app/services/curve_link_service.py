@@ -198,55 +198,84 @@ def detect_cross_account(
         if r.funding_source and r.funding_source.lower() in links
     }
     mapped_accounts.discard(target_account_id)
-
     # Direction B: Curve labels that point at the account we're importing into.
     labels_for_target = {label for label, acc in links.items() if acc == target_account_id}
 
-    candidates_by_account: dict[int, list[Transaction]] = {}
-    if mapped_accounts:
-        for txn in db.scalars(
-            select(Transaction).where(
-                Transaction.account_id.in_(mapped_accounts),
-                Transaction.transaction_date >= lo,
-                Transaction.transaction_date <= hi,
-                Transaction.archived_at.is_(None),
-            )
-        ).all():
-            candidates_by_account.setdefault(txn.account_id, []).append(txn)
+    candidates_by_account = _candidates_by_account(db, mapped_accounts, lo, hi)
+    curve_candidates = _curve_candidates(db, labels_for_target, lo, hi)
 
-    curve_candidates: list[Transaction] = []
-    if labels_for_target:
-        for txn in db.scalars(
+    used: set[int] = set()  # an existing txn matches at most one incoming row
+    matches: dict[int, CrossMatch] = {}
+    for i, row in enumerate(parsed_rows):
+        match = _match_row(
+            row, target_account_id, links, labels_for_target,
+            candidates_by_account, curve_candidates, used, account_names,
+        )
+        if match is not None:
+            matches[i] = match
+    return matches
+
+
+def _candidates_by_account(
+    db: Session, mapped_accounts: set[int], lo: date, hi: date
+) -> dict[int, list[Transaction]]:
+    """Existing transactions in the mapped underlying accounts within the window."""
+    out: dict[int, list[Transaction]] = {}
+    if not mapped_accounts:
+        return out
+    for txn in db.scalars(
+        select(Transaction).where(
+            Transaction.account_id.in_(mapped_accounts),
+            Transaction.transaction_date >= lo,
+            Transaction.transaction_date <= hi,
+            Transaction.archived_at.is_(None),
+        )
+    ).all():
+        out.setdefault(txn.account_id, []).append(txn)
+    return out
+
+
+def _curve_candidates(
+    db: Session, labels_for_target: set[str], lo: date, hi: date
+) -> list[Transaction]:
+    """Existing Curve transactions whose funding label maps to the target account."""
+    if not labels_for_target:
+        return []
+    return list(
+        db.scalars(
             select(Transaction).where(
                 func.lower(Transaction.funding_source).in_(labels_for_target),
                 Transaction.transaction_date >= lo,
                 Transaction.transaction_date <= hi,
                 Transaction.archived_at.is_(None),
             )
-        ).all():
-            curve_candidates.append(txn)
+        ).all()
+    )
 
-    used: set[int] = set()  # an existing txn matches at most one incoming row
-    matches: dict[int, CrossMatch] = {}
 
-    for i, row in enumerate(parsed_rows):
-        match = None
-        if row.funding_source and row.funding_source.lower() in links:
-            acc_id = links[row.funding_source.lower()]
-            if acc_id != target_account_id:
-                # Direction A: bank-side is the existing candidate in that account.
-                match = _match_against(
-                    row, candidates_by_account.get(acc_id, []), used,
-                    account_names, bank_side="candidate",
-                )
-        elif not row.funding_source and labels_for_target:
-            # Direction B: bank-side is the incoming row itself.
-            match = _match_against(
-                row, curve_candidates, used, account_names, bank_side="row",
-            )
-        if match is not None:
-            matches[i] = match
-    return matches
+def _match_row(
+    row: StandardTransaction,
+    target_account_id: int,
+    links: dict[str, int],
+    labels_for_target: set[str],
+    candidates_by_account: dict[int, list[Transaction]],
+    curve_candidates: list[Transaction],
+    used: set[int],
+    account_names: dict[int, str],
+) -> CrossMatch | None:
+    """Match one incoming row against the right candidate set for its direction."""
+    if row.funding_source and row.funding_source.lower() in links:
+        acc_id = links[row.funding_source.lower()]
+        if acc_id == target_account_id:
+            return None
+        # Direction A: bank-side is the existing candidate in that account.
+        return _match_against(
+            row, candidates_by_account.get(acc_id, []), used, account_names, bank_side="candidate",
+        )
+    if not row.funding_source and labels_for_target:
+        # Direction B: bank-side is the incoming row itself.
+        return _match_against(row, curve_candidates, used, account_names, bank_side="row")
+    return None
 
 
 def _match_against(

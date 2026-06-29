@@ -128,26 +128,39 @@ def rerun_ocr(receipt_id: int, db: Annotated[Session, Depends(get_db)]) -> dict:
     return receipt_service.to_dict(db, receipt)
 
 
+def _ai_date(raw: str) -> _date | None:
+    raw = raw.strip()
+    if not raw or raw.lower() == "null":
+        return None
+    try:
+        return _date.fromisoformat(raw[:10])
+    except ValueError:
+        return None
+
+
+def _ai_total(raw: str) -> Decimal | None:
+    raw = raw.strip().replace(",", "")
+    if not raw:
+        return None
+    try:
+        total = Decimal(raw)
+    except InvalidOperation:
+        return None
+    return total if total >= 0 else None
+
+
 def _receipt_fields_from_ai(fields: dict) -> dict:
     """Map the vision model's {merchant, date, total, currency} to receipt fields."""
     out: dict = {}
     merchant = str(fields.get("merchant") or "").strip()
     if merchant:
         out["merchant_raw"] = merchant[:300]
-    raw_date = str(fields.get("date") or "").strip()
-    if raw_date and raw_date.lower() != "null":
-        try:
-            out["receipt_date"] = _date.fromisoformat(raw_date[:10])
-        except ValueError:
-            pass
-    raw_total = str(fields.get("total") or "").strip().replace(",", "")
-    if raw_total:
-        try:
-            total = Decimal(raw_total)
-            if total >= 0:
-                out["total_amount"] = total
-        except InvalidOperation:
-            pass
+    receipt_date = _ai_date(str(fields.get("date") or ""))
+    if receipt_date is not None:
+        out["receipt_date"] = receipt_date
+    total = _ai_total(str(fields.get("total") or ""))
+    if total is not None:
+        out["total_amount"] = total
     cur = str(fields.get("currency") or "").strip()
     if cur and cur.lower() != "null":
         out["currency"] = cur[:3].upper()
