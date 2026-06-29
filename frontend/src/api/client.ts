@@ -354,10 +354,11 @@ function toQuery(filters: Record<string, unknown>): string {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(filters)) {
     // Filter values are primitives (string | number | boolean); skip empties and
-    // defensively skip any object so we never serialise "[object Object]".
+    // only stringify a confirmed primitive so we never serialise "[object Object]".
     if (value === undefined || value === null || value === "" || value === false) continue;
-    if (typeof value === "object") continue;
-    params.append(key, String(value));
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      params.append(key, String(value));
+    }
   }
   return params.toString();
 }
