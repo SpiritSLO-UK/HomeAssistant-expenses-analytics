@@ -176,7 +176,7 @@ export default function CsvMappingPanel({
       </div>
       <p className="muted" style={{ fontSize: "0.8rem" }}>
         Minimum: a <strong>Date</strong> and either an <strong>Amount</strong> (signed) or a{" "}
-        <strong>Debit</strong>/<strong>Credit</strong> pair.
+        <strong>Money out</strong>/<strong>Money in</strong> pair.
       </p>
 
       {sample_rows.length > 0 && (
@@ -207,7 +207,7 @@ export default function CsvMappingPanel({
           {save.isPending ? "Saving…" : "Save as profile"}
         </button>
       </div>
-      {!canPreview && <p className="muted" style={{ fontSize: "0.8rem" }}>Map a Date + an Amount (or Debit/Credit) to continue.</p>}
+      {!canPreview && <p className="muted" style={{ fontSize: "0.8rem" }}>Map a Date + an Amount (or Money out/Money in) to continue.</p>}
       {err && <p className="status status--error">{err}</p>}
     </div>
   );

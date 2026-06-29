@@ -25,8 +25,8 @@ from app.parsers.base import (
 LOGICAL_FIELDS: list[dict[str, object]] = [
     {"key": "date", "label": "Date", "required": True},
     {"key": "amount", "label": "Amount (signed)", "required": False},
-    {"key": "debit", "label": "Debit / money out", "required": False},
-    {"key": "credit", "label": "Credit / money in", "required": False},
+    {"key": "debit", "label": "Money out", "required": False},
+    {"key": "credit", "label": "Money in", "required": False},
     {"key": "description", "label": "Description", "required": False},
     {"key": "merchant", "label": "Merchant / payee", "required": False},
     {"key": "currency", "label": "Currency", "required": False},
