@@ -178,19 +178,31 @@ def ai_extract_receipt(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
 ) -> dict:
-    """Opt-in vision-AI fallback: read merchant/date/total from the receipt image
-    when OCR couldn't. The frontend warns first (the image is sent to the AI, and
-    an image can't be redacted). Image receipts only."""
+    """Opt-in vision-AI fallback: read merchant/date/total from the receipt when
+    OCR couldn't. The frontend warns first (the image is sent to the AI, and it
+    can't be redacted). Works on image receipts and PDFs (the first PDF page is
+    rendered to an image — receipts/invoices are often PDFs)."""
     receipt = _get(db, receipt_id)
     path = Path(receipt.storage_path) if receipt.storage_path else None
     if path is None or not path.exists():
         raise HTTPException(status_code=404, detail="Receipt original is not available")
     mime = mimetypes.guess_type(receipt.source_filename or path.name)[0] or ""
-    if not mime.startswith("image/"):
-        raise HTTPException(status_code=400, detail="AI extraction needs an image receipt (not a PDF).")
-    content = path.read_bytes()
+    is_pdf = mime == "application/pdf" or path.suffix.lower() == ".pdf"
+    if mime.startswith("image/"):
+        content, send_mime = path.read_bytes(), mime
+    elif is_pdf:
+        # Vision models can't take a PDF directly — render the first page to PNG.
+        rendered = ocr_service.render_pdf_page_png(path)
+        if rendered is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Couldn't render this PDF for AI extraction (the PDF rasteriser is unavailable).",
+            )
+        content, send_mime = rendered, "image/png"
+    else:
+        raise HTTPException(status_code=400, detail="AI extraction needs an image or PDF receipt.")
     try:
-        fields = ai_service.extract_receipt_image(db, content, mime)
+        fields = ai_service.extract_receipt_image(db, content, send_mime)
     except AIDisabled as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except AIError as exc:

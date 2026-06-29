@@ -447,3 +447,33 @@ def test_ai_extract_import_off_returns_400(client):
     client.get("/api/users/me")  # strict_local default → AI off
     r = client.post("/api/imports/ai-extract", files={"file": ("s.png", b"x", "image/png")})
     assert r.status_code == 400
+
+
+# --- PDF receipts/invoices for vision extraction ---
+
+
+def test_render_pdf_page_png(samples_dir):
+    """The PDF→PNG rasteriser turns a PDF's first page into a real PNG so it can
+    be sent to vision AI (receipts/invoices are often PDFs)."""
+    from app.services import ocr_service
+
+    pdf = next((samples_dir.parent / "sample-pdf").glob("*.pdf"))
+    png = ocr_service.render_pdf_page_png(pdf)
+    assert png is not None and png[:4] == b"\x89PNG"
+
+
+def test_ai_extract_accepts_pdf_receipt(client, monkeypatch, samples_dir):
+    """A PDF receipt is no longer rejected — the first page is rendered + sent to
+    vision AI, and the returned fields are applied."""
+    client.get("/api/users/me")
+    client.put("/api/settings", json={"privacy_mode": "cloud_manual", "ai_provider": "openai_compatible",
+                                      "ai_base_url": "https://x/v1", "ai_model": "m"})
+    monkeypatch.setattr(ai_service, "get_provider", lambda _db: _VisionProvider(
+        {"merchant": "Acme Ltd", "date": "2026-06-01", "total": "42.00", "currency": "GBP"}))
+    pdf = next((samples_dir.parent / "sample-pdf").glob("*.pdf"))
+    up = client.post("/api/receipts/upload", files={"file": ("invoice.pdf", pdf.read_bytes(), "application/pdf")})
+    assert up.status_code == 201, up.text
+    rid = up.json()["id"]
+    r = client.post(f"/api/receipts/{rid}/ai-extract")
+    assert r.status_code == 200, r.text
+    assert "Acme Ltd" in r.text  # the AI-extracted merchant was applied
