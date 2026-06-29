@@ -39,11 +39,6 @@ export function initTheme(): void {
   const onChange = () => {
     if (getThemePref() === "system") applyTheme("system");
   };
-  if (typeof mql.addEventListener === "function") {
-    mql.addEventListener("change", onChange);
-  } else {
-    // Legacy Safari (<14) exposes only the deprecated addListener.
-    (mql as MediaQueryList & { addListener(cb: () => void): void }).addListener(onChange);
-  }
+  mql.addEventListener("change", onChange);
   osListenerAttached = true;
 }

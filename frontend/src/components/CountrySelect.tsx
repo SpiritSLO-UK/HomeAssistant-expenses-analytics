@@ -43,7 +43,7 @@ export default function CountrySelect({
       <option value="">—</option>
       {!known && value && <option value={value}>{value}</option>}
       {pinned && <option value={pinned.code}>{pinned.name}</option>}
-      {pinned && rest.length > 0 && <option value="" disabled aria-hidden="true">──────────</option>}
+      {pinned && rest.length > 0 && <option value="" disabled>──────────</option>}
       {rest.map((c) => (
         <option key={c.code} value={c.code}>{c.name}</option>
       ))}

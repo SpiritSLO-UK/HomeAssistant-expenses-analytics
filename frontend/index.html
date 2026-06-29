@@ -12,7 +12,7 @@
           var p = localStorage.getItem("hafi_theme") || "system";
           var dark = p === "dark" || (p === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
           document.documentElement.dataset.theme = dark ? "dark" : "light";
-        } catch (e) {
+        } catch {
           // localStorage/matchMedia unavailable — fall back to the light default.
           document.documentElement.dataset.theme = "light";
         }
