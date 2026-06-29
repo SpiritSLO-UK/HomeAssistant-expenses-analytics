@@ -400,8 +400,8 @@ function PreviewTable({ rows }: Readonly<{ rows: UploadResponse["preview"] }>) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((r, i) => (
-            <tr key={i} className={rowClass(r)}>
+          {rows.map((r) => (
+            <tr key={`${r.transaction_date}|${r.description_raw}|${r.amount}|${r.currency}`} className={rowClass(r)}>
               <td>{r.transaction_date}</td>
               <td>{r.description_raw}</td>
               <td className={"num " + (r.direction === "credit" ? "amt--pos" : "amt--neg")}>

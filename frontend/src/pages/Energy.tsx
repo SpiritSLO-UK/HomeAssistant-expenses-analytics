@@ -63,7 +63,7 @@ export default function Energy() {
         </p>
       )}
 
-      {o && o.configured && (
+      {o?.configured && (
         <div className="card">
           <h2 className="card__title">This month ({o.month})</h2>
           {!o.available && (
@@ -98,7 +98,7 @@ export default function Energy() {
 
       <EnergyHistoryCard currency={base} />
 
-      {o && o.configured && <ProductionTrendCard currency={base} />}
+      {o?.configured && <ProductionTrendCard currency={base} />}
 
       {canManage && <EnergyConfigCard />}
     </div>
@@ -228,7 +228,7 @@ function EnergyConfigCard() {
     setEntities(s.production_entities.join("\n"));
     setTopics(s.production_topics.join("\n"));
     setTariff(s.tariff_per_kwh);
-    setCategoryId(s.energy_category_id != null ? String(s.energy_category_id) : "");
+    setCategoryId(s.energy_category_id == null ? "" : String(s.energy_category_id));
     setSemantics(s.production_semantics);
   }, [status.data]);
 

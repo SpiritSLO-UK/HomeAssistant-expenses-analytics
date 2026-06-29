@@ -217,8 +217,8 @@ function ReviewRow({
         await createVendorFromTransaction(item.item_id, s.vendor);
         qc.invalidateQueries({ queryKey: ["vendors"] });
       }
-      if (s.categoryId != null) categorise.mutate(s.categoryId); // resolves item + invalidates
-      else qc.invalidateQueries({ queryKey: ["transactions"] }); // category-less change
+      if (s.categoryId == null) qc.invalidateQueries({ queryKey: ["transactions"] }); // category-less change
+      else categorise.mutate(s.categoryId); // resolves item + invalidates
     } catch (e) {
       fail(e);
     }
@@ -380,8 +380,8 @@ function UncategorisedRow({
       if (!s) return;
       if (s.country) await updateTransaction(txn.id, { country: s.country });
       if (s.vendor) await createVendorFromTransaction(txn.id, s.vendor);
-      if (s.categoryId != null) set.mutate(s.categoryId);
-      else onDone();
+      if (s.categoryId == null) onDone();
+      else set.mutate(s.categoryId);
     } catch (e) {
       fail(e);
     }

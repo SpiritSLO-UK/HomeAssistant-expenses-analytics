@@ -184,8 +184,10 @@ export default function CsvMappingPanel({
           <table className="table">
             <thead><tr>{headers.map((h) => <th key={h}>{h}</th>)}</tr></thead>
             <tbody>
-              {sample_rows.map((r, i) => (
-                <tr key={i}>{headers.map((h) => <td key={h}>{r[h] ?? ""}</td>)}</tr>
+              {sample_rows.map((r) => (
+                <tr key={headers.map((h) => r[h] ?? "").join("")}>
+                  {headers.map((h) => <td key={h}>{r[h] ?? ""}</td>)}
+                </tr>
               ))}
             </tbody>
           </table>

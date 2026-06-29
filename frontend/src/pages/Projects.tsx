@@ -215,7 +215,7 @@ function NewProject({
       createProject({
         name,
         status,
-        budget_amount: budget ? budget : null,
+        budget_amount: budget || null,
       }),
     onSuccess: () => {
       setName("");
