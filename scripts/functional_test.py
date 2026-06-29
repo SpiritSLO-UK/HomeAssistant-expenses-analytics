@@ -100,7 +100,8 @@ class Runner:
             detail = fn()
             self.results.append((name, True, str(detail) if detail is not None else ""))
             return detail
-        except Exception as exc:  # noqa: BLE001 - report any failure, keep going
+        # Report any failure and keep going — a broad except is intentional here.
+        except Exception as exc:  # noqa: BLE001
             self.results.append((name, False, str(exc)))
             return None
 

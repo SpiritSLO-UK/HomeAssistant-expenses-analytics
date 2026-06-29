@@ -28,6 +28,8 @@ from app.services.auth_service import get_current_user
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
 
+_ACCOUNT_NOT_FOUND = "Account not found"
+
 
 def _to_dict(account: Account, owner_names: dict[int, str], in_use: set[int] | None = None) -> dict:
     return {
@@ -109,7 +111,7 @@ def update_account(
     account = db.get(Account, account_id)
     scope = auth_service.visible_account_scope(request, db)
     if account is None or (scope is not None and account_id not in scope):
-        raise HTTPException(status_code=404, detail="Account not found")
+        raise HTTPException(status_code=404, detail=_ACCOUNT_NOT_FOUND)
 
     data = payload.model_dump(exclude_unset=True)
     is_admin = auth_service.is_admin(user.role)
@@ -150,7 +152,7 @@ def delete_account(
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     if deleted is None:
-        raise HTTPException(status_code=404, detail="Account not found")
+        raise HTTPException(status_code=404, detail=_ACCOUNT_NOT_FOUND)
     return {"deleted": True, "id": account_id}
 
 
@@ -173,5 +175,5 @@ def merge_account(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if target is None:
-        raise HTTPException(status_code=404, detail="Account not found")
+        raise HTTPException(status_code=404, detail=_ACCOUNT_NOT_FOUND)
     return _to_dict(target, _owner_names(db), account_service.accounts_in_use(db))
