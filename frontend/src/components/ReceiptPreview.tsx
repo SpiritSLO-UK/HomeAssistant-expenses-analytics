@@ -27,13 +27,11 @@ export default function ReceiptPreview({
       ref={ref}
       className="modal-dialog"
       aria-label={`Receipt preview: ${filename ?? "original"}`}
-      // Escape closes via onKeyDown below (also the keyboard equivalent of the
-      // backdrop click, keeping the click handler accessible). onCancel only
-      // prevents the native close so Escape doesn't fire onClose twice.
-      onCancel={(e) => { e.preventDefault(); }}
-      // Click on the dialog backdrop (outside the inner card) closes it.
-      onClick={(e) => { if (e.target === ref.current) onClose(); }}
-      onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}
+      // Native <dialog> handles Esc via the cancel event; preventDefault stops the
+      // native close so React drives the unmount through onClose (single fire).
+      // (Close via the ✕ button or Esc — no backdrop-click handler, which would
+      // put a mouse/keyboard listener on a non-interactive element.)
+      onCancel={(e) => { e.preventDefault(); onClose(); }}
     >
       <div className="card" style={{ margin: 0, maxWidth: "92vw" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>

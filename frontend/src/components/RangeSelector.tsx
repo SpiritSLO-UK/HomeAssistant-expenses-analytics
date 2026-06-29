@@ -12,7 +12,7 @@ export default function RangeSelector({
   onChange,
 }: Readonly<{ months: number; onChange: (months: number) => void }>) {
   return (
-    <div className="form-row" style={{ gap: 4 }} role="group" aria-label="Time range">
+    <div className="form-row" style={{ gap: 4 }} title="Time range">
       {RANGES.map((r) => (
         <button
           key={r.months}
