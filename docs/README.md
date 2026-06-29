@@ -17,7 +17,7 @@ and how to run it; the guides below go deeper.
 | [Privacy](privacy.md) | Local-first model, what happens when AI is enabled, and the honest limits of third-party AI guarantees. |
 | [Security & isolation](security.md) | Threat model, the private `/data` volume, file permissions, AppArmor, encryption at rest, and access control. |
 | [HTTPS / reverse proxy](reverse-proxy.md) | Serve the standalone app over TLS — terminate HTTPS in a Caddy/nginx/Traefik proxy in front of port 8099 (bundled Caddy compose profile). |
-| [Architecture](architecture.md) | How the pieces fit together (diagrams) — backend, frontend, data model, request flow. |
+| [Architecture](architecture.md) ([HTML](architecture.html)) | How the pieces fit together (diagrams) — backend, frontend, data model, request flow. The HTML version is self-contained (inline SVG, renders offline). |
 | [Context](context.md) | The living design/context notes for the project. |
 | [Community intro post](community-intro.md) | A ready-to-post draft for the Home Assistant forum — what the app is, install, features, and a screenshots checklist. |
 

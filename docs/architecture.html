@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>HA Finance Intelligence — Architecture</title>
+<meta name="description" content="Self-contained architecture &amp; flow diagrams for HA Finance Intelligence (inline SVG, no external dependencies)." />
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --ink: #1f2630; --muted: #5b6573;
+    --line: #c7ced8; --accent: #2f6fed; --accent-soft: #e8f0ff;
+    --opt: #8a93a3; --opt-fill: #f1f3f6; --db: #fff6e6; --db-line: #e0a800;
+    --ext: #eafaf1; --ext-line: #2f9e6b; --shadow: 0 1px 3px rgba(20,30,50,.10);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161b22; --panel: #1f2630; --ink: #e6eaf0; --muted: #9aa4b2;
+      --line: #3a434f; --accent: #6aa9ff; --accent-soft: #243043;
+      --opt: #7f8a99; --opt-fill: #232a34; --db: #2b2718; --db-line: #c9a227;
+      --ext: #16271f; --ext-line: #3aa974; --shadow: 0 1px 3px rgba(0,0,0,.4);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 32px 20px 64px; }
+  header h1 { margin: 0 0 6px; font-size: 1.9rem; letter-spacing: -.01em; }
+  header p { margin: 0; color: var(--muted); }
+  header .legend { margin-top: 14px; font-size: .85rem; color: var(--muted); }
+  header .legend b { color: var(--ink); }
+  nav { margin: 22px 0 8px; font-size: .9rem; }
+  nav a { color: var(--accent); text-decoration: none; margin-right: 14px; white-space: nowrap; }
+  nav a:hover { text-decoration: underline; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 18px 20px 8px; margin: 22px 0; box-shadow: var(--shadow); }
+  section h2 { margin: 0 0 2px; font-size: 1.2rem; }
+  section .sub { margin: 0 0 14px; color: var(--muted); font-size: .92rem; }
+  .figure { overflow-x: auto; }
+  svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+  text { font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace; }
+  .note { color: var(--muted); font-size: .88rem; border-top: 1px dashed var(--line);
+    margin-top: 12px; padding: 10px 0 12px; }
+  footer { color: var(--muted); font-size: .85rem; margin-top: 28px; text-align: center; }
+  code { background: var(--accent-soft); padding: .05em .35em; border-radius: 4px;
+    font-family: ui-monospace, Consolas, monospace; font-size: .9em; }
+  /* shared SVG primitive styles */
+  .box { fill: var(--panel); stroke: var(--line); stroke-width: 1.5; }
+  .box-accent { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+  .box-db { fill: var(--db); stroke: var(--db-line); stroke-width: 1.5; }
+  .box-ext { fill: var(--ext); stroke: var(--ext-line); stroke-width: 1.5; stroke-dasharray: 5 4; }
+  .grp { fill: none; stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 2 3; }
+  .lbl { fill: var(--ink); font-size: 13px; }
+  .lbl-sm { fill: var(--muted); font-size: 11px; }
+  .ttl { fill: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .04em; }
+  .edge { stroke: var(--accent); stroke-width: 1.6; fill: none; }
+  .edge-opt { stroke: var(--opt); stroke-width: 1.4; fill: none; stroke-dasharray: 5 4; }
+  .elbl { fill: var(--muted); font-size: 10.5px; }
+  /* marker fills — var() only resolves via CSS, not as a presentation attribute */
+  .mk-accent { fill: var(--accent); }
+  .mk-opt { fill: var(--opt); }
+  .mk-muted { fill: var(--muted); }
+  .mk-line { fill: var(--line); }
+  .edge-ret { stroke: var(--muted); stroke-width: 1.4; fill: none; stroke-dasharray: 5 4; }
+  .gline { stroke: var(--line); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>HA Finance Intelligence — Architecture</h1>
+    <p>Self-contained visual companion to <code>ha_finance_intelligence_spec.md</code> and <code>docs/context.md</code>. Pure inline SVG — renders offline, no external scripts.</p>
+    <p class="legend">Legend: <b>solid</b> = core data path · <span style="color:var(--opt)">dashed</span> = optional / opt-in / external. The Markdown version (<a href="architecture.md" style="color:var(--accent)">architecture.md</a>) carries the same diagrams as Mermaid for GitHub.</p>
+    <nav>
+      <a href="#sys">1 · System</a>
+      <a href="#req">2 · Request flow</a>
+      <a href="#imp">3 · Import &amp; categorise</a>
+      <a href="#data">4 · Data model</a>
+      <a href="#dep">5 · Deployment</a>
+    </nav>
+  </header>
+
+  <!-- 1. SYSTEM ------------------------------------------------------------>
+  <section id="sys">
+    <h2>1 · System &amp; infrastructure</h2>
+    <p class="sub">One container: React frontend → FastAPI → service layer → private SQLite. Everything external is opt-in.</p>
+    <div class="figure">
+    <svg viewBox="0 0 920 540" role="img" aria-label="System diagram: browser through Home Assistant ingress to the add-on container (frontend, backend, services, SQLite), with optional MQTT and external services.">
+      <defs>
+        <marker id="ah" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" class="mk-accent"/></marker>
+        <marker id="ao" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" class="mk-opt"/></marker>
+      </defs>
+
+      <!-- browser -->
+      <rect class="box-accent" x="350" y="16" width="220" height="44" rx="9"/>
+      <text class="lbl" x="460" y="43" text-anchor="middle">Browser / HA mobile app</text>
+
+      <!-- HA group -->
+      <rect class="grp" x="24" y="92" width="300" height="220" rx="12"/>
+      <text class="ttl" x="40" y="112">HOME ASSISTANT</text>
+      <rect class="box" x="44" y="124" width="260" height="44" rx="9"/>
+      <text class="lbl" x="174" y="146" text-anchor="middle">Ingress sidebar panel</text>
+      <text class="lbl-sm" x="174" y="160" text-anchor="middle">(handles auth · strips identity headers)</text>
+      <rect class="box" x="44" y="186" width="124" height="40" rx="9"/>
+      <text class="lbl" x="106" y="210" text-anchor="middle">MQTT broker</text>
+      <rect class="box" x="180" y="186" width="124" height="40" rx="9"/>
+      <text class="lbl" x="242" y="205" text-anchor="middle">Automations</text>
+      <text class="lbl-sm" x="242" y="219" text-anchor="middle">/ notifications</text>
+
+      <!-- add-on container -->
+      <rect class="grp" x="356" y="92" width="300" height="380" rx="12"/>
+      <text class="ttl" x="372" y="112">ADD-ON CONTAINER</text>
+      <rect class="box-accent" x="396" y="124" width="220" height="42" rx="9"/>
+      <text class="lbl" x="506" y="150" text-anchor="middle">React + TS frontend</text>
+      <rect class="box-accent" x="396" y="190" width="220" height="42" rx="9"/>
+      <text class="lbl" x="506" y="216" text-anchor="middle">FastAPI backend · /api</text>
+      <rect class="box" x="376" y="256" width="260" height="92" rx="9"/>
+      <text class="lbl" x="506" y="278" text-anchor="middle">Service layer</text>
+      <text class="lbl-sm" x="506" y="296" text-anchor="middle">import · categorise · rules · fx · dashboard</text>
+      <text class="lbl-sm" x="506" y="310" text-anchor="middle">budgets · savings · investments · receipts/OCR</text>
+      <text class="lbl-sm" x="506" y="324" text-anchor="middle">subscriptions · search · energy · AI gateway</text>
+      <text class="lbl-sm" x="506" y="338" text-anchor="middle">retention · backup</text>
+      <path class="box-db" d="M406 372 a100 12 0 0 0 200 0 v40 a100 12 0 0 1 -200 0 z"/>
+      <ellipse class="box-db" cx="506" cy="372" rx="100" ry="12"/>
+      <text class="lbl" x="506" y="404" text-anchor="middle">SQLite · /data (private)</text>
+
+      <!-- external opt-in -->
+      <rect class="grp" x="688" y="92" width="208" height="300" rx="12"/>
+      <text class="ttl" x="704" y="112">EXTERNAL · OPT-IN</text>
+      <rect class="box-ext" x="704" y="124" width="176" height="40" rx="9"/>
+      <text class="lbl" x="792" y="148" text-anchor="middle">local / cloud LLM</text>
+      <rect class="box-ext" x="704" y="178" width="176" height="40" rx="9"/>
+      <text class="lbl" x="792" y="202" text-anchor="middle">api.frankfurter.dev</text>
+      <rect class="box-ext" x="704" y="232" width="176" height="40" rx="9"/>
+      <text class="lbl" x="792" y="251" text-anchor="middle">Stooq / Alpha Vantage</text>
+      <text class="lbl-sm" x="792" y="265" text-anchor="middle">prices</text>
+      <rect class="box-ext" x="704" y="286" width="176" height="40" rx="9"/>
+      <text class="lbl" x="792" y="310" text-anchor="middle">your Paperless-ngx</text>
+
+      <!-- edges -->
+      <path class="edge" marker-end="url(#ah)" d="M440 60 C 300 78, 174 96, 174 120"/>
+      <text class="elbl" x="250" y="82">open</text>
+      <path class="edge" marker-end="url(#ah)" d="M174 168 C 174 250, 360 200, 392 200"/>
+      <text class="elbl" x="250" y="200" text-anchor="middle">serve UI</text>
+      <path class="edge" marker-end="url(#ah)" d="M506 166 L506 188"/>
+      <path class="edge" marker-end="url(#ah)" d="M506 232 L506 254"/>
+      <path class="edge" marker-end="url(#ah)" d="M506 348 L506 360"/>
+      <!-- mqtt + autos -->
+      <path class="edge-opt" marker-end="url(#ao)" d="M376 300 C 240 300, 106 250, 106 228"/>
+      <text class="elbl" x="222" y="270" text-anchor="middle">publish sensors</text>
+      <path class="edge-opt" marker-end="url(#ao)" d="M168 206 L178 206"/>
+      <!-- external dashed -->
+      <path class="edge-opt" marker-end="url(#ao)" d="M636 292 C 670 250, 676 180, 700 150"/>
+      <path class="edge-opt" marker-end="url(#ao)" d="M636 300 C 672 280, 676 220, 700 196"/>
+      <path class="edge-opt" marker-end="url(#ao)" d="M636 308 C 672 300, 678 270, 700 250"/>
+      <path class="edge-opt" marker-end="url(#ao)" d="M636 316 C 672 330, 678 320, 700 304"/>
+    </svg>
+    </div>
+    <p class="note"><b>Standalone (no Home Assistant):</b> the same container runs behind an optional TLS reverse proxy instead of HA ingress — see <a href="reverse-proxy.md">reverse-proxy.md</a>. Bind it to localhost or a header-stripping proxy (the app trusts <code>X-Remote-User-*</code>).</p>
+  </section>
+
+  <!-- 2. REQUEST FLOW ------------------------------------------------------>
+  <section id="req">
+    <h2>2 · Request flow</h2>
+    <p class="sub">A read/write request, ingress → backend → service → SQLite and back.</p>
+    <div class="figure">
+    <svg viewBox="0 0 900 300" role="img" aria-label="Sequence: Browser to HA Ingress to FastAPI to service layer to SQLite, returning JSON or the SPA index.html.">
+      <defs>
+        <marker id="ah2" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" class="mk-accent"/></marker>
+        <marker id="ah2b" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" class="mk-muted"/></marker>
+      </defs>
+      <!-- lifelines -->
+      <g>
+        <rect class="box-accent" x="20" y="16" width="120" height="38" rx="9"/><text class="lbl" x="80" y="40" text-anchor="middle">Browser</text>
+        <rect class="box" x="200" y="16" width="120" height="38" rx="9"/><text class="lbl" x="260" y="40" text-anchor="middle">HA Ingress</text>
+        <rect class="box-accent" x="380" y="16" width="130" height="38" rx="9"/><text class="lbl" x="445" y="40" text-anchor="middle">FastAPI /api</text>
+        <rect class="box" x="570" y="16" width="130" height="38" rx="9"/><text class="lbl" x="635" y="40" text-anchor="middle">Service layer</text>
+        <rect class="box-db" x="760" y="16" width="120" height="38" rx="9"/><text class="lbl" x="820" y="40" text-anchor="middle">SQLite</text>
+      </g>
+      <g class="gline" stroke-width="1.2" stroke-dasharray="3 4">
+        <line x1="80" y1="54" x2="80" y2="284"/><line x1="260" y1="54" x2="260" y2="284"/>
+        <line x1="445" y1="54" x2="445" y2="284"/><line x1="635" y1="54" x2="635" y2="284"/>
+        <line x1="820" y1="54" x2="820" y2="284"/>
+      </g>
+      <!-- messages -->
+      <path class="edge" marker-end="url(#ah2)" d="M80 86 L256 86"/><text class="elbl" x="84" y="80">request /api/hassio_ingress/&lt;token&gt;/</text>
+      <path class="edge" marker-end="url(#ah2)" d="M260 118 L441 118"/><text class="elbl" x="264" y="112">proxied (forwarded headers)</text>
+      <path class="edge" marker-end="url(#ah2)" d="M445 150 L631 150"/><text class="elbl" x="449" y="144">call service</text>
+      <path class="edge" marker-end="url(#ah2)" d="M635 182 L816 182"/><text class="elbl" x="639" y="176">query / write</text>
+      <path class="edge-opt" marker-end="url(#ah2b)" d="M820 214 L639 214"/><text class="elbl" x="660" y="208">rows</text>
+      <path class="edge-opt" marker-end="url(#ah2b)" d="M635 246 L449 246"/><text class="elbl" x="470" y="240">result</text>
+      <path class="edge-opt" marker-end="url(#ah2b)" d="M445 278 L84 278"/><text class="elbl" x="150" y="272">JSON (API) or index.html (SPA)</text>
+    </svg>
+    </div>
+  </section>
+
+  <!-- 3. IMPORT FLOW ------------------------------------------------------->
+  <section id="imp">
+    <h2>3 · Import &amp; categorisation flow</h2>
+    <p class="sub">Two phases: upload → preview (dedup), then confirm → persist with the rules → vendor → keyword → FX pipeline per row.</p>
+    <div class="figure">
+    <svg viewBox="0 0 900 430" role="img" aria-label="Import flow: upload creates a preview with source-hash dedup; confirm runs each new transaction through rules, vendor, keyword and FX before persisting.">
+      <defs><marker id="ah3" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" class="mk-accent"/></marker></defs>
+      <!-- phase A -->
+      <rect class="grp" x="16" y="40" width="868" height="120" rx="12"/>
+      <text class="ttl" x="32" y="62">PHASE 1 · UPLOAD → PREVIEW</text>
+      <rect class="box-accent" x="32" y="78" width="150" height="60" rx="9"/><text class="lbl" x="107" y="104" text-anchor="middle">POST upload</text><text class="lbl-sm" x="107" y="120" text-anchor="middle">CSV / PDF / image</text>
+      <rect class="box" x="232" y="78" width="170" height="60" rx="9"/><text class="lbl" x="317" y="104" text-anchor="middle">import_service</text><text class="lbl-sm" x="317" y="120" text-anchor="middle">detect parser + parse</text>
+      <rect class="box" x="452" y="78" width="160" height="60" rx="9"/><text class="lbl" x="532" y="104" text-anchor="middle">source-hash</text><text class="lbl-sm" x="532" y="120" text-anchor="middle">dedup</text>
+      <rect class="box-db" x="662" y="78" width="200" height="60" rx="9"/><text class="lbl" x="762" y="104" text-anchor="middle">pending statement</text><text class="lbl-sm" x="762" y="120" text-anchor="middle">→ preview + report</text>
+      <path class="edge" marker-end="url(#ah3)" d="M182 108 L228 108"/>
+      <path class="edge" marker-end="url(#ah3)" d="M402 108 L448 108"/>
+      <path class="edge" marker-end="url(#ah3)" d="M612 108 L658 108"/>
+
+      <!-- phase B -->
+      <rect class="grp" x="16" y="186" width="868" height="220" rx="12"/>
+      <text class="ttl" x="32" y="208">PHASE 2 · CONFIRM → PERSIST (per new transaction)</text>
+      <rect class="box-accent" x="32" y="224" width="150" height="52" rx="9"/><text class="lbl" x="107" y="255" text-anchor="middle">POST confirm</text>
+      <path class="edge" marker-end="url(#ah3)" d="M182 250 L228 250"/>
+      <rect class="box" x="232" y="224" width="150" height="52" rx="9"/><text class="lbl" x="307" y="248" text-anchor="middle">confirm_import</text><text class="lbl-sm" x="307" y="264" text-anchor="middle">loop rows</text>
+
+      <!-- pipeline -->
+      <rect class="box" x="432" y="220" width="130" height="44" rx="9"/><text class="lbl" x="497" y="240" text-anchor="middle">rule_service</text><text class="lbl-sm" x="497" y="255" text-anchor="middle">manual &gt; rule</text>
+      <rect class="box" x="432" y="272" width="130" height="44" rx="9"/><text class="lbl" x="497" y="292" text-anchor="middle">vendor_service</text><text class="lbl-sm" x="497" y="307" text-anchor="middle">alias + default</text>
+      <rect class="box" x="432" y="324" width="130" height="44" rx="9"/><text class="lbl" x="497" y="344" text-anchor="middle">category_service</text><text class="lbl-sm" x="497" y="359" text-anchor="middle">keyword fallback</text>
+      <rect class="box" x="592" y="272" width="120" height="44" rx="9"/><text class="lbl" x="652" y="292" text-anchor="middle">fx_service</text><text class="lbl-sm" x="652" y="307" text-anchor="middle">→ base ccy</text>
+      <rect class="box-db" x="742" y="272" width="124" height="44" rx="9"/><text class="lbl" x="804" y="298" text-anchor="middle">persisted</text>
+      <path class="edge" marker-end="url(#ah3)" d="M382 250 C 405 250, 410 242, 430 242"/>
+      <path class="edge" marker-end="url(#ah3)" d="M382 250 C 405 250, 410 294, 430 294"/>
+      <path class="edge" marker-end="url(#ah3)" d="M382 250 C 405 250, 410 346, 430 346"/>
+      <path class="edge" marker-end="url(#ah3)" d="M562 294 L588 294"/>
+      <path class="edge" marker-end="url(#ah3)" d="M712 294 L738 294"/>
+      <text class="elbl" x="742" y="338" text-anchor="middle">imported: N new / M duplicates</text>
+    </svg>
+    </div>
+  </section>
+
+  <!-- 4. DATA MODEL -------------------------------------------------------->
+  <section id="data">
+    <h2>4 · Data model — core spine</h2>
+    <p class="sub">The full model has ~30 tables (spec §12); this shows the core relationships.</p>
+    <div class="figure">
+    <svg viewBox="0 0 900 420" role="img" aria-label="Entity spine: Household has Users and Accounts; Account produces Statements which contain Transactions; Transactions split, and link to Category, Vendor, Project and Receipt matches.">
+      <defs><marker id="ah4" markerWidth="8" markerHeight="8" refX="6.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" class="mk-line"/></marker></defs>
+      <g class="gline" stroke-width="1.5" fill="none" marker-end="url(#ah4)">
+        <path d="M150 70 L150 104"/>            <!-- household->user -->
+        <path d="M210 52 C 320 52, 330 52, 360 64"/> <!-- household->account -->
+        <path d="M430 100 L430 134"/>           <!-- account->statement -->
+        <path d="M430 178 L430 212"/>           <!-- statement->transaction -->
+        <path d="M380 252 L250 290"/>           <!-- txn->split -->
+        <path d="M430 256 L430 290"/>           <!-- txn->category -->
+        <path d="M500 252 L640 290"/>           <!-- txn->vendor -->
+        <path d="M520 240 L700 240"/>           <!-- txn->project -->
+        <path d="M430 256 C 430 330, 430 330, 430 348"/>
+      </g>
+      <!-- entities -->
+      <rect class="box-accent" x="96" y="30" width="116" height="40" rx="8"/><text class="lbl" x="154" y="55" text-anchor="middle">HOUSEHOLD</text>
+      <rect class="box" x="96" y="104" width="116" height="38" rx="8"/><text class="lbl" x="154" y="128" text-anchor="middle">USER</text>
+      <rect class="box" x="360" y="64" width="140" height="38" rx="8"/><text class="lbl" x="430" y="88" text-anchor="middle">ACCOUNT</text>
+      <rect class="box" x="360" y="134" width="140" height="40" rx="8"/><text class="lbl" x="430" y="159" text-anchor="middle">STATEMENT</text>
+      <rect class="box-accent" x="356" y="212" width="148" height="42" rx="8"/><text class="lbl" x="430" y="238" text-anchor="middle">TRANSACTION</text>
+      <rect class="box" x="170" y="290" width="150" height="38" rx="8"/><text class="lbl" x="245" y="314" text-anchor="middle">TRANSACTION_SPLIT</text>
+      <rect class="box" x="368" y="290" width="124" height="38" rx="8"/><text class="lbl" x="430" y="314" text-anchor="middle">CATEGORY</text>
+      <rect class="box" x="600" y="290" width="120" height="38" rx="8"/><text class="lbl" x="660" y="314" text-anchor="middle">VENDOR</text>
+      <rect class="box" x="680" y="222" width="120" height="36" rx="8"/><text class="lbl" x="740" y="245" text-anchor="middle">PROJECT</text>
+      <rect class="box" x="360" y="348" width="140" height="38" rx="8"/><text class="lbl" x="430" y="372" text-anchor="middle">RECEIPT_MATCH</text>
+      <rect class="box" x="560" y="348" width="120" height="38" rx="8"/><text class="lbl" x="620" y="372" text-anchor="middle">RECEIPT</text>
+      <path d="M500 367 L556 367" class="edge-ret" marker-end="url(#ah4)"/>
+    </svg>
+    </div>
+    <p class="note">Other groups hang off the same <code>ACCOUNT</code> / <code>TRANSACTION</code> / <code>USER</code> spine: <b>savings</b> (SavingsBalance, SavingsGoal) · <b>investments</b> (AccountValue, Holding, HoldingPrice) · <b>assets</b> (Asset, AssetLog) · <b>AI</b> (AIRequest) · <b>review</b> (ReviewItem) · <b>subscriptions</b> · <b>rules</b> · <b>budgets</b> · <b>tags</b> · <b>child allowance</b> (ChildAllocation) · <b>MFA</b> (UserSession) · <b>audit</b> (AuditLog). Retention adds an <code>archived_at</code> column to transactions / receipts / AI-requests / audit-logs.</p>
+  </section>
+
+  <!-- 5. DEPLOYMENT -------------------------------------------------------->
+  <section id="dep">
+    <h2>5 · Deployment — add-on image</h2>
+    <p class="sub">Multi-stage build: the frontend is built with Node, then served by the Python runtime alongside the backend; data lives on a private volume.</p>
+    <div class="figure">
+    <svg viewBox="0 0 900 280" role="img" aria-label="Build stage compiles the frontend with node into dist; the python runtime serves dist plus the backend at root; run.sh maps options to env, migrates and starts; a private /data volume holds the database and uploads.">
+      <defs><marker id="ah5" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" class="mk-accent"/></marker></defs>
+      <!-- build stage -->
+      <rect class="grp" x="20" y="40" width="250" height="120" rx="12"/>
+      <text class="ttl" x="36" y="62">docker build · stage 1</text>
+      <rect class="box" x="40" y="76" width="120" height="60" rx="9"/><text class="lbl" x="100" y="102" text-anchor="middle">node:22</text><text class="lbl-sm" x="100" y="118" text-anchor="middle">npm run build</text>
+      <rect class="box-accent" x="180" y="86" width="80" height="40" rx="9"/><text class="lbl" x="220" y="111" text-anchor="middle">dist</text>
+      <path class="edge" marker-end="url(#ah5)" d="M160 106 L176 106"/>
+
+      <!-- runtime -->
+      <rect class="grp" x="320" y="20" width="420" height="200" rx="12"/>
+      <text class="ttl" x="336" y="42">python:3.12-slim runtime</text>
+      <rect class="box" x="340" y="56" width="170" height="44" rx="9"/><text class="lbl" x="425" y="83" text-anchor="middle">backend (pip install)</text>
+      <rect class="box" x="340" y="116" width="170" height="48" rx="9"/><text class="lbl" x="425" y="136" text-anchor="middle">run.sh</text><text class="lbl-sm" x="425" y="151" text-anchor="middle">options→env · migrate · start</text>
+      <rect class="box-accent" x="560" y="86" width="150" height="60" rx="9"/><text class="lbl" x="635" y="112" text-anchor="middle">served at /</text><text class="lbl-sm" x="635" y="128" text-anchor="middle">SPA + /api</text>
+      <path class="edge" marker-end="url(#ah5)" d="M510 78 C 540 86, 540 104, 556 108"/>
+      <path class="edge" marker-end="url(#ah5)" d="M260 106 C 420 106, 520 120, 556 120"/>
+      <text class="elbl" x="300" y="100">dist →</text>
+
+      <!-- volume -->
+      <ellipse class="box-db" cx="600" cy="244" rx="150" ry="14"/>
+      <path class="box-db" d="M450 244 v0 a150 14 0 0 0 300 0" fill="none"/>
+      <text class="lbl" x="600" y="249" text-anchor="middle">/data volume · db + uploads (private, backed up)</text>
+      <path class="edge-opt" marker-end="url(#ah5)" d="M530 164 L580 232"/>
+    </svg>
+    </div>
+  </section>
+
+  <footer>
+    Keep these in step with the code when a shape changes (a new external dependency, a new core entity, a changed flow).
+    The source of truth is the code and the spec. · Mermaid source: <a href="architecture.md">architecture.md</a>
+  </footer>
+</div>
+</body>
+</html>
