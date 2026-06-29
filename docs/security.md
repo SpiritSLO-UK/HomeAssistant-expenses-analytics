@@ -73,10 +73,13 @@ behave exactly as before.
   disabled or deleted (you can never lock yourself out of administration).
 - **Optional MFA (TOTP).** Per user, off by default. When on, a 6-digit code is
   required to open the app (a per-device session token, SHA-256-hashed in the DB,
-  12-hour TTL) and a **fresh** code is required to confirm admin actions
-  (step-up, 10-minute window). The MFA secret/sessions live inside the database,
-  so the at-rest unlock (below) necessarily runs **first** and without MFA — the
-  order is always *passphrase → then code*, never a deadlock.
+  12-hour TTL) and a recently-entered code (within a **10-minute step-up window**)
+  is required to confirm admin actions. The MFA secret/sessions live inside the
+  database, so the at-rest unlock (below) necessarily runs **first** and without
+  MFA — the order is always *passphrase → then code*, never a deadlock.
+  There are currently **no backup/recovery codes**: if you lose your authenticator,
+  another owner can disable/re-enrol MFA for you (and a sole owner restores from a
+  backup), so keep a backup.
 - **Failed-unlock visibility.** Because the DB is sealed during an unlock attempt,
   failures are recorded to a small file beside it and surfaced on the unlock
   screen and in the security-health panel.
@@ -86,10 +89,13 @@ behave exactly as before.
 
 > **Trust boundary — important.** Identity is only as trustworthy as the proxy in
 > front of the app. The `X-Remote-User-*` headers are set by Home Assistant
-> ingress and a browser cannot override them. **Do not expose the add-on's port
-> directly** — the add-on is ingress-only by default (`host_network: false`, no
-> port mapped). If you bypass ingress and reach the app directly, a client could
-> forge those headers and impersonate any user. Keep it behind ingress.
+> ingress, which **strips any inbound copy** a client tries to send — so through
+> ingress a browser cannot forge them. This is **not** enforced by the app itself:
+> **do not expose the add-on's port directly** — the add-on is ingress-only by
+> default (`host_network: false`, no port mapped). If you bypass ingress and reach
+> the app directly (or run the standalone compose without a header-stripping proxy),
+> a client could forge those headers and impersonate any user. Keep it behind
+> ingress (or a trusted reverse proxy).
 
 ## What this does NOT protect against (be honest)
 

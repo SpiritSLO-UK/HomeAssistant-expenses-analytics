@@ -22,7 +22,7 @@ services:
     build:
       context: .
       dockerfile: addon/Dockerfile
-    image: ha-finance-intelligence:0.9.0-beta
+    image: ha-finance-intelligence:1.0.2
     container_name: ha-finance
     restart: unless-stopped
     environment:

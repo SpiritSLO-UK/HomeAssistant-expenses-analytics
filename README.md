@@ -23,7 +23,7 @@ Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md
 
 ## 🏠 Install on Home Assistant (add-on)
 
-This is the **v1.0.0** release. The recommended way to run it is **on Home Assistant**
+This is the **v1.0.2** release. The recommended way to run it is **on Home Assistant**
 as an add-on: it installs from a **prebuilt image** (no on-device build — a quick pull,
 even on a Raspberry Pi), shows up as an **ingress sidebar panel**, signs you in
 automatically with your Home Assistant identity (the first user becomes the owner), and
@@ -95,7 +95,7 @@ A quick look (on demo data) — the full tour is in **[docs/screenshots.md](docs
 | 10 | Cloud AI approval: preview + approve/reject each request, never-cloud category blocking, audit log | ✅ |
 | 11 | PDF statement import: best-effort, rows flagged for review | ✅ |
 | 12 | Polish: CI, dashboard trends/outliers, savings, investments & pensions, cars & home, geo/world map, data retention, multi-user & roles, global search, performance indexes | ✅ |
-| — | **v1.0.0** released — standalone **and** a one-click **Home Assistant add-on** (prebuilt multi-arch image, ingress SSO, MQTT sensors, energy-cost offset, at-rest encryption) | ✅ |
+| — | **v1.0.0 → v1.0.2** — standalone **and** a one-click **Home Assistant add-on** (prebuilt multi-arch image, ingress SSO, MQTT sensors, energy-cost offset, at-rest encryption); v1.0.1–v1.0.2 added polish, security hardening, and broader bank/receipt import (Curve, Barclaycard, define-your-own CSV) | ✅ |
 
 ## What it does today
 

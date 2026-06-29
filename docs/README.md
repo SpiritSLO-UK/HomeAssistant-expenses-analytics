@@ -23,8 +23,8 @@ and how to run it; the guides below go deeper.
 
 ## Quick links
 
-- **Run it standalone:** [README → Beta quick-run](../README.md)
-- **What's changed:** [CHANGELOG](../CHANGELOG.md) (v0.9.0-beta + the post-beta wave)
+- **Run it standalone:** [README → Quick run](../README.md)
+- **What's changed:** [CHANGELOG](../CHANGELOG.md) (current release: v1.0.2)
 - **Serve it over HTTPS:** [HTTPS / reverse proxy](reverse-proxy.md) (`docker-compose.tls.yml`)
 - **Install on Home Assistant:** [Install on Home Assistant](ha-install.md) —
   one-click repository add → Install (prebuilt image, ingress panel on port 8099).

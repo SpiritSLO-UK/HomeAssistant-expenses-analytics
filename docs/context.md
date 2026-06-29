@@ -26,12 +26,13 @@ addon/      Home Assistant add-on (single container): config.yaml, Dockerfile,
 backend/    FastAPI (Python 3.12) + SQLAlchemy 2.0 + Alembic + SQLite
   app/api/        routers, one per resource, aggregated in api/router.py (prefix /api)
   app/models/     SQLAlchemy models (one file per entity)
-  app/services/   business logic — import, category, vendor, rule, dashboard,
-                  analytics, fx, budget, project, tag, split, subscription,
-                  savings, investment (+ price), asset, receipt/ocr, review,
-                  ai (+ provider/redaction), search, geo, travel, business,
-                  retention, backup/crypto, security/totp, paperless, settings,
-                  household, auth, demo
+  app/services/   business logic — import (+ curve-link), category, vendor, rule,
+                  dashboard, analytics, fx, budget, project, tag, split,
+                  subscription, savings, investment (+ price), asset, energy,
+                  receipt/ocr, review, ai (+ provider/redaction), search, geo,
+                  travel, business, retention, backup/crypto, security/totp,
+                  paperless, settings, household, auth (+ mfa), mqtt, ha, stats,
+                  demo
   app/parsers/    bank CSV parsers + detection registry
   app/schemas/    Pydantic request/response models
   app/tests/      pytest (forced temp DB)
@@ -95,8 +96,11 @@ value-over-time), cars/home/assets, geo + world map + per-transaction country
 dark mode, persisted filters, re-orderable/hideable nav tabs + dashboard cards,
 HTTPS reverse-proxy, parallel tests, and a SonarCloud-green pass.
 
-**Next milestone:** the Home Assistant packaging push (add-on repository +
-one-click install, ingress SSO, MQTT sensors) + HA energy-cost offset.
+**Shipped since:** the Home Assistant packaging (add-on repository + one-click
+install, ingress SSO, MQTT sensors) **and** the HA energy-cost offset all landed
+in **v1.0.0**; v1.0.1–v1.0.2 added polish, security hardening and broader
+bank/receipt import. **Next:** the v2 horizon (net worth + liabilities, cash-flow
+forecasting — see the backlog).
 
 > Stage-numbering note: the spec §29 order is Stage 7 = review queue, Stage 8 =
 > receipts. We built recurring/subscriptions (§20, not a numbered §29 stage)
@@ -398,8 +402,8 @@ digits, 30s).
   secret + otpauth URI; enable/disable), and step-up handling on the Users page.
   Migration `e2f3a4b5c6d7` adds `users.mfa_secret`/`mfa_enabled` + `user_sessions`.
 - **Note:** the secret sits in the DB (standard for TOTP); at-rest encryption is
-  the protection for a stolen disk. No QR image yet — the otpauth URI/secret are
-  shown for manual entry.
+  the protection for a stolen disk. Setup shows a scannable **QR code** (with the
+  otpauth URI/secret also shown for manual entry).
 
 ### Security health + failed-unlock alerts (Stage 12-S3 — #128/#130)
 

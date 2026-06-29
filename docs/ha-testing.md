@@ -34,7 +34,9 @@ install: the image has to be **published**, and its GHCR package must be **publi
 
 ### 1. Publish a release-candidate image
 
-Tag an RC — the release workflow builds + pushes `amd64` and `aarch64` images:
+Tag an RC — the release workflow builds + pushes `amd64` and `aarch64` images.
+Replace `N` with the RC number and the version with the one you're cutting (e.g.
+`v1.0.2-rc1`):
 
 ```bash
 git tag -a v1.0.0-rcN -m "v1.0.0-rcN"
@@ -141,6 +143,6 @@ All green → bump the version everywhere, update the CHANGELOG, and tag `v1.0.0
 | Add-on not in the sidebar | Enable **"Show in sidebar"** (Info tab) + restart + refresh. |
 | MQTT `not authorised` / no sensors | Broker needs auth → MQTT auto-discovery (rc2+) handles it; else set `mqtt_username`/`mqtt_password`. Click **Publish now**. |
 | Energy offset shows 0 saving | No unit price → set a tariff or log Home electricity meter readings with costs. |
-| Encryption "unavailable" | At-rest SQLCipher isn't available on aarch64 yet (no wheel); the private `/data` isolation still applies. |
+| Encryption "unavailable" | At-rest SQLCipher is available on both amd64 and aarch64 (the arm64 wheel is compiled into the image); if a custom/minimal image omits it, the private `/data` isolation still applies. |
 
 See [troubleshooting.md](troubleshooting.md) for the wider list.

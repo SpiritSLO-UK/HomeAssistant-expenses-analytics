@@ -18,7 +18,7 @@ logs, then open an issue with the relevant lines (redact any account details).
   resolve to IPv6 `::1` first and time out).
 - Check logs: `docker compose logs -f` (standalone) or the add-on **Log** tab.
 
-**"Frontend not built" message at `/`.**
+**The `/` page returns a JSON "backend is running / frontend not built" message.**
 - The backend serves the built `frontend/dist`. In the published image it's
   prebuilt; if you're running from source, build it: `npm run build` in
   `frontend/` (Node 20+).
@@ -101,8 +101,9 @@ money out — they net out, which is the correct accounting.
 ## OCR (receipts)
 
 **OCR isn't reading receipts.**
-- OCR runs only in the add-on image (Tesseract is bundled there). Standalone
-  images may not include it — then receipts fall back to **manual entry** (the
+- Both the add-on and the standard `docker compose` images build from
+  `addon/Dockerfile`, which installs **Tesseract** — so OCR works in both. Only a
+  custom/minimal image without Tesseract falls back to **manual entry** (the
   fields are editable). Confirm OCR is on in Settings → Services.
 - A receipt that reads poorly is flagged for review; correct the merchant/date/
   total by hand and match it to a transaction.

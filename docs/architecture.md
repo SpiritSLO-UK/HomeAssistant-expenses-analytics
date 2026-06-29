@@ -21,7 +21,7 @@ flowchart TB
   subgraph addon["HA Finance Intelligence add-on (one container)"]
     fe["React + TS frontend"]
     api["FastAPI backend /api"]
-    svc["Services<br/>import · categorise · rules · fx · dashboard · budgets ·<br/>projects · savings · investments · assets · receipts/OCR ·<br/>subscriptions · analytics · AI gateway · retention · backup"]
+    svc["Services<br/>import · categorise · rules · fx · dashboard · budgets ·<br/>projects · savings · investments · assets · receipts/OCR ·<br/>subscriptions · analytics · search · energy · AI gateway · retention · backup"]
     db[("SQLite<br/>/data/finance.db (private)")]
     fe --> api --> svc --> db
   end
