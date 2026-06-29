@@ -20,6 +20,7 @@ migrations run automatically on start.
 - **Receipts → transactions** — suggests the matching transaction for an unmatched
   receipt, with one-click *Add* from the Review Queue.
 - **Bulk AI suggest + categorise** from the Review Queue.
+- **AI extraction from PDF** receipts/invoices — the first page is rendered for the vision model (not images only).
 
 ### Improved
 - **Spending-by-location** recognises more currencies (CZK/HUF/TRY/BRL/ISK/KRW/ILS/…).
@@ -35,6 +36,7 @@ migrations run automatically on start.
 - Split transactions now total the parent **to the penny** in base currency.
 - A no-op categorisation rule no longer blocks a lower-priority rule.
 - FX rates are matched case-insensitively (no duplicate rate rows).
+- A spurious pending **"Local User"** is no longer created by the internal health probe.
 - Numerous smaller correctness fixes across imports, receipts and the dashboard.
 
 ### Security
