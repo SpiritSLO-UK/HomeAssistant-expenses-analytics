@@ -26,7 +26,7 @@ flowchart TB
     fe["React + TS frontend"]
     api["FastAPI backend /api"]
     svc["Services<br/>import · categorise · rules · fx · dashboard · budgets ·<br/>projects · savings · investments · assets · receipts/OCR ·<br/>subscriptions · analytics · search · energy · AI gateway · retention · backup"]
-    db[("SQLite<br/>/data/finance.db (private)")]
+    db[("SQLite<br/>/data/finance/finance.db<br/>(private · optional at-rest encryption)")]
     fe --> api --> svc --> db
   end
 
@@ -100,8 +100,10 @@ groups hang off the same `ACCOUNT`/`TRANSACTION`/`USER` spine: **savings**
 (`SavingsBalance`, `SavingsGoal`), **investments** (`AccountValue`, `Holding`,
 `HoldingPrice`), **assets** (`Asset`, `AssetLog` for cars/home), **receipts**
 (`Receipt`, `ReceiptMatch`), **AI** (`AIRequest`), **review** (`ReviewItem`),
-**subscriptions**, **rules**, **child allowance** (`ChildAllocation`), **MFA**
-(`UserSession`) and **audit** (`AuditLog`). Retention adds an `archived_at` column
+**energy** (`EnergySnapshot`), **import profiles** (`ImportProfile`), **Curve
+funding links** (`CurveFundingLink`), **subscriptions**, **rules**, **child
+allowance** (`ChildAllocation`), **MFA** (`UserSession`) and **audit**
+(`AuditLog`). Retention adds an `archived_at` column
 to transactions / receipts / AI-requests / audit-logs.
 
 ```mermaid
@@ -139,9 +141,13 @@ flowchart LR
     be --> served
     run["run.sh<br/>options -> env, migrate, start"]
   end
-  vol[("/data volume<br/>db + uploads (private, backed up)")]
+  vol[("/data volume<br/>db + uploads (private, backed up,<br/>optional at-rest encryption)")]
   img --- vol
 ```
+
+> The runtime image is multi-arch (amd64 / arm64). At-rest DB encryption (SQLCipher)
+> ships as a prebuilt wheel on amd64; on arm64 the `sqlcipher3` wheel is compiled in
+> a throwaway build stage so the Pi gets it too. It's opt-in — off by default.
 
 ## Keeping these current
 
