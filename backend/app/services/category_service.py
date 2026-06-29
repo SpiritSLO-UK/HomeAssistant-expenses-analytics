@@ -296,7 +296,8 @@ def categorise_text(db: Session, description: str) -> tuple[int | None, float | 
     # ("travel") winning — and a tie at the same position prefers the more specific
     # keyword ("cafe nero" over "cafe").
     best_id: int | None = None
-    best_rank: tuple[int, int] | None = None  # (start, -len); lower is better
+    # Rank by earliest match position, then longest keyword; lowest rank wins.
+    best_rank: tuple[int, int] | None = None
     for entry in library.get("categories", []):
         db_id = lib_rows.get(entry["id"])
         if db_id is None:  # library category not seeded → can't be suggested

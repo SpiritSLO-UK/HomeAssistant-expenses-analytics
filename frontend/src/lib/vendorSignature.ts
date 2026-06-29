@@ -15,7 +15,8 @@ export function deriveVendorSignature(text: string): string {
 // signature, e.g. "TESCO STORES" → "Tesco Stores"), so the preview matches.
 export function recommendedVendorName(merchantRaw: string | null | undefined, description: string): string {
   const sig = deriveVendorSignature(merchantRaw || description || "");
-  if (sig && sig === sig.toUpperCase()) {
+  const isAllCaps = sig.length > 0 && sig === sig.toUpperCase();
+  if (isAllCaps) {
     return sig.toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase());
   }
   return sig;
