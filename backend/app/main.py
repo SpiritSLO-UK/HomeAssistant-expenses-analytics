@@ -211,9 +211,12 @@ async def _auth_guard(request: Request, call_next):
     roles (viewer/child) may only issue safe methods (spec §28; backlog #82/#126).
     """
     path = request.url.path
-    # Skip non-API paths and anything while the DB is locked (the lock guard owns
-    # that case and the auth lookup needs a live DB).
-    if not path.startswith(_API_PREFIX) or dbsession.is_locked():
+    # Skip non-API paths, the public health probe, and anything while the DB is
+    # locked (the lock guard owns that case and the auth lookup needs a live DB).
+    # Health must be exempt: the container HEALTHCHECK polls it from inside the
+    # container with no HA ingress headers, which would otherwise resolve to the
+    # "local" fallback identity and spawn a bogus pending user on every probe.
+    if not path.startswith(_API_PREFIX) or path == _HEALTH or dbsession.is_locked():
         return await call_next(request)
 
     from app.services import auth_service, mfa_service

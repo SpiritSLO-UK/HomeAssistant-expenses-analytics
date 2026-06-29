@@ -160,3 +160,18 @@ def test_owner_is_never_restricted(client):
     client.patch(f"/api/users/{owner_id}", json={"blocked_nav_keys": ["budgets"]})
     assert client.get("/api/budgets").status_code == 200
     assert client.get("/api/users/me").json()["blocked_nav_keys"] == ["budgets"]
+
+
+def test_health_probe_does_not_create_local_user(client):
+    """Regression: the container HEALTHCHECK hits /api/health with no HA ingress
+    headers. Behind ingress (a real HA user is the owner) that must NOT spawn a
+    bogus pending "local" user — health is exempt from user resolution."""
+    # A real HA user opens the app first → becomes owner.
+    client.get("/api/users/me", headers=_hdr("ha-blaz", "Blaz"))
+    # The internal, header-less health probe fires (repeatedly, in reality).
+    for _ in range(3):
+        assert client.get("/api/health").status_code == 200
+    # Only the real HA owner exists — no "Local User" was created.
+    users = client.get("/api/users", headers=_hdr("ha-blaz", "Blaz")).json()
+    assert [u["external_id"] for u in users] == ["ha-blaz"]
+    assert all(u["external_id"] != "local" for u in users)
