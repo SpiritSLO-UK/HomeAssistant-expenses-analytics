@@ -170,7 +170,7 @@ def _sum_numeric(values) -> Decimal:
     return total
 
 
-def _production_kwh(db: Session, cfg: dict, *, live: bool) -> Decimal:
+def _production_kwh(cfg: dict, *, live: bool) -> Decimal:
     """Total produced kWh from the configured source. ``live=False`` (used during
     an MQTT publish) skips any broker read to avoid latency/recursion."""
     source = cfg["source"]
@@ -243,7 +243,7 @@ def offset(
     elif cfg["source"] == "off":
         produced = Decimal("0")
     else:
-        produced = _production_kwh(db, cfg, live=live)
+        produced = _production_kwh(cfg, live=live)
         # A real live read → sample it for the production trend (throttled).
         if live:
             record_snapshot(db, produced, cfg["source"])

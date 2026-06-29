@@ -40,6 +40,8 @@ from app.services.import_service import ImportFailed
 
 router = APIRouter(prefix="/imports", tags=["imports"])
 
+_EMPTY_FILE = "Empty file"
+
 
 @router.get("/parsers", response_model=list[ParserInfo])
 def list_parsers() -> list[dict]:
@@ -56,7 +58,7 @@ async def upload(
 ) -> dict:
     content = await uploads.read_capped(file, uploads.IMPORT_MAX, label="Statement")
     if not content:
-        raise HTTPException(status_code=400, detail="Empty file")
+        raise HTTPException(status_code=400, detail=_EMPTY_FILE)
     mapping_dict = None
     if mapping:
         try:
@@ -113,7 +115,7 @@ async def ai_extract(
     and an image can't be redacted)."""
     content = await uploads.read_capped(file, uploads.AI_IMAGE_MAX, label="Image")
     if not content:
-        raise HTTPException(status_code=400, detail="Empty file")
+        raise HTTPException(status_code=400, detail=_EMPTY_FILE)
     mime = file.content_type or "image/jpeg"
     try:
         extracted = ai_service.extract_statement_image(db, content, mime)
@@ -176,10 +178,10 @@ async def inspect_csv(file: Annotated[UploadFile, File()]) -> dict:
     the user can map columns in the UI before importing (no data is stored)."""
     content = await uploads.read_capped(file, uploads.IMPORT_MAX, label="CSV")
     if not content:
-        raise HTTPException(status_code=400, detail="Empty file")
+        raise HTTPException(status_code=400, detail=_EMPTY_FILE)
     try:
         return import_profile_service.inspect_csv(content)
-    except (ValueError, ParseError) as exc:
+    except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 

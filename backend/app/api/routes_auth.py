@@ -19,7 +19,12 @@ from app.schemas.auth import CodeIn, EnableIn, SetupIn, SetupOut, VerifyOut
 from app.services import audit_service, auth_service, mfa_service
 from app.services.auth_service import get_current_user
 
-router = APIRouter(prefix="/auth/mfa", tags=["auth"])
+# 429 is raised by the shared lockout guard below, so document it router-wide.
+router = APIRouter(
+    prefix="/auth/mfa",
+    tags=["auth"],
+    responses={429: {"description": "Too many incorrect codes — temporarily locked out"}},
+)
 
 _BAD_CODE = "That code didn't match. Try again."
 

@@ -20,7 +20,7 @@ def list_tags(db: Annotated[Session, Depends(get_db)]) -> list[Tag]:
     return tag_service.list_tags(db)
 
 
-@router.post("", response_model=TagOut, status_code=201)
+@router.post("", response_model=TagOut, status_code=201, responses={400: {"description": "Bad request"}})
 def create_tag(payload: TagIn, db: Annotated[Session, Depends(get_db)]) -> Tag:
     try:
         tag = tag_service.get_or_create(db, payload.name, payload.colour)

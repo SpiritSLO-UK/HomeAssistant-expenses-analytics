@@ -17,7 +17,12 @@ from app.models.user import User
 from app.schemas.energy import EnergyConfig, EnergyConfigUpdate
 from app.services import auth_service, energy_service
 
-router = APIRouter(prefix="/energy", tags=["energy"])
+# 422 is raised by the shared month parser below, so document it router-wide.
+router = APIRouter(
+    prefix="/energy",
+    tags=["energy"],
+    responses={422: {"description": "Invalid month (use YYYY-MM or YYYY-MM-DD)"}},
+)
 
 
 def _ref(month: str | None) -> date:
