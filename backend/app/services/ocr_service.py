@@ -144,6 +144,34 @@ def ocr_pdf_pages(path: Path, *, scale: float = 2.0, max_pages: int = 20) -> str
     return "\n".join(parts).strip()
 
 
+def render_pdf_page_png(path: Path, *, page: int = 0, scale: float = 2.0) -> bytes | None:
+    """Render one PDF page to PNG bytes — used to send a PDF receipt/invoice to
+    vision AI (which can't take a PDF directly). Needs only the rasteriser
+    (pypdfium2 + Pillow), not Tesseract. Returns ``None`` if it's unavailable or
+    on any render error, so callers can fall back to a clear message."""
+    if not _pdfium_ok():
+        return None
+    try:
+        import io
+
+        import pypdfium2 as pdfium
+
+        pdf = pdfium.PdfDocument(str(path))
+        try:
+            if len(pdf) == 0:
+                return None
+            idx = max(0, min(page, len(pdf) - 1))
+            bitmap = pdf[idx].render(scale=scale)  # pyright: ignore[reportArgumentType]
+            buf = io.BytesIO()
+            bitmap.to_pil().save(buf, format="PNG")
+            return buf.getvalue()
+        finally:
+            pdf.close()
+    except Exception:  # pragma: no cover - engine/format errors
+        logger.warning("PDF page render failed for %s", path.name, exc_info=True)
+        return None
+
+
 def _pdf_text(path: Path) -> tuple[str, float | None]:
     import pypdf
 
