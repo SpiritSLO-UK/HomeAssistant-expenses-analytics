@@ -112,6 +112,31 @@ def balance_history(db: Session, account_id: int) -> list[SavingsBalance]:
     )
 
 
+def _balance_as_of(snaps: list, end: date) -> Decimal | None:
+    """The latest snapshot balance strictly before ``end`` (snaps are date-ordered)."""
+    as_of_balance = None
+    for snap in snaps:
+        if snap.as_of_date < end:
+            as_of_balance = Decimal(snap.balance)
+        else:
+            break
+    return as_of_balance
+
+
+def _month_total(db: Session, accounts: list, snaps: dict, end: date, base: str, on: date) -> Decimal:
+    """Point-in-time total across accounts as of ``end``, converted to base
+    (a foreign balance with no available rate is skipped)."""
+    total = Decimal("0.00")
+    for a in accounts:
+        bal = _balance_as_of(snaps[a.id], end)
+        if bal is None:
+            continue
+        converted = fx_service.convert_amount(db, bal, a.currency, base, on)
+        if converted is not None:
+            total += converted
+    return total
+
+
 def history(db: Session, *, account_ids: set[int] | None = None, months: int = 12) -> dict:
     """Total savings over time: each month's point-in-time total — the latest
     snapshot of every account as of that month's end — oldest first. Powers the
@@ -121,21 +146,13 @@ def history(db: Session, *, account_ids: set[int] | None = None, months: int = 1
     today = date.today()
     accounts = list_accounts(db, account_ids=account_ids)
     snaps = {a.id: balance_history(db, a.id) for a in accounts}
-    series = []
-    for start, end in windows:
-        total = Decimal("0.00")
-        for a in accounts:
-            as_of_balance = None
-            for snap in snaps[a.id]:  # ordered by date; take the last one before the month end
-                if snap.as_of_date < end:
-                    as_of_balance = Decimal(snap.balance)
-                else:
-                    break
-            if as_of_balance is not None:
-                converted = fx_service.convert_amount(db, as_of_balance, a.currency, base, today)
-                if converted is not None:  # skip a foreign balance with no rate
-                    total += converted
-        series.append({"month": start.strftime("%Y-%m"), "total": str(total.quantize(TWO_DP))})
+    series = [
+        {
+            "month": start.strftime("%Y-%m"),
+            "total": str(_month_total(db, accounts, snaps, end, base, today).quantize(TWO_DP)),
+        }
+        for start, end in windows
+    ]
     return {"currency": base, "months": series}
 
 

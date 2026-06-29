@@ -103,6 +103,37 @@ def _resolve_parser(parser_id: str | None, filename: str, content: bytes, mappin
     return parser
 
 
+def _build_preview(
+    parsed: list[StandardTransaction],
+    account_id: int,
+    existing_hashes: set[str],
+    cross: dict[int, curve_link_service.CrossMatch],
+    preview_limit: int,
+) -> tuple[int, int, list[dict]]:
+    """Walk the parsed rows: tally new vs duplicate (same-account hash or a
+    high-confidence Curve cross-match) and build the capped preview list."""
+    new_count = 0
+    dup_count = 0
+    seen: set[str] = set()
+    preview: list[dict] = []
+    for idx, txn in enumerate(parsed):
+        h = source_hash(account_id, txn)
+        same_dup = h in existing_hashes or h in seen
+        seen.add(h)
+        match = cross.get(idx)
+        cross_skip = match is not None and match.confidence == "high"
+        is_dup = same_dup or cross_skip
+        if is_dup:
+            dup_count += 1
+        else:
+            new_count += 1
+        dup_reason = match.reason if cross_skip else None
+        warning = match.reason if (match is not None and not cross_skip and not same_dup) else None
+        if len(preview) < preview_limit:
+            preview.append(_preview_row(txn, is_dup, dup_reason=dup_reason, warning=warning))
+    return new_count, dup_count, preview
+
+
 def create_import(
     db: Session,
     filename: str,
@@ -159,25 +190,9 @@ def create_import(
         db, target_account_id=account.id, parsed_rows=parsed, links=links
     )
 
-    new_count = 0
-    dup_count = 0
-    seen: set[str] = set()
-    preview: list[dict] = []
-    for idx, txn in enumerate(parsed):
-        h = source_hash(account.id, txn)
-        same_dup = h in existing_hashes or h in seen
-        seen.add(h)
-        match = cross.get(idx)
-        cross_skip = match is not None and match.confidence == "high"
-        is_dup = same_dup or cross_skip
-        if is_dup:
-            dup_count += 1
-        else:
-            new_count += 1
-        dup_reason = match.reason if cross_skip else None
-        warning = match.reason if (match is not None and not cross_skip and not same_dup) else None
-        if len(preview) < preview_limit:
-            preview.append(_preview_row(txn, is_dup, dup_reason=dup_reason, warning=warning))
+    new_count, dup_count, preview = _build_preview(
+        parsed, account.id, existing_hashes, cross, preview_limit
+    )
 
     statement = Statement(
         account_id=account.id,
@@ -344,6 +359,66 @@ def _statement_config(statement: Statement) -> dict:
     return config if isinstance(config, dict) else {}
 
 
+def _load_parsed_rows(db: Session, statement: Statement, config: dict) -> list[StandardTransaction]:
+    """Rebuild the rows to persist on confirm: AI image-extract rows were staged at
+    upload (the image can't be re-parsed); everything else is re-parsed from the
+    stored file. Marks the statement failed + raises ImportFailed on a parse error."""
+    ai_rows = config.get("ai_rows")
+    if ai_rows is not None:
+        return _deserialize_rows(ai_rows)
+    parser = _resolve_parser(config.get("parser_id"), statement.source_filename or "", b"", config.get("mapping"))
+    stored_path = Path(config["stored_path"])
+    if not stored_path.is_file():
+        raise ImportFailed("Uploaded file is no longer available; please re-upload")
+    content = stored_path.read_bytes()
+    try:
+        return parser.parse(statement.source_filename or "", content)
+    except ParseError as exc:
+        statement.status = "failed"
+        db.commit()
+        raise ImportFailed(f"Parse failed on confirm: {exc}") from exc
+
+
+def _persist_rows(
+    db: Session,
+    parsed: list[StandardTransaction],
+    cross: dict[int, curve_link_service.CrossMatch],
+    *,
+    household_id: int,
+    account_id: int,
+    statement_id: int,
+    existing_hashes: set[str],
+    base_currency: str,
+    fx_mode: str,
+) -> tuple[int, int, int, int]:
+    """Persist each parsed row (skipping exact + high-confidence Curve duplicates).
+    Returns (new, duplicates, auto-categorised, needs-rate) counts."""
+    new_count = dup_count = categorised = needs_rate = 0
+    for idx, txn in enumerate(parsed):
+        match = cross.get(idx)
+        if match is not None and match.confidence == "high":
+            dup_count += 1  # also on the linked funding account → skip
+            continue
+        flag = "possible_duplicate" if (match is not None and match.confidence == "low") else None
+        new_delta, cat_delta, rate_delta = _persist_parsed_transaction(
+            db, txn,
+            household_id=household_id,
+            account_id=account_id,
+            statement_id=statement_id,
+            existing_hashes=existing_hashes,
+            base_currency=base_currency,
+            fx_mode=fx_mode,
+            review_reason=flag,
+        )
+        if not new_delta:
+            dup_count += 1
+            continue
+        new_count += new_delta
+        categorised += cat_delta
+        needs_rate += rate_delta
+    return new_count, dup_count, categorised, needs_rate
+
+
 def confirm_import(db: Session, import_id: int) -> dict:
     """Persist the transactions for a pending statement, skipping exact
     duplicates (spec §14.5)."""
@@ -353,25 +428,7 @@ def confirm_import(db: Session, import_id: int) -> dict:
     if statement.status == "imported":
         raise ImportFailed(f"Import {import_id} was already confirmed")
 
-    config = _statement_config(statement)
-    ai_rows = config.get("ai_rows")
-    if ai_rows is not None:
-        # AI image-extract: rebuild the rows staged at upload — the stored image
-        # itself isn't re-parseable, so there's no parser to re-run here.
-        parsed = _deserialize_rows(ai_rows)
-    else:
-        parser = _resolve_parser(config.get("parser_id"), statement.source_filename or "", b"", config.get("mapping"))
-        stored_path = Path(config["stored_path"])
-        if not stored_path.is_file():
-            raise ImportFailed("Uploaded file is no longer available; please re-upload")
-        content = stored_path.read_bytes()
-
-        try:
-            parsed = parser.parse(statement.source_filename or "", content)
-        except ParseError as exc:
-            statement.status = "failed"
-            db.commit()
-            raise ImportFailed(f"Parse failed on confirm: {exc}") from exc
+    parsed = _load_parsed_rows(db, statement, _statement_config(statement))
 
     account = db.get(Account, statement.account_id)
     if account is None:
@@ -397,33 +454,15 @@ def confirm_import(db: Session, import_id: int) -> dict:
         db, target_account_id=account.id, parsed_rows=parsed, links=links
     )
 
-    new_count = 0
-    dup_count = 0
-    categorised = 0
-    needs_rate = 0
-    for idx, txn in enumerate(parsed):
-        match = cross.get(idx)
-        if match is not None and match.confidence == "high":
-            dup_count += 1  # also on the linked funding account → skip
-            continue
-        flag = "possible_duplicate" if (match is not None and match.confidence == "low") else None
-        new_delta, cat_delta, rate_delta = _persist_parsed_transaction(
-            db,
-            txn,
-            household_id=household.id,
-            account_id=account.id,
-            statement_id=statement.id,
-            existing_hashes=existing_hashes,
-            base_currency=base_currency,
-            fx_mode=fx_mode,
-            review_reason=flag,
-        )
-        if not new_delta:
-            dup_count += 1
-            continue
-        new_count += new_delta
-        categorised += cat_delta
-        needs_rate += rate_delta
+    new_count, dup_count, categorised, needs_rate = _persist_rows(
+        db, parsed, cross,
+        household_id=household.id,
+        account_id=account.id,
+        statement_id=statement.id,
+        existing_hashes=existing_hashes,
+        base_currency=base_currency,
+        fx_mode=fx_mode,
+    )
 
     statement.status = "imported"
     statement.transaction_count = new_count

@@ -385,6 +385,30 @@ def total_value_as_of(
     return total.quantize(TWO_DP)
 
 
+def _account_legs(
+    db: Session, account: Account, earlier: date, later: date
+) -> list[tuple[Decimal, Decimal]]:
+    """(earlier, later) original-currency value pairs for one account, counting
+    only positions priced at BOTH endpoints (so a newly-added position can't
+    masquerade as a gain). Holdings price per-holding; a value-snapshot account
+    uses its snapshot value."""
+    holdings = list_holdings(db, account.id)
+    legs: list[tuple[Decimal, Decimal]] = []
+    if holdings:
+        for h in holdings:
+            pe = _holding_price_as_of(db, h.id, earlier)
+            pl = _holding_price_as_of(db, h.id, later)
+            if pe is not None and pl is not None:  # priced at both ⇒ comparable
+                units = Decimal(h.units)
+                legs.append((units * pe, units * pl))
+        return legs
+    ve = _account_value_as_of(db, account, earlier)
+    vl = _account_value_as_of(db, account, later)
+    if ve is not None and vl is not None:
+        legs.append((ve, vl))
+    return legs
+
+
 def _comparable_change(
     db: Session, accounts: list[Account], earlier: date, later: date, base: str
 ) -> dict:
@@ -400,21 +424,7 @@ def _comparable_change(
     earlier_total = Decimal("0")
     later_total = Decimal("0")
     for account in accounts:
-        holdings = list_holdings(db, account.id)
-        legs: list[tuple[Decimal, Decimal]] = []
-        if holdings:
-            for h in holdings:
-                pe = _holding_price_as_of(db, h.id, earlier)
-                pl = _holding_price_as_of(db, h.id, later)
-                if pe is not None and pl is not None:  # priced at both ⇒ comparable
-                    units = Decimal(h.units)
-                    legs.append((units * pe, units * pl))
-        else:
-            ve = _account_value_as_of(db, account, earlier)
-            vl = _account_value_as_of(db, account, later)
-            if ve is not None and vl is not None:
-                legs.append((ve, vl))
-        for e_amt, l_amt in legs:
+        for e_amt, l_amt in _account_legs(db, account, earlier, later):
             e_base = fx_service.convert_amount(db, e_amt, account.currency, base, today)
             l_base = fx_service.convert_amount(db, l_amt, account.currency, base, today)
             if e_base is not None and l_base is not None:
