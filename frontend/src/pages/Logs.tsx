@@ -34,15 +34,23 @@ function decisionLabel(action: string): string {
   return kind ? kind.replace(/_/g, " ") : "Decision";
 }
 
+// Render an unknown detail value without risking "[object Object]": pass strings
+// through, stringify primitives, JSON anything else.
+function stringifyVal(v: unknown): string {
+  if (typeof v === "string") return v;
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  return JSON.stringify(v) ?? "";
+}
+
 function describe(row: AuditLogRow): string {
   if (!row.details) return "";
   // Decisions carry a human-readable `summary`; show it first, then any extras.
   const { summary, ...rest } = row.details as Record<string, unknown>;
   const tail = Object.entries(rest)
     .filter(([, v]) => v !== null && v !== undefined && v !== "")
-    .map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : String(v)}`)
+    .map(([k, v]) => `${k}: ${stringifyVal(v)}`)
     .join(" · ");
-  return [summary ? String(summary) : "", tail].filter(Boolean).join(" — ");
+  return [summary ? stringifyVal(summary) : "", tail].filter(Boolean).join(" — ");
 }
 
 export default function Logs() {

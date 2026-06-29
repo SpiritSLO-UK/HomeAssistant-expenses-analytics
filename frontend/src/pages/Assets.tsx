@@ -134,7 +134,7 @@ function AssetCard({ asset, onChange, onError }: Readonly<{ asset: Asset; onChan
           </button>
           {asset.identifier && <span className="muted"> · {asset.identifier}</span>}
           <div className="muted" style={{ fontSize: "0.85rem", marginTop: 2 }}>
-            {car?.avg_economy != null ? <>≈ {car.avg_economy} {car.economy_unit} · </> : null}
+            {car?.avg_economy == null ? null : <>≈ {car.avg_economy} {car.economy_unit} · </>}
             Total cost {money(asset.total_cost)}
             {car?.latest_odometer && <> · {car.latest_odometer} {car.distance_unit}</>}
           </div>

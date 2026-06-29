@@ -90,7 +90,7 @@ export async function fetchJson<T>(endpoint: string, init?: RequestInit): Promis
     headers: {
       "Content-Type": "application/json",
       ...sessionHeaders(),
-      ...(init?.headers ?? {}),
+      ...init?.headers,
     },
   });
   if (!res.ok) throw await toApiError(res, endpoint);
@@ -107,7 +107,7 @@ export async function fetchForm<T>(endpoint: string, form: FormData, init?: Requ
     method: "POST",
     ...init,
     body: form,
-    headers: { ...sessionHeaders(), ...(init?.headers ?? {}) },
+    headers: { ...sessionHeaders(), ...init?.headers },
   });
   if (!res.ok) throw await toApiError(res, endpoint);
   if (res.status === 204) return undefined as T;
@@ -120,7 +120,7 @@ export async function fetchForm<T>(endpoint: string, form: FormData, init?: Requ
 async function fetchRaw(endpoint: string, init?: RequestInit): Promise<Response> {
   const res = await fetch(apiUrl(endpoint), {
     ...init,
-    headers: { ...sessionHeaders(), ...(init?.headers ?? {}) },
+    headers: { ...sessionHeaders(), ...init?.headers },
   });
   if (!res.ok) throw await toApiError(res, endpoint);
   return res;
@@ -353,9 +353,11 @@ export interface TransactionFilters {
 function toQuery(filters: Record<string, unknown>): string {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(filters)) {
-    if (value !== undefined && value !== null && value !== "" && value !== false) {
-      params.append(key, String(value));
-    }
+    // Filter values are primitives (string | number | boolean); skip empties and
+    // defensively skip any object so we never serialise "[object Object]".
+    if (value === undefined || value === null || value === "" || value === false) continue;
+    if (typeof value === "object") continue;
+    params.append(key, String(value));
   }
   return params.toString();
 }

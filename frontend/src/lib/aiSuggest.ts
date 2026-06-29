@@ -33,7 +33,7 @@ export async function suggestForTransaction(transactionId: number): Promise<AiSu
   if (res.status === "ok" && (res.category_id != null || country || vendor)) {
     const pct = res.confidence == null ? "" : ` (${Math.round(res.confidence * 100)}%)`;
     const lines = [
-      res.category_id != null ? `Category: ${res.category_name}${pct}` : null,
+      res.category_id == null ? null : `Category: ${res.category_name}${pct}`,
       vendor ? `Vendor: ${vendor}` : null,
       country ? `Country: ${country}` : null,
       res.rationale || null,

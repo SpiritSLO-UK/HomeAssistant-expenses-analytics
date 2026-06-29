@@ -223,7 +223,7 @@ function DashboardCard({
 function EnergyCard({ monthDate }: Readonly<{ monthDate: string }>) {
   const q = useQuery({ queryKey: ["energy-offset", monthDate], queryFn: () => getEnergyOffset(monthDate) });
   const o = q.data;
-  if (!o || !o.configured) return null;
+  if (!o?.configured) return null;
   return (
     <div className="card">
       <h2 className="card__title"><Link to="/energy">⚡ Energy cost offset</Link></h2>
@@ -721,10 +721,10 @@ function AssetsCard() {
           <li key={a.id}>
             <span>{icon[a.kind] ?? "📦"} {a.name}</span>
             <span>
-              {a.car?.avg_economy != null ? (
-                <>{a.car.avg_economy} {a.car.economy_unit} <span className="muted">· {money(a.total_cost)}</span></>
-              ) : (
+              {a.car?.avg_economy == null ? (
                 money(a.total_cost)
+              ) : (
+                <>{a.car.avg_economy} {a.car.economy_unit} <span className="muted">· {money(a.total_cost)}</span></>
               )}
             </span>
           </li>
@@ -909,12 +909,14 @@ function ProcessingCard() {
 
 const ARROW: Record<string, string> = { up: "▲", down: "▼", flat: "→" };
 
+type TrendKey = "spend" | "income" | "net";
+
 function TrendMini({ label, values, metric, currency, key_ }: Readonly<{
   label: string;
   values: number[];
   metric: TrendMetric | undefined;
   currency: string;
-  key_: "spend" | "income" | "net";
+  key_: TrendKey;
 }>) {
   const current = values.length ? values[values.length - 1] : 0;
   // For spend, going down is good; for income/net, going up is good.
@@ -947,8 +949,8 @@ function TrendsCard({ monthDate, view, memberId }: Readonly<{ monthDate: string;
   });
   const data = q.data;
   if (!data || data.months.length < 2) return null;
-  const num = (m: MonthlyPoint, k: "spend" | "income" | "net") => Number(m[k]);
-  const keys: Array<"spend" | "income" | "net"> = ["spend", "income", "net"];
+  const num = (m: MonthlyPoint, k: TrendKey) => Number(m[k]);
+  const keys: Array<TrendKey> = ["spend", "income", "net"];
   const labels = { spend: "Spend", income: "Income", net: "Net" };
   return (
     <div className="card">
