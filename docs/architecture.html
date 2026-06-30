@@ -123,7 +123,7 @@
       <text class="lbl-sm" x="506" y="338" text-anchor="middle">retention · backup</text>
       <path class="box-db" d="M406 372 a100 12 0 0 0 200 0 v40 a100 12 0 0 1 -200 0 z"/>
       <ellipse class="box-db" cx="506" cy="372" rx="100" ry="12"/>
-      <text class="lbl" x="506" y="404" text-anchor="middle">SQLite · /data (private)</text>
+      <text class="lbl" x="506" y="404" text-anchor="middle">SQLite · /data (private · opt. encrypted)</text>
 
       <!-- external opt-in -->
       <rect class="grp" x="688" y="92" width="208" height="300" rx="12"/>
@@ -269,7 +269,7 @@
       <path d="M500 367 L556 367" class="edge-ret" marker-end="url(#ah4)"/>
     </svg>
     </div>
-    <p class="note">Other groups hang off the same <code>ACCOUNT</code> / <code>TRANSACTION</code> / <code>USER</code> spine: <b>savings</b> (SavingsBalance, SavingsGoal) · <b>investments</b> (AccountValue, Holding, HoldingPrice) · <b>assets</b> (Asset, AssetLog) · <b>AI</b> (AIRequest) · <b>review</b> (ReviewItem) · <b>subscriptions</b> · <b>rules</b> · <b>budgets</b> · <b>tags</b> · <b>child allowance</b> (ChildAllocation) · <b>MFA</b> (UserSession) · <b>audit</b> (AuditLog). Retention adds an <code>archived_at</code> column to transactions / receipts / AI-requests / audit-logs.</p>
+    <p class="note">Other groups hang off the same <code>ACCOUNT</code> / <code>TRANSACTION</code> / <code>USER</code> spine: <b>savings</b> (SavingsBalance, SavingsGoal) · <b>investments</b> (AccountValue, Holding, HoldingPrice) · <b>assets</b> (Asset, AssetLog) · <b>AI</b> (AIRequest) · <b>review</b> (ReviewItem) · <b>energy</b> (EnergySnapshot) · <b>import profiles</b> (ImportProfile) · <b>Curve funding links</b> (CurveFundingLink) · <b>subscriptions</b> · <b>rules</b> · <b>budgets</b> · <b>tags</b> · <b>child allowance</b> (ChildAllocation) · <b>MFA</b> (UserSession) · <b>audit</b> (AuditLog). Retention adds an <code>archived_at</code> column to transactions / receipts / AI-requests / audit-logs.</p>
   </section>
 
   <!-- 5. DEPLOYMENT -------------------------------------------------------->
@@ -299,10 +299,11 @@
       <!-- volume -->
       <ellipse class="box-db" cx="600" cy="244" rx="150" ry="14"/>
       <path class="box-db" d="M450 244 v0 a150 14 0 0 0 300 0" fill="none"/>
-      <text class="lbl" x="600" y="249" text-anchor="middle">/data volume · db + uploads (private, backed up)</text>
+      <text class="lbl" x="600" y="249" text-anchor="middle">/data volume · db + uploads (private, backed up, opt. encrypted)</text>
       <path class="edge-opt" marker-end="url(#ah5)" d="M530 164 L580 232"/>
     </svg>
     </div>
+    <p class="note">The runtime image is <b>multi-arch</b> (amd64 / arm64). At-rest DB encryption (SQLCipher) ships as a prebuilt wheel on amd64; on arm64 the <code>sqlcipher3</code> wheel is compiled in a throwaway build stage so the Pi gets it too. It's opt-in — off by default.</p>
   </section>
 
   <footer>
