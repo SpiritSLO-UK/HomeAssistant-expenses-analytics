@@ -14,6 +14,8 @@ a second factor *inside* the app). Flow:
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import secrets
 from datetime import UTC, datetime, timedelta
@@ -21,9 +23,10 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.models import User, UserSession
 from app.models.user import MFA_SCOPES
-from app.services import totp
+from app.services import crypto_service, totp
 
 ISSUER = "HA Finance"
 
@@ -49,6 +52,69 @@ def _now() -> datetime:
 
 def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+# --- TOTP secret at-rest encryption (CR-SEC-13) ------------------------------
+#
+# The stored ``mfa_secret`` used to be the raw base32 TOTP seed (plaintext,
+# protected only by *optional* at-rest DB encryption). We now app-layer-encrypt
+# it with the same AES-256-GCM + scrypt primitive used for backups
+# (``crypto_service``), keyed on the configured app secret (``HAFI_DB_KEY`` —
+# the one key we already require to be present on every start in stored-key
+# mode). No schema change: the ciphertext is stored as a string in the same
+# TEXT column, tagged with ``_ENC_PREFIX`` so it can never be mistaken for a
+# legacy plaintext secret.
+#
+# Key availability is the crux: the key must be present on *every* verify. If no
+# app key is configured we DO NOT encrypt (encrypting with a key that isn't
+# reliably present at verify time would lock users out) — we fall back to the
+# previous plaintext behaviour. Existing plaintext secrets keep working: reads
+# detect the absence of the marker and use the value as-is. New / re-enrolled
+# secrets are encrypted whenever a key is available.
+#
+# A base32 TOTP seed is only ``[A-Z2-7]`` (upper-case, no ':'), so a value that
+# starts with the lower-case, colon-bearing marker can never be a real seed —
+# the plaintext fallback cannot mis-fire.
+_ENC_PREFIX = "mfaenc1:"
+
+
+def _app_key() -> str | None:
+    """The app secret used to encrypt the TOTP seed, or ``None`` if not set.
+
+    Read live (not cached) so a runtime change / test monkeypatch is honoured.
+    """
+    key = settings.db_key
+    return key or None
+
+
+def encrypt_secret(secret: str | None) -> str | None:
+    """The value to persist for a TOTP seed: app-layer ciphertext when an app key
+    is configured, otherwise the seed unchanged (no key → plaintext fallback)."""
+    key = _app_key()
+    if not secret or not key:
+        return secret
+    blob = crypto_service.encrypt(secret.encode("utf-8"), key)
+    return _ENC_PREFIX + base64.b64encode(blob).decode("ascii")
+
+
+def decrypt_secret(stored: str | None) -> str | None:
+    """Recover the usable base32 TOTP seed from a stored value.
+
+    Legacy plaintext seeds (no marker) are returned as-is. A marked value is
+    decrypted with the app key; if the key is missing or decryption fails (e.g.
+    a rotated key) we return ``None`` so verification fails closed rather than
+    crashing — the seed is simply unusable until the correct key is restored.
+    """
+    if not stored or not stored.startswith(_ENC_PREFIX):
+        return stored  # legacy plaintext seed (or None/empty)
+    key = _app_key()
+    if not key:
+        return None
+    try:
+        blob = base64.b64decode(stored[len(_ENC_PREFIX):].encode("ascii"), validate=True)
+        return crypto_service.decrypt(blob, key).decode("utf-8")
+    except (crypto_service.DecryptError, binascii.Error, ValueError, UnicodeDecodeError):
+        return None
 
 
 # --- MFA brute-force throttle (CR-SEC-6) -------------------------------------
@@ -100,10 +166,11 @@ def start_enrolment(db: Session, user: User, code: str | None = None) -> dict | 
     reset the second factor. Returns the new secret + otpauth URI, or ``None`` when
     a required re-enrolment code is missing/invalid (the route maps that to 400).
     """
-    if user.mfa_enabled and (not code or not user.mfa_secret or not totp.verify(user.mfa_secret, code)):
+    live = decrypt_secret(user.mfa_secret)
+    if user.mfa_enabled and (not code or not live or not totp.verify(live, code)):
         return None
     secret = totp.generate_secret()
-    user.mfa_pending_secret = secret
+    user.mfa_pending_secret = encrypt_secret(secret)
     db.commit()
     return {
         "secret": secret,
@@ -116,10 +183,10 @@ def enable(db: Session, user: User, code: str, scope: str | None = None) -> bool
     it to the live secret and turn MFA on. ``scope`` (#157) sets what MFA gates —
     ``app`` (entry only) or ``app_admin`` (entry + admin step-up); an unknown/None
     value keeps ``app_admin``."""
-    pending = user.mfa_pending_secret
+    pending = decrypt_secret(user.mfa_pending_secret)
     if not pending or not totp.verify(pending, code):
         return False
-    user.mfa_secret = pending
+    user.mfa_secret = encrypt_secret(pending)
     user.mfa_pending_secret = None
     user.mfa_enabled = True
     user.mfa_scope = scope if scope in MFA_SCOPES else "app_admin"
@@ -130,9 +197,10 @@ def enable(db: Session, user: User, code: str, scope: str | None = None) -> bool
 
 def disable(db: Session, user: User, code: str) -> bool:
     """Turn MFA off (current code required) and drop every session for the user."""
-    if not user.mfa_enabled or not user.mfa_secret:
+    live = decrypt_secret(user.mfa_secret)
+    if not user.mfa_enabled or not live:
         return False
-    if not totp.verify(user.mfa_secret, code):
+    if not totp.verify(live, code):
         return False
     user.mfa_enabled = False
     user.mfa_secret = None
@@ -153,9 +221,10 @@ def verify_and_open(db: Session, user: User, code: str) -> str | None:
     second session. (Step-up/disable operate on an already-valid session and may
     reuse the current in-period code, which the user legitimately does in one go.)
     """
-    if not user.mfa_enabled or not user.mfa_secret:
+    live = decrypt_secret(user.mfa_secret)
+    if not user.mfa_enabled or not live:
         return None
-    counter = totp.matched_counter(user.mfa_secret, code)
+    counter = totp.matched_counter(live, code)
     if counter is None:
         return None
     if user.mfa_last_counter is not None and counter <= user.mfa_last_counter:
@@ -199,9 +268,10 @@ def has_valid_session(db: Session, user_id: int, token: str | None) -> bool:
 def step_up(db: Session, user: User, token: str | None, code: str) -> bool:
     """Re-verify a code on the current session, refreshing the step-up window."""
     session = get_valid_session(db, user.id, token)
-    if session is None or not user.mfa_secret:
+    live = decrypt_secret(user.mfa_secret)
+    if session is None or not live:
         return False
-    if not totp.verify(user.mfa_secret, code):
+    if not totp.verify(live, code):
         return False
     session.last_step_up_at = _now()
     db.commit()

@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+from app.config import settings
 from app.db.session import SessionLocal
-from app.models import UserSession
-from app.services import totp
+from app.models import User, UserSession
+from app.services import mfa_service, totp
 
 
 def _wrong(code: str) -> str:
@@ -259,3 +260,75 @@ def test_verify_window_is_clamped():
     old = totp.current_code(secret, now=0)  # counter 0
     assert not totp.verify(secret, old, now=5 * totp.PERIOD, window=999)  # 5 periods → rejected
     assert totp.verify(secret, old, now=2 * totp.PERIOD, window=999)      # within ±2 → accepted
+
+
+# --- TOTP secret at-rest encryption (CR-SEC-13) ------------------------------
+
+
+def _mk_user(db, name: str, **kw) -> User:
+    user = User(display_name=name, external_id=name.lower(), role="owner", status="approved", **kw)
+    db.add(user)
+    db.commit()
+    return user
+
+
+def test_secret_encrypted_at_rest_when_key_set(db, monkeypatch):
+    """With an app key configured, the enrolled seed is stored as app-layer
+    ciphertext (marker-prefixed, not the raw base32) and still round-trips
+    through enable → verify."""
+    monkeypatch.setattr(settings, "db_key", "test-app-key")
+    user = _mk_user(db, "Enc")
+
+    secret = mfa_service.start_enrolment(db, user)["secret"]
+    # Pending seed is stored encrypted, never as the raw base32.
+    assert user.mfa_pending_secret != secret
+    assert user.mfa_pending_secret.startswith(mfa_service._ENC_PREFIX)
+
+    assert mfa_service.enable(db, user, totp.current_code(secret)) is True
+    assert user.mfa_secret != secret
+    assert user.mfa_secret.startswith(mfa_service._ENC_PREFIX)
+    # It decrypts back to the original seed and opens a session.
+    assert mfa_service.decrypt_secret(user.mfa_secret) == secret
+    assert mfa_service.verify_and_open(db, user, totp.current_code(secret)) is not None
+
+
+def test_legacy_plaintext_secret_still_verifies(db, monkeypatch):
+    """Backward compat: a pre-existing plaintext base32 seed (no marker) is used
+    as-is and still verifies, even with an app key now configured."""
+    monkeypatch.setattr(settings, "db_key", "test-app-key")
+    secret = totp.generate_secret()
+    user = _mk_user(db, "Legacy", mfa_enabled=True, mfa_secret=secret)
+
+    # An unmarked value is treated as plaintext and returned unchanged.
+    assert mfa_service.decrypt_secret(secret) == secret
+    assert mfa_service.verify_and_open(db, user, totp.current_code(secret)) is not None
+
+
+def test_no_app_key_keeps_plaintext_behaviour(db, monkeypatch):
+    """No app key → seeds stay plaintext (encrypting would make MFA
+    undecryptable). Behaviour is unchanged and nothing crashes."""
+    monkeypatch.setattr(settings, "db_key", None)
+    user = _mk_user(db, "Plain")
+
+    secret = mfa_service.start_enrolment(db, user)["secret"]
+    assert user.mfa_pending_secret == secret  # stored as-is, no marker
+    assert not user.mfa_pending_secret.startswith(mfa_service._ENC_PREFIX)
+
+    assert mfa_service.enable(db, user, totp.current_code(secret)) is True
+    assert user.mfa_secret == secret
+    assert mfa_service.verify_and_open(db, user, totp.current_code(secret)) is not None
+
+
+def test_encrypted_secret_fails_closed_without_or_wrong_key(monkeypatch):
+    """A marked ciphertext is unrecoverable if the key is missing or wrong — it
+    returns None (verify fails closed) rather than crashing or mis-firing the
+    plaintext fallback."""
+    monkeypatch.setattr(settings, "db_key", "real-key")
+    blob = mfa_service.encrypt_secret(totp.generate_secret())
+    assert blob.startswith(mfa_service._ENC_PREFIX)
+
+    monkeypatch.setattr(settings, "db_key", None)
+    assert mfa_service.decrypt_secret(blob) is None  # no key
+
+    monkeypatch.setattr(settings, "db_key", "wrong-key")
+    assert mfa_service.decrypt_secret(blob) is None  # wrong key, no exception
