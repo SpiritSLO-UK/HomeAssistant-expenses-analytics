@@ -44,6 +44,10 @@ function stringifyVal(v: unknown): string {
 
 function describe(row: AuditLogRow): string {
   if (!row.details) return "";
+  // `details` is usually an object, but legacy / malformed rows may carry a
+  // string or other primitive — spreading those would crash the render, so
+  // stringify anything non-object rather than destructuring it.
+  if (typeof row.details !== "object") return stringifyVal(row.details);
   // Decisions carry a human-readable `summary`; show it first, then any extras.
   const { summary, ...rest } = row.details as Record<string, unknown>;
   const tail = Object.entries(rest)
@@ -56,6 +60,10 @@ function describe(row: AuditLogRow): string {
 export default function Logs() {
   const me = useQuery({ queryKey: ["me"], queryFn: getMe });
   const [includeArchived, setIncludeArchived] = useState(false);
+  // Only fire the admin-only log queries once `me` has loaded AND the caller is
+  // the owner/admin — otherwise the pre-guard render (me still loading) would
+  // trigger forbidden requests for a non-admin/unauthenticated visitor.
+  const authorized = me.data?.is_admin === true;
 
   if (me.data && !me.data.is_admin) {
     return (
@@ -90,19 +98,41 @@ export default function Logs() {
         <strong>Include archived</strong>.
       </p>
 
-      <ActivityCard includeArchived={includeArchived} />
-      <AiRequestsCard includeArchived={includeArchived} />
+      <ActivityCard includeArchived={includeArchived} authorized={authorized} />
+      <AiRequestsCard includeArchived={includeArchived} authorized={authorized} />
     </div>
   );
 }
 
-function ActivityCard({ includeArchived }: Readonly<{ includeArchived: boolean }>) {
+function ActivityCard({ includeArchived, authorized }: Readonly<{ includeArchived: boolean; authorized: boolean }>) {
   const [action, setAction] = useState("");
   const [limit, setLimit] = useState(100);
-  const actions = useQuery({ queryKey: ["audit-actions"], queryFn: listAuditActions });
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [text, setText] = useState("");
+  const actions = useQuery({ queryKey: ["audit-actions"], queryFn: listAuditActions, enabled: authorized });
   const log = useQuery({
     queryKey: ["activity-log", action, limit, includeArchived],
     queryFn: () => listActivityLog({ action: action || undefined, limit, includeArchived }),
+    enabled: authorized,
+  });
+
+  // Client-side date-range + free-text narrowing over the fetched page. `text`
+  // is matched against actor / action / item / rendered details; dates compare
+  // the ISO day (created_at starts `YYYY-MM-DD`).
+  const needle = text.trim().toLowerCase();
+  const rows = (log.data ?? []).filter((row) => {
+    const day = row.created_at.slice(0, 10);
+    if (dateFrom && day < dateFrom) return false;
+    if (dateTo && day > dateTo) return false;
+    if (needle) {
+      const entityRef = row.entity_id == null ? "" : ` #${row.entity_id}`;
+      const hay = [row.actor ?? "system", row.action, (row.entity_type ?? "") + entityRef, describe(row)]
+        .join(" ")
+        .toLowerCase();
+      if (!hay.includes(needle)) return false;
+    }
+    return true;
   });
 
   return (
@@ -155,18 +185,40 @@ function ActivityCard({ includeArchived }: Readonly<{ includeArchived: boolean }
         </div>
       </div>
 
+      <div className="form-row" style={{ gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+        <label className="muted" style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "0.82rem" }}>
+          From
+          <input type="date" value={dateFrom} max={dateTo || undefined} onChange={(e) => setDateFrom(e.target.value)} title="Only show entries on or after this date" />
+        </label>
+        <label className="muted" style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "0.82rem" }}>
+          To
+          <input type="date" value={dateTo} min={dateFrom || undefined} onChange={(e) => setDateTo(e.target.value)} title="Only show entries on or before this date" />
+        </label>
+        <input
+          type="search"
+          value={text}
+          placeholder="Search who / action / item / details…"
+          onChange={(e) => setText(e.target.value)}
+          title="Free-text filter over the loaded entries"
+          style={{ flex: "1 1 12rem", minWidth: "10rem" }}
+        />
+      </div>
+
       {log.isLoading && <p className="muted">Loading…</p>}
-      {log.data?.length === 0 && (
-        <p className="muted">No activity recorded yet{action ? " for this action" : ""}.</p>
+      {log.isError && (
+        <p className="status status--error">Couldn’t load the activity log. {String(log.error)}</p>
       )}
-      {log.data && log.data.length > 0 && (
+      {log.data && rows.length === 0 && (
+        <p className="muted">No matching activity{action || dateFrom || dateTo || needle ? " for these filters" : ""}.</p>
+      )}
+      {rows.length > 0 && (
         <div className="table-wrap">
           <table className="table">
             <thead>
               <tr><th>When</th><th>Who</th><th>Action</th><th>Item</th><th>Details</th></tr>
             </thead>
             <tbody>
-              {log.data.map((row) => {
+              {rows.map((row) => {
                 const entityRef = row.entity_id == null ? "" : ` #${row.entity_id}`;
                 return (
                   <tr key={row.id}>
@@ -188,10 +240,11 @@ function ActivityCard({ includeArchived }: Readonly<{ includeArchived: boolean }
   );
 }
 
-function AiRequestsCard({ includeArchived }: Readonly<{ includeArchived: boolean }>) {
+function AiRequestsCard({ includeArchived, authorized }: Readonly<{ includeArchived: boolean; authorized: boolean }>) {
   const requests = useQuery({
     queryKey: ["ai-requests", includeArchived],
     queryFn: () => listAiRequests({ includeArchived }),
+    enabled: authorized,
   });
   if (!requests.data || requests.data.length === 0) return null;
 
