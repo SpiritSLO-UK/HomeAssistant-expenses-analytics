@@ -17,7 +17,7 @@ from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.models import Category, Project, Transaction, TransactionSplit, Vendor
 from app.services import analytics_service, settings_service, split_service
@@ -41,7 +41,38 @@ def _project_transactions(
         return []
     return list(
         db.scalars(
-            select(Transaction).where(
+            select(Transaction)
+            .options(selectinload(Transaction.splits))
+            .where(
+                Transaction.id.in_(ids),
+                *account_scope_condition(account_ids),
+                *archived_condition(),
+            )
+        ).all()
+    )
+
+
+def _all_project_transactions(
+    db: Session, *, account_ids: set[int] | None = None
+) -> list[Transaction]:
+    """Every account-scoped, non-archived transaction touching *any* project
+    (directly or via a split), splits eager-loaded — fetched in a small constant
+    number of queries so multi-project reports (``totals``/``history``) avoid the
+    N+1 of one fetch per project."""
+    direct = db.scalars(
+        select(Transaction.id).where(Transaction.project_id.is_not(None))
+    ).all()
+    via_split = db.scalars(
+        select(TransactionSplit.transaction_id).where(TransactionSplit.project_id.is_not(None))
+    ).all()
+    ids = set(direct) | set(via_split)
+    if not ids:
+        return []
+    return list(
+        db.scalars(
+            select(Transaction)
+            .options(selectinload(Transaction.splits))
+            .where(
                 Transaction.id.in_(ids),
                 *account_scope_condition(account_ids),
                 *archived_condition(),
@@ -96,23 +127,55 @@ def _accumulate(db: Session, project_id: int, *, account_ids: set[int] | None = 
     return spent, by_cat, by_vendor, count, (min(dates) if dates else None), (max(dates) if dates else None)
 
 
-def history(db: Session, *, account_ids: set[int] | None = None, months: int = 12) -> dict:
+def _txns_by_project(
+    txns: list[Transaction],
+) -> dict[int, list[Transaction]]:
+    """Group already-fetched transactions by the project(s) they touch (directly
+    or via a split part). One transaction may appear under several projects."""
+    grouped: dict[int, list[Transaction]] = defaultdict(list)
+    for txn in txns:
+        seen: set[int] = set()
+        if txn.project_id is not None:
+            seen.add(txn.project_id)
+        if txn.is_split:
+            for split in txn.splits:
+                if split.project_id is not None:
+                    seen.add(split.project_id)
+        for pid in seen:
+            grouped[pid].append(txn)
+    return grouped
+
+
+def history(
+    db: Session,
+    *,
+    account_ids: set[int] | None = None,
+    months: int = 12,
+    ref: date | None = None,
+) -> dict:
     """Total project-attributed spend per month across all projects (split-aware,
     reusing the same accumulation as the project totals), oldest first — for the
-    over-time chart + period selector on the Projects page."""
-    windows = analytics_service._month_windows(date.today(), max(1, months))
+    over-time chart + period selector on the Projects page.
+
+    ``ref`` anchors the trailing window (default = today) so callers/tests can
+    compute the series relative to a fixed date deterministically."""
+    ref = ref or date.today()
+    windows = analytics_service._month_windows(ref, max(1, months))
     totals: dict[date, Decimal] = {start: Decimal("0.00") for start, _ in windows}
+    # month-start keyed lookup so bucketing is O(1) per txn, not O(windows).
+    month_key: dict[tuple[int, int], date] = {(start.year, start.month): start for start, _ in windows}
     sink_cat: dict[int | None, Decimal] = defaultdict(lambda: Decimal("0.00"))
     sink_ven: dict[int | None, Decimal] = defaultdict(lambda: Decimal("0.00"))
-    for project in db.scalars(select(Project)).all():
-        for txn in _project_transactions(db, project.id, account_ids=account_ids):
-            amt = _accumulate_txn(txn, project.id, sink_cat, sink_ven)  # split-aware contribution
+    txns = _all_project_transactions(db, account_ids=account_ids)
+    for project_id, project_txns in _txns_by_project(txns).items():
+        for txn in project_txns:
+            amt = _accumulate_txn(txn, project_id, sink_cat, sink_ven)  # split-aware contribution
             if amt <= 0:
                 continue
-            for start, end in windows:
-                if start <= txn.transaction_date < end:
-                    totals[start] += amt
-                    break
+            td = txn.transaction_date
+            start = month_key.get((td.year, td.month))
+            if start is not None:
+                totals[start] += amt
     series = [
         {"month": start.strftime("%Y-%m"), "total": str(totals[start].quantize(Decimal("0.01")))}
         for start, _ in windows
@@ -165,10 +228,24 @@ def summary(db: Session, project: Project, *, account_ids: set[int] | None = Non
 
 
 def totals(db: Session, *, account_ids: set[int] | None = None) -> list[dict]:
-    """One row per project for the dashboard "Project totals" card (spec §25.1)."""
+    """One row per project for the dashboard "Project totals" card (spec §25.1).
+
+    Uses a single account-scoped fetch of project-touching transactions (splits
+    eager-loaded) and assembles per-project spend in Python, so the query count
+    is a small constant regardless of how many projects exist."""
+    grouped = _txns_by_project(_all_project_transactions(db, account_ids=account_ids))
+    spent_by_project: dict[int, Decimal] = {}
+    _sink_cat: dict[int | None, Decimal] = defaultdict(lambda: Decimal("0.00"))
+    _sink_ven: dict[int | None, Decimal] = defaultdict(lambda: Decimal("0.00"))
+    for project_id, project_txns in grouped.items():
+        spent = Decimal("0.00")
+        for txn in project_txns:
+            spent += _accumulate_txn(txn, project_id, _sink_cat, _sink_ven)
+        spent_by_project[project_id] = spent
+
     rows = []
     for project in db.scalars(select(Project).order_by(Project.name)).all():
-        spent, *_ = _accumulate(db, project.id, account_ids=account_ids)
+        spent = spent_by_project.get(project.id, Decimal("0.00"))
         rows.append(
             {
                 "project_id": project.id,
