@@ -53,7 +53,8 @@ export default function Travel() {
       setErr(null);
       setMsg(`Created project “${r.name}” and assigned the trip's transactions to it.`);
       qc.invalidateQueries({ queryKey: ["projects"] });            // Transactions project filter
-      qc.invalidateQueries({ queryKey: ["dashboard-projects"] });  // Projects page + dashboard card
+      qc.invalidateQueries({ queryKey: ["dashboard-projects"] });  // Projects page list + dashboard card
+      qc.invalidateQueries({ queryKey: ["projects-history"] });    // Projects page over-time chart
       qc.invalidateQueries({ queryKey: ["transactions"] });
       qc.invalidateQueries({ queryKey: ["travel-trips"] });
     },
@@ -73,6 +74,8 @@ export default function Travel() {
       setMsg(`Tagged ${v.ids.length} transaction(s) as ${v.country} — the spend-by-location map will use it.`);
       qc.invalidateQueries({ queryKey: ["dash-geo"] });
       qc.invalidateQueries({ queryKey: ["transactions"] });
+      qc.invalidateQueries({ queryKey: ["travel-trips"] });        // trip list "Where" reflects the new country
+      qc.invalidateQueries({ queryKey: ["travel-by-currency"] });  // spend-by-currency "Where" column
     },
     onError: (e) => {
       setMsg(null);
@@ -176,7 +179,7 @@ export default function Travel() {
               </thead>
               <tbody>
                 {trips.data.map((trip) => {
-                  const key = `${trip.first}-${trip.last}-${trip.currencies.join(",")}`;
+                  const key = `${trip.first}-${trip.last}-${trip.transaction_ids.join("-")}`;
                   const open = openTrip === key;
                   return (
                     <Fragment key={key}>
