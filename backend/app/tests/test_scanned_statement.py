@@ -113,6 +113,13 @@ def test_money_signal_distinguishes_amounts_from_scraps():
     assert not ocr_service._MONEY_RE.search("Dated 01.05.2026")  # a dotted date, not money
 
 
+# A substantial digital text layer: a money amount plus a real body of words.
+_DIGITAL_TEXT = (
+    "ACME LTD INVOICE\nDate 01/05/2026\nCoffee beans 500g 12.99\n"
+    "Delivery 3.50\nSubtotal 16.49\nVAT 3.30\nTOTAL 42.18\n"
+)
+
+
 def test_pdf_text_trusts_embedded_only_with_money(monkeypatch, tmp_path):
     """A tiny embedded text layer with no money amount (an image-only PDF) must fall
     through to OCR, not return a high-confidence empty parse."""
@@ -122,8 +129,8 @@ def test_pdf_text_trusts_embedded_only_with_money(monkeypatch, tmp_path):
     pdf.write_bytes(b"%PDF-1.4")
     monkeypatch.setattr(ocr_service, "ocr_pdf_pages", lambda *a, **k: "01/05/2026 CAFE 3.50")
 
-    # Embedded text WITH a money amount → trusted at 0.95 (OCR not used).
-    monkeypatch.setattr(pypdf, "PdfReader", lambda _p: _FakeReader(_FakePage("ACME LTD\nTOTAL 42.18\n")))
+    # A substantial embedded text layer WITH a money amount → trusted at 0.95 (OCR not used).
+    monkeypatch.setattr(pypdf, "PdfReader", lambda _p: _FakeReader(_FakePage(_DIGITAL_TEXT)))
     text, conf = ocr_service._pdf_text(pdf)
     assert conf == pytest.approx(0.95) and "42.18" in text
 
@@ -131,3 +138,56 @@ def test_pdf_text_trusts_embedded_only_with_money(monkeypatch, tmp_path):
     monkeypatch.setattr(pypdf, "PdfReader", lambda _p: _FakeReader(_FakePage("Page 1 of 3")))
     text, conf = ocr_service._pdf_text(pdf)
     assert conf == pytest.approx(0.5) and "CAFE" in text
+
+
+def test_pdf_text_rejects_lone_money_watermark(monkeypatch, tmp_path):
+    """A stray money-looking scrap (a watermark / short header) is NOT enough to trust
+    the embedded text layer — it must fall through to the OCR fallback (SR-D6)."""
+    import pypdf
+
+    pdf = tmp_path / "x.pdf"
+    pdf.write_bytes(b"%PDF-1.4")
+    monkeypatch.setattr(ocr_service, "ocr_pdf_pages", lambda *a, **k: "01/05/2026 CAFE 3.50")
+    # Money amount present but only a few words → below the substance threshold.
+    monkeypatch.setattr(pypdf, "PdfReader", lambda _p: _FakeReader(_FakePage("SALE £9.99")))
+    text, conf = ocr_service._pdf_text(pdf)
+    assert conf == pytest.approx(0.5) and "CAFE" in text
+
+
+def test_looks_like_digital_text_threshold():
+    assert ocr_service._looks_like_digital_text(_DIGITAL_TEXT)
+    assert not ocr_service._looks_like_digital_text("SALE 9.99")  # too few words
+    assert not ocr_service._looks_like_digital_text("Page 1 of 3 header footer x y z")  # no money
+
+
+# --- decompression-bomb guard (no engine needed) -------------------------
+
+def test_ocr_image_refuses_decompression_bomb(monkeypatch):
+    """A maliciously huge image degrades to ('', None) rather than crashing (SR-D6)."""
+    from PIL import Image
+
+    class _BombImage:
+        def load(self):
+            raise Image.DecompressionBombError("too many pixels")
+
+    fake_pil = type("F", (), {
+        "MAX_IMAGE_PIXELS": None,
+        "DecompressionBombError": Image.DecompressionBombError,
+        "open": staticmethod(lambda _p: _BombImage()),
+    })
+    fake_tess = type("T", (), {})
+
+    monkeypatch.setitem(__import__("sys").modules, "PIL", type("P", (), {"Image": fake_pil}))
+    monkeypatch.setitem(__import__("sys").modules, "PIL.Image", fake_pil)
+    monkeypatch.setitem(__import__("sys").modules, "pytesseract", fake_tess)
+
+    text, conf = ocr_service._ocr_image(Path("huge.png"))
+    assert text == "" and conf is None
+    # The guard must have bounded (never disabled) Pillow's pixel cap.
+    assert fake_pil.MAX_IMAGE_PIXELS == ocr_service._MAX_IMAGE_PIXELS
+
+
+def test_image_pixel_cap_is_bounded_and_enabled():
+    """The configured cap is a real positive bound, not None/disabled (SR-D6)."""
+    assert isinstance(ocr_service._MAX_IMAGE_PIXELS, int)
+    assert ocr_service._MAX_IMAGE_PIXELS > 0
