@@ -35,17 +35,19 @@ Cloud AI is opt-in and is layered behind several safeguards
 |-----------|---------------|--------|
 | Minimal payload | We send one transaction at a time, only `description`, `amount`, `currency`, and candidate category names — nothing else. | ✅ `redact_for_cloud()` |
 | Redaction | Card/account/IBAN/sort-code/postcode/email tokens are stripped before sending. | ✅ `redaction.py` (unit-tested) |
-| Never-cloud categories | **Opt-in per category:** mark any category **never-cloud** (Categories → Cloud-AI privacy) and a transaction in it is never sent to a cloud provider, regardless of AI mode. Defaults ship a few categories as *sensitive* (extra-redacted); set them to *never-cloud* if you want the hard block. The block applies once a transaction is in that category. | ✅ enforced in `ai_service` |
+| Never-cloud categories | **Opt-in per category, off by default.** Mark any category **never-cloud** (Categories → Cloud-AI privacy) and a transaction already assigned to it is never sent to a cloud provider, regardless of AI mode. **No category ships as never-cloud** — the shipped defaults set seven categories (Income, Cashback, Transfers, Housing, Health, Insurance, Cash) to *sensitive*, but *sensitive* is a label only and does **not** itself block a cloud send or add extra redaction; enable the hard block yourself by switching a category to *never-cloud*. Two caveats: the block keys off the **assigned** category, so an as-yet-**uncategorised** row (e.g. a not-yet-categorised medical payment) is **not** protected by it; and it applies to the category-suggestion call, not the image/vision path (which has its own per-send warning). | ✅ `never_cloud` block in `ai_service` |
 | Manual approval | In `cloud_manual` mode you see the exact payload and approve each request; the cloud **batch** flow previews the whole redacted list before you approve it in one go. | ✅ per-call + batch |
 | One-time disclaimer | The first time you select a cloud mode, a dialog spells out what it means and the choice is gated until you confirm. | ✅ |
 | Full audit log | Every external request (provider, model, redacted payload, response) is logged and viewable. | ✅ `ai_requests` + Logs page |
 
-**Honest limitations.** Redaction is **pattern-based and UK-centric** (card/IBAN/
-sort-code/postcode/email shapes) — it does **not** strip names, phone numbers,
-addresses, or arbitrary free-text in a description, so review what you enable.
-And "nothing leaves the device" in **strict-local** describes the AI gateway;
-it doesn't cover **MQTT** if you enable it (that talks to *your own* broker,
-independent of the AI privacy mode).
+**Honest limitations.** Redaction is **pattern-based and still somewhat
+region-centric** — it matches structured PII shapes only (card/PAN, IBAN, UK
+sort code, 8-digit account number, UK postcode, email). It does **not** remove
+names or other free-text personal information from a description, nor phone
+numbers or street addresses, so review what you enable. And "zero outbound
+requests" in **strict-local** describes the **AI gateway** only; it does **not**
+cover **MQTT** if you enable it — MQTT talks to *your own* broker regardless of
+the AI privacy mode.
 
 **Receipts never go to AI.** Only a transaction's `description` (redacted) is ever
 sent — receipt images and OCR text are never included in an AI payload. The
@@ -70,8 +72,12 @@ Being honest about the boundary of what software can enforce:
 - The AI is **stateless from our side** — it has no connection back to your
   database. It cannot "read" anything except the single request we send it. It
   cannot browse, query, or retain access to your data.
-- Sensitive categories and raw statements/receipt images are never sent unless
-  you explicitly override the defaults.
+- A transaction whose **assigned** category you have set to *never-cloud* is
+  never sent to a cloud provider (this is opt-in — see §2; nothing ships as
+  never-cloud by default).
+- Raw statements and receipt/statement **images** are never sent on the
+  category-suggestion path; the only time an image leaves is the opt-in
+  vision-extraction fallback, which warns you each time (§6).
 
 **We *cannot* technically force a third-party provider to:**
 - Delete your prompt after processing, or
