@@ -35,8 +35,13 @@ export default function Search() {
     <div className="page">
       <h1 className="page__title">Search</h1>
       <div className="card">
+        <label htmlFor="search-input" className="muted" style={{ display: "block", marginBottom: 4 }}>
+          Search transactions, vendors, categories, projects
+        </label>
         <input
+          id="search-input"
           autoFocus
+          aria-label="Search transactions, vendors, categories, projects"
           placeholder="Search transactions, vendors, categories, projects…"
           value={term}
           onChange={(e) => setTerm(e.target.value)}
@@ -55,10 +60,15 @@ export default function Search() {
               <p className="muted">No matches for “{debounced}”.</p>
             </div>
           )}
+          {r && total > 0 && (
+            <p className="muted">
+              {total} result{total === 1 ? "" : "s"} for “{debounced}”
+            </p>
+          )}
 
           {r && r.transactions.length > 0 && (
             <div className="card">
-              <h2 className="card__title">Transactions</h2>
+              <h2 className="card__title">Transactions ({r.transactions.length})</h2>
               <ul className="kv">
                 {r.transactions.map((t) => (
                   <li key={t.id}>
@@ -75,10 +85,10 @@ export default function Search() {
 
           {r && r.vendors.length > 0 && (
             <div className="card">
-              <h2 className="card__title">Vendors</h2>
+              <h2 className="card__title">Vendors ({r.vendors.length})</h2>
               <div className="chips">
                 {r.vendors.map((v) => (
-                  <Link key={v.id} className="chip" to="/vendors">{v.name}</Link>
+                  <Link key={v.id} className="chip" to={`/transactions?vendor_id=${v.id}`}>{v.name}</Link>
                 ))}
               </div>
             </div>
@@ -86,10 +96,10 @@ export default function Search() {
 
           {r && r.categories.length > 0 && (
             <div className="card">
-              <h2 className="card__title">Categories</h2>
+              <h2 className="card__title">Categories ({r.categories.length})</h2>
               <div className="chips">
                 {r.categories.map((c) => (
-                  <Link key={c.id} className="chip" to="/categories">
+                  <Link key={c.id} className="chip" to={`/transactions?category_id=${c.id}`}>
                     <span className="chip__dot" style={{ background: c.colour ?? "#bbb" }} />
                     {c.name}
                   </Link>
@@ -100,11 +110,11 @@ export default function Search() {
 
           {r && r.projects.length > 0 && (
             <div className="card">
-              <h2 className="card__title">Projects</h2>
+              <h2 className="card__title">Projects ({r.projects.length})</h2>
               <ul className="kv">
                 {r.projects.map((p) => (
                   <li key={p.id}>
-                    <span><Link to="/projects">{p.name}</Link></span>
+                    <span><Link to={`/transactions?project_id=${p.id}`}>{p.name}</Link></span>
                     <span className="tag">{p.status}</span>
                   </li>
                 ))}
