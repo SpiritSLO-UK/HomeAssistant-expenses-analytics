@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -151,6 +151,16 @@ export default function Transactions() {
 
   const categories = useQuery({ queryKey: ["categories"], queryFn: listCategories });
   const projects = useQuery({ queryKey: ["projects"], queryFn: listProjects });
+  // Build id→name lookups once per data change instead of scanning the arrays
+  // for every rendered row.
+  const categoryNameById = useMemo(
+    () => new Map<number, string>((categories.data ?? []).map((c) => [c.id, c.name])),
+    [categories.data],
+  );
+  const projectNameById = useMemo(
+    () => new Map<number, string>((projects.data ?? []).map((p) => [p.id, p.name])),
+    [projects.data],
+  );
   const members = useQuery({ queryKey: ["members"], queryFn: listMembers });
   const vendors = useQuery({ queryKey: ["vendors"], queryFn: listVendors });
   const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
@@ -206,6 +216,7 @@ export default function Transactions() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["transactions"] });
       qc.invalidateQueries({ queryKey: ["dash-categories"] }); // dashboard breakdown depends on categories
+      qc.invalidateQueries({ queryKey: ["dash-vendors"] });
     },
   });
 
@@ -219,6 +230,7 @@ export default function Transactions() {
       qc.invalidateQueries({ queryKey: ["transactions"] });
       qc.invalidateQueries({ queryKey: ["rules"] });
       qc.invalidateQueries({ queryKey: ["dash-categories"] });
+      qc.invalidateQueries({ queryKey: ["dash-vendors"] });
     },
     onError: (e) => setRuleMsg(`Couldn't save rule: ${e instanceof Error ? e.message : e}`),
   });
@@ -228,12 +240,21 @@ export default function Transactions() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["transactions"] });
       qc.invalidateQueries({ queryKey: ["dash-categories"] });
+      qc.invalidateQueries({ queryKey: ["dash-vendors"] });
     },
   });
 
   const unarchive = useMutation({
     mutationFn: (id: number) => unarchiveTransaction(id),
-    onSuccess: () => qc.invalidateQueries(),
+    // Unarchiving re-includes a transaction in aggregates, so refresh the
+    // transaction list + the dashboard summaries it feeds (mirrors the other
+    // mutations rather than a blanket invalidate).
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["transactions"] });
+      qc.invalidateQueries({ queryKey: ["summary"] });
+      qc.invalidateQueries({ queryKey: ["dash-categories"] });
+      qc.invalidateQueries({ queryKey: ["dash-vendors"] });
+    },
   });
 
   const setBusiness = useMutation({
@@ -659,8 +680,9 @@ export default function Transactions() {
                     const isOpen = openId === t.id || String(t.id) === focusId;
                     const catName = t.is_split
                       ? "Split"
-                      : (categories.data?.find((c) => c.id === t.category_id)?.name ?? null);
-                    const projName = projects.data?.find((p) => p.id === t.project_id)?.name ?? null;
+                      : (t.category_id != null ? (categoryNameById.get(t.category_id) ?? null) : null);
+                    const projName =
+                      t.project_id != null ? (projectNameById.get(t.project_id) ?? null) : null;
                     return (
                     <Fragment key={t.id}>
                     <tr
