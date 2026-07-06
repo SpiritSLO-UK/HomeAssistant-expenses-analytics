@@ -8,6 +8,7 @@ so "Work" and "work" don't both get created.
 from __future__ import annotations
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import Tag, Transaction
@@ -18,19 +19,37 @@ def list_tags(db: Session) -> list[Tag]:
     return list(db.scalars(select(Tag).order_by(Tag.name)).all())
 
 
+def _find_ci(db: Session, name: str, household_id: int | None) -> Tag | None:
+    """Case-insensitive lookup scoped to a household (SR-B8)."""
+    return db.scalars(
+        select(Tag).where(
+            func.lower(Tag.name) == name.lower(),
+            func.coalesce(Tag.household_id, -1) == (household_id if household_id is not None else -1),
+        )
+    ).first()
+
+
 def get_or_create(db: Session, name: str, colour: str | None = None) -> Tag:
     name = name.strip()
     if not name:
         raise ValueError("Tag name cannot be empty")
-    existing = db.scalars(
-        select(Tag).where(func.lower(Tag.name) == name.lower())
-    ).first()
+    household = get_or_create_default_household(db)
+    existing = _find_ci(db, name, household.id)
     if existing is not None:
         return existing
-    household = get_or_create_default_household(db)
     tag = Tag(name=name, colour=colour, household_id=household.id)
     db.add(tag)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError:
+        # A concurrent caller inserted the same case-insensitive name first and the
+        # unique index (ix_tags_household_lower_name) rejected our row. Roll our
+        # pending insert back and return the winner (SR-B8).
+        db.rollback()
+        winner = _find_ci(db, name, household.id)
+        if winner is None:  # pragma: no cover - only if the row vanished mid-race
+            raise
+        return winner
     return tag
 
 
