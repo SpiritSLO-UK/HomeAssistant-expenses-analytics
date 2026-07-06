@@ -137,3 +137,152 @@ def test_history_point_in_time_total(client):
     assert all({"month", "total"} == set(m) for m in h["months"])
     assert h["months"][-1]["total"] == "500.00"  # current month
     assert h["months"][0]["total"] == "0.00"     # before any snapshot
+
+
+# --- N+1 refactor: outputs unchanged + bounded query count -------------------
+
+
+class _SavingsBalanceSelectCounter:
+    """Counts SELECT statements hitting ``savings_balances`` on the shared engine,
+    so a test can prove the batched loaders don't scale queries with account count."""
+
+    def __init__(self) -> None:
+        self.count = 0
+
+    def __call__(self, conn, cursor, statement, params, context, executemany) -> None:
+        lowered = statement.lower()
+        if "savings_balances" in lowered and lowered.lstrip().startswith("select"):
+            self.count += 1
+
+    def __enter__(self):
+        from sqlalchemy import event
+
+        from app.db import session as dbsession
+
+        self._engine = dbsession.require_engine()
+        event.listen(self._engine, "before_cursor_execute", self)
+        return self
+
+    def __exit__(self, *exc) -> None:
+        from sqlalchemy import event
+
+        event.remove(self._engine, "before_cursor_execute", self)
+
+
+def _seed_multi_account(db, n=5):
+    from app.services import savings_service
+
+    accounts = []
+    for i in range(n):
+        acct = savings_service.create_account(db, name=f"Acct{i}")
+        # A few out-of-order snapshots so "latest" must be resolved by date.
+        savings_service.record_balance(db, acct.id, as_of=date(2026, 3, 31), balance=Decimal(f"{i}300"))
+        savings_service.record_balance(db, acct.id, as_of=date(2026, 1, 31), balance=Decimal(f"{i}100"))
+        savings_service.record_balance(db, acct.id, as_of=date(2026, 2, 28), balance=Decimal(f"{i}200"))
+        accounts.append(acct)
+    return accounts
+
+
+def test_total_savings_batched_matches_naive_and_bounds_queries(db):
+    from app.services import savings_service
+
+    accounts = _seed_multi_account(db, n=5)
+    # Independent (naive per-account) expected total in the single base currency.
+    expected = sum(
+        (savings_service.latest_balance(db, a.id) or Decimal("0") for a in accounts),
+        Decimal("0.00"),
+    )
+
+    with _SavingsBalanceSelectCounter() as counter:
+        total = savings_service.total_savings(db)
+    assert total == expected
+    # One batched load for the balances (the per-account N+1 is gone) — well under n.
+    assert counter.count <= 2
+
+
+def test_history_batched_matches_naive_and_bounds_queries(db):
+    from app.services import savings_service
+
+    accounts = _seed_multi_account(db, n=5)
+
+    with _SavingsBalanceSelectCounter() as counter:
+        result = savings_service.history(db, months=3)
+    # Latest month's total = sum of every account's latest snapshot.
+    expected_latest = sum(
+        (savings_service.latest_balance(db, a.id) or Decimal("0") for a in accounts),
+        Decimal("0.00"),
+    )
+    # Every snapshot predates the 3-month window, so each month reads the latest.
+    assert Decimal(result["months"][-1]["total"]) == expected_latest
+    assert all(Decimal(m["total"]) == expected_latest for m in result["months"])
+    # A single batched snapshot load regardless of the 5 accounts.
+    assert counter.count <= 2
+
+
+# --- Compound-interest projection (pure) -------------------------------------
+
+
+def _acct(rate):
+    from app.models import Account
+
+    return Account(name="x", account_type="savings", currency="GBP",
+                   interest_rate=(Decimal(rate) if rate is not None else None))
+
+
+def test_project_balance_monthly_compound():
+    from app.services import savings_service
+
+    # 1000 at 4.5%/yr compounded monthly for 12 months.
+    got = savings_service.project_balance(_acct("4.5"), 12, principal=Decimal("1000"))
+    assert got == Decimal("1045.94")
+
+
+def test_project_balance_annual_compound():
+    from app.services import savings_service
+
+    # Annual compounding: one whole period in 12 months → simple 4.5%.
+    got = savings_service.project_balance(
+        _acct("4.5"), 12, principal=Decimal("1000"), frequency="annual"
+    )
+    assert got == Decimal("1045.00")
+    # Fewer than a full year → no compounding period elapses, principal unchanged.
+    partial = savings_service.project_balance(
+        _acct("4.5"), 6, principal=Decimal("1000"), frequency="annual"
+    )
+    assert partial == Decimal("1000.00")
+
+
+def test_project_balance_no_rate_or_zero_horizon_returns_principal():
+    from app.services import savings_service
+
+    assert savings_service.project_balance(_acct(None), 12, principal=Decimal("1000")) == Decimal("1000.00")
+    assert savings_service.project_balance(_acct("4.5"), 0, principal=Decimal("1000")) == Decimal("1000.00")
+
+
+def test_project_balance_rejects_unknown_frequency():
+    import pytest
+
+    from app.services import savings_service
+
+    with pytest.raises(ValueError, match="frequency"):
+        savings_service.project_balance(_acct("4.5"), 12, principal=Decimal("1000"), frequency="daily")
+
+
+# --- Clearable goal fields ---------------------------------------------------
+
+
+def test_update_goal_can_clear_target_date(db):
+    from app.services import savings_service
+
+    goal = savings_service.create_goal(
+        db, name="Trip", target_amount=Decimal("1000"), target_date=date(2027, 1, 1)
+    )
+    assert goal.target_date == date(2027, 1, 1)
+
+    # Explicit None clears the nullable field...
+    savings_service.update_goal(db, goal, target_date=None)
+    assert goal.target_date is None
+
+    # ...but omitting a required field (or passing None for it) never nulls it.
+    savings_service.update_goal(db, goal, name=None)
+    assert goal.name == "Trip"
