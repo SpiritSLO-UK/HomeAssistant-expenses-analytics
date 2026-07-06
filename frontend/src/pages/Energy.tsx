@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Sparkline from "../components/Sparkline";
+import { useServerState } from "../lib/useServerState";
 import {
   getEnergyHistory,
   getEnergyOffset,
@@ -210,27 +211,19 @@ function EnergyConfigCard() {
   const [msg, setMsg] = useState<string | null>(null);   // success notice (muted)
   const [err, setErr] = useState<string | null>(null);   // failure notice (red) — FE-3b
 
-  const [source, setSource] = useState("off");
-  const [entities, setEntities] = useState("");
-  const [topics, setTopics] = useState("");
-  const [tariff, setTariff] = useState("");
-  const [categoryId, setCategoryId] = useState("");
-  const [semantics, setSemantics] = useState("cumulative");
-
-  // Seed the form from the saved config once, when it first loads — never on later
-  // refetches, which would wipe edits in progress (FE-7).
-  const seeded = useRef(false);
-  useEffect(() => {
-    const s = status.data;
-    if (!s || seeded.current) return;
-    seeded.current = true;
-    setSource(s.source);
-    setEntities(s.production_entities.join("\n"));
-    setTopics(s.production_topics.join("\n"));
-    setTariff(s.tariff_per_kwh);
-    setCategoryId(s.energy_category_id == null ? "" : String(s.energy_category_id));
-    setSemantics(s.production_semantics);
-  }, [status.data]);
+  // Seed each field from the saved config. useServerState (FE-7) adopts the server
+  // value only when it actually changes between renders, so a background refetch
+  // won't clobber edits in progress, yet the fields re-sync to the canonical values
+  // after a save invalidates the config query.
+  const cfg = status.data;
+  const [source, setSource] = useServerState(cfg?.source ?? "off");
+  const [entities, setEntities] = useServerState((cfg?.production_entities ?? []).join("\n"));
+  const [topics, setTopics] = useServerState((cfg?.production_topics ?? []).join("\n"));
+  const [tariff, setTariff] = useServerState(cfg?.tariff_per_kwh ?? "");
+  const [categoryId, setCategoryId] = useServerState(
+    cfg?.energy_category_id == null ? "" : String(cfg.energy_category_id),
+  );
+  const [semantics, setSemantics] = useServerState(cfg?.production_semantics ?? "cumulative");
 
   const save = useMutation({
     mutationFn: () =>
@@ -254,8 +247,6 @@ function EnergyConfigCard() {
       setErr(String(e));
     },
   });
-
-  const s = status.data;
 
   return (
     <div className="card">
@@ -285,7 +276,7 @@ function EnergyConfigCard() {
           />
           <small className="muted">
             Point at sensors that report the period's production in kWh (e.g. a HA Utility Meter for
-            "this month"). {s?.ha_api_available === false && "⚠️ HA API not available to the add-on yet."}
+            "this month"). {cfg?.ha_api_available === false && "⚠️ HA API not available to the add-on yet."}
           </small>
         </label>
       )}
@@ -324,8 +315,8 @@ function EnergyConfigCard() {
           value={tariff}
           onChange={(e) => setTariff(e.target.value)}
         />
-        {s?.derived_unit_price && !tariff && (
-          <small className="muted">Derived from your meter readings: {s.derived_unit_price}/kWh.</small>
+        {cfg?.derived_unit_price && !tariff && (
+          <small className="muted">Derived from your meter readings: {cfg.derived_unit_price}/kWh.</small>
         )}
       </label>
 
