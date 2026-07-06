@@ -64,8 +64,29 @@ def sqlcipher_available() -> bool:
     return importlib.util.find_spec("sqlcipher3") is not None
 
 
-def _escape(passphrase: str) -> str:
-    return passphrase.replace("'", "''")
+def _sql_string_literal(value: str) -> str:
+    """Return ``value`` as a safely-quoted SQLite/SQLCipher string literal,
+    *including* the surrounding single quotes (CR-SEC-15).
+
+    SQLite string literals escape an embedded single quote by doubling it; no
+    other character is special (there is no backslash-escaping in a standard
+    single-quoted literal), so doubling quotes is complete and correct. A NUL
+    byte would be silently truncated by the driver's C string handling and is
+    rejected up front so a passphrase can never be quietly shortened.
+
+    This centralises the previously ad-hoc ``"'" + s.replace("'", "''") + "'"``
+    interpolation into one audited helper. Passphrase-as-key semantics are
+    unchanged: SQLCipher still runs its own KDF over the passphrase text, so
+    databases created before this change open unchanged (no re-key).
+    """
+    if "\x00" in value:
+        raise ValueError("Passphrase must not contain a NUL byte.")
+    return "'" + value.replace("'", "''") + "'"
+
+
+def _key_pragma(passphrase: str) -> str:
+    """The ``PRAGMA key = '...'`` statement that unlocks the DB with ``passphrase``."""
+    return f"PRAGMA key = {_sql_string_literal(passphrase)}"
 
 
 def _remove_wal_shm() -> None:
@@ -80,7 +101,7 @@ def verify_passphrase(passphrase: str) -> bool:
 
     con = sqlcipher3.connect(str(settings.database_file))
     try:
-        con.execute(f"PRAGMA key='{_escape(passphrase)}'")
+        con.execute(_key_pragma(passphrase))
         con.execute("SELECT count(*) FROM sqlite_master").fetchone()
         return True
     except Exception:
@@ -113,8 +134,7 @@ def enable_encryption(passphrase: str, unlock_mode: str = "prompt") -> None:
 
     con = sqlcipher3.connect(db_path)  # opened as plaintext
     try:
-        safe = _escape(passphrase)
-        con.execute(f"ATTACH DATABASE '{enc_tmp}' AS enc KEY '{safe}'")
+        con.execute(f"ATTACH DATABASE '{enc_tmp}' AS enc KEY {_sql_string_literal(passphrase)}")
         con.execute("SELECT sqlcipher_export('enc')")
         con.execute("DETACH DATABASE enc")
     finally:
@@ -148,7 +168,7 @@ def disable_encryption(passphrase: str) -> None:
 
     con = sqlcipher3.connect(db_path)
     try:
-        con.execute(f"PRAGMA key='{_escape(passphrase)}'")
+        con.execute(_key_pragma(passphrase))
         con.execute(f"ATTACH DATABASE '{plain_tmp}' AS plaintext KEY ''")
         con.execute("SELECT sqlcipher_export('plaintext')")
         con.execute("DETACH DATABASE plaintext")
