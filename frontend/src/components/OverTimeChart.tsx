@@ -35,6 +35,9 @@ export default function OverTimeChart({
       </div>
       {hasData ? (
         <>
+          {/* 560x120 is the viewBox coordinate space; Sparkline renders at
+              width:100% (capped at 560) so the chart scales within the card
+              instead of forcing a fixed pixel width / widening the page. */}
           <Sparkline values={values} color={color} width={560} height={120} label={`${title} over time`} />
           <p className="muted" style={{ marginBottom: 0 }}>
             {points[0].month} – {points[points.length - 1].month} · total{" "}
