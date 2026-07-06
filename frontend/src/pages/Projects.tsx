@@ -1,4 +1,4 @@
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -26,11 +26,18 @@ export default function Projects() {
   const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
   const base = settings.data?.base_currency ?? "GBP";
 
+  const invalidateProjects = () => {
+    qc.invalidateQueries({ queryKey: ["dashboard-projects"] });
+    qc.invalidateQueries({ queryKey: ["projects-history"] });
+    qc.invalidateQueries({ queryKey: ["project-summary"] });
+    qc.invalidateQueries({ queryKey: ["project-txns"] });
+  };
+
   const remove = useMutation({
     mutationFn: (id: number) => deleteProject(id),
     onSuccess: () => {
       setErr(null);
-      qc.invalidateQueries({ queryKey: ["dashboard-projects"] });
+      invalidateProjects();
     },
     onError: (e) => setErr(String(e)),
   });
@@ -43,7 +50,7 @@ export default function Projects() {
       <NewProject
         base={base}
         onError={setErr}
-        onCreated={() => qc.invalidateQueries({ queryKey: ["dashboard-projects"] })}
+        onCreated={invalidateProjects}
       />
 
       <OverTimeChart
@@ -75,7 +82,7 @@ export default function Projects() {
                   }
                 }}
               />
-              {openId === p.project_id && <ProjectDetail id={p.project_id} base={base} />}
+              {openId === p.project_id && <ProjectDetail id={p.project_id} base={base} onError={setErr} onLoaded={() => setErr(null)} />}
             </Fragment>
           ))}
         </div>
@@ -124,13 +131,18 @@ function ProjectRow({
   );
 }
 
-function ProjectDetail({ id, base }: Readonly<{ id: number; base: string }>) {
+function ProjectDetail({ id, base, onError, onLoaded }: Readonly<{ id: number; base: string; onError: (e: string) => void; onLoaded: () => void }>) {
   const summary = useQuery({ queryKey: ["project-summary", id], queryFn: () => getProjectSummary(id) });
   const txns = useQuery({
     queryKey: ["project-txns", id],
     queryFn: () => listTransactions({ project_id: id, limit: 200 }),
   });
   const s = summary.data;
+  useEffect(() => {
+    if (summary.error) onError(String(summary.error));
+    else if (s) onLoaded();
+  }, [summary.error, s, onError, onLoaded]);
+  if (summary.isError) return <p className="status status--error" style={{ padding: "6px 0 12px 16px" }}>Couldn’t load project details. {String(summary.error)}</p>;
   if (summary.isLoading || !s) return <p className="muted" style={{ padding: "6px 0 12px 16px" }}>Loading…</p>;
   return (
     <div style={{ padding: "6px 0 14px 16px", background: "rgba(127,127,127,0.05)" }}>
@@ -143,12 +155,13 @@ function ProjectDetail({ id, base }: Readonly<{ id: number; base: string }>) {
         <Breakdown title="By category" rows={s.by_category} base={base} />
         <Breakdown title="By vendor" rows={s.by_vendor} base={base} />
       </div>
-      <ProjectTxns data={txns.data} projectId={id} />
+      <ProjectTxns data={txns.data} projectId={id} isError={txns.isError} />
     </div>
   );
 }
 
-function ProjectTxns({ data, projectId }: Readonly<{ data?: TransactionListResponse; projectId: number }>) {
+function ProjectTxns({ data, projectId, isError }: Readonly<{ data?: TransactionListResponse; projectId: number; isError?: boolean }>) {
+  if (isError) return <p className="status status--error" style={{ margin: "8px 0 0" }}>Couldn’t load transactions.</p>;
   if (!data) return <p className="muted" style={{ margin: "8px 0 0" }}>Loading transactions…</p>;
   if (data.items.length === 0) {
     return (
@@ -225,6 +238,19 @@ function NewProject({
     onError: (e) => onError(String(e)),
   });
 
+  const submit = () => {
+    const trimmed = budget.trim();
+    if (trimmed) {
+      const value = Number(trimmed);
+      if (!Number.isFinite(value) || value < 0) {
+        onError("Budget must be a number of 0 or more, or left empty.");
+        return;
+      }
+    }
+    onError("");
+    create.mutate();
+  };
+
   return (
     <div className="card">
       <h2 className="card__title">New project</h2>
@@ -241,7 +267,7 @@ function NewProject({
           onChange={(e) => setBudget(e.target.value)}
           style={{ width: 170 }}
         />
-        <button className="btn" disabled={!name.trim() || create.isPending} onClick={() => create.mutate()}>
+        <button className="btn" disabled={!name.trim() || create.isPending} onClick={submit}>
           {create.isPending ? "Adding…" : "Add project"}
         </button>
       </div>
