@@ -20,7 +20,11 @@ function badge(a: Account): { label: string; colour: string } {
   return { label: `Private · ${a.owner_name ?? "owner"}`, colour: "#e0a800" };
 }
 
-const alertErr = (e: unknown) => globalThis.alert(String(e instanceof Error ? e.message : e));
+const errText = (e: unknown) => String(e instanceof Error ? e.message : e);
+
+// Errors are surfaced through an in-page banner (like Vendors/Categories) instead
+// of a blocking alert(). Each edit component takes this `fail` callback.
+type Fail = (e: unknown) => void;
 
 function useInvalidateAccounts() {
   const qc = useQueryClient();
@@ -37,11 +41,16 @@ export default function Accounts() {
   const accounts = useQuery({ queryKey: ["accounts"], queryFn: listAccounts });
   const users = useQuery({ queryKey: ["users"], queryFn: listUsers, enabled: isAdmin });
 
+  const [err, setErr] = useState<string | null>(null);
+  const fail: Fail = (e) => setErr(errText(e));
+  const clearErr = () => setErr(null);
+
   return (
     <div className="page">
       <div className="page__head">
         <h1 className="page__title">Accounts</h1>
       </div>
+      {err && <p className="status status--error">{err}</p>}
       <p className="muted">
         Mark an account <strong>private</strong> to keep it (and its transactions) off everyone else's
         dashboards, budgets, exports and lists — only you and the household owner see it. Accounts left
@@ -50,7 +59,7 @@ export default function Accounts() {
           : "You can add an account and change the ones you own."}
       </p>
 
-      <NewAccountCard isAdmin={isAdmin} />
+      <NewAccountCard isAdmin={isAdmin} fail={fail} clearErr={clearErr} />
 
       {accounts.isLoading && <p className="muted">Loading…</p>}
       {accounts.data?.length === 0 && (
@@ -66,6 +75,8 @@ export default function Accounts() {
               meId={me.data?.id ?? -1}
               users={users.data ?? []}
               accounts={accounts.data ?? []}
+              fail={fail}
+              clearErr={clearErr}
             />
           ))}
         </div>
@@ -74,7 +85,7 @@ export default function Accounts() {
   );
 }
 
-function NewAccountCard({ isAdmin }: Readonly<{ isAdmin: boolean }>) {
+function NewAccountCard({ isAdmin, fail, clearErr }: Readonly<{ isAdmin: boolean; fail: Fail; clearErr: () => void }>) {
   const invalidate = useInvalidateAccounts();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
@@ -83,8 +94,9 @@ function NewAccountCard({ isAdmin }: Readonly<{ isAdmin: boolean }>) {
 
   const create = useMutation({
     mutationFn: () => createAccount({ name: name.trim(), account_type: type, currency: currency.trim() || undefined }),
+    onMutate: clearErr,
     onSuccess: () => { invalidate(); setName(""); setCurrency(""); setType("current_account"); setOpen(false); },
-    onError: alertErr,
+    onError: fail,
   });
 
   if (!open) {
@@ -123,24 +135,44 @@ function NewAccountCard({ isAdmin }: Readonly<{ isAdmin: boolean }>) {
   );
 }
 
-function AccountRow({ account, isAdmin, meId, users, accounts }: Readonly<{
+type AccountPatch = { name?: string; is_shared?: boolean; owner_user_id?: number | null };
+
+function AccountRow({ account, isAdmin, meId, users, accounts, fail, clearErr }: Readonly<{
   account: Account;
   isAdmin: boolean;
   meId: number;
   users: User[];
   accounts: Account[];
+  fail: Fail;
+  clearErr: () => void;
 }>) {
+  const qc = useQueryClient();
   const invalidate = useInvalidateAccounts();
   const canEdit = isAdmin || account.owner_user_id === meId;
   const b = badge(account);
   const [renaming, setRenaming] = useState(false);
   const [newName, setNewName] = useServerState(account.name);
 
+  // Optimistic edit: the owner select + "shared" checkbox reflect the intended
+  // state immediately (no flicker), snapshotting the accounts cache so a rejected
+  // request rolls back to exactly the server's value (never a state it refused).
   const patch = useMutation({
-    mutationFn: (p: { name?: string; is_shared?: boolean; owner_user_id?: number | null }) =>
-      updateAccount(account.id, p),
-    onSuccess: () => { invalidate(); setRenaming(false); },
-    onError: alertErr,
+    mutationFn: (p: AccountPatch) => updateAccount(account.id, p),
+    onMutate: async (p: AccountPatch) => {
+      clearErr();
+      await qc.cancelQueries({ queryKey: ["accounts"] });
+      const previous = qc.getQueryData<Account[]>(["accounts"]);
+      qc.setQueryData<Account[]>(["accounts"], (list) =>
+        list?.map((a) => (a.id === account.id ? { ...a, ...p } : a)),
+      );
+      return { previous };
+    },
+    onError: (e, _p, ctx) => {
+      if (ctx?.previous) qc.setQueryData(["accounts"], ctx.previous);
+      fail(e);
+    },
+    onSuccess: () => setRenaming(false),
+    onSettled: invalidate,
   });
 
   return (
@@ -171,7 +203,6 @@ function AccountRow({ account, isAdmin, meId, users, accounts }: Readonly<{
             <select
               value={account.owner_user_id ?? ""}
               onChange={(e) => patch.mutate({ owner_user_id: e.target.value ? Number(e.target.value) : null })}
-              disabled={patch.isPending}
             >
               <option value="">Household (shared)</option>
               {users.map((u) => <option key={u.id} value={u.id}>{u.display_name}</option>)}
@@ -183,33 +214,34 @@ function AccountRow({ account, isAdmin, meId, users, accounts }: Readonly<{
             <input
               type="checkbox"
               checked={account.is_shared}
-              disabled={patch.isPending}
               onChange={(e) => patch.mutate({ is_shared: e.target.checked })}
             />{" "}
             Shared with household
           </label>
         )}
-        {isAdmin && <AccountAdminControls account={account} accounts={accounts} />}
+        {isAdmin && <AccountAdminControls account={account} accounts={accounts} fail={fail} clearErr={clearErr} />}
       </div>
     </div>
   );
 }
 
 // Delete (empty accounts) or merge (accounts that still have data) — owner-only.
-function AccountAdminControls({ account, accounts }: Readonly<{ account: Account; accounts: Account[] }>) {
+function AccountAdminControls({ account, accounts, fail, clearErr }: Readonly<{ account: Account; accounts: Account[]; fail: Fail; clearErr: () => void }>) {
   const invalidate = useInvalidateAccounts();
   const [mergeTarget, setMergeTarget] = useState<number | "">("");
   const others = accounts.filter((a) => a.id !== account.id);
 
   const del = useMutation({
     mutationFn: () => deleteAccount(account.id),
+    onMutate: clearErr,
     onSuccess: invalidate,
-    onError: alertErr,
+    onError: fail,
   });
   const merge = useMutation({
     mutationFn: (target: number) => mergeAccount(account.id, target),
+    onMutate: clearErr,
     onSuccess: () => { invalidate(); setMergeTarget(""); },
-    onError: alertErr,
+    onError: fail,
   });
 
   if (!account.in_use) {
