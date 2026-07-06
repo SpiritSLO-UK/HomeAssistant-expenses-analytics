@@ -125,6 +125,83 @@ def test_car_reports_one_system_not_a_mix(client):
     assert car["segments"][0]["economy"] == car["segments"][0]["l_per_100km"]
 
 
+def test_refuels_segment_by_date_not_odometer(client):
+    # Fills are entered out of odometer order but their DATES are chronological:
+    # a lower odometer was logged *after* a higher one (e.g. a corrected/edited
+    # entry). Segmentation must follow the dates, not the odometer values.
+    aid = _asset(client, distance_unit="mi")
+    # Chronology: 01-01 @10000 → 01-15 @10300 (300 mi, 30 L) → 02-01 @10600 (300 mi, 30 L)
+    # Enter the 02-01 row FIRST so insertion/id order ≠ chronology, and it has a
+    # higher odometer than the middle one.
+    _refuel(client, aid, date="2026-02-01", odometer=10600, litres=30, cost=45)
+    _refuel(client, aid, date="2026-01-01", odometer=10000, litres=35, cost=50)
+    _refuel(client, aid, date="2026-01-15", odometer=10300, litres=30, cost=45)
+
+    car = client.get(f"/api/assets/{aid}").json()["car"]
+    # Two chronological 300 mi / 30 L segments, both counted.
+    assert len(car["segments"]) == 2
+    # Segments appear in date order.
+    assert [s["date"] for s in car["segments"]] == ["2026-01-15", "2026-02-01"]
+    assert car["latest_odometer"] == "10600.0"  # last chronological, not max
+    assert car["avg_mpg"] == pytest.approx(45.5, abs=0.2)
+
+
+def test_decreasing_odometer_between_dates_is_skipped(client):
+    # Odometer goes DOWN between two chronological fills (mistyped reading).
+    # That yields a non-positive distance and must be skipped, not emitted as a
+    # negative-distance segment.
+    aid = _asset(client, distance_unit="mi")
+    _refuel(client, aid, date="2026-01-01", odometer=10000, litres=35)
+    _refuel(client, aid, date="2026-01-15", odometer=9800, litres=30)  # typo: lower
+    car = client.get(f"/api/assets/{aid}").json()["car"]
+    assert car["segments"] == []
+    assert car["avg_mpg"] is None
+
+
+def test_partial_fill_without_flag_is_not_full(client):
+    # A refuel whose full-tank flag was never recorded (None) must NOT anchor a
+    # tank-to-tank segment — economy is measured full-to-full, so only an
+    # explicit full tank counts.
+    from app.db.session import SessionLocal
+    from app.services import asset_service
+
+    aid = _asset(client, distance_unit="mi")
+    first = _refuel(client, aid, date="2026-01-01", odometer=20000, litres=40)
+    second = _refuel(client, aid, date="2026-01-10", odometer=20150, litres=15)
+
+    # Force the middle fill's flag to unrecorded (None) directly in the DB, the
+    # way legacy/imported rows can be, then recompute.
+    db = SessionLocal()
+    try:
+        log = asset_service.get_log(db, second["id"])
+        log.is_full_tank = None
+        db.commit()
+        asset = asset_service.get_asset(db, aid)
+        car = asset_service.car_stats(db, asset)
+    finally:
+        db.close()
+
+    assert car["segments"] == []
+    assert car["avg_mpg"] is None
+    # First fill is still explicitly full; sanity that only the None one dropped.
+    assert first["is_full_tank"] is True
+
+
+def test_segment_fuel_cost_separates_from_total(client):
+    # total_fuel_cost = all refuel spend; segment_fuel_cost = only fills that
+    # anchor a measured segment. A trailing partial fill's cost is in the total
+    # but not in the segment cost.
+    aid = _asset(client, distance_unit="mi")
+    _refuel(client, aid, date="2026-01-01", odometer=30000, litres=40, cost=55)
+    _refuel(client, aid, date="2026-01-15", odometer=30300, litres=30, cost=45)  # full → counted
+    _refuel(client, aid, date="2026-01-20", odometer=30400, litres=10, cost=15, full=False)  # partial
+
+    car = client.get(f"/api/assets/{aid}").json()["car"]
+    assert len(car["segments"]) == 1
+    assert car["total_fuel_cost"] == "115.00"  # 55 + 45 + 15
+    assert car["segment_fuel_cost"] == "45.00"  # only the 2nd (segment-anchoring) fill
+
+
 def test_list_filtered_by_kind(client):
     _asset(client, name="Car", kind="car")
     _asset(client, name="House", kind="home")

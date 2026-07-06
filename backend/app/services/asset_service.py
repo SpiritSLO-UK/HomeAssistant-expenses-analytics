@@ -164,8 +164,11 @@ def log_to_dict(log: AssetLog) -> dict:
 
 
 def _is_full(value: bool | None) -> bool:
-    # NULL means "not recorded" → assume a full tank (the common case).
-    return value is None or bool(value)
+    # Tank-to-tank economy is measured full-to-full, so a segment boundary
+    # requires an *explicit* full-tank marker. An unrecorded flag (NULL) is
+    # treated as NOT full: a partial fill with no flag must not anchor a
+    # segment, or it would skew the economy figure.
+    return bool(value)
 
 
 def _refuel_segment(prev: AssetLog, cur: AssetLog, unit: str, imperial: bool) -> dict | None:
@@ -186,6 +189,7 @@ def _refuel_segment(prev: AssetLog, cur: AssetLog, unit: str, imperial: bool) ->
     return {
         "_dist_km": dist_km,  # accumulator inputs, stripped before the result
         "_litres": litres,
+        "_cost": Decimal(cur.cost) if cur.cost is not None else Decimal("0"),
         "date": cur.log_date.isoformat(),
         "from_odometer": str(prev.odometer),
         "to_odometer": str(cur.odometer),
@@ -220,6 +224,7 @@ def _car_result(
     tot_km: Decimal,
     tot_litres: Decimal,
     fuel_cost: Decimal,
+    segment_fuel_cost: Decimal,
 ) -> dict:
     """Assemble the car-stats response dict from the accumulated totals/segments."""
     avg_l_per_100km, avg_mpg = _car_averages(tot_km, tot_litres)
@@ -235,7 +240,12 @@ def _car_result(
         "economy_unit": "MPG" if imperial else "L/100km",
         "refuel_count": len(refuels),
         "latest_odometer": str(refuels[-1].odometer) if refuels else None,
+        # `total_fuel_cost` = money spent on ALL refuels (what the driver paid).
+        # `segment_fuel_cost` = the portion of that spent on fills that anchor a
+        # measured tank-to-tank segment, so it lines up with `total_litres` /
+        # the economy figures. They differ when partial or unmeasured fills exist.
         "total_fuel_cost": str(fuel_cost),
+        "segment_fuel_cost": str(segment_fuel_cost),
         "total_litres": litres_str,
         # Fuel total in the asset's own system (gallons for imperial).
         "total_fuel": str((tot_litres / IMPERIAL_GALLON_L).quantize(TWO_DP)) if imperial else litres_str,
@@ -257,20 +267,28 @@ def car_stats(db: Session, asset: Asset, logs: list[AssetLog] | None = None) -> 
     # One consistent system, never a mix: imperial = miles + gallons + MPG;
     # metric = km + litres + L/100km. Driven by the asset's distance unit.
     imperial = unit == "mi"
+    # Segment tank-to-tank in *chronological* order. Sorting by odometer would
+    # let a mistyped reading or a rollover mis-segment the intervals; date
+    # follows how the fills actually happened. `id` is a stable tie-break for
+    # two fills on the same day. A genuinely decreasing odometer between two
+    # chronological fills yields a non-positive distance, which
+    # `_refuel_segment` skips (rather than emitting a bogus negative segment).
     refuels = sorted(
         [lg for lg in logs if lg.kind == "refuel" and lg.odometer is not None and lg.litres is not None],
-        key=lambda lg: (Decimal(lg.odometer or 0), lg.id),
+        key=lambda lg: (lg.log_date, lg.id),
     )
 
     segments: list[dict] = []
     tot_km = Decimal("0")
     tot_litres = Decimal("0")
+    segment_cost = Decimal("0")
     for prev, cur in zip(refuels, refuels[1:], strict=False):
         seg = _refuel_segment(prev, cur, unit, imperial)
         if seg is None:
             continue
         tot_km += seg.pop("_dist_km")
         tot_litres += seg.pop("_litres")
+        segment_cost += seg.pop("_cost")
         segments.append(seg)
 
     fuel_cost = sum(
@@ -284,6 +302,7 @@ def car_stats(db: Session, asset: Asset, logs: list[AssetLog] | None = None) -> 
         tot_km=tot_km,
         tot_litres=tot_litres,
         fuel_cost=fuel_cost,
+        segment_fuel_cost=segment_cost.quantize(TWO_DP),
     )
 
 
