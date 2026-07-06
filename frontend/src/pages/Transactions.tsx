@@ -161,6 +161,9 @@ export default function Transactions() {
     () => new Map<number, string>((projects.data ?? []).map((p) => [p.id, p.name])),
     [projects.data],
   );
+  // Look a name up by id, tolerating a null id (unset) and a missing entry.
+  const nameFor = (map: Map<number, string>, id: number | null | undefined): string | null =>
+    id != null ? (map.get(id) ?? null) : null;
   const members = useQuery({ queryKey: ["members"], queryFn: listMembers });
   const vendors = useQuery({ queryKey: ["vendors"], queryFn: listVendors });
   const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
@@ -678,11 +681,8 @@ export default function Transactions() {
                 <tbody>
                   {data.items.map((t) => {
                     const isOpen = openId === t.id || String(t.id) === focusId;
-                    const catName = t.is_split
-                      ? "Split"
-                      : (t.category_id != null ? (categoryNameById.get(t.category_id) ?? null) : null);
-                    const projName =
-                      t.project_id != null ? (projectNameById.get(t.project_id) ?? null) : null;
+                    const catName = t.is_split ? "Split" : nameFor(categoryNameById, t.category_id);
+                    const projName = nameFor(projectNameById, t.project_id);
                     return (
                     <Fragment key={t.id}>
                     <tr
