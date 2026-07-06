@@ -177,7 +177,15 @@ function ReviewRow({
     mutationFn: (categoryId: number) => categoriseTransaction(item.item_id as number, categoryId),
     onSuccess: async () => {
       setErr(null);
-      await setReviewStatus(item.id, "resolved");
+      // The txn is now categorised. Resolving the review item can still fail on
+      // its own — an exception thrown out of an async onSuccess isn't routed to
+      // onError, so guard it here and surface it. Either way we refresh so the
+      // UI reflects the real state (item stays open if the resolve didn't land).
+      try {
+        await setReviewStatus(item.id, "resolved");
+      } catch (e) {
+        fail(e);
+      }
       qc.invalidateQueries({ queryKey: ["review"] });
       qc.invalidateQueries({ queryKey: ["uncategorised"] });
       qc.invalidateQueries({ queryKey: ["transactions"] });
@@ -309,12 +317,14 @@ function UncategorisedTab() {
 
   const data = txns.data;
   const total = data?.total ?? 0;
+  const itemCount = data?.items.length;
 
   // After categorising the last row on a page that isn't the first, step back so
-  // we don't strand the user on an empty page.
+  // we don't strand the user on an empty page. Depend on the derived count (not
+  // the whole `data` object) so this doesn't re-run on every refetch.
   useEffect(() => {
-    if (data?.items.length === 0 && offset > 0) setOffset((o) => Math.max(0, o - PAGE));
-  }, [data, offset]);
+    if (itemCount === 0 && offset > 0) setOffset((o) => Math.max(0, o - PAGE));
+  }, [itemCount, offset]);
 
   const onDone = () => {
     qc.invalidateQueries({ queryKey: ["uncategorised"] });
