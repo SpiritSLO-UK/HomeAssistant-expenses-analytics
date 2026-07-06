@@ -49,6 +49,30 @@ def _q(value: Decimal | str | float) -> Decimal:
         raise SplitError(f"Invalid amount: {value!r}") from exc
 
 
+def split_evenly(total: Decimal | str | float | int, n: int) -> list[Decimal]:
+    """Divide ``total`` into ``n`` penny-exact parts (SR-A5, mirrors the frontend
+    "Split evenly" from PR #44).
+
+    Uses integer-cents math so the parts always sum back to ``total`` to the
+    penny, with any odd pennies spread one-each across the first parts (rather
+    than dumped in the last one). The parts keep the sign of ``total``.
+
+    Example: ``split_evenly("10.00", 3) == [3.34, 3.33, 3.33]``.
+
+    Raises :class:`SplitError` if ``n < 2`` (a split needs at least two parts).
+    """
+    if n < 2:
+        raise SplitError("A split needs at least two parts.")
+    # Quantise to the penny then work in signed integer cents to stay exact.
+    total_cents = int((_q(total) * 100).to_integral_value())
+    sign = -1 if total_cents < 0 else 1
+    magnitude = abs(total_cents)
+    base, remainder = divmod(magnitude, n)
+    # The first ``remainder`` parts get one extra penny.
+    cents = [base + 1 if i < remainder else base for i in range(n)]
+    return [Decimal(sign * c) / 100 for c in cents]
+
+
 def _validate_part(db: Session, i: int, part: SplitInput, *, txn_negative: bool) -> SplitInput:
     """Validate one split part (spec §17.2) and return its quantised copy.
 
@@ -78,6 +102,15 @@ def _validate_part(db: Session, i: int, part: SplitInput, *, txn_negative: bool)
 def validate(db: Session, txn: Transaction, parts: list[SplitInput]) -> list[SplitInput]:
     """Validate ``parts`` against ``txn`` (spec §17.2). Returns the quantised
     parts on success; raises :class:`SplitError` otherwise."""
+    # An archived transaction is hidden from every aggregate (backlog #78), so
+    # splitting it would silently produce category rows that never surface; and a
+    # transfer is not spend/income at all, so it has nothing meaningful to split
+    # across categories. Reject both up front (SR-A5).
+    if txn.archived_at is not None:
+        raise SplitError("Cannot split an archived transaction.")
+    if txn.is_transfer:
+        raise SplitError("Cannot split a transfer transaction.")
+
     if len(parts) < 2:
         raise SplitError("A split needs at least two parts.")
 

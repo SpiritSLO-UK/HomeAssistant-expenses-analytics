@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
+
+import pytest
 
 from app.models import Transaction, TransactionSplit
 from app.services import split_service
@@ -27,6 +30,67 @@ def test_split_base_amount_none_without_rate():
     txn = Transaction(amount=Decimal("-10.00"), fx_rate=None, base_amount=None)
     txn.splits = [TransactionSplit(amount=Decimal("-5.00")), TransactionSplit(amount=Decimal("-5.00"))]
     assert split_service.split_base_amount(txn, txn.splits[0]) is None
+
+
+# --- guard: archived + transfer transactions cannot be split (SR-A5) ---
+
+_TWO_VALID_PARTS = [
+    split_service.SplitInput(amount=Decimal("-60.00"), category_id=1),
+    split_service.SplitInput(amount=Decimal("-60.00"), category_id=2),
+]
+
+
+def test_cannot_split_archived_transaction():
+    # The guard fires before any category lookup, so db is never touched (None).
+    txn = Transaction(amount=Decimal("-120.00"), archived_at=datetime(2026, 1, 1))
+    with pytest.raises(split_service.SplitError, match="archived"):
+        split_service.validate(None, txn, _TWO_VALID_PARTS)
+
+
+def test_cannot_split_transfer_transaction():
+    txn = Transaction(amount=Decimal("-120.00"), is_transfer=True)
+    with pytest.raises(split_service.SplitError, match="transfer"):
+        split_service.validate(None, txn, _TWO_VALID_PARTS)
+
+
+# --- pure helper: split_evenly penny-exactness (SR-A5) ---
+
+def test_split_evenly_spreads_odd_pennies():
+    # 10.00 / 3 -> 3.34 + 3.33 + 3.33 (odd penny to the first part), sums exact.
+    parts = split_service.split_evenly(Decimal("10.00"), 3)
+    assert parts == [Decimal("3.34"), Decimal("3.33"), Decimal("3.33")]
+    assert sum(parts) == Decimal("10.00")
+
+
+def test_split_evenly_exact_division():
+    parts = split_service.split_evenly(Decimal("9.00"), 3)
+    assert parts == [Decimal("3.00"), Decimal("3.00"), Decimal("3.00")]
+    assert sum(parts) == Decimal("9.00")
+
+
+def test_split_evenly_negative_total_keeps_sign():
+    # Debit (negative) totals split into negative parts, still penny-exact.
+    parts = split_service.split_evenly(Decimal("-100.00"), 3)
+    assert sum(parts) == Decimal("-100.00")
+    assert all(p < 0 for p in parts)
+    assert parts == [Decimal("-33.34"), Decimal("-33.33"), Decimal("-33.33")]
+
+
+def test_split_evenly_two_pennies_spread():
+    # 1.00 / 4 = 0.25 each (exact); 1.01 / 4 spreads 1 penny -> 0.26,0.25,0.25,0.25
+    parts = split_service.split_evenly(Decimal("1.01"), 4)
+    assert parts == [Decimal("0.26"), Decimal("0.25"), Decimal("0.25"), Decimal("0.25")]
+    assert sum(parts) == Decimal("1.01")
+
+
+def test_split_evenly_accepts_string_and_float():
+    assert sum(split_service.split_evenly("10.00", 3)) == Decimal("10.00")
+    assert sum(split_service.split_evenly(10.0, 3)) == Decimal("10.00")
+
+
+def test_split_evenly_rejects_fewer_than_two_parts():
+    with pytest.raises(split_service.SplitError):
+        split_service.split_evenly(Decimal("10.00"), 1)
 
 
 def _curve(rows: list[tuple[str, str, str]]) -> bytes:
