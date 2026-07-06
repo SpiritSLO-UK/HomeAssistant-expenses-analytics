@@ -387,7 +387,11 @@ if FRONTEND_DIST.is_dir():
 
     _DIST_ROOT = FRONTEND_DIST.resolve()
 
-    @app.get("/{full_path:path}", include_in_schema=False)
+    @app.get(
+        "/{full_path:path}",
+        include_in_schema=False,
+        responses={404: {"description": "Unknown /api/* route (not a client path)"}},
+    )
     def serve_spa(full_path: str) -> FileResponse:
         """SPA fallback: serve the requested file if present (and contained within
         the build directory), else index.html."""
