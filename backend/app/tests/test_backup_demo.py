@@ -138,6 +138,88 @@ def test_demo_seeds_review_queue(client):
     assert client.get("/api/transactions?needs_review=true").json()["total"] >= 1
 
 
+def test_demo_seeds_merge_candidate_vendors(client):
+    """Near-duplicate vendors (with real spend) are seeded so the vendor-merge UI
+    has obvious candidates to consolidate."""
+    client.post("/api/backup/demo")
+    vendors = client.get("/api/vendors").json()
+    by_name = {v["canonical_name"]: v["id"] for v in vendors}
+    # Each duplicate exists alongside its canonical original.
+    for dup, original in (("Amazon UK", "Amazon"), ("Costa", "Costa Coffee")):
+        assert dup in by_name and original in by_name
+        # The duplicate carries at least one re-pointed demo transaction (so a merge
+        # actually consolidates spend).
+        linked = client.get(
+            "/api/transactions", params={"vendor_id": by_name[dup], "limit": 500}
+        ).json()
+        assert linked["total"] >= 1
+
+
+def test_demo_seeds_varied_subscription_cadences(client):
+    """Subscription detection surfaces more than just monthly cycles — the demo now
+    seeds fortnightly and bi-monthly recurring merchants too."""
+    client.post("/api/backup/demo")
+    subs = client.get("/api/subscriptions").json()
+    freqs = {s["frequency"] for s in subs}
+    assert {"monthly", "fortnightly", "bi_monthly"} <= freqs
+
+
+def test_demo_seeds_investment_price_history(client):
+    """Holdings get a back-filled price series so the portfolio chart renders a line
+    (more than one point)."""
+    client.post("/api/backup/demo")
+    hist = client.get("/api/investments/history").json()
+    assert len(hist["points"]) >= 2
+
+
+def test_demo_seeds_a_split_transaction(client):
+    """One transaction is split across two categories (the split UI example)."""
+    client.post("/api/backup/demo")
+    txns = client.get("/api/transactions?limit=500").json()["items"]
+    split_ids = [t["id"] for t in txns if t.get("is_split")]
+    assert len(split_ids) >= 1
+    splits = client.get(f"/api/transactions/{split_ids[0]}/splits").json()
+    assert splits["is_split"] is True
+    assert len(splits["splits"]) >= 2
+
+
+def test_demo_seeds_a_receipt(client):
+    """A receipt is seeded and attached to a transaction."""
+    client.post("/api/backup/demo")
+    receipts = client.get("/api/receipts").json()
+    assert len(receipts) >= 1
+
+
+def test_demo_remove_clears_receipts_splits_and_prices(client, db):
+    """The load→remove round-trip leaves no orphans: the seeded receipt, split rows
+    and holding price history all go when the demo is removed."""
+    from sqlalchemy import func, select
+
+    from app.models import HoldingPrice, TransactionSplit
+
+    def _counts():
+        # End any open read transaction so the next query sees the latest commits
+        # from the client's requests (separate connection, WAL snapshot).
+        db.rollback()
+        return (
+            db.scalar(select(func.count()).select_from(TransactionSplit)),
+            db.scalar(select(func.count()).select_from(HoldingPrice)),
+        )
+
+    client.post("/api/backup/demo")
+    assert len(client.get("/api/receipts").json()) >= 1
+    splits, prices = _counts()
+    assert splits >= 1 and prices >= 1
+
+    body = client.delete("/api/backup/demo").json()
+    assert body["removed"] is True
+    assert body["counts"].get("receipts", 0) >= 1
+
+    assert client.get("/api/receipts").json() == []
+    # No orphaned split parts or holding price points remain.
+    assert _counts() == (0, 0)
+
+
 def test_demo_defaults_to_debug_log_level(client):
     """Loading the demo flips logging to DEBUG so there's something to see."""
     client.post("/api/backup/demo")

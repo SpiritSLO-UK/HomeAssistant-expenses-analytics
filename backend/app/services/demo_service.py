@@ -39,7 +39,9 @@ from app.models import (
     Budget,
     Category,
     ChildAllocation,
+    HoldingPrice,
     Project,
+    Receipt,
     ReviewItem,
     Rule,
     SavingsGoal,
@@ -56,9 +58,11 @@ from app.services import (
     fx_service,
     import_service,
     investment_service,
+    receipt_service,
     review_service,
     savings_service,
     settings_service,
+    split_service,
     vendor_service,
 )
 from app.services.household_service import get_or_create_default_household
@@ -129,6 +133,24 @@ _MONTHLY_INCOME: list[tuple[int, str, str]] = [
     (28, "BARCLAYS INTEREST", "3.20"),
 ]
 
+# --- Extra recurring merchants at non-monthly cadences -----------------------
+# The monthly template above only ever produces *monthly* subscriptions. These
+# distinct merchants are charged a flat amount at a regular non-monthly gap so
+# subscription detection (which runs during the import) also surfaces
+# **fortnightly** and **bi-monthly** cycles. (days_ago, description, amount) — the
+# gap between rows is what the detector classifies, so the offsets matter.
+_RECURRING_EXTRA: list[tuple[int, str, str]] = [
+    # Fortnightly meal-kit box (~14-day gaps → "fortnightly").
+    (2, "GOUSTO MEAL KIT", "34.95"),
+    (16, "GOUSTO MEAL KIT", "34.95"),
+    (30, "GOUSTO MEAL KIT", "34.95"),
+    (44, "GOUSTO MEAL KIT", "34.95"),
+    # Bi-monthly boiler care plan (~61-day gaps → "bi_monthly").
+    (4, "BOILER CARE PLAN", "18.00"),
+    (65, "BOILER CARE PLAN", "18.00"),
+    (126, "BOILER CARE PLAN", "18.00"),
+]
+
 # --- One-off business expenses (GBP) with VAT, by cycle ----------------------
 # (cycle, day, description, amount, vat)
 _BUSINESS: list[tuple[int, int, str, str, str]] = [
@@ -174,6 +196,10 @@ def _build_specs() -> list[_Spec]:
             specs.append(_Spec(cycle, day, desc, -value, vary=vary))
         for day, desc, amt in _MONTHLY_INCOME:
             specs.append(_Spec(cycle, day, desc, Decimal(amt)))
+    # Non-monthly recurring rows live in cycle 0 with the day offset carrying the
+    # whole "days ago" (``_spec_date`` = cycle*30 + day, so cycle 0 keeps it exact).
+    for days_ago, desc, amt in _RECURRING_EXTRA:
+        specs.append(_Spec(0, days_ago, desc, -Decimal(amt)))
     for cycle, day, desc, amt, vat in _BUSINESS:
         specs.append(_Spec(cycle, day, desc, -Decimal(amt), business=True, vat=Decimal(vat)))
     for cycle, day, desc, amt, cur, business, vat in _TRIPS:
@@ -351,6 +377,42 @@ def _seed_vendors(db: Session, rows: list[Transaction]) -> None:
         # category — only fills merchant_id and any still-blank category).
         for txn in rows:
             vendor_service.normalise_transaction(db, txn)
+
+
+# Obvious duplicate / alias-y vendor pairs so the vendor-merge UI has real
+# candidates to consolidate. Each near-duplicate vendor is created and a subset of
+# already-linked demo transactions is re-pointed onto it, so both the original and
+# the duplicate carry spend (a merge that actually consolidates something).
+# (duplicate canonical name, original canonical name, descriptions to move onto it)
+_DEMO_MERGE_VENDORS: list[tuple[str, str, set[str]]] = [
+    ("Amazon UK", "Amazon", {"AMAZON OFFICE SUPPLIES"}),
+    ("Costa", "Costa Coffee", {"COSTA COFFEE CLIENT"}),
+]
+
+
+def _seed_merge_candidate_vendors(db: Session, rows: list[Transaction]) -> None:
+    """Seed a couple of near-duplicate vendors (each with some re-pointed demo
+    spend) so the vendor-merge feature has obvious candidates to act on. Idempotent:
+    guarded by the duplicate's canonical name; the re-point only touches demo rows."""
+    household = get_or_create_default_household(db)
+    for dup_name, original_name, descriptions in _DEMO_MERGE_VENDORS:
+        if db.scalar(select(Vendor.id).where(Vendor.canonical_name == dup_name)):
+            continue
+        original = db.scalar(select(Vendor).where(Vendor.canonical_name == original_name))
+        dup = Vendor(
+            household_id=household.id,
+            canonical_name=dup_name,
+            display_name=dup_name,
+            default_category_id=original.default_category_id if original else None,
+            created_by="import",
+        )
+        db.add(dup)
+        db.flush()
+        db.add(VendorAlias(vendor_id=dup.id, alias=dup_name.upper(), match_type="contains", source="import"))
+        for txn in rows:
+            if txn.description_raw in descriptions:
+                txn.merchant_id = dup.id
+    db.flush()
 
 
 def _seed_rule(db: Session) -> None:
@@ -598,10 +660,30 @@ def _seed_assets(db: Session) -> None:
                               meter=meter, reading=r1, unit=unit, cost=cost)
 
 
+def _seed_price_history(db: Session, holding_id: int, points: list[tuple[int, str]]) -> None:
+    """Back-fill historical price points for a holding (one row per date) so the
+    portfolio-value chart renders a line rather than a single dot. Today's price is
+    already recorded by ``create_holding``; skip it and any date already present."""
+    today = date.today()
+    for days_ago, price in points:
+        if days_ago == 0:
+            continue
+        on = today - timedelta(days=days_ago)
+        if db.scalar(
+            select(HoldingPrice.id).where(
+                HoldingPrice.holding_id == holding_id, HoldingPrice.as_of_date == on
+            )
+        ):
+            continue
+        db.add(HoldingPrice(holding_id=holding_id, as_of_date=on, price=Decimal(price)))
+    db.flush()
+
+
 def _seed_investments(db: Session) -> None:
-    """An investment account with two holdings (→ market value + unrealised gain)
-    and a workplace pension with a growing value series — so the Investments page
-    is populated (both tracking modes)."""
+    """An investment account with two holdings (→ market value + unrealised gain,
+    plus back-filled price history so the value chart renders) and a workplace
+    pension with a growing value series — so the Investments page is populated
+    (both tracking modes)."""
     if db.scalar(
         select(Account.id).where(Account.name == _DEMO_ISA_NAME, Account.account_type == "investment")
     ):
@@ -610,19 +692,72 @@ def _seed_investments(db: Session) -> None:
     isa = investment_service.create_account(
         db, name=_DEMO_ISA_NAME, institution="Demo Invest", account_type="investment"
     )
-    investment_service.create_holding(
+    vwrl = investment_service.create_holding(
         db, isa.id, symbol="VWRL", name="Vanguard FTSE All-World",
         units="120", avg_cost="92.50", last_price="108.20",
     )
-    investment_service.create_holding(
+    aapl = investment_service.create_holding(
         db, isa.id, symbol="AAPL", name="Apple Inc.",
         units="15", avg_cost="145.00", last_price="171.30",
     )
+    # A rising price series per holding (ending at today's last_price) → the ISA's
+    # value chart shows a trend.
+    _seed_price_history(db, vwrl.id, [(90, "99.00"), (60, "102.50"), (30, "105.80")])
+    _seed_price_history(db, aapl.id, [(90, "150.00"), (60, "158.00"), (30, "165.00")])
     pension = investment_service.create_account(
         db, name=_DEMO_PENSION_NAME, institution="Demo Pensions", account_type="pension"
     )
     investment_service.record_value(db, pension.id, as_of=today - timedelta(days=90), value=Decimal("38400.00"))
+    investment_service.record_value(db, pension.id, as_of=today - timedelta(days=45), value=Decimal("39900.00"))
     investment_service.record_value(db, pension.id, as_of=today, value=Decimal("41250.00"))
+
+
+_CAT_ENTERTAINMENT = "Entertainment"
+_DEMO_RECEIPT_FILENAME = "waitrose-receipt.txt"
+_DEMO_RECEIPT_BYTES = (
+    b"WAITROSE & PARTNERS\nDartford\n\nGroceries.......52.70\nTOTAL  GBP 52.70\n"
+    b"Thank you for shopping with us\n"
+)
+
+
+def _seed_split(db: Session, rows: list[Transaction]) -> None:
+    """Split one transaction across two categories so the split UI + the split-aware
+    category breakdown have an example. Idempotent: skips an already-split row."""
+    odeon = next((t for t in rows if t.description_raw == "ODEON CINEMA"), None)
+    if odeon is None or odeon.is_split:
+        return
+    entertainment = _cat_id(db, _CAT_ENTERTAINMENT)
+    eating = _cat_id(db, _CAT_EATING_OUT)
+    if entertainment is None or eating is None:
+        return
+    halves = split_service.split_evenly(odeon.amount, 2)
+    split_service.set_splits(
+        db,
+        odeon,
+        [
+            split_service.SplitInput(amount=halves[0], category_id=entertainment, description="Tickets"),
+            split_service.SplitInput(amount=halves[1], category_id=eating, description="Snacks & drinks"),
+        ],
+    )
+
+
+def _seed_receipt(db: Session, rows: list[Transaction]) -> None:
+    """Attach a processed receipt to a grocery transaction so the Receipts page and
+    the transaction's receipt link are populated. Idempotent: skips if the row
+    already has a receipt (and ``store_upload`` dedups by content hash anyway)."""
+    waitrose = next((t for t in rows if t.description_raw == "WAITROSE AND PARTNERS"), None)
+    if waitrose is None or receipt_service.receipts_for_transaction(db, waitrose.id):
+        return
+    receipt, _created = receipt_service.store_upload(db, _DEMO_RECEIPT_FILENAME, _DEMO_RECEIPT_BYTES)
+    receipt_service.set_fields(
+        db,
+        receipt,
+        merchant_raw="Waitrose & Partners",
+        receipt_date=waitrose.transaction_date,
+        total_amount=abs(waitrose.amount),
+        currency="GBP",
+    )
+    receipt_service.attach_to_transaction(db, receipt, waitrose.id)
 
 
 def _seed_examples(db: Session, statement_id: int) -> None:
@@ -633,6 +768,7 @@ def _seed_examples(db: Session, statement_id: int) -> None:
         db.scalars(select(Transaction).where(Transaction.statement_id == statement_id)).all()
     )
     _seed_vendors(db, rows)
+    _seed_merge_candidate_vendors(db, rows)
     _seed_rule(db)
     _seed_projects(db, rows)
     _seed_budgets(db)
@@ -642,6 +778,8 @@ def _seed_examples(db: Session, statement_id: int) -> None:
     _seed_household(db, rows)
     _claim_main_account(db, rows)
     _seed_review_queue(db, rows)
+    _seed_split(db, rows)
+    _seed_receipt(db, rows)
     db.commit()
 
 
@@ -662,6 +800,10 @@ _MANIFEST_MODELS: dict[str, type] = {
     # Subscriptions are auto-detected from the demo's recurring transactions during
     # the import, so capture them too — otherwise they'd survive a remove (bug fix).
     "subscriptions": Subscription,
+    # A receipt attached to a demo transaction. Its match cascades when the txn goes,
+    # but the Receipt row itself is independent, so capture it (and drop its stored
+    # file on removal) — otherwise it (and its file) would survive a remove.
+    "receipts": Receipt,
     "users": User,
 }
 
@@ -768,6 +910,20 @@ def _remove_demo_transactions(db: Session, manifest: dict[str, list[int]], count
     counts["statements"] = _bulk_delete(db, Statement, stmt_ids)
 
 
+def _remove_demo_receipts(db: Session, manifest: dict[str, list[int]], counts: dict[str, int]) -> None:
+    """Delete the demo's receipts, dropping each stored original file first (the
+    file isn't captured by the id-diff). Receipt-match rows cascade (FK ON DELETE)."""
+    removed = 0
+    for r_id in manifest.get("receipts", []):
+        receipt = db.get(Receipt, r_id)
+        if receipt is None:
+            continue
+        receipt_service.drop_original(db, receipt, commit=False)  # unlink the file
+        db.delete(receipt)
+        removed += 1
+    counts["receipts"] = removed
+
+
 def _delete_if_unreferenced(db: Session, model: type, ids: list[int], ref_column) -> int:
     """ORM-delete each row in ``ids`` whose ``ref_column`` no transaction still uses
     (so a shared account/vendor a real import touched is kept). Returns the count."""
@@ -808,6 +964,9 @@ def remove_demo(db: Session) -> dict:
 
     # 1. Transactions on the demo statements (derived — not stored in the manifest).
     _remove_demo_transactions(db, manifest, counts)
+
+    # 1b. Demo receipts (row + stored file); their match rows already cascaded above.
+    _remove_demo_receipts(db, manifest, counts)
 
     # 2. Savings goals (before any savings account they point at), then the uniquely
     #    demo budgets / projects / rules.
