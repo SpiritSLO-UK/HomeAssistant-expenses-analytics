@@ -64,6 +64,9 @@ def test_parser_whole_number_total():
     """A currency-anchored whole-number total (no decimals) parses instead of dropping."""
     assert receipt_parser.detect_total("TOTAL £42") == Decimal("42.00")
     assert receipt_parser.detect_total("AMOUNT DUE 100 EUR") == Decimal("100.00")
+    # Symbol-prefixed and code-suffixed forms both parse (the two whole-amount patterns).
+    assert receipt_parser.detect_total("GRAND TOTAL $1,234") == Decimal("1234.00")
+    assert receipt_parser.detect_total("BALANCE DUE 1,234 GBP") == Decimal("1234.00")
     # A decimal total on a line still wins over a whole number on the same line.
     assert receipt_parser.detect_total("TOTAL £42.18") == Decimal("42.18")
 

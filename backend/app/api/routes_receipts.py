@@ -167,6 +167,30 @@ def _receipt_fields_from_ai(fields: dict) -> dict:
     return out
 
 
+def _receipt_image_for_ai(receipt: Receipt) -> tuple[bytes, str]:
+    """Resolve a receipt's on-disk original to (image bytes, mime) suitable for the
+    vision model. PDFs are rasterised (first page → PNG). Raises HTTPException with the
+    same status codes the route documents when the file is missing / unrenderable / not
+    an image or PDF."""
+    path = Path(receipt.storage_path) if receipt.storage_path else None
+    if path is None or not path.exists():
+        raise HTTPException(status_code=404, detail="Receipt original is not available")
+    mime = mimetypes.guess_type(receipt.source_filename or path.name)[0] or ""
+    if mime.startswith("image/"):
+        return path.read_bytes(), mime
+    is_pdf = mime == "application/pdf" or path.suffix.lower() == ".pdf"
+    if is_pdf:
+        # Vision models can't take a PDF directly — render the first page to PNG.
+        rendered = ocr_service.render_pdf_page_png(path)
+        if rendered is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Couldn't render this PDF for AI extraction (the PDF rasteriser is unavailable).",
+            )
+        return rendered, "image/png"
+    raise HTTPException(status_code=400, detail="AI extraction needs an image or PDF receipt.")
+
+
 @router.post(
     "/{receipt_id}/ai-extract",
     response_model=ReceiptOut,
@@ -183,24 +207,7 @@ def ai_extract_receipt(
     can't be redacted). Works on image receipts and PDFs (the first PDF page is
     rendered to an image — receipts/invoices are often PDFs)."""
     receipt = _get(db, receipt_id)
-    path = Path(receipt.storage_path) if receipt.storage_path else None
-    if path is None or not path.exists():
-        raise HTTPException(status_code=404, detail="Receipt original is not available")
-    mime = mimetypes.guess_type(receipt.source_filename or path.name)[0] or ""
-    is_pdf = mime == "application/pdf" or path.suffix.lower() == ".pdf"
-    if mime.startswith("image/"):
-        content, send_mime = path.read_bytes(), mime
-    elif is_pdf:
-        # Vision models can't take a PDF directly — render the first page to PNG.
-        rendered = ocr_service.render_pdf_page_png(path)
-        if rendered is None:
-            raise HTTPException(
-                status_code=400,
-                detail="Couldn't render this PDF for AI extraction (the PDF rasteriser is unavailable).",
-            )
-        content, send_mime = rendered, "image/png"
-    else:
-        raise HTTPException(status_code=400, detail="AI extraction needs an image or PDF receipt.")
+    content, send_mime = _receipt_image_for_ai(receipt)
     try:
         fields = ai_service.extract_receipt_image(db, content, send_mime)
     except AIDisabled as exc:

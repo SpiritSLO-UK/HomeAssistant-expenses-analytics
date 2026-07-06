@@ -21,9 +21,13 @@ _AMOUNT_RE = re.compile(_AMOUNT)
 # A currency-anchored WHOLE number (no decimals): "TOTAL £42", "TOTAL 42 EUR". Only
 # matched where a total is expected (detect_total), so bare quantities/years elsewhere
 # aren't mistaken for money. Requires a symbol/code so a stray "12" doesn't win.
-_WHOLE_AMOUNT_RE = re.compile(
-    r"(?:[£$€]\s?(\d{1,3}(?:,\d{3})*|\d+)|(\d{1,3}(?:,\d{3})*|\d+)\s?(?:GBP|USD|EUR))",
-    re.I,
+# Split into two simpler compiled patterns (symbol-prefixed / code-suffixed) built from
+# a shared whole-number sub-pattern, to keep each regex's complexity low. Each captures
+# the number in group 1; the two are tried in sequence (see _whole_amounts_on).
+_WHOLE_NUM = r"(\d{1,3}(?:,\d{3})*|\d+)"
+_WHOLE_AMOUNT_RES = (
+    re.compile(r"[£$€]\s?" + _WHOLE_NUM),
+    re.compile(_WHOLE_NUM + r"\s?(?:GBP|USD|EUR)", re.I),
 )
 _CURRENCY_SYMBOL = {"£": "GBP", "$": "USD", "€": "EUR"}
 
@@ -102,11 +106,11 @@ def detect_date(text: str) -> date | None:
 def _whole_amounts_on(line: str) -> list[Decimal]:
     """Currency-anchored whole numbers (no decimal part), e.g. "TOTAL £42"."""
     out = []
-    for m in _WHOLE_AMOUNT_RE.finditer(line):
-        raw = m.group(1) or m.group(2)
-        d = _to_decimal(raw.replace(",", ""))
-        if d is not None:
-            out.append(d)
+    for pattern in _WHOLE_AMOUNT_RES:
+        for m in pattern.finditer(line):
+            d = _to_decimal(m.group(1).replace(",", ""))
+            if d is not None:
+                out.append(d)
     return out
 
 
