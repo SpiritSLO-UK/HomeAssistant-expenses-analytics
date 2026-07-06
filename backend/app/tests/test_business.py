@@ -113,6 +113,47 @@ def test_vat_converted_to_base_via_fx_rate(db):
     assert s["vat"] == "17.00"
 
 
+def test_vat_fx_direction_matches_base_amount_convention(db):
+    """VAT must be converted with the app-wide ``base_amount = amount * fx_rate``
+    convention (multiply, not divide). A rate > 1 (e.g. a strong quote currency)
+    makes this direction unambiguous: dividing would give the wrong sign of error.
+
+    USD txn: 200 USD spend, 40 USD VAT, rate 1.25 → 250 GBP spend, 50 GBP VAT.
+    (If VAT were divided by the rate it would wrongly come out at 32.00.)
+    """
+    _txn(db, business=True, currency="USD", amount="-200.00", base="-250.00", fx_rate="1.25", vat="40.00")
+    s = business_service.summary(db)
+    assert Decimal(s["total"]) == Decimal("250.00")
+    assert Decimal(s["vat"]) == Decimal("50.00")  # 40 * 1.25, NOT 40 / 1.25 (=32.00)
+    # And it lines up with the transaction's own base_amount magnitude.
+    assert Decimal(s["vat"]) == (Decimal("40.00") * Decimal("1.25")).quantize(Decimal("0.01"))
+
+
+def test_vat_clamped_to_spend_when_larger(db):
+    """A VAT amount larger than the transaction's spend is nonsensical (a typo);
+    it is clamped to the spend so reclaimable VAT never exceeds the spend."""
+    settings_service.set_value(db, settings_service.BASE_CURRENCY, "GBP")
+    # 100 GBP spend but 150 GBP VAT entered by mistake → VAT clamped to 100.
+    _txn(db, business=True, amount="-100.00", vat="150.00")
+    s = business_service.summary(db)
+    assert Decimal(s["total"]) == Decimal("100.00")
+    assert Decimal(s["vat"]) == Decimal("100.00")  # clamped, not 150.00
+    # VAT equal to spend (edge) is allowed through unchanged.
+    assert Decimal(s["vat"]) <= Decimal(s["total"])
+
+
+def test_vat_clamp_uses_original_currency_before_fx(db):
+    """The clamp compares VAT to spend in the ORIGINAL currency (both pre-FX),
+    then converts the clamped VAT — so a foreign row isn't spuriously clamped by
+    a base-vs-original mismatch, and a genuine over-VAT is clamped correctly."""
+    # EUR: 120 spend, 80 VAT (plausible, <120) at rate 0.85 → VAT not clamped,
+    # converts to 68.00 GBP.
+    _txn(db, business=True, currency="EUR", amount="-120.00", base="-102.00", fx_rate="0.85", vat="80.00")
+    s = business_service.summary(db)
+    assert Decimal(s["vat"]) == (Decimal("80.00") * Decimal("0.85")).quantize(Decimal("0.01"))  # 68.00
+    assert Decimal(s["vat"]) < Decimal(s["total"])
+
+
 def test_receipt_match_propagates_vat(db):
     r, _ = receipt_service.store_upload(db, "biz-receipt.jpg", b"biz-receipt-bytes")
     r.vat_amount = Decimal("4.20")

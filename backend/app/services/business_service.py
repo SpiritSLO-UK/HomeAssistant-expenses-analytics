@@ -44,11 +44,30 @@ def _period_bucket(d: date, period: str) -> tuple[str, str, date, date]:
 
 
 def _vat_base(txn: Transaction) -> Decimal:
-    """The transaction's VAT converted to the base currency via its FX rate."""
+    """The transaction's VAT converted to the base currency via its FX rate.
+
+    Uses the app-wide FX convention ``base_amount = amount * fx_rate`` — so VAT
+    (which is stored in the transaction's *original* currency, like ``amount``)
+    is likewise **multiplied** by the rate to reach the base currency. Dividing
+    here would corrupt reclaimable VAT for foreign-currency business receipts.
+
+    A VAT amount that exceeds the transaction's own (original-currency) spend is
+    nonsensical — VAT is a component of the price paid, never larger than it —
+    and usually a receipt-entry typo. We clamp VAT to the transaction's spend
+    magnitude (in the original currency, *before* FX conversion) so an inflated
+    figure can never make reclaimable VAT exceed the spend it belongs to and the
+    Business summary stays coherent.
+    """
     if txn.vat_amount is None:
         return _ZERO
+    vat = Decimal(txn.vat_amount)
+    # Compare in the original currency (both amount + vat are pre-FX). ``amount``
+    # is negative for money-out; use its magnitude as the ceiling.
+    spend = abs(Decimal(txn.amount)) if txn.amount is not None else None
+    if spend is not None and vat > spend:
+        vat = spend
     rate = txn.fx_rate if txn.fx_rate is not None else Decimal("1")
-    return (Decimal(txn.vat_amount) * Decimal(rate)).quantize(Decimal("0.01"))
+    return (vat * Decimal(rate)).quantize(Decimal("0.01"))
 
 
 def _business_spend(db: Session, account_ids: set[int] | None) -> list[Transaction]:
@@ -108,7 +127,14 @@ def summary(
         b["count"] += 1
         dates.append(t.transaction_date)
 
-    cats: dict[int | None, str] = {c.id: c.name for c in db.scalars(select(Category)).all()}
+    # Only the categories actually referenced by these business rows are needed
+    # for the labels (identical output, avoids loading the whole category table).
+    cat_ids = {cid for cid in by_cat if cid is not None}
+    cats: dict[int | None, str] = (
+        {c.id: c.name for c in db.scalars(select(Category).where(Category.id.in_(cat_ids))).all()}
+        if cat_ids
+        else {}
+    )
     by_category = sorted(
         (
             {
