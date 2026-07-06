@@ -52,7 +52,7 @@ export default function Sidebar({
 }>) {
   const isAdmin = role === "owner";
   const isChild = role === "child";
-  const ai = useQuery({ queryKey: ["ai-status"], queryFn: getAiStatus });
+  const ai = useQuery({ queryKey: ["ai-status"], queryFn: getAiStatus, staleTime: 60_000 });
   const badge = privacyBadge(ai.data);
   const [hidden, setHidden] = useState<Set<string>>(() => getHiddenNavKeys());
   const [order, setOrder] = useState<string[]>(() => mergeNavOrder(getNavOrder()));
@@ -105,15 +105,21 @@ export default function Sidebar({
         <span className="sidebar__brand-text">Finance</span>
       </div>
       <nav className="sidebar__nav">
-        {items.map((item, idx) =>
+        {items.map((item) =>
           editing ? (
+            // canUp/canDown must reason about the tab's position in the FULL
+            // ordered role list (what `move` operates on), not the rendered
+            // list — otherwise hidden tabs would skew the enable/disable state.
             <EditRow
               key={item.path}
               item={item}
               shown={!hidden.has(item.path)}
               locked={ALWAYS_SHOWN.has(item.path)}
-              canUp={idx > 0}
-              canDown={idx < items.length - 1}
+              canUp={orderedRoleItems.findIndex((i) => i.path === item.path) > 0}
+              canDown={
+                orderedRoleItems.findIndex((i) => i.path === item.path) <
+                orderedRoleItems.length - 1
+              }
               onToggle={() => toggle(item.path)}
               onMoveUp={() => move(item.path, -1)}
               onMoveDown={() => move(item.path, 1)}
