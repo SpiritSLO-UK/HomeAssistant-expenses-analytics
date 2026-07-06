@@ -11,7 +11,28 @@
 {$SITE_ADDRESS:localhost} {
 	reverse_proxy app:8099
 	encode gzip
-	header Strict-Transport-Security "max-age=31536000;"
+
+	# Security headers (CR-SEC-11). Caddy only serves this site over HTTPS (it
+	# terminates TLS here), so HSTS is always sent on a real request.
+	header {
+		# Stick to HTTPS for a year, subdomains included. No trailing ';' —
+		# the previous value had one, which is technically tolerated but sloppy.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		# Stop browsers MIME-sniffing responses into an unintended type.
+		X-Content-Type-Options "nosniff"
+		# Clickjacking: SAMEORIGIN (not DENY) so the app still loads inside the
+		# Home Assistant ingress iframe, matching the backend CSP's
+		# `frame-ancestors 'self'` from PR #326.
+		X-Frame-Options "SAMEORIGIN"
+		# Don't leak the URL to third parties on outbound navigation.
+		Referrer-Policy "no-referrer"
+		# NOTE: Content-Security-Policy is deliberately NOT set here. The backend
+		# (backend/app/main.py, PR #326) owns the CSP and stamps it on every
+		# response — including a sha256 hash for the inline theme script. Setting a
+		# second policy in Caddy would give two competing headers; the strictest
+		# wins per-directive and would almost certainly break the SPA. Let the
+		# backend be the single source of truth for CSP.
+	}
 }
 
 # --- Reaching it by LAN name or IP (no public domain) ------------------------
