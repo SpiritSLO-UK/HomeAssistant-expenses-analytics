@@ -294,6 +294,66 @@ async def _audit_actions(request: Request, call_next):
     return response
 
 
+# --- Content-Security-Policy (CR-FEAT-8) ---
+# Served on every response as the primary mitigation for the sessionStorage-held
+# session token: a strict script-src denies an injected inline/remote script the
+# chance to run and exfiltrate it. Every directive below is verified against how the
+# app actually loads — Vite's same-origin JS/CSS bundles, the single inline theme
+# script in frontend/index.html, and the same-origin receipt-preview iframe — so this
+# can be *enforced* (not report-only) without breaking the SPA.
+#
+# NOTE: the script-src hash is the sha256 of the exact inline theme script in
+# frontend/index.html. If that inline script is ever edited, this hash must be
+# recomputed or the app will fail to set its theme on load.
+_CSP_DIRECTIVES = (
+    # Fallback for any resource type without its own rule: same-origin only.
+    "default-src 'self'",
+    # JS: the Vite bundle is same-origin ('self'); the only inline script is the
+    # pre-paint theme setter in index.html, allowed by its exact sha256 hash rather
+    # than 'unsafe-inline' so an injected script still can't run (the token-theft
+    # mitigation that is the whole point of this header).
+    "script-src 'self' 'sha256-+fwDoau6WkaBQHVWdlxW4L0hEDD377jzXBuYSc7bPfw='",
+    # CSS: the Vite stylesheet is same-origin; 'unsafe-inline' covers React inline
+    # style props and any runtime-injected <style>. Low risk (style injection can't
+    # read the token) and it keeps the SPA from breaking on styling.
+    "style-src 'self' 'unsafe-inline'",
+    # Images: same-origin (receipt image previews) plus data: URIs (the SVG favicon).
+    "img-src 'self' data:",
+    # Fonts: same-origin bundled fonts plus any data: font.
+    "font-src 'self' data:",
+    # XHR/fetch/WebSocket: the API and all FX/price lookups are proxied through this
+    # backend, so same-origin is sufficient.
+    "connect-src 'self'",
+    # Frames the app embeds: the receipt PDF preview iframe loads
+    # /api/receipts/{id}/file, which is same-origin.
+    "frame-src 'self'",
+    # Who may frame the app: 'self' still allows Home Assistant ingress (which
+    # reverse-proxies the add-on onto the HA origin) while blocking external
+    # clickjacking. Deliberately NOT 'none', which would break ingress.
+    "frame-ancestors 'self'",
+    # No plugins / <object>/<embed>.
+    "object-src 'none'",
+    # Lock <base href> to same-origin so an injection can't repoint relative URLs.
+    "base-uri 'self'",
+    # Restrict form submissions to same-origin.
+    "form-action 'self'",
+)
+_CSP = "; ".join(_CSP_DIRECTIVES)
+
+
+@app.middleware("http")
+async def _security_headers(request: Request, call_next):
+    """Attach the Content-Security-Policy to every response (CR-FEAT-8).
+
+    Registered last so it is the OUTERMOST middleware and therefore also stamps the
+    header on the 403/423 short-circuit responses returned by the guards above. See
+    ``_CSP`` for the per-directive rationale. ``setdefault`` lets a route override it
+    if one ever needs to (none do today)."""
+    response = await call_next(request)
+    response.headers.setdefault("Content-Security-Policy", _CSP)
+    return response
+
+
 @app.exception_handler(dbsession.DatabaseLocked)
 async def _locked_handler(_request: Request, _exc: dbsession.DatabaseLocked):
     return JSONResponse(status_code=423, content={"detail": "Database is locked."})
