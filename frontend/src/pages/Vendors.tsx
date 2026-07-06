@@ -195,7 +195,7 @@ export default function Vendors() {
           <h2 className="card__title" style={{ margin: 0 }}>Vendors ({vendorList.length})</h2>
           {vendorList.length > 0 && (
             <label className="muted" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-              Sort
+              Sort{" "}
               <select aria-label="Sort vendors" value={sort} onChange={(e) => setSort(e.target.value as SortKey)}>
                 {SORT_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>

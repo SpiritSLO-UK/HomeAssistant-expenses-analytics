@@ -187,11 +187,11 @@ function ActivityCard({ includeArchived, authorized }: Readonly<{ includeArchive
 
       <div className="form-row" style={{ gap: 8, marginTop: 8, flexWrap: "wrap" }}>
         <label className="muted" style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "0.82rem" }}>
-          From
+          From{" "}
           <input type="date" value={dateFrom} max={dateTo || undefined} onChange={(e) => setDateFrom(e.target.value)} title="Only show entries on or after this date" />
         </label>
         <label className="muted" style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "0.82rem" }}>
-          To
+          To{" "}
           <input type="date" value={dateTo} min={dateFrom || undefined} onChange={(e) => setDateTo(e.target.value)} title="Only show entries on or before this date" />
         </label>
         <input

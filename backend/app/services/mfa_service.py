@@ -15,7 +15,6 @@ a second factor *inside* the app). Flow:
 from __future__ import annotations
 
 import base64
-import binascii
 import hashlib
 import secrets
 from datetime import UTC, datetime, timedelta
@@ -113,7 +112,9 @@ def decrypt_secret(stored: str | None) -> str | None:
     try:
         blob = base64.b64decode(stored[len(_ENC_PREFIX):].encode("ascii"), validate=True)
         return crypto_service.decrypt(blob, key).decode("utf-8")
-    except (crypto_service.DecryptError, binascii.Error, ValueError, UnicodeDecodeError):
+    except (crypto_service.DecryptError, ValueError):
+        # binascii.Error and UnicodeDecodeError both subclass ValueError, so
+        # catching ValueError already covers them.
         return None
 
 
