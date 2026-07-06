@@ -52,6 +52,7 @@ export default function Budgets() {
     onSuccess: () => {
       setErr(null);
       qc.invalidateQueries({ queryKey: ["budget-summary"] });
+      qc.invalidateQueries({ queryKey: ["budget-txns"] });
     },
     onError: (e) => setErr(String(e)),
   });
@@ -84,7 +85,11 @@ export default function Budgets() {
         base={base}
         categories={categories.data ?? []}
         onError={setErr}
-        onCreated={() => qc.invalidateQueries({ queryKey: ["budget-summary"] })}
+        onCreated={() => {
+          setErr(null);
+          qc.invalidateQueries({ queryKey: ["budget-summary"] });
+          qc.invalidateQueries({ queryKey: ["budget-txns"] });
+        }}
       />
 
       <div className="card">
@@ -170,7 +175,12 @@ function BudgetRow({
       </div>
       {open && (
         <div style={{ marginTop: 8, paddingLeft: 12 }}>
-          {(txns.isLoading || !txns.data) && (
+          {txns.isError && (
+            <p className="status status--error" style={{ margin: 0 }}>
+              Couldn’t load transactions: {String(txns.error)}
+            </p>
+          )}
+          {!txns.isError && (txns.isLoading || !txns.data) && (
             <p className="muted" style={{ margin: 0 }}>Loading…</p>
           )}
           {txns.data?.length === 0 && (
