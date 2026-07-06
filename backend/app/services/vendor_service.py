@@ -11,7 +11,7 @@ import re
 from datetime import UTC, datetime
 from difflib import SequenceMatcher
 
-from sqlalchemy import func, select
+from sqlalchemy import func, literal, select
 from sqlalchemy.orm import Session
 
 from app.logging import get_logger
@@ -44,23 +44,85 @@ def _alias_matches(alias: VendorAlias, description: str) -> bool:
     return False
 
 
+def _consider(
+    best: tuple[int, int, Vendor, str] | None,
+    alias: VendorAlias,
+    vendor: Vendor,
+) -> tuple[int, int, Vendor, str] | None:
+    """Fold one matching alias into the running best.
+
+    Ranks by match-type precedence, breaking ties on the longer (more specific)
+    alias rather than DB insertion order (SR-A3 §3)."""
+    rank = _MATCH_PRECEDENCE.get(alias.match_type or "contains", 0)
+    specificity = len(alias.alias or "")
+    if best is None or (rank, specificity) > (best[0], best[1]):
+        return (rank, specificity, vendor, alias.match_type or "contains")
+    return best
+
+
 def match_vendor(db: Session, description: str) -> tuple[Vendor | None, str | None]:
-    """Return (vendor, match_type) for the best alias match, or (None, None)."""
+    """Return (vendor, match_type) for the best alias match, or (None, None).
+
+    Performance (SR-A3 §1): exact/contains aliases are the common case and are
+    now resolved by a SQL prefilter (``LIKE`` on the lowered alias) instead of a
+    full Python scan over every alias. Because ``exact`` (rank 4) and
+    ``contains`` (rank 2) outrank ``regex`` (3) only partially, we still fall
+    back to a Python pass — but only over ``regex``/``fuzzy`` aliases (which SQL
+    can't express) — and only when needed. The best match is chosen by the same
+    precedence/tie-break rules as before, so results are unchanged."""
     if not description:
         return None, None
-    rows = db.execute(
-        select(VendorAlias, Vendor).join(Vendor, VendorAlias.vendor_id == Vendor.id)
+
+    text = description.lower()
+    best: tuple[int, int, Vendor, str] | None = None
+
+    # 1) SQL prefilter for the string match types (exact / contains). ``exact``
+    #    means the whole description equals the alias; ``contains`` means the
+    #    (lowered) alias appears somewhere in the (lowered) description. Both are
+    #    expressed against the lowered alias, mirroring ``_alias_matches``. The
+    #    ``contains`` test is a substring check with the *description* as the
+    #    haystack, so we pass the literal description to ``like`` and match rows
+    #    whose lowered alias is a substring of it via a bound-literal LIKE.
+    lowered_alias = func.lower(VendorAlias.alias)
+    # ``:text LIKE '%' || lower(alias) || '%'`` — the alias is the pattern needle,
+    # the (constant) description is the haystack. This compiles portably (``||``
+    # on SQLite, ``concat``/``||`` elsewhere). The prefilter may be slightly loose
+    # if an alias itself contains LIKE wildcards, but every returned row is
+    # re-verified below by ``_alias_matches``, so results stay exact — the SQL is
+    # purely a candidate-narrowing step (no false negatives for real substrings).
+    contains_expr = literal(text).like(literal("%").concat(lowered_alias).concat("%"))
+    string_rows = db.execute(
+        select(VendorAlias, Vendor)
+        .join(Vendor, VendorAlias.vendor_id == Vendor.id)
+        .where(
+            ((VendorAlias.match_type == "exact") & (lowered_alias == text))
+            | ((VendorAlias.match_type == "contains") & contains_expr)
+        )
     ).all()
 
-    best: tuple[int, Vendor, str] | None = None
-    for alias, vendor in rows:
+    for alias, vendor in string_rows:
+        # Re-verify in Python so the exact/contains semantics are identical to
+        # the previous implementation (belt-and-braces against LIKE wildcards in
+        # the alias text).
         if _alias_matches(alias, description):
-            rank = _MATCH_PRECEDENCE.get(alias.match_type or "contains", 0)
-            if best is None or rank > best[0]:
-                best = (rank, vendor, alias.match_type or "contains")
+            best = _consider(best, alias, vendor)
+
+    # 2) Fall back to a Python pass over regex/fuzzy aliases only — these can't
+    #    be expressed in portable SQL. This is the small remainder, not the whole
+    #    table, so the per-transaction cost is bounded by how many regex/fuzzy
+    #    aliases exist rather than the total alias count.
+    fuzzy_rows = db.execute(
+        select(VendorAlias, Vendor)
+        .join(Vendor, VendorAlias.vendor_id == Vendor.id)
+        .where(VendorAlias.match_type.in_(("regex", "fuzzy")))
+    ).all()
+    for alias, vendor in fuzzy_rows:
+        if _alias_matches(alias, description):
+            best = _consider(best, alias, vendor)
+
     if best is None:
         return None, None
-    return best[1], best[2]
+    return best[2], best[3]
 
 
 def normalise_transaction(db: Session, txn: Transaction) -> bool:
