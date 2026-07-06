@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from app.services.redaction import (
@@ -62,3 +64,65 @@ def test_redact_for_cloud_drops_extra_fields_and_redacts():
 
 def test_redact_for_cloud_handles_missing_fields():
     assert redact_for_cloud({"amount": -1.0}) == {"amount": -1.0}
+
+
+def test_candidate_category_with_pii_is_masked():
+    # A category renamed to contain PII must not leak via the list field.
+    payload = {
+        "description": "shop",
+        "candidate_categories": ["Groceries", "call me on +44 20 7946 0958"],
+    }
+    out = redact_for_cloud(payload)
+    assert out["candidate_categories"][0] == "Groceries"
+    assert "+44 20 7946 0958" not in out["candidate_categories"][1]
+    assert "[phone]" in out["candidate_categories"][1]
+
+
+def test_candidate_category_email_and_account_masked():
+    payload = {"candidate_categories": ["mail bob@example.com acct 87654321"]}
+    out = redact_for_cloud(payload)
+    masked = out["candidate_categories"][0]
+    assert "bob@example.com" not in masked
+    assert "87654321" not in masked
+    assert "[email]" in masked
+    assert "[account]" in masked
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "call +44 20 7946 0958 now",
+        "phone (020) 7946 0958",
+        "US +1 (415) 555-2671 line",
+    ],
+)
+def test_international_phone_masked(raw):
+    out = redact_text(raw)
+    assert "[phone]" in out
+    # No long digit run should survive.
+    assert not re.search(r"\d{7}", out)
+
+
+def test_international_number_always_masked_even_if_card_shaped():
+    # A "0044…"-prefixed number happens to be 16 digits so it masks as [card];
+    # the point is that no raw digit run leaks, regardless of which rule fires.
+    out = redact_text("ring 0044 20 7946 0958")
+    assert ("[phone]" in out) or ("[card]" in out)
+    assert "0044 20 7946" not in out
+
+
+def test_long_account_like_run_masked():
+    # 8+ digit standalone runs that are NOT card-length are masked as accounts;
+    # short store/reference numbers are left intact.
+    assert "[account]" in redact_text("acct 87654321 done")  # 8 digits
+    assert "[account]" in redact_text("ref 1234567890 done")  # 10-digit non-card run
+    assert redact_text("STORE 3142") == "STORE 3142"
+    assert redact_text("COSTA 482") == "COSTA 482"
+
+
+def test_contains_sensitive_bounds_and_behaviour():
+    assert contains_sensitive("acct 87654321") is True
+    assert contains_sensitive("call +44 20 7946 0958") is True
+    assert contains_sensitive("TESCO STORES 3142 DARTFORD") is False
+    # Pathological long input is truncated and does not hang.
+    assert contains_sensitive("a" * 20000) is False
