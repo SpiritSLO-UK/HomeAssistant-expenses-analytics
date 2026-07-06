@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import Column, ForeignKey, String, Table
+from sqlalchemy import Column, ForeignKey, Index, String, Table, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin
@@ -26,6 +26,19 @@ transaction_tags = Table(
 
 class Tag(Base, TimestampMixin):
     __tablename__ = "tags"
+
+    # Case-insensitive uniqueness per household so "Work" and "work" can't both be
+    # created (SR-B8). household_id is nullable and SQLite/Postgres treat NULLs as
+    # distinct in a unique index, so scope by COALESCE(household_id, -1). Name mirrors
+    # the Alembic migration so create_all (tests) and Alembic (runtime) agree.
+    __table_args__ = (
+        Index(
+            "ix_tags_household_lower_name",
+            text("COALESCE(household_id, -1)"),
+            text("lower(name)"),
+            unique=True,
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     household_id: Mapped[int | None] = mapped_column(

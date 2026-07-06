@@ -2,6 +2,14 @@
 
 from __future__ import annotations
 
+import pytest
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
+
+from app.models import Tag
+from app.services import tag_service
+from app.services.household_service import get_or_create_default_household
+
 
 def _curve(rows: list[tuple[str, str, str]]) -> bytes:
     head = "Date,Description,Amount,Currency,Card,Category\n"
@@ -90,3 +98,45 @@ def test_filter_transactions_by_tag(client):
     items = client.get(f"/api/transactions?tag_id={tid}").json()["items"]
     assert len(items) == 1
     assert items[0]["description_raw"] == "SHELL FUEL"
+
+
+# --- SR-B8: case-insensitive uniqueness + atomic get_or_create ---
+
+def test_get_or_create_case_insensitive_returns_same_tag(db):
+    first = tag_service.get_or_create(db, "Food")
+    db.commit()
+    same = tag_service.get_or_create(db, "food")
+    assert same.id == first.id
+    # Original display casing is preserved, and only one row exists.
+    assert same.name == "Food"
+    assert db.scalar(select(func.count()).select_from(Tag)) == 1
+
+
+def test_get_or_create_handles_duplicate_race(db):
+    """A concurrent insert of the same case-insensitive name must not blow up:
+    get_or_create catches the IntegrityError and returns the row that won."""
+    household = get_or_create_default_household(db)
+    # Simulate the "other" caller having already committed a tag while our
+    # in-flight get_or_create still believes the name is free. We prime the race
+    # by inserting the winner directly, then call get_or_create with a different
+    # casing — its own pre-flight lookup finds the winner, so no error and the
+    # same row comes back.
+    winner = Tag(name="Travel", household_id=household.id)
+    db.add(winner)
+    db.commit()
+    got = tag_service.get_or_create(db, "TRAVEL")
+    assert got.id == winner.id
+    assert db.scalar(select(func.count()).select_from(Tag)) == 1
+
+
+def test_unique_index_rejects_direct_duplicate_insert(db):
+    """The DB-level functional unique index rejects a second case-insensitive
+    duplicate that bypasses the service layer."""
+    household = get_or_create_default_household(db)
+    db.add(Tag(name="Utilities", household_id=household.id))
+    db.commit()
+    db.add(Tag(name="utilities", household_id=household.id))
+    with pytest.raises(IntegrityError):
+        db.commit()
+    db.rollback()
+    assert db.scalar(select(func.count()).select_from(Tag)) == 1
