@@ -171,6 +171,62 @@ def test_annual_view_scales_cap_and_window(client):
     assert len(ytxns) == 2
 
 
+def test_annual_view_custom_budget_not_falsely_over(client):
+    """A custom-period budget on the "This year" view must compare its ×1 cap
+    against the SAME custom span, not a full year of spend (SR-B6). Otherwise a
+    single-month custom budget looks wildly over-budget on the annual view."""
+    groceries = _cat(client, "Groceries")
+    # In-window spend (May) and out-of-window spend (August) in the same year.
+    _import(client, _curve([("2026-05-05", "TESCO STORES", "-100.00"),
+                            ("2026-08-10", "TESCO METRO", "-100.00")]))
+    bid = client.post(
+        "/api/budgets",
+        json={"name": "May groceries", "amount": "300.00", "period": "custom",
+              "category_id": groceries,
+              "start_date": "2026-05-01", "end_date": "2026-05-31"},
+    ).json()["id"]
+
+    annual = {
+        b["budget_id"]: b
+        for b in client.get("/api/budgets/summary?month=2026-05-01&annual=true").json()
+    }[bid]
+    # Only the May transaction counts (window = the custom span, not the year).
+    assert annual["spent"] == "100.00"
+    # Cap stays ×1 for custom, and matches the window duration.
+    assert annual["amount"] == "300.00"
+    assert annual["period_start"] == "2026-05-01"
+    assert annual["period_end"] == "2026-06-01"  # end-date + 1 (half-open)
+    assert annual["remaining"] == "200.00"
+    # 100 / 300 ≈ 33% -> well within budget, NOT over.
+    assert annual["percent"] == pytest.approx(100.0 / 3.0, abs=0.1)
+    assert annual["status"] == "ok"
+    # Drill-down over the annual view mirrors the window: just the May txn.
+    ytxns = client.get(f"/api/budgets/{bid}/transactions?month=2026-05-01&annual=true").json()
+    assert len(ytxns) == 1
+    assert ytxns[0]["description"] == "TESCO STORES"
+
+
+def test_annual_view_monthly_budget_unchanged_regression(client):
+    """Monthly budgets on the annual view are unaffected by the custom fix:
+    cap ×12 and spend counted across the whole calendar year (SR-B6 regression)."""
+    groceries = _cat(client, "Groceries")
+    _import(client, _curve([("2026-02-10", "TESCO STORES", "-100.00"),
+                            ("2026-09-10", "TESCO METRO", "-50.00")]))
+    bid = client.post(
+        "/api/budgets",
+        json={"name": "Groceries", "amount": "300.00", "period": "monthly", "category_id": groceries},
+    ).json()["id"]
+    annual = {
+        b["budget_id"]: b
+        for b in client.get("/api/budgets/summary?month=2026-05-01&annual=true").json()
+    }[bid]
+    assert annual["spent"] == "150.00"        # whole year counted, both months
+    assert annual["amount"] == "3600.00"      # 300 × 12 -> unchanged
+    assert annual["period_start"] == "2026-01-01"
+    assert annual["period_end"] == "2027-01-01"
+    assert annual["status"] == "ok"
+
+
 def test_weekly_period_window(client):
     groceries = _cat(client, "Groceries")
     # 2026-05-13 is a Wednesday; the week is Mon 2026-05-11 .. Sun 2026-05-17.

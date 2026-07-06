@@ -142,10 +142,24 @@ def _status(spent: Decimal, amount: Decimal, threshold: int | None) -> str:
 
 def _eval_window(budget: Budget, ref: date, annual: bool) -> tuple[date, date, Decimal]:
     """The [start, end) window and the cap to compare against. ``annual`` evaluates
-    the whole calendar year and annualises the cap (amount × periods-per-year)."""
+    the whole calendar year and annualises the cap (amount × periods-per-year).
+
+    A ``custom`` budget already covers a single fixed span (its own start/end),
+    so it does not tile a year the way a weekly/monthly/quarterly cap does. For it
+    the annualised cap is just the one-off amount (×1); to keep the cap and the
+    spend window the SAME duration we therefore keep the spend window on the
+    custom period itself instead of stretching it across the whole calendar year
+    (which would leave a ×1 cap measured against a full year of spend and report a
+    false over-budget). Weekly/monthly/quarterly/yearly are unchanged: their caps
+    scale by periods-per-year and are compared against the whole year.
+    """
     if annual:
         period = budget.period if budget.period in PERIODS else "monthly"
         cap = Decimal(budget.amount) * _PERIODS_PER_YEAR.get(period, 12)
+        if period == "custom":
+            # Cap is ×1, so keep the spend window on the custom period to match it.
+            start, end = period_bounds(budget, ref)
+            return start, end, cap
         return date(ref.year, 1, 1), date(ref.year + 1, 1, 1), cap
     start, end = period_bounds(budget, ref)
     return start, end, Decimal(budget.amount)
