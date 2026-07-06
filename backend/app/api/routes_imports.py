@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import functools
 import json
 from typing import Annotated
 
+import anyio.to_thread
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -66,13 +68,18 @@ async def upload(
         except json.JSONDecodeError as exc:
             raise HTTPException(status_code=400, detail=f"Invalid mapping JSON: {exc}") from exc
     try:
-        return import_service.create_import(
-            db,
-            filename=file.filename or "upload.csv",
-            content=content,
-            parser_id=parser_id or None,
-            account_id=account_id,
-            mapping=mapping_dict,
+        # Statement parsing is CPU/IO-bound and synchronous — run it in a worker
+        # thread so a large/slow parse doesn't block the event loop (CR-BUG-1).
+        return await anyio.to_thread.run_sync(
+            functools.partial(
+                import_service.create_import,
+                db,
+                filename=file.filename or "upload.csv",
+                content=content,
+                parser_id=parser_id or None,
+                account_id=account_id,
+                mapping=mapping_dict,
+            )
         )
     except ImportFailed as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -118,7 +125,11 @@ async def ai_extract(
         raise HTTPException(status_code=400, detail=_EMPTY_FILE)
     mime = file.content_type or "image/jpeg"
     try:
-        extracted = ai_service.extract_statement_image(db, content, mime)
+        # The vision-AI call is a synchronous, blocking network request (sync
+        # httpx, up to a 30s timeout) — run it off the event loop (CR-BUG-1).
+        extracted = await anyio.to_thread.run_sync(
+            ai_service.extract_statement_image, db, content, mime
+        )
     except AIDisabled as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except AIError as exc:

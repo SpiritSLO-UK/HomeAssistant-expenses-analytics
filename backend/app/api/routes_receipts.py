@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import functools
 import mimetypes
 from datetime import date as _date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Annotated
 
+import anyio.to_thread
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import select
@@ -67,7 +69,11 @@ async def upload_receipt(file: Annotated[UploadFile, File()], db: Annotated[Sess
     receipt, created = receipt_service.store_upload(db, file.filename or "receipt", content)
     if created:
         # Best-effort OCR + auto-match; degrades to 'skipped' if no engine.
-        receipt_service.run_ocr(db, receipt, auto_match=True)
+        # OCR is synchronous and CPU/IO-heavy — run it off the event loop so it
+        # can't stall other concurrent requests (CR-BUG-1).
+        await anyio.to_thread.run_sync(
+            functools.partial(receipt_service.run_ocr, db, receipt, auto_match=True)
+        )
     result = receipt_service.to_dict(db, receipt)
     # Re-uploading a byte-identical file is deduped by content hash — the existing
     # receipt is returned. Flag it so the UI can say "already imported" instead of
