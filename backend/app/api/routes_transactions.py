@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import functools
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Annotated
 
+import anyio.to_thread
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import func, select
@@ -450,8 +452,11 @@ async def attach_transaction_receipt(
     receipt, created = receipt_service.store_upload(db, file.filename or "receipt", content)
     if created:
         # Best-effort OCR for the extracted fields, but don't auto-match elsewhere —
-        # the user is explicitly attaching it here.
-        receipt_service.run_ocr(db, receipt, auto_match=False)
+        # the user is explicitly attaching it here. OCR is synchronous and
+        # CPU/IO-heavy, so run it off the event loop (CR-BUG-1).
+        await anyio.to_thread.run_sync(
+            functools.partial(receipt_service.run_ocr, db, receipt, auto_match=False)
+        )
     receipt_service.attach_to_transaction(db, receipt, txn.id)
     return receipt_service.to_dict(db, receipt)
 
