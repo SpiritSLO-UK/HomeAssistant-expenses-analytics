@@ -150,3 +150,33 @@ def test_recent_action_prefix_escapes_like_metacharacters(db):
     # "user%" literally matches only "user%update" (not the others via % wildcard).
     percent = {e.action for e in audit_service.recent(db, action_prefix="user%")}
     assert percent == {"user%update"}
+
+
+def test_small_details_are_stored_verbatim(db):
+    # A small/normal details dict round-trips unchanged (no truncation marker).
+    from app.services import audit_service
+
+    payload = {"method": "POST", "path": "/api/x", "status": 200}
+    audit_service.record(db, action="small_details", details=payload)
+    db.commit()
+
+    entry = next(e for e in audit_service.recent(db) if e.action == "small_details")
+    assert audit_service.to_dict(entry)["details"] == payload
+
+
+def test_oversized_details_are_truncated_and_bounded(db):
+    # A large details payload is capped to a compact marker so the audit row
+    # stays bounded, and recording still succeeds (SR-E8).
+    from app.services import audit_service
+
+    big = {"blob": "x" * (audit_service.MAX_DETAILS_BYTES + 5000)}
+    audit_service.record(db, action="big_details", details=big)
+    db.commit()
+
+    entry = next(e for e in audit_service.recent(db) if e.action == "big_details")
+    # The stored blob is bounded well under the cap.
+    assert len(entry.details_json) <= audit_service.MAX_DETAILS_BYTES
+    stored = audit_service.to_dict(entry)["details"]
+    assert stored["_truncated"] is True
+    # The true (pre-truncation) size is recorded for context.
+    assert stored["_bytes"] > audit_service.MAX_DETAILS_BYTES
