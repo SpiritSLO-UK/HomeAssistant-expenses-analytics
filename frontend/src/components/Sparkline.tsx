@@ -1,6 +1,10 @@
 // Tiny inline-SVG sparkline (no chart dependency). Shared by the Dashboard
 // trends card and the Savings page.
-
+//
+// `width`/`height` define the SVG's *coordinate space* (viewBox) — the
+// polyline/point math is computed in that space. The rendered element scales
+// responsively to its container (width:100%, capped at the `width` prop) so it
+// never overflows a narrow card / mobile screen, while keeping its aspect ratio.
 export default function Sparkline({
   values,
   color = "#6aa9ff",
@@ -18,7 +22,16 @@ export default function Sparkline({
   // When a label is given the chart is meaningful (role="img"); otherwise it's
   // decorative next to the figures it illustrates (aria-hidden).
   const a11y = label ? { role: "img" as const, "aria-label": label } : { "aria-hidden": true };
-  if (values.length < 2) return <svg width={width} height={height} {...a11y} />;
+  // Scales to the container but never larger than its natural coordinate size,
+  // preserving the aspect ratio of the viewBox.
+  const style = {
+    display: "block",
+    width: "100%",
+    maxWidth: width,
+    height: "auto",
+  } as const;
+  if (values.length < 2)
+    return <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet" style={style} {...a11y} />;
   const min = Math.min(...values);
   const max = Math.max(...values);
   const flat = max === min;
@@ -32,7 +45,7 @@ export default function Sparkline({
   const pts = values.map((v, i) => xy(v, i).map((n) => n.toFixed(1)).join(",")).join(" ");
   const [lx, ly] = xy(values[values.length - 1], values.length - 1);
   return (
-    <svg width={width} height={height} {...a11y} style={{ display: "block" }}>
+    <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet" style={style} {...a11y}>
       <polyline points={pts} fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round" />
       <circle cx={lx} cy={ly} r={2.5} fill={color} />
     </svg>
