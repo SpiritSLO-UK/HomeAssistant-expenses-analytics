@@ -6,13 +6,16 @@ upload→manual-fields→match→confirm flow doesn't depend on a Tesseract bina
 
 from __future__ import annotations
 
+from datetime import date, timedelta
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
 from app.db.session import SessionLocal
-from app.models import Category, Receipt, Transaction
-from app.services import receipt_parser
+from app.models import Category, Household, Receipt, Transaction
+from app.services import receipt_parser, receipt_service, settings_service
+from app.services.household_service import get_or_create_default_household
 
 SAMPLE = """TESCO STORES
 123 High Street
@@ -419,3 +422,123 @@ def test_create_transaction_from_receipt_requires_total_and_account(client):
     # Total set, but no account chosen → 400.
     client.patch(f"/api/receipts/{rid}", json={"total_amount": "9.99"})
     assert client.post(f"/api/receipts/{rid}/create-transaction", json={}).status_code == 400
+
+
+# --- SR-D4: match scope + never destroy the sole original on auto-match ---
+
+
+def _make_txn(db, *, household_id, amount="42.18", days_ago=0, archived=False) -> Transaction:
+    """Insert a transaction the matcher could consider (money out, GBP)."""
+    txn = Transaction(
+        household_id=household_id,
+        transaction_date=date.today() - timedelta(days=days_ago),
+        description_raw="TESCO",
+        merchant_raw="TESCO",
+        amount=Decimal(f"-{amount}"),
+        currency="GBP",
+        direction="debit",
+    )
+    if archived:
+        from app.services.receipt_service import _now  # local import: test-only helper
+
+        txn.archived_at = _now()
+    db.add(txn)
+    db.commit()
+    db.refresh(txn)
+    return txn
+
+
+def _seed_receipt(db, *, merchant="TESCO", total="42.18") -> Receipt:
+    receipt, _ = receipt_service.store_upload(db, "r.png", b"receipt-bytes-unique")
+    receipt.merchant_raw = merchant
+    receipt.receipt_date = date.today()
+    receipt.total_amount = Decimal(total)
+    db.commit()
+    db.refresh(receipt)
+    return receipt
+
+
+def test_vendor_similarity_normalises_punctuation():
+    """Trivial punctuation/spacing variants score > 0 (M&S vs 'M & S')."""
+    assert receipt_service._vendor_similarity("M&S", "M & S") > 0
+    assert receipt_service._vendor_similarity("Barnes & Noble", "Barnes&Noble") > 0
+    # Unrelated names still score nothing.
+    assert receipt_service._vendor_similarity("Tesco", "Aldi") == pytest.approx(0.0)
+
+
+def test_candidates_confined_to_receipt_household(db):
+    """A receipt only matches transactions in its own household (latent
+    cross-tenant fix); a same-household txn is still a candidate."""
+    default_hh = get_or_create_default_household(db)
+    other = Household(name="Other tenant")
+    db.add(other)
+    db.commit()
+    db.refresh(other)
+
+    receipt = _seed_receipt(db)  # store_upload assigns the default household
+    assert receipt.household_id == default_hh.id
+    mine = _make_txn(db, household_id=default_hh.id)
+    theirs = _make_txn(db, household_id=other.id)
+
+    ids = {t.id for t in receipt_service._candidates(db, receipt)}
+    assert mine.id in ids
+    assert theirs.id not in ids
+
+
+def test_candidates_exclude_archived_transactions(db):
+    """Archived (retention aged-out) transactions are not match candidates."""
+    hh = get_or_create_default_household(db).id
+    receipt = _seed_receipt(db)
+    live = _make_txn(db, household_id=hh)
+    gone = _make_txn(db, household_id=hh, archived=True)
+
+    ids = {t.id for t in receipt_service._candidates(db, receipt)}
+    assert live.id in ids
+    assert gone.id not in ids
+
+
+def test_candidates_respect_account_scope(db):
+    """An explicit visible-account scope narrows candidates; None is unrestricted."""
+    hh = get_or_create_default_household(db).id
+    receipt = _seed_receipt(db)
+    txn = _make_txn(db, household_id=hh)
+
+    # Empty scope → nothing visible (the txn has no account so it's an orphan,
+    # which stays visible); a scope that excludes it hides it.
+    assert txn.id in {t.id for t in receipt_service._candidates(db, receipt, account_ids=None)}
+    scoped = receipt_service._candidates(db, receipt, account_ids={999_999})
+    # Orphan (account_id IS NULL) txns stay visible under any scope by design.
+    assert {t.id for t in scoped} == {txn.id}
+
+
+def test_auto_match_never_drops_sole_original(db):
+    """A purely-automatic score-≥90 match must NOT delete the only copy of the
+    receipt, even with 'delete original after processing' turned on."""
+    settings_service.set_value(db, settings_service.RECEIPT_DELETE_AFTER_PROCESSING, "true")
+    receipt = _seed_receipt(db)
+    path = receipt.storage_path
+    _make_txn(db, household_id=receipt.household_id)  # exact amount + same day + vendor = 90
+
+    result = receipt_service.match(db, receipt, mode="auto")
+    db.refresh(receipt)
+
+    assert result["status"] == "auto_confirmed"
+    assert result["best_score"] >= receipt_service.AUTO_MATCH
+    # The sole original survives the auto-match.
+    assert receipt.storage_path == path
+    assert Path(path).exists()
+    assert receipt.archived_at is None
+
+
+def test_confirm_match_still_drops_original_when_enabled(db):
+    """The drop only happens on a user-confirmed match (regression guard for the
+    auto-match fix — confirm behaviour is unchanged)."""
+    settings_service.set_value(db, settings_service.RECEIPT_DELETE_AFTER_PROCESSING, "true")
+    receipt = _seed_receipt(db)
+    path = receipt.storage_path
+    txn = _make_txn(db, household_id=receipt.household_id)
+
+    receipt_service.confirm_match(db, receipt, txn.id)
+    db.refresh(receipt)
+    assert receipt.storage_path is None
+    assert not Path(path).exists()
