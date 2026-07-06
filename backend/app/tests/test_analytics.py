@@ -102,6 +102,90 @@ def test_budget_over_is_flagged(db):
     assert budgets[0]["severity"] == "warn"  # over
 
 
+def _reference_series(db, ref, months):
+    """Old row-by-row per-month accumulation, kept here so the GROUP BY path can
+    be proven equivalent to the pre-optimisation behaviour."""
+    out = []
+    for start, end in analytics_service._month_windows(ref, months):
+        spend = Decimal("0.00")
+        income = Decimal("0.00")
+        for txn in analytics_service._spendable(db, start, end):
+            amt = txn.base_amount or Decimal("0")
+            if amt < 0:
+                spend += -amt
+            else:
+                income += amt
+        out.append((start.isoformat()[:7], spend, income))
+    return out
+
+
+def test_monthly_series_groupby_matches_per_month_with_empty_month(db):
+    # Dataset spanning four months with January left completely empty, plus
+    # fractional amounts to exercise 2-dp handling.
+    _credit(db, date(2025, 12, 3), "1000")
+    _debit(db, date(2025, 12, 4), "-200")
+    _debit(db, date(2025, 12, 20), "-50")
+    # January 2026: no transactions at all (the empty month).
+    _credit(db, date(2026, 2, 5), "1500")
+    _debit(db, date(2026, 2, 6), "-300.25")
+    _debit(db, date(2026, 3, 9), "-125.50")
+    _credit(db, date(2026, 3, 10), "800")
+    db.commit()
+
+    result = analytics_service.monthly_series(db, REF, months=4)
+    months = result["months"]
+    assert [m["month"] for m in months] == ["2025-12", "2026-01", "2026-02", "2026-03"]
+
+    # The GROUP BY pass must equal the naive per-month accumulation, month for
+    # month (Decimal compares — no float ==).
+    reference = {ym: (sp, inc) for ym, sp, inc in _reference_series(db, REF, months=4)}
+    for m in months:
+        exp_spend, exp_income = reference[m["month"]]
+        assert Decimal(m["spend"]) == exp_spend
+        assert Decimal(m["income"]) == exp_income
+        assert Decimal(m["net"]) == exp_income - exp_spend
+
+    empty = next(m for m in months if m["month"] == "2026-01")
+    assert Decimal(empty["spend"]) == Decimal("0")
+    assert Decimal(empty["income"]) == Decimal("0")
+
+
+def test_new_merchant_normalises_trivial_text_variations(db):
+    # Prior month has "Tesco"; the current-month "  TESCO " (case + surrounding
+    # whitespace) must fold to the same key and not read as brand-new, while a
+    # genuinely new merchant still surfaces.
+    _debit(db, date(2026, 2, 9), "-50", merchant="Tesco")
+    _debit(db, date(2026, 3, 9), "-50", merchant="  TESCO ")
+    _debit(db, date(2026, 3, 10), "-40", merchant="NewShop")
+    db.commit()
+
+    res = analytics_service.outliers(db, REF)
+    new = [i for i in res["items"] if i["type"] == "new_merchant"]
+    assert len(new) == 1
+    assert "NewShop" in new[0]["title"]
+
+
+def test_outliers_single_pass_across_lookback_window(db):
+    # A baseline of typical small charges spread across the lookback window, one
+    # large outlier this month, and a merchant seen only in the prior window.
+    for m in (1, 2, 3):
+        for i in range(3):
+            _debit(db, date(2026, m, 3 + i), "-20")
+    _debit(db, date(2026, 3, 25), "-500")                       # the outlier
+    _debit(db, date(2025, 12, 5), "-15", merchant="OldMerch")   # prior-window merchant
+    _debit(db, date(2026, 3, 26), "-30", merchant="OldMerch")   # seen before → not new
+    _debit(db, date(2026, 3, 27), "-45", merchant="FreshCo")    # genuinely new
+    db.commit()
+
+    res = analytics_service.outliers(db, REF)
+    large = [i for i in res["items"] if i["type"] == "large_charge"]
+    new = [i for i in res["items"] if i["type"] == "new_merchant"]
+    assert len(large) == 1
+    assert Decimal(large[0]["amount"]) == Decimal("500")
+    assert [i["title"] for i in new if "FreshCo" in i["title"]]
+    assert not [i for i in new if "OldMerch" in i["title"]]
+
+
 def test_no_false_positives_without_history(db):
     # A single month with a handful of charges and no prior data → nothing flagged.
     for i in range(4):

@@ -16,12 +16,13 @@ positives.
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from datetime import date
 from decimal import Decimal
 from statistics import median
 
-from sqlalchemy import select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from app.models import Transaction
@@ -96,31 +97,49 @@ def _amt(txn: Transaction) -> Decimal:
     return txn.base_amount or Decimal("0")
 
 
-def _month_totals(
+def _month_totals_by_key(
     db: Session, start: date, end: date, *, account_ids: set[int] | None = None
-) -> tuple[Decimal, Decimal]:
-    spend = Decimal("0.00")
-    income = Decimal("0.00")
-    for txn in _spendable(db, start, end, account_ids=account_ids):
-        amount = _amt(txn)
-        if amount < 0:
-            spend += -amount
-        else:
-            income += amount
-    return spend, income
+) -> dict[str, tuple[Decimal, Decimal]]:
+    """One GROUP-BY pass over ``[start, end)`` returning per-month ``(spend,
+    income)`` keyed by ``YYYY-MM``. Replaces a per-month query and matches the
+    old row-by-row Decimal accumulation (transfers/duplicates/no-rate excluded,
+    account-scoped and archived-excluded)."""
+    month = func.strftime("%Y-%m", Transaction.transaction_date)
+    spend_sum = func.sum(case((Transaction.base_amount < 0, -Transaction.base_amount), else_=0))
+    income_sum = func.sum(case((Transaction.base_amount >= 0, Transaction.base_amount), else_=0))
+    conditions = [
+        Transaction.transaction_date >= start,
+        Transaction.transaction_date < end,
+        Transaction.is_transfer.is_(False),
+        Transaction.is_duplicate.is_(False),
+        Transaction.base_amount.is_not(None),
+        *account_scope_condition(account_ids),
+        *archived_condition(),
+    ]
+    rows = db.execute(
+        select(month, spend_sum, income_sum).where(*conditions).group_by(month)
+    ).all()
+    return {r[0]: (_two_dp(Decimal(str(r[1] or 0))), _two_dp(Decimal(str(r[2] or 0)))) for r in rows}
 
 
 # --- Trends -----------------------------------------------------------------
 
+# A month-over-month change smaller than this (in %) reads as "flat" rather than
+# up/down. The same rounded percentage drives both the arrow and the displayed
+# figure, so they never disagree at the boundary.
+TREND_FLAT_PCT = 1.0
+
 
 def _trend_direction(delta: Decimal, pct: float | None) -> str:
+    # No prior baseline to take a percentage against: only an exact-zero delta is
+    # flat; any movement off a zero base is a genuine change.
     if pct is None:
         if delta > 0:
             return "up"
         if delta < 0:
             return "down"
         return "flat"
-    if abs(pct) < 1:
+    if abs(pct) < TREND_FLAT_PCT:
         return "flat"
     return "up" if delta > 0 else "down"
 
@@ -129,28 +148,32 @@ def _trend_entry(current: dict, previous: dict, key: str) -> dict:
     cur = Decimal(current[key])
     prev = Decimal(previous[key])
     delta = cur - prev
-    pct = float(delta / abs(prev) * 100) if prev != 0 else None
+    pct = round(float(delta / abs(prev) * 100), 1) if prev != 0 else None
     return {
         "current": str(cur),
         "previous": str(prev),
         "delta": str(delta),
-        "pct": round(pct, 1) if pct is not None else None,
+        "pct": pct,
         "direction": _trend_direction(delta, pct),
     }
 
 
 def monthly_series(db: Session, ref: date, months: int = 6, *, account_ids: set[int] | None = None) -> dict:
+    windows = _month_windows(ref, months)
     series = []
-    for start, end in _month_windows(ref, months):
-        spend, income = _month_totals(db, start, end, account_ids=account_ids)
-        series.append(
-            {
-                "month": start.isoformat()[:7],
-                "spend": str(spend),
-                "income": str(income),
-                "net": str(income - spend),
-            }
-        )
+    if windows:
+        totals = _month_totals_by_key(db, windows[0][0], windows[-1][1], account_ids=account_ids)
+        for start, _end in windows:
+            key = start.isoformat()[:7]
+            spend, income = totals.get(key, (Decimal("0.00"), Decimal("0.00")))
+            series.append(
+                {
+                    "month": key,
+                    "spend": str(spend),
+                    "income": str(income),
+                    "net": str(income - spend),
+                }
+            )
 
     trend: dict[str, dict] = {}
     if len(series) >= 2:
@@ -169,30 +192,43 @@ def _txn_label(txn: Transaction) -> str:
     return (label[:48] or "transaction")
 
 
+_WHITESPACE_RUN = re.compile(r"\s+")
+
+
+def _normalise_merchant(raw: str) -> str:
+    """Fold trivial text variations (case + surrounding/repeated whitespace) so
+    e.g. ``"Tesco"``, ``"TESCO "`` and ``"Tesco  "`` map to one key and don't
+    each look like a brand-new merchant."""
+    return _WHITESPACE_RUN.sub(" ", raw.strip()).casefold()
+
+
 def _merchant_key(txn: Transaction) -> str | None:
     if txn.merchant_id is not None:
         return f"id:{txn.merchant_id}"
     if txn.merchant_raw:
-        return f"raw:{txn.merchant_raw.strip().lower()}"
+        norm = _normalise_merchant(txn.merchant_raw)
+        if norm:
+            return f"raw:{norm}"
     return None
 
 
 def _large_charges(
-    db: Session, cur_start: date, cur_end: date, ref: date, lookback: int,
-    *, account_ids: set[int] | None = None,
+    db: Session, debits: list[Transaction], cur_start: date, cur_end: date, lb_start: date,
 ) -> list[dict]:
-    lb_start = _month_windows(ref, lookback)[0][0]
-    debits = _spendable(db, lb_start, cur_end, debits_only=True, account_ids=account_ids)
-    if len(debits) < MIN_DEBITS_FOR_BASELINE:
+    """Flag unusually large charges. ``debits`` is a pre-fetched superset scan;
+    the baseline window ``[lb_start, cur_end)`` is filtered in Python so we don't
+    re-query a range that overlaps the other detectors."""
+    window = [t for t in debits if lb_start <= t.transaction_date < cur_end]
+    if len(window) < MIN_DEBITS_FOR_BASELINE:
         return []
-    med = median(float(-_amt(t)) for t in debits)
+    med = median(float(-_amt(t)) for t in window)
     if med <= 0:
         return []
     threshold = max(float(LARGE_CHARGE_FLOOR), med * LARGE_CHARGE_MULTIPLE)
 
     flagged = [
         (-_amt(t), t)
-        for t in debits
+        for t in window
         if cur_start <= t.transaction_date < cur_end and float(-_amt(t)) >= threshold
     ]
     flagged.sort(key=lambda pair: pair[0], reverse=True)
@@ -279,17 +315,21 @@ def _category_spikes(
 
 
 def _new_merchants(
-    db: Session, cur_start: date, cur_end: date, ref: date, history_months: int,
-    *, account_ids: set[int] | None = None,
+    db: Session, debits: list[Transaction], cur_start: date, cur_end: date,
+    prior_start: date, history_months: int,
 ) -> list[dict]:
-    prior_start = _month_windows(ref, history_months + 1)[0][0]
-    prior = _spendable(db, prior_start, cur_start, debits_only=True, account_ids=account_ids)
+    """Flag merchants seen this month but not in the prior window. ``debits`` is a
+    pre-fetched superset scan; both windows are filtered in Python rather than
+    re-queried."""
+    prior = [t for t in debits if prior_start <= t.transaction_date < cur_start]
     if not prior:  # no history → everything would look "new"
         return []
     prior_keys = {_merchant_key(t) for t in prior}
 
     spend: dict[str, list] = defaultdict(lambda: [Decimal("0.00"), None])
-    for txn in _spendable(db, cur_start, cur_end, debits_only=True, account_ids=account_ids):
+    for txn in debits:
+        if not (cur_start <= txn.transaction_date < cur_end):
+            continue
         key = _merchant_key(txn)
         if key is None:
             continue
@@ -383,10 +423,19 @@ def outliers(
     account_ids: set[int] | None = None,
 ) -> dict:
     cur_start, cur_end = dashboard_service.month_bounds(ref)
+    # One debit scan over the widest window any detector needs; the large-charge
+    # and new-merchant detectors then filter it in Python instead of each
+    # re-querying overlapping date ranges.
+    lb_start = _month_windows(ref, lookback)[0][0]
+    prior_start = _month_windows(ref, history_months + 1)[0][0]
+    debits = _spendable(
+        db, min(lb_start, prior_start), cur_end, debits_only=True, account_ids=account_ids
+    )
+
     items: list[dict] = []
-    items += _large_charges(db, cur_start, cur_end, ref, lookback, account_ids=account_ids)
+    items += _large_charges(db, debits, cur_start, cur_end, lb_start)
     items += _category_spikes(db, ref, history_months, account_ids=account_ids)
-    items += _new_merchants(db, cur_start, cur_end, ref, history_months, account_ids=account_ids)
+    items += _new_merchants(db, debits, cur_start, cur_end, prior_start, history_months)
     items += _budget_alerts(db, ref, account_ids=account_ids)
     items += _subscription_alerts(db, account_ids=account_ids)
 
