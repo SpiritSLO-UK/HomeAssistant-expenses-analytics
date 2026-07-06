@@ -10,7 +10,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -391,6 +391,11 @@ if FRONTEND_DIST.is_dir():
     def serve_spa(full_path: str) -> FileResponse:
         """SPA fallback: serve the requested file if present (and contained within
         the build directory), else index.html."""
+        # An unknown /api/* path must not fall back to the SPA shell: return a real
+        # 404 so API clients get JSON (not a 200 index.html), and so behaviour is
+        # identical whether or not a frontend build is present.
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not found")
         candidate = (FRONTEND_DIST / full_path).resolve()
         # Explicit containment guard: Starlette already strips `..`, but never
         # serve a file resolved outside the build dir even if that changes
