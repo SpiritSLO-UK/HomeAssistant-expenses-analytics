@@ -30,7 +30,6 @@ export default function Business() {
   });
   const exportCsv = useMutation({
     mutationFn: () => exportTransactionsCsv({ is_business: true }),
-    onError: (e) => globalThis.alert(String(e instanceof Error ? e.message : e)),
   });
 
   const s = summary.data;
@@ -55,7 +54,18 @@ export default function Business() {
         receipt fill it in) to see it here.
       </p>
 
+      {exportCsv.isError && (
+        <p className="status status--error">
+          Couldn’t export CSV. {String(exportCsv.error)}
+        </p>
+      )}
+
       {summary.isLoading && <p className="muted">Loading…</p>}
+      {summary.isError && (
+        <p className="status status--error">
+          Couldn’t load business expenses. {String(summary.error)}
+        </p>
+      )}
 
       {s?.transaction_count === 0 && (
         <div className="card">
@@ -191,6 +201,7 @@ function PeriodTxns({ row, cur }: Readonly<{ row: BusinessPeriodRow; cur: string
     queryFn: () =>
       listTransactions({ is_business: true, date_from: row.start, date_to: row.end, limit: 200 }),
   });
+  if (q.isError) return <p className="status status--error" style={{ margin: "6px 0" }}>Couldn’t load these transactions. {String(q.error)}</p>;
   if (q.isLoading || !q.data) return <p className="muted" style={{ margin: "6px 0" }}>Loading…</p>;
   const items: Transaction[] = q.data.items;
   if (items.length === 0) return <p className="muted" style={{ margin: "6px 0" }}>No transactions.</p>;
@@ -206,7 +217,9 @@ function PeriodTxns({ row, cur }: Readonly<{ row: BusinessPeriodRow; cur: string
               </Link>
             </span>
             <span style={{ whiteSpace: "nowrap" }}>
-              {t.base_amount ?? t.amount} {cur}
+              {t.base_amount != null
+                ? `${t.base_amount} ${cur}`
+                : `${t.amount} ${t.currency}`}
               {t.vat_amount ? <span className="muted"> · VAT {t.vat_amount}</span> : null}
             </span>
           </li>
