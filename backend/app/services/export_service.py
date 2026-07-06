@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import csv
 import io
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -75,7 +75,12 @@ def _equality_conditions(
     if date_from is not None:
         conditions.append(Transaction.transaction_date >= date_from)
     if date_to is not None:
-        conditions.append(Transaction.transaction_date <= date_to)
+        # ``date_to`` is an inclusive-whole-day UI bound, expressed as a half-open
+        # ``< date_to + 1 day`` interval to match the rest of the codebase (e.g.
+        # budget_service.period_bounds, dashboard_service, analytics_service all
+        # use ``>= start, < end``). This keeps the whole ``date_to`` day in range
+        # while staying consistent with how dashboard/analytics windows are cut.
+        conditions.append(Transaction.transaction_date < date_to + timedelta(days=1))
     if account_id is not None:
         conditions.append(Transaction.account_id == account_id)
     if category_id is not None:
