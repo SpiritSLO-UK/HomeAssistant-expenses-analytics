@@ -60,6 +60,37 @@ def test_parser_handles_us_and_ambiguous_dates():
     assert receipt_parser.detect_date("Date: 12.31.2024").isoformat() == "2024-12-31"  # US, dotted
 
 
+def test_parser_whole_number_total():
+    """A currency-anchored whole-number total (no decimals) parses instead of dropping."""
+    assert receipt_parser.detect_total("TOTAL £42") == Decimal("42.00")
+    assert receipt_parser.detect_total("AMOUNT DUE 100 EUR") == Decimal("100.00")
+    # A decimal total on a line still wins over a whole number on the same line.
+    assert receipt_parser.detect_total("TOTAL £42.18") == Decimal("42.18")
+
+
+def test_parser_skips_savings_and_points_lines():
+    """Loyalty 'Total savings'/'points' lines must not override the real total."""
+    text = (
+        "TESCO\n"
+        "Clubcard Points 250\n"
+        "Total savings £5.00\n"
+        "TOTAL £12.34\n"
+    )
+    assert receipt_parser.detect_total(text) == Decimal("12.34")
+    # Even when the savings figure is larger, it doesn't win.
+    text2 = "Total savings £99.99\nTOTAL £8.50"
+    assert receipt_parser.detect_total(text2) == Decimal("8.50")
+    # A lone savings line yields no total (rather than a bogus one).
+    assert receipt_parser.detect_total("Total savings £5.00") is None
+
+
+def test_parser_vat_is_the_smaller_tax_figure():
+    """VAT on a 'Net … VAT …' line is the tax charged, not the larger net; % ignored."""
+    assert receipt_parser.detect_vat("Net 38.00 VAT 4.18") == Decimal("4.18")
+    assert receipt_parser.detect_vat("VAT 20% 4.18") == Decimal("4.18")
+    assert receipt_parser.detect_vat("VAT £4.18") == Decimal("4.18")
+
+
 # Real card-payment slip a user uploaded — OCR collapsed it to one long line of
 # terminal/transaction boilerplate. The merchant heuristic must NOT dump that into
 # the merchant field (backlog: receipt-OCR merchant gibberish, 2026-06-06).
