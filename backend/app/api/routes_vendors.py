@@ -8,16 +8,18 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
+from app.models import User
 from app.schemas.vendors import (
     AliasCreate,
     AliasOut,
     SetDefaultCategory,
     VendorCreate,
+    VendorMerge,
     VendorOut,
     VendorUpdate,
     VendorWithStats,
 )
-from app.services import vendor_service
+from app.services import auth_service, vendor_service
 
 router = APIRouter(prefix="/vendors", tags=["vendors"])
 
@@ -83,3 +85,25 @@ def set_default_category(vendor_id: int, payload: SetDefaultCategory, db: Annota
 def delete_vendor(vendor_id: int, db: Annotated[Session, Depends(get_db)]) -> None:
     if not vendor_service.delete_vendor(db, vendor_id):
         raise HTTPException(status_code=404, detail=_NOT_FOUND)
+
+
+@router.post(
+    "/{vendor_id}/merge",
+    response_model=VendorOut,
+    responses={400: {"description": "Bad request"}, 404: {"description": "Not found"}},
+)
+def merge_vendor(
+    vendor_id: int,
+    payload: VendorMerge,
+    db: Annotated[Session, Depends(get_db)],
+    _user: Annotated[User, Depends(auth_service.require_owner)],
+):
+    """Merge one vendor's references (transactions, receipts, subscriptions,
+    aliases) into another then delete it — structural/destructive, so owner only."""
+    try:
+        target = vendor_service.merge_vendor(db, vendor_id, payload.target_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if target is None:
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
+    return target

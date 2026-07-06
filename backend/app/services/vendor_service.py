@@ -11,11 +11,11 @@ import re
 from datetime import UTC, datetime
 from difflib import SequenceMatcher
 
-from sqlalchemy import func, literal, select
+from sqlalchemy import func, literal, select, update
 from sqlalchemy.orm import Session
 
 from app.logging import get_logger
-from app.models import Transaction, Vendor, VendorAlias
+from app.models import Receipt, Subscription, Transaction, Vendor, VendorAlias
 from app.services.household_service import get_or_create_default_household
 
 logger = get_logger(__name__)
@@ -242,6 +242,65 @@ def delete_vendor(db: Session, vendor_id: int) -> bool:
     db.delete(vendor)
     db.commit()
     return True
+
+
+def _move_aliases(db: Session, source: Vendor, target: Vendor) -> None:
+    """Move the source vendor's aliases onto the target, dropping exact-duplicate
+    alias strings (case-insensitive). Uses the relationship so ``delete-orphan``
+    won't re-delete the moved rows when the source vendor is deleted."""
+    target_aliases = {a.alias.lower() for a in target.aliases}
+    for alias in list(source.aliases):
+        key = (alias.alias or "").lower()
+        if key in target_aliases:
+            db.delete(alias)  # exact-duplicate alias string → drop it
+        else:
+            target.aliases.append(alias)  # back_populates detaches it from source
+            target_aliases.add(key)
+
+
+def merge_vendor(db: Session, source_id: int, target_id: int) -> Vendor | None:
+    """Merge ``source_id`` into ``target_id``: re-point every reference from the
+    source to the target, fold the source's aliases / default category /
+    ``last_seen_at`` onto the target, then delete the source. Returns the target,
+    ``None`` if either id is unknown. Raises ``ValueError`` on a self-merge.
+
+    Mirrors ``category_service.merge_category``: bulk ``update`` with
+    ``synchronize_session=False`` for the foreign-key re-points."""
+    if source_id == target_id:
+        raise ValueError("Cannot merge a vendor into itself.")
+    source = db.get(Vendor, source_id)
+    target = db.get(Vendor, target_id)
+    if source is None or target is None:
+        return None
+
+    opts = {"synchronize_session": False}
+    # Transactions point at a vendor via ``merchant_id``; receipts/subscriptions
+    # via ``vendor_id``. Re-point all of them from source to target.
+    db.execute(
+        update(Transaction).where(Transaction.merchant_id == source_id)
+        .values(merchant_id=target_id).execution_options(**opts)
+    )
+    for model in (Receipt, Subscription):
+        db.execute(
+            update(model).where(model.vendor_id == source_id)
+            .values(vendor_id=target_id).execution_options(**opts)
+        )
+
+    _move_aliases(db, source, target)
+
+    # Fold the source's default category onto the target only if the target lacks one.
+    if target.default_category_id is None and source.default_category_id is not None:
+        target.default_category_id = source.default_category_id
+    # Keep the more recent ``last_seen_at``.
+    if source.last_seen_at is not None and (
+        target.last_seen_at is None or source.last_seen_at > target.last_seen_at
+    ):
+        target.last_seen_at = source.last_seen_at
+
+    db.delete(source)
+    db.commit()
+    db.refresh(target)
+    return target
 
 
 def derive_vendor_signature(text: str) -> str:

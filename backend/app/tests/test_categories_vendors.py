@@ -165,6 +165,101 @@ def test_category_merge_repoints_category_equals_rule_conditions(db):
     assert matches.condition_value == str(eating.id)  # the category_equals condition (SR-4 fix)
 
 
+def test_merge_vendor_repoints_txns_and_moves_dedupes_aliases(db):
+    """SR-A3: merging re-points a transaction's ``merchant_id`` to the target,
+    moves the source's aliases onto the target while dropping exact-duplicate
+    alias strings (case-insensitive), and deletes the source vendor."""
+    from datetime import date
+    from decimal import Decimal
+
+    from sqlalchemy import select
+
+    from app.models import Account, Transaction, VendorAlias
+
+    source = vendor_service.create_vendor(
+        db, {"canonical_name": "Tesco Metro", "alias": "TESCO METRO", "match_type": "contains"}
+    )
+    target = vendor_service.create_vendor(
+        db, {"canonical_name": "Tesco", "alias": "TESCO", "match_type": "contains"}
+    )
+    # A duplicate alias string (differing only in case) on the source — must be dropped.
+    vendor_service.add_alias(db, source.id, "tesco", "contains")
+
+    acct = Account(name="A", account_type="current_account", currency="GBP")
+    db.add(acct)
+    db.flush()
+    txn = Transaction(
+        account_id=acct.id, transaction_date=date(2026, 5, 15), description_raw="TESCO METRO 12",
+        amount=Decimal("-3.50"), currency="GBP", direction="debit",
+        base_amount=Decimal("-3.50"), fx_rate=Decimal("1"), merchant_id=source.id,
+    )
+    db.add(txn)
+    db.commit()
+
+    result = vendor_service.merge_vendor(db, source.id, target.id)
+    assert result.id == target.id
+    assert vendor_service.get_vendor(db, source.id) is None  # source removed
+
+    db.refresh(txn)
+    assert txn.merchant_id == target.id  # transaction re-pointed
+
+    # Target keeps its own "TESCO", gains the unique "TESCO METRO", and the
+    # case-duplicate "tesco" is dropped (not moved).
+    aliases = {a.alias.lower() for a in db.scalars(
+        select(VendorAlias).where(VendorAlias.vendor_id == target.id)
+    ).all()}
+    assert aliases == {"tesco", "tesco metro"}
+
+
+def test_merge_vendor_folds_default_category_and_last_seen(db):
+    """The target adopts the source's default category when it lacks one, and keeps
+    the more recent ``last_seen_at``."""
+    from datetime import UTC, datetime
+
+    cat = category_service.create_category(db, {"name": "Groceries"})
+    source = vendor_service.create_vendor(db, {"canonical_name": "S", "default_category_id": cat.id})
+    target = vendor_service.create_vendor(db, {"canonical_name": "T"})
+    source.last_seen_at = datetime(2026, 6, 1, tzinfo=UTC)
+    target.last_seen_at = datetime(2026, 1, 1, tzinfo=UTC)
+    db.commit()
+
+    result = vendor_service.merge_vendor(db, source.id, target.id)
+    assert result.default_category_id == cat.id            # adopted from source
+    assert result.last_seen_at.year == 2026 and result.last_seen_at.month == 6  # kept the later
+
+
+def test_merge_vendor_self_merge_and_unknown(client):
+    """Merging a vendor into itself is a 400; an unknown source or target is a 404."""
+    a = client.post("/api/vendors", json={"canonical_name": "A"}).json()["id"]
+    assert client.post(f"/api/vendors/{a}/merge", json={"target_id": a}).status_code == 400
+    assert client.post(f"/api/vendors/{a}/merge", json={"target_id": 999999}).status_code == 404
+    assert client.post("/api/vendors/999999/merge", json={"target_id": a}).status_code == 404
+
+
+def test_merge_vendor_endpoint_repoints_and_owner_gated(client):
+    """The endpoint re-points a transaction and deletes the source; a non-owner
+    member is blocked (structural/destructive → owner only)."""
+    client.post("/api/backup/demo")
+    txn = client.get("/api/transactions", params={"limit": 1}).json()["items"][0]
+    source = client.post("/api/vendors", json={"canonical_name": "MergeSrc"}).json()["id"]
+    target = client.post("/api/vendors", json={"canonical_name": "MergeTgt"}).json()["id"]
+    client.patch(f"/api/transactions/{txn['id']}", json={"merchant_id": source})
+
+    # A non-owner member is blocked.
+    hdr = {"X-Remote-User-Id": "ha-eve", "X-Remote-User-Display-Name": "Eve"}
+    client.get("/api/users/me", headers=hdr)
+    eve_id = next(u["id"] for u in client.get("/api/users").json() if u["external_id"] == "ha-eve")
+    client.patch(f"/api/users/{eve_id}", json={"role": "member", "status": "approved"})
+    assert client.post(f"/api/vendors/{source}/merge", json={"target_id": target}, headers=hdr).status_code == 403
+
+    # The owner succeeds; the transaction is re-pointed and the source is gone.
+    res = client.post(f"/api/vendors/{source}/merge", json={"target_id": target})
+    assert res.status_code == 200 and res.json()["id"] == target
+    assert client.get(f"/api/vendors/{source}").status_code == 404
+    moved = next(t for t in client.get("/api/transactions", params={"limit": 500}).json()["items"] if t["id"] == txn["id"])
+    assert moved["merchant_id"] == target
+
+
 def test_categorise_text_prefers_longest_keyword(db, monkeypatch):
     """The longest (most specific) matching keyword wins, not the first in file order —
     a generic 'cafe' must not shadow a specific 'cafe nero' in another category."""
