@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import csv
 import io
+from datetime import date
+from decimal import Decimal
 
 
 def _rows(resp) -> list[list[str]]:
@@ -85,6 +87,38 @@ def test_transactions_csv_respects_filters(client):
     )
     assert len(empty) == 1
     assert len(full) > len(empty)
+
+
+def test_date_to_boundary_is_inclusive_whole_day(db):
+    """``date_to`` is an inclusive-whole-day bound, implemented as the half-open
+    ``< date_to + 1 day`` interval the rest of the codebase uses (dashboard/
+    analytics/budget windows). So a transaction dated exactly on ``date_to`` is
+    included and one dated the following day is excluded."""
+    from app.models import Transaction
+    from app.services import export_service
+
+    def _mk(txn_date: date, desc: str) -> None:
+        db.add(
+            Transaction(
+                transaction_date=txn_date,
+                description_raw=desc,
+                amount=Decimal("10.00"),
+                direction="debit",
+            )
+        )
+
+    end = date(2024, 3, 15)
+    _mk(end, "on-date_to")
+    _mk(date(2024, 3, 16), "day-after")  # one day past the inclusive bound
+    db.commit()
+
+    conditions = export_service.build_transaction_filters(date_to=end)
+    csv_text = export_service.transactions_csv(db, conditions)
+    rows = list(csv.reader(io.StringIO(csv_text)))
+    descriptions = [r[2] for r in rows[1:]]  # column 2 = description
+
+    assert "on-date_to" in descriptions  # exactly on date_to → included
+    assert "day-after" not in descriptions  # the next day → excluded
 
 
 def test_categories_csv_export(client):
