@@ -18,6 +18,13 @@ from decimal import Decimal, InvalidOperation
 # quantities / years as money). _to_decimal works out which separator is the point.
 _AMOUNT = r"(?:[£$€]\s?)?(\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{1,2})?|\d+[.,]\d{1,2})"
 _AMOUNT_RE = re.compile(_AMOUNT)
+# A currency-anchored WHOLE number (no decimals): "TOTAL £42", "TOTAL 42 EUR". Only
+# matched where a total is expected (detect_total), so bare quantities/years elsewhere
+# aren't mistaken for money. Requires a symbol/code so a stray "12" doesn't win.
+_WHOLE_AMOUNT_RE = re.compile(
+    r"(?:[£$€]\s?(\d{1,3}(?:,\d{3})*|\d+)|(\d{1,3}(?:,\d{3})*|\d+)\s?(?:GBP|USD|EUR))",
+    re.I,
+)
 _CURRENCY_SYMBOL = {"£": "GBP", "$": "USD", "€": "EUR"}
 
 # Date patterns -> the strptime formats to try in order. The numeric d/m/y forms are
@@ -92,32 +99,56 @@ def detect_date(text: str) -> date | None:
     return None
 
 
+def _whole_amounts_on(line: str) -> list[Decimal]:
+    """Currency-anchored whole numbers (no decimal part), e.g. "TOTAL £42"."""
+    out = []
+    for m in _WHOLE_AMOUNT_RE.finditer(line):
+        raw = m.group(1) or m.group(2)
+        d = _to_decimal(raw.replace(",", ""))
+        if d is not None:
+            out.append(d)
+    return out
+
+
 def detect_total(text: str) -> Decimal | None:
     lines = text.splitlines()
     # Prefer a line that names the total but isn't a subtotal.
     keyword = re.compile(r"\b(grand\s*total|total\s*to\s*pay|amount\s*due|balance\s*due|total)\b", re.I)
     subtotal = re.compile(r"\bsub[\s-]*total\b", re.I)
+    # Loyalty / savings / points lines often say "total" ("Total savings", "Total
+    # points") but carry a rewards figure, not the amount paid — never treat them as
+    # the total (spec §21.2: don't let promo lines override the real total).
+    loyalty = re.compile(r"\b(savings?|points?|rewards?|loyalty|clubcard|nectar|coupon|voucher|discount)\b", re.I)
     candidates: list[Decimal] = []
     for line in lines:
-        if subtotal.search(line):
+        if subtotal.search(line) or loyalty.search(line):
             continue
         if keyword.search(line):
-            amts = _amounts_on(line)
+            # A decimal money amount is preferred; if the total line has none, accept a
+            # currency-anchored whole number ("TOTAL £42") rather than dropping it.
+            amts = _amounts_on(line) or _whole_amounts_on(line)
             if amts:
                 candidates.append(max(amts))
     if candidates:
         return max(candidates)
-    # Fallback: the largest money amount anywhere.
-    all_amounts = _amounts_on(text)
+    # Fallback: the largest money amount anywhere (still skipping loyalty/savings lines).
+    all_amounts = [a for ln in lines if not loyalty.search(ln) for a in _amounts_on(ln)]
     return max(all_amounts) if all_amounts else None
+
+
+_PERCENT_RE = re.compile(r"\d{1,3}(?:[.,]\d+)?\s*%")
 
 
 def detect_vat(text: str) -> Decimal | None:
     for line in text.splitlines():
         if re.search(r"\b(vat|tax)\b", line, re.I):
-            amts = _amounts_on(line)
+            # Drop "20%"-style rate tokens so the rate isn't mistaken for the amount,
+            # then take the SMALLEST money figure: on a "Net 38.00 VAT 4.18" line the
+            # VAT is the tax charged (4.18), not the larger net (using max picked net).
+            cleaned = _PERCENT_RE.sub(" ", line)
+            amts = _amounts_on(cleaned)
             if amts:
-                return max(amts)
+                return min(amts)
     return None
 
 
@@ -152,6 +183,10 @@ def detect_merchant(text: str) -> str | None:
         if _AMOUNT_RE.fullmatch(s) or detect_date(s):
             continue
         if _NON_MERCHANT_RE.search(s):
+            continue
+        # Skip an address line ("123 High Street") — a leading street number means it's
+        # the address under the header, not the merchant name itself.
+        if re.match(r"\d+\s+[A-Za-z]", s):
             continue
         letters = sum(c.isalpha() for c in s)
         if letters >= 2 and letters >= len(s) * 0.4:
