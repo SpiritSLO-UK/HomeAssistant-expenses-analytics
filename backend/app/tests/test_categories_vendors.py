@@ -311,6 +311,83 @@ def test_vendor_alias_matching(db):
     assert match_type == "contains"
 
 
+def test_match_vendor_prefilter_preserves_all_match_types(db):
+    """SR-A3 §1: the SQL-prefilter refactor of ``match_vendor`` returns the same
+    results as the old full-scan for every match type (exact / contains / regex /
+    fuzzy) and precedence still holds (exact > regex > contains > fuzzy)."""
+    from app.models import Vendor, VendorAlias
+
+    def _vendor(name: str, alias: str, match_type: str) -> Vendor:
+        v = Vendor(canonical_name=name, display_name=name)
+        db.add(v)
+        db.flush()
+        db.add(VendorAlias(vendor_id=v.id, alias=alias, match_type=match_type, source="user"))
+        db.commit()
+        return v
+
+    exact = _vendor("Exactly", "PAYPAL *SPOTIFY", "exact")
+    contains = _vendor("Containsco", "TESCO", "contains")
+    rx = _vendor("Regexco", r"AMZN\w+", "regex")
+    fz = _vendor("Fuzzyco", "STARBUCKS", "fuzzy")
+
+    # exact
+    v, mt = vendor_service.match_vendor(db, "PAYPAL *SPOTIFY")
+    assert v is not None and v.id == exact.id and mt == "exact"
+    # contains
+    v, mt = vendor_service.match_vendor(db, "TESCO STORES 3142 DARTFORD")
+    assert v is not None and v.id == contains.id and mt == "contains"
+    # regex
+    v, mt = vendor_service.match_vendor(db, "AMZNMKTPLACE ORDER")
+    assert v is not None and v.id == rx.id and mt == "regex"
+    # fuzzy (near-identical string, above threshold)
+    v, mt = vendor_service.match_vendor(db, "STARBUCK")
+    assert v is not None and v.id == fz.id and mt == "fuzzy"
+    # no match
+    assert vendor_service.match_vendor(db, "SOME UNKNOWN MERCHANT 999") == (None, None)
+    # empty short-circuits
+    assert vendor_service.match_vendor(db, "") == (None, None)
+
+
+def test_match_vendor_precedence_exact_over_contains(db):
+    """When two aliases match the same description, the higher-precedence type
+    (exact) wins over the lower one (contains) — unchanged behaviour."""
+    from app.models import Vendor, VendorAlias
+
+    generic = Vendor(canonical_name="Generic")
+    specific = Vendor(canonical_name="Specific")
+    db.add_all([generic, specific])
+    db.flush()
+    db.add(VendorAlias(vendor_id=generic.id, alias="COFFEE SHOP LONDON", match_type="contains"))
+    db.add(VendorAlias(vendor_id=specific.id, alias="COFFEE SHOP LONDON", match_type="exact"))
+    db.commit()
+
+    v, mt = vendor_service.match_vendor(db, "COFFEE SHOP LONDON")
+    assert v.id == specific.id and mt == "exact"
+
+
+def test_match_vendor_tie_break_prefers_longer_alias(db):
+    """SR-A3 §3: on a same-match-type tie, the longer (more specific) alias wins
+    instead of DB insertion order. The generic alias is inserted FIRST so the old
+    first-wins code would have returned it."""
+    from app.models import Vendor, VendorAlias
+
+    generic = Vendor(canonical_name="Generic Coffee")
+    specific = Vendor(canonical_name="Cafe Nero")
+    db.add_all([generic, specific])
+    db.flush()
+    # Both 'contains' (same precedence); generic inserted first.
+    db.add(VendorAlias(vendor_id=generic.id, alias="CAFE", match_type="contains"))
+    db.add(VendorAlias(vendor_id=specific.id, alias="CAFE NERO", match_type="contains"))
+    db.commit()
+
+    v, _ = vendor_service.match_vendor(db, "CAFE NERO LONDON EC1")
+    assert v.id == specific.id  # longer alias wins the tie
+
+    # A description matching only the shorter alias still resolves to it.
+    v2, _ = vendor_service.match_vendor(db, "THE LOCAL CAFE")
+    assert v2.id == generic.id
+
+
 def test_vendor_default_category_beats_keyword(client, samples_dir):
     # A vendor default category should win over the keyword fallback.
     shopping = _category_id(client, "Shopping")
