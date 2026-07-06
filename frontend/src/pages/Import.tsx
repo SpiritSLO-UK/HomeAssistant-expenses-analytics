@@ -1,21 +1,25 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
 import AiImageWarningDialog from "../components/AiImageWarningDialog";
 import CameraCaptureButton from "../components/CameraCaptureButton";
-import CsvMappingPanel from "../components/CsvMappingPanel";
 import { isImageAiWarningDismissed, setImageAiWarningDismissed } from "../prefs";
 import {
   aiExtractImport,
   confirmImport,
+  createImportProfile,
+  deleteImportProfile,
   getAiStatus,
+  inspectCsv,
   listAccounts,
+  listImportProfiles,
   listParsers,
   setFundingLink,
   uploadImport,
   uploadReceipt,
   type ConfirmResponse,
   type FundingLabel,
+  type ImportProfile,
   type PreviewRow,
   type UploadResponse,
 } from "../api/client";
@@ -444,4 +448,278 @@ function DupBadge({ row }: Readonly<{ row: PreviewRow }>) {
     );
   }
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Custom-CSV column mapping (page-local). Kept inside the Import page so the
+// mapping UX stays self-contained: inspect the file → map each field to a CSV
+// column (with a live first-row preview + inline validation) → preview/import
+// via the generic parser; save the mapping as a reusable profile, and
+// export/share it so it can become a built-in parser.
+// ---------------------------------------------------------------------------
+
+const REPO = "https://github.com/SpiritSLO-UK/HomeAssistant-expenses-analytics";
+
+// Short, plain-language hint for each target field so the user knows what a
+// column should contain. Keyed by the backend field key; unknown keys fall
+// back to no hint (the label alone is enough).
+const FIELD_HELP: Readonly<Record<string, string>> = {
+  date: "When the transaction happened (e.g. 2024-01-31 or 31/01/2024).",
+  amount: "A single signed amount — negative for money out, positive for money in.",
+  description: "The payee / description text shown on the statement.",
+  merchant: "Merchant name, if your CSV keeps it separate from the description.",
+  debit: "Money out as a positive number. Pair with Money in when there's no single signed amount.",
+  credit: "Money in as a positive number.",
+  currency: "3-letter currency code (defaults to GBP if left unmapped).",
+};
+
+/** Drop empty header assignments so we only send real mappings. */
+function cleanMapping(m: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(m).filter(([, v]) => v));
+}
+
+/** A profile is just column names — safe to download/share (no transaction data). */
+function profileBlob(p: ImportProfile): string {
+  return JSON.stringify({ name: p.name, mapping: p.mapping, default_currency: p.default_currency }, null, 2);
+}
+
+function exportProfile(p: ImportProfile): void {
+  const blob = new Blob([profileBlob(p)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `import-profile-${p.name.replace(/[^\w.-]+/g, "_")}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function shareProfile(p: ImportProfile): void {
+  const title = `CSV import mapping: ${p.name}`;
+  const body = [
+    "Sharing a CSV import column mapping so it can become a built-in parser.",
+    "",
+    "```json",
+    profileBlob(p),
+    "```",
+    "",
+    "_(No transaction data — only column names.)_",
+  ].join("\n");
+  const url = `${REPO}/issues/new?title=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}`;
+  globalThis.open(url, "_blank", "noopener,noreferrer");
+}
+
+function CsvMappingPanel({
+  file,
+  onPreview,
+}: Readonly<{ file: File; onPreview: (data: UploadResponse) => void }>) {
+  const qc = useQueryClient();
+  const inspect = useQuery({
+    queryKey: ["csv-inspect", file.name, file.size, file.lastModified],
+    queryFn: () => inspectCsv(file),
+  });
+  const profiles = useQuery({ queryKey: ["import-profiles"], queryFn: listImportProfiles });
+
+  const [mapping, setMapping] = useState<Record<string, string>>({});
+  const [selectedId, setSelectedId] = useState<number | "">("");
+  const [profileName, setProfileName] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+
+  // Seed from the heuristic suggestion once the file is inspected.
+  useEffect(() => {
+    if (inspect.data) setMapping(inspect.data.suggested_mapping ?? {});
+  }, [inspect.data]);
+
+  const preview = useMutation({
+    mutationFn: () => uploadImport(file, "generic_csv", cleanMapping(mapping)),
+    onSuccess: (data) => { setErr(null); onPreview(data); },
+    onError: (e) => setErr(String(e instanceof Error ? e.message : e)),
+  });
+
+  const save = useMutation({
+    mutationFn: () =>
+      createImportProfile({ name: profileName.trim(), mapping: cleanMapping(mapping), default_currency: "GBP" }),
+    // BUGFIX: after saving, refetch the profiles list AND select the profile we
+    // just created so it's immediately usable (previously it stayed on
+    // "— choose —" and the new profile appeared unselectable). We seed the cache
+    // optimistically so the dropdown shows + selects right away, then invalidate
+    // to stay authoritative.
+    onSuccess: (created) => {
+      setProfileName("");
+      setErr(null);
+      qc.setQueryData<ImportProfile[]>(["import-profiles"], (old) => {
+        const list = old ? [...old] : [];
+        if (!list.some((p) => p.id === created.id)) list.push(created);
+        return list;
+      });
+      qc.invalidateQueries({ queryKey: ["import-profiles"] });
+      setSelectedId(created.id);
+      setMapping({ ...created.mapping });
+    },
+    onError: (e) => setErr(String(e instanceof Error ? e.message : e)),
+  });
+
+  const del = useMutation({
+    mutationFn: (id: number) => deleteImportProfile(id),
+    onSuccess: () => {
+      setSelectedId("");
+      qc.invalidateQueries({ queryKey: ["import-profiles"] });
+    },
+  });
+
+  if (inspect.isPending) {
+    return <div className="card" style={{ background: "var(--surface)" }}><p className="muted">Reading columns…</p></div>;
+  }
+  if (inspect.isError) {
+    return (
+      <div className="card" style={{ background: "var(--surface)" }}>
+        <p className="status status--error">Couldn't read this as a CSV: {String(inspect.error)}</p>
+      </div>
+    );
+  }
+
+  const { headers, sample_rows, fields } = inspect.data;
+  const firstRow = sample_rows[0];
+  const selected = profiles.data?.find((p) => p.id === selectedId);
+
+  const hasDate = !!mapping.date;
+  const hasAmount = !!(mapping.amount || mapping.debit || mapping.credit);
+  const hasDescription = !!mapping.description;
+  const canPreview = hasDate && hasAmount;
+
+  // Inline validation: list the required pieces that are still missing.
+  const missing: string[] = [];
+  if (!hasDate) missing.push("a Date column");
+  if (!hasAmount) missing.push("an Amount (or a Money out / Money in pair)");
+
+  const setField = (key: string, header: string) =>
+    setMapping((m) => {
+      const next = { ...m };
+      if (header) next[key] = header;
+      else delete next[key];
+      return next;
+    });
+
+  const applyAutodetect = () => {
+    if (inspect.data) setMapping(inspect.data.suggested_mapping ?? {});
+  };
+
+  const chooseProfile = (raw: string) => {
+    const id = raw ? Number(raw) : "";
+    setSelectedId(id);
+    const p = profiles.data?.find((x) => x.id === id);
+    if (p) setMapping({ ...p.mapping });
+  };
+
+  return (
+    <div className="card" style={{ background: "var(--surface)" }}>
+      <h2 className="card__title">⚙ Map columns (custom CSV)</h2>
+      <p className="muted">
+        For a bank with no built-in parser: tell us which CSV column holds each field, check the{" "}
+        <strong>first-row preview</strong>, then Preview and import. Save it as a profile to reuse next
+        time — and export or share it so it can become a built-in parser.
+      </p>
+
+      {!!profiles.data?.length && (
+        <div className="form-row" style={{ flexWrap: "wrap", gap: 8 }}>
+          <label>
+            Saved profile{" "}
+            <select value={selectedId} onChange={(e) => chooseProfile(e.target.value)}>
+              <option value="">— choose —</option>
+              {profiles.data.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </label>
+          {selected && (
+            <>
+              <button className="btn btn--ghost" onClick={() => exportProfile(selected)} title="Download (anonymous — column names only)">⬇ Export</button>
+              <button className="btn btn--ghost" onClick={() => shareProfile(selected)} title="Open a prefilled GitHub issue">↗ Share</button>
+              <button className="btn btn--ghost" disabled={del.isPending} onClick={() => del.mutate(selected.id)} title="Delete this profile">🗑</button>
+            </>
+          )}
+        </div>
+      )}
+
+      <div className="form-row" style={{ flexWrap: "wrap", gap: 8 }}>
+        <button className="btn btn--ghost" onClick={applyAutodetect} title="Guess columns from their header names">
+          ✨ Auto-detect columns
+        </button>
+      </div>
+
+      <div className="table-wrap">
+        <table className="table">
+          <thead><tr><th>Field</th><th>CSV column</th><th>First row</th></tr></thead>
+          <tbody>
+            {fields.map((f) => {
+              const header = mapping[f.key];
+              const sample = header ? firstRow?.[header] : undefined;
+              const help = FIELD_HELP[f.key] ?? "";
+              return (
+                <tr key={f.key}>
+                  <td>
+                    <div>{f.label}{f.required ? " *" : ""}</div>
+                    {help && <div className="muted" style={{ fontSize: "0.78rem" }}>{help}</div>}
+                  </td>
+                  <td>
+                    <select value={header ?? ""} onChange={(e) => setField(f.key, e.target.value)}>
+                      <option value="">— none —</option>
+                      {headers.map((h) => <option key={h} value={h}>{h}</option>)}
+                    </select>
+                  </td>
+                  <td className="muted" style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {header ? (sample ?? "") : "—"}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="muted" style={{ fontSize: "0.8rem" }}>
+        Minimum: a <strong>Date</strong> and either an <strong>Amount</strong> (signed) or a{" "}
+        <strong>Money out</strong>/<strong>Money in</strong> pair. A{" "}
+        <strong>Description</strong> is recommended so transactions are readable.
+      </p>
+
+      {sample_rows.length > 0 && (
+        <div className="table-wrap">
+          <table className="table">
+            <thead><tr>{headers.map((h) => <th key={h}>{h}</th>)}</tr></thead>
+            <tbody>
+              {sample_rows.map((r) => (
+                <tr key={headers.map((h) => r[h] ?? "").join("")}>
+                  {headers.map((h) => <td key={h}>{r[h] ?? ""}</td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div className="form-row" style={{ flexWrap: "wrap", gap: 8 }}>
+        <button className="btn" disabled={!canPreview || preview.isPending} onClick={() => preview.mutate()}>
+          {preview.isPending ? "Previewing…" : "Preview with this mapping"}
+        </button>
+        <input placeholder="Profile name" value={profileName} onChange={(e) => setProfileName(e.target.value)} />
+        <button
+          className="btn btn--ghost"
+          disabled={!canPreview || !profileName.trim() || save.isPending}
+          onClick={() => save.mutate()}
+        >
+          {save.isPending ? "Saving…" : "Save as profile"}
+        </button>
+      </div>
+      {missing.length > 0 && (
+        <p className="muted" style={{ fontSize: "0.8rem" }}>
+          Still needed to continue: {missing.join(" and ")}.
+        </p>
+      )}
+      {canPreview && !hasDescription && (
+        <p className="muted" style={{ fontSize: "0.8rem" }}>
+          Tip: map a <strong>Description</strong> column so imported transactions are easy to read.
+        </p>
+      )}
+      {err && <p className="status status--error">{err}</p>}
+    </div>
+  );
 }
