@@ -9,13 +9,13 @@ import pytest
 
 
 def test_processing_endpoint_after_demo(client):
-    """The demo imports statements/transactions but never calls AI or OCR, so the
-    card reflects a fully-local pipeline."""
+    """The demo imports statements/transactions and seeds an attached receipt, but
+    never calls AI or OCR, so the card reflects a fully-local pipeline."""
     client.post("/api/backup/demo")
     s = client.get("/api/dashboard/processing").json()
     assert s["statements_imported"] >= 1
     assert s["transactions_imported"] > 0
-    assert s["receipts_total"] == 0
+    assert s["receipts_total"] >= 1  # the demo seeds a receipt attached to a txn
     assert s["ai_total"] == 0
     assert s["ai_cloud"] == 0 and s["ai_local"] == 0
     assert s["ai_avg_seconds"] is None
