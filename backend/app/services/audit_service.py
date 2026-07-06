@@ -18,6 +18,30 @@ from app.models import AuditLog
 
 logger = get_logger(__name__)
 
+# Upper bound on the serialised ``details`` blob stored per audit row. A large
+# payload (e.g. a big bulk-operation body) would otherwise be persisted verbatim
+# and bloat the DB. Beyond this the blob is replaced with a small marker so audit
+# rows stay bounded; normal/small details round-trip unchanged (SR-E8).
+MAX_DETAILS_BYTES = 4096
+
+
+def _serialise_details(details: dict | None) -> str | None:
+    """Serialise ``details`` to JSON, capping the result so a single audit row
+    cannot grow without bound. Small payloads are returned verbatim; an oversized
+    one is replaced with a compact ``{"_truncated": true, ...}`` marker that keeps
+    the original size and a leading excerpt for debugging."""
+    if not details:
+        return None
+    blob = json.dumps(details, default=str)
+    if len(blob) <= MAX_DETAILS_BYTES:
+        return blob
+    # Keep a short excerpt (well under the cap) so the row still carries a hint of
+    # the original content, plus the true size for context.
+    excerpt = blob[:512]
+    return json.dumps(
+        {"_truncated": True, "_bytes": len(blob), "_excerpt": excerpt}
+    )
+
 
 def record(
     db: Session,
@@ -38,7 +62,7 @@ def record(
                 action=action,
                 entity_type=entity_type,
                 entity_id=entity_id,
-                details_json=json.dumps(details, default=str) if details else None,
+                details_json=_serialise_details(details),
             )
         )
         db.flush()
