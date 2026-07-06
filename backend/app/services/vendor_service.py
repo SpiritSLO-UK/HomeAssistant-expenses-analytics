@@ -249,7 +249,11 @@ def _move_aliases(db: Session, source: Vendor, target: Vendor) -> None:
     alias strings (case-insensitive). Uses the relationship so ``delete-orphan``
     won't re-delete the moved rows when the source vendor is deleted."""
     target_aliases = {a.alias.lower() for a in target.aliases}
-    for alias in list(source.aliases):
+    # Snapshot the source aliases up front: re-pointing each onto the target
+    # mutates ``source.aliases`` mid-loop (via ``back_populates``), so we must
+    # iterate over a copy rather than the live collection.
+    source_aliases = list(source.aliases)
+    for alias in source_aliases:
         key = (alias.alias or "").lower()
         if key in target_aliases:
             db.delete(alias)  # exact-duplicate alias string → drop it

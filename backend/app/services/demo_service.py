@@ -78,6 +78,13 @@ _CYCLES = 3
 # arithmetic per row — see _spec_date).
 _CYCLE_DAYS = 30
 
+# Merchant descriptions reused across the demo tables and the enrichment helpers
+# below; kept as constants so the seeded strings stay in exactly one place.
+_MERCHANT_ODEON = "ODEON CINEMA"
+_MERCHANT_GOUSTO = "GOUSTO MEAL KIT"
+_MERCHANT_BOILER = "BOILER CARE PLAN"
+_MERCHANT_AMAZON_OFFICE = "AMAZON OFFICE SUPPLIES"
+
 
 @dataclass(frozen=True)
 class _Spec:
@@ -125,7 +132,7 @@ _MONTHLY_SPEND: list[tuple[int, str, str, bool]] = [
     (24, "ARGOS RETAIL", "34.99", True),
     (19, "BOOTS PHARMACY", "14.49", False),
     (22, "PETS AT HOME", "28.00", False),
-    (25, "ODEON CINEMA", "21.00", False),
+    (25, _MERCHANT_ODEON, "21.00", False),
 ]
 # (day, description, amount) — money in.
 _MONTHLY_INCOME: list[tuple[int, str, str]] = [
@@ -141,21 +148,21 @@ _MONTHLY_INCOME: list[tuple[int, str, str]] = [
 # gap between rows is what the detector classifies, so the offsets matter.
 _RECURRING_EXTRA: list[tuple[int, str, str]] = [
     # Fortnightly meal-kit box (~14-day gaps → "fortnightly").
-    (2, "GOUSTO MEAL KIT", "34.95"),
-    (16, "GOUSTO MEAL KIT", "34.95"),
-    (30, "GOUSTO MEAL KIT", "34.95"),
-    (44, "GOUSTO MEAL KIT", "34.95"),
+    (2, _MERCHANT_GOUSTO, "34.95"),
+    (16, _MERCHANT_GOUSTO, "34.95"),
+    (30, _MERCHANT_GOUSTO, "34.95"),
+    (44, _MERCHANT_GOUSTO, "34.95"),
     # Bi-monthly boiler care plan (~61-day gaps → "bi_monthly").
-    (4, "BOILER CARE PLAN", "18.00"),
-    (65, "BOILER CARE PLAN", "18.00"),
-    (126, "BOILER CARE PLAN", "18.00"),
+    (4, _MERCHANT_BOILER, "18.00"),
+    (65, _MERCHANT_BOILER, "18.00"),
+    (126, _MERCHANT_BOILER, "18.00"),
 ]
 
 # --- One-off business expenses (GBP) with VAT, by cycle ----------------------
 # (cycle, day, description, amount, vat)
 _BUSINESS: list[tuple[int, int, str, str, str]] = [
     (0, 16, "TRAINLINE RAIL TICKET", "84.00", "14.00"),
-    (0, 20, "AMAZON OFFICE SUPPLIES", "54.00", "9.00"),
+    (0, 20, _MERCHANT_AMAZON_OFFICE, "54.00", "9.00"),
     (0, 24, "SCREWFIX DIRECT", "120.00", "20.00"),
     (1, 6, "PREMIER INN HOTEL", "96.00", "16.00"),
     (1, 22, "COSTA COFFEE CLIENT", "18.00", "3.00"),
@@ -385,7 +392,7 @@ def _seed_vendors(db: Session, rows: list[Transaction]) -> None:
 # the duplicate carry spend (a merge that actually consolidates something).
 # (duplicate canonical name, original canonical name, descriptions to move onto it)
 _DEMO_MERGE_VENDORS: list[tuple[str, str, set[str]]] = [
-    ("Amazon UK", "Amazon", {"AMAZON OFFICE SUPPLIES"}),
+    ("Amazon UK", "Amazon", {_MERCHANT_AMAZON_OFFICE}),
     ("Costa", "Costa Coffee", {"COSTA COFFEE CLIENT"}),
 ]
 
@@ -456,7 +463,7 @@ def _seed_projects(db: Session, rows: list[Transaction]) -> None:
     """Two projects with transactions assigned (one drawn from the Spain trip)."""
     eur = [t for t in rows if t.currency == "EUR"]
     _assign_project(db, "Spain City Break", eur, budget=Decimal("1200.00"))
-    office_desc = {"AMAZON OFFICE SUPPLIES", "SCREWFIX DIRECT", "ARGOS RETAIL"}
+    office_desc = {_MERCHANT_AMAZON_OFFICE, "SCREWFIX DIRECT", "ARGOS RETAIL"}
     office = [t for t in rows if t.description_raw in office_desc]
     _assign_project(db, "Home Office Setup", office, budget=Decimal("500.00"))
 
@@ -540,7 +547,7 @@ def _seed_household(db: Session, rows: list[Transaction]) -> None:
         )
         db.flush()
     if not allowance_service.list_allocations(db, child.id):
-        treats = {"COSTA COFFEE 482", "ODEON CINEMA", "NANDOS DARTFORD"}
+        treats = {"COSTA COFFEE 482", _MERCHANT_ODEON, "NANDOS DARTFORD"}
         for t in [r for r in rows if r.description_raw in treats][:4]:
             allowance_service.create_allocation(db, child_id=child.id, transaction_id=t.id)
 
@@ -723,7 +730,7 @@ _DEMO_RECEIPT_BYTES = (
 def _seed_split(db: Session, rows: list[Transaction]) -> None:
     """Split one transaction across two categories so the split UI + the split-aware
     category breakdown have an example. Idempotent: skips an already-split row."""
-    odeon = next((t for t in rows if t.description_raw == "ODEON CINEMA"), None)
+    odeon = next((t for t in rows if t.description_raw == _MERCHANT_ODEON), None)
     if odeon is None or odeon.is_split:
         return
     entertainment = _cat_id(db, _CAT_ENTERTAINMENT)
