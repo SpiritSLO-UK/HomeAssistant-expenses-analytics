@@ -63,7 +63,7 @@ catch-alls, so the specific one wins.
 | `vendor_equals` | the transaction's resolved vendor id equals | `42` |
 | `account_equals` | the transaction's account id equals | `3` |
 | `amount_equals` | the amount equals exactly | `9.99` |
-| `amount_between` | the amount is within an inclusive range | `10,50` (min,max — comma- or pipe-separated) |
+| `amount_between` | the amount is within an inclusive range | `10,50` (min,max — comma- or pipe-separated; use `.` for decimals, e.g. `10.50`; out-of-order bounds are auto-swapped, malformed values simply never match) |
 | `category_equals` | the current category id equals (re-route an existing category) | `7` |
 | `recurring_payment` | _designed, not yet wired — currently never matches_ | `true` |
 | `source_format` | _designed, not yet wired — currently never matches_ | `monzo_csv` |
@@ -79,7 +79,7 @@ catch-alls, so the specific one wins.
 | `mark_transfer` | flag as a transfer (excluded from spend/income) | — |
 | `mark_income` | flag as income | — |
 | `require_review` | send to the review queue | — |
-| `mark_subscription` | _designed, not yet wired — currently a no-op_ | — |
+| `mark_subscription` | record the transaction as a subscription (creates a *possible* subscription for its vendor/name, which the recurring-payment detector later confirms) | — |
 | `block_cloud_ai` | _designed, not yet wired — use per-category privacy instead (see below)_ | — |
 
 ## Worked examples
@@ -102,7 +102,7 @@ catch-alls, so the specific one wins.
 - Keeps internal money movement out of your spend/income totals.
 
 **4 — Salary as income.**
-- Condition: `amount_between` = `2000:5000` (or `description_contains` = `acme payroll`)
+- Condition: `amount_between` = `2000,5000` (or `description_contains` = `acme payroll`)
 - Action: `mark_income`
 
 **5 — Keep a sensitive category off cloud AI.**
@@ -112,7 +112,16 @@ catch-alls, so the specific one wins.
 - Transactions in a never-cloud category are never included in any cloud AI
   payload, regardless of the global AI mode (see [privacy.md](privacy.md)).
 
-**6 — Tag a foreign vendor's country.**
+**6 — Flag a recurring charge as a subscription.**
+- Condition: `merchant_contains` = `netflix`
+- Action: `mark_subscription`
+- Records the transaction as a *possible* subscription (keyed on its vendor, or
+  its merchant name when no vendor is matched). The recurring-payment detector
+  then confirms it — promoting it to *active* with a real interval — once it sees
+  enough occurrences. Re-running is idempotent: it won't create a duplicate
+  subscription for a vendor/name that already has one.
+
+**7 — Tag a foreign vendor's country.**
 - Condition: `description_contains` = `mercadona`
 - Action: `set_country` = `ES`
 - The spend-by-location map then credits **Spain** instead of falling back to the
