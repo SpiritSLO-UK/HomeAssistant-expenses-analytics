@@ -183,6 +183,94 @@ def test_noop_rule_does_not_block_lower_priority(client):
     assert _by_desc(client)["ZZQ MARKET"]["category_id"] == groceries
 
 
+def test_mark_subscription_rule(client):
+    # A mark_subscription rule records the matched transaction as a (possible)
+    # subscription via the existing subscription mechanism (SR-A4 wiring).
+    client.post(
+        "/api/rules",
+        json={
+            "condition_type": "description_contains",
+            "condition_value": "NETFLIX",
+            "action_type": "mark_subscription",
+        },
+    )
+    _import(client, _curve([("2026-05-06", "NETFLIX MONTHLY", "-9.99")]))
+    items = client.get("/api/subscriptions").json()
+    names = [s["name"] for s in items]
+    assert any("NETFLIX" in n.upper() for n in names)
+
+
+def test_mark_subscription_idempotent(client):
+    # Two matching charges must not create two subscriptions for the same name.
+    client.post(
+        "/api/rules",
+        json={
+            "condition_type": "description_contains",
+            "condition_value": "SPOTIFY",
+            "action_type": "mark_subscription",
+        },
+    )
+    _import(client, _curve([("2026-05-06", "SPOTIFY", "-11.99")]), name="s1.csv")
+    _import(client, _curve([("2026-06-06", "SPOTIFY", "-11.99")]), name="s2.csv")
+    items = client.get("/api/subscriptions").json()
+    spotify = [s for s in items if "SPOTIFY" in s["name"].upper()]
+    assert len(spotify) == 1
+
+
+def test_amount_between_validation_bad_input_never_matches():
+    # Malformed / out-of-order amount_between values are handled gracefully in the
+    # rule engine (never raise, never spuriously match).
+    from decimal import Decimal
+
+    from app.models import Rule, Transaction
+    from app.services import rule_service
+
+    def _txn(amount: str) -> Transaction:
+        return Transaction(description_raw="X", amount=Decimal(amount), direction="debit")
+
+    def _rule(value: str) -> Rule:
+        return Rule(condition_type="amount_between", condition_value=value)
+
+    # In-range, well-formed.
+    assert rule_service.matches(_rule("10,50"), _txn("-30")) is False  # signed: -30 not in 10..50
+    assert rule_service.matches(_rule("10,50"), _txn("30")) is True
+    assert rule_service.matches(_rule("-50,-10"), _txn("-30")) is True
+
+    # Out-of-order bounds are auto-swapped, so this still matches.
+    assert rule_service.matches(_rule("50,10"), _txn("30")) is True
+
+    # Malformed: wrong part count, empty, unparseable — never match, never raise.
+    for bad in ("10", "10,20,30", "", "abc,def", "10,x"):
+        assert rule_service.matches(_rule(bad), _txn("15")) is False
+
+
+def test_amount_bounds_parsing():
+    from decimal import Decimal
+
+    from app.services import rule_service
+
+    assert rule_service._amount_bounds("10,50") == (Decimal("10"), Decimal("50"))
+    # Pipe separator + out-of-order swap.
+    assert rule_service._amount_bounds("50|10") == (Decimal("10"), Decimal("50"))
+    # Decimal point preserved.
+    assert rule_service._amount_bounds("10.50,20.00") == (Decimal("10.50"), Decimal("20.00"))
+    for bad in ("10", "10,20,30", "", "abc,1", "1,abc"):
+        assert rule_service._amount_bounds(bad) is None
+
+
+def test_block_cloud_ai_is_documented_noop():
+    # block_cloud_ai stays a no-op (no transaction-level lever without a migration)
+    # so it must NOT claim its action slot / report as fired.
+    from decimal import Decimal
+
+    from app.models import Rule, Transaction
+    from app.services import rule_service
+
+    txn = Transaction(description_raw="X", amount=Decimal("-5"), direction="debit")
+    rule = Rule(action_type="block_cloud_ai", action_value=None)
+    assert rule_service.apply_action(rule, txn, None) is False
+
+
 def test_rule_test_endpoint(client):
     _import(client, _curve([("2026-05-02", "TESCO STORES 3142", "-42.18"),
                             ("2026-05-03", "COSTA COFFEE", "-3.85")]))

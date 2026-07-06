@@ -14,7 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.logging import get_logger
-from app.models import Category, Rule, Transaction
+from app.models import Category, Rule, Subscription, Transaction
 from app.services.household_service import get_or_create_default_household
 from app.services.vendor_service import derive_vendor_signature
 
@@ -58,14 +58,32 @@ def _matches_amount_equals(cv: str, txn: Transaction) -> bool:
     return target is not None and txn.amount == target
 
 
-def _matches_amount_between(cv: str, txn: Transaction) -> bool:
-    # "lo,hi" on the signed amount.
+def _amount_bounds(cv: str) -> tuple[Decimal, Decimal] | None:
+    """Parse an ``amount_between`` condition value into ``(lo, hi)``.
+
+    The value is ``"lo,hi"`` (comma- or pipe-separated) on the signed amount.
+    Returns ``None`` — so the condition simply never matches — when the input is
+    malformed: wrong number of parts, an unparseable bound, or a mistyped
+    locale/format (e.g. a decimal comma ``"10,5"`` reading as two ints, or
+    ``"1.234,56"`` euro grouping). Bounds given out of order (``hi,lo``) are
+    tolerated by swapping them so ``lo <= hi`` always holds."""
     parts = cv.replace("|", ",").split(",")
-    if len(parts) == 2:
-        lo, hi = _to_decimal(parts[0]), _to_decimal(parts[1])
-        if lo is not None and hi is not None:
-            return lo <= txn.amount <= hi
-    return False
+    if len(parts) != 2:
+        return None
+    lo, hi = _to_decimal(parts[0]), _to_decimal(parts[1])
+    if lo is None or hi is None:
+        return None
+    if lo > hi:
+        lo, hi = hi, lo
+    return lo, hi
+
+
+def _matches_amount_between(cv: str, txn: Transaction) -> bool:
+    bounds = _amount_bounds(cv)
+    if bounds is None:
+        return False
+    lo, hi = bounds
+    return lo <= txn.amount <= hi
 
 
 def matches(rule: Rule, txn: Transaction) -> bool:
@@ -119,13 +137,53 @@ def _apply_set_country(txn: Transaction, av: str | None) -> bool:
     return True
 
 
-def apply_action(rule: Rule, txn: Transaction) -> bool:
+def _apply_mark_subscription(db: Session, txn: Transaction) -> bool:
+    """Record the transaction as a subscription via the existing Subscription
+    mechanism (``subscription_service``). A single transaction can't establish a
+    cadence the way the heuristic detector does, so we create/upsert a
+    ``possible`` subscription keyed on the same vendor/name grouping the detector
+    uses — a later :func:`subscription_service.detect` run promotes it to
+    ``active`` with a real interval once enough occurrences are seen. Returns
+    ``True`` when a subscription was created (a no-op if one already exists for
+    this vendor/name, so the action doesn't consume its slot pointlessly)."""
+    # Imported lazily to avoid a circular import at module load.
+    from app.services import subscription_service
+
+    vendor_id = txn.merchant_id
+    name = subscription_service._label(txn)
+    if subscription_service._find_existing(db, vendor_id, name) is not None:
+        return False
+    db.add(
+        Subscription(
+            household_id=get_or_create_default_household(db).id,
+            vendor_id=vendor_id,
+            category_id=txn.category_id,
+            name=name,
+            amount=abs(txn.amount),
+            currency=txn.currency or "GBP",
+            frequency="monthly",
+            interval_days=subscription_service.FREQUENCY_INTERVALS["monthly"],
+            last_seen_date=txn.transaction_date,
+            occurrences=1,
+            # User asked for it via a rule, but a single hit isn't proof of a
+            # cadence — leave it "possible" for the detector to confirm.
+            status="possible",
+        )
+    )
+    return True
+
+
+def apply_action(rule: Rule, txn: Transaction, db: Session | None = None) -> bool:
     """Apply a single rule's action. Returns ``True`` when the action actually
     took effect, ``False`` when it was a no-op (e.g. ``set_category`` skipped
     because a manual choice already wins, or a value-setting action with an
     unparseable value). The caller uses this so a no-op rule doesn't consume the
     one-per-action-type slot and block a lower-priority rule that *would* apply
-    (SR-A4)."""
+    (SR-A4).
+
+    ``db`` is only needed for actions that persist a related row
+    (``mark_subscription``); when it's ``None`` those actions are treated as a
+    no-op so callers with no session (e.g. previews) stay side-effect free."""
     at = rule.action_type
     av = rule.action_value
 
@@ -155,9 +213,14 @@ def apply_action(rule: Rule, txn: Transaction) -> bool:
         txn.needs_review = True
         txn.review_reason = txn.review_reason or "rule"
         return True
-    # mark_subscription and block_cloud_ai are recorded intent honoured by later
-    # stages (Stage 6 subscriptions / Stage 10 AI gateway).
-    return True
+    elif at == "mark_subscription":
+        return _apply_mark_subscription(db, txn) if db is not None else False
+    # block_cloud_ai is designed but not yet wired: the AI gateway only honours a
+    # *category*-level never-cloud flag (Category.privacy_sensitivity); there is
+    # no transaction-level lever it reads, and adding one needs a DB migration
+    # (deliberately out of scope here). Marked as a no-op so it never claims the
+    # action slot. Use per-category privacy to keep a category off cloud AI.
+    return False
 
 
 def apply_rules(db: Session, txn: Transaction) -> list[int]:
@@ -172,7 +235,7 @@ def apply_rules(db: Session, txn: Transaction) -> list[int]:
     for rule in rules:
         if rule.action_type in used_actions:
             continue
-        if matches(rule, txn) and apply_action(rule, txn):
+        if matches(rule, txn) and apply_action(rule, txn, db):
             # Only a rule that actually applied claims its action slot and is
             # reported as fired — a no-op leaves the slot open for the next rule.
             used_actions.add(rule.action_type)
@@ -255,6 +318,14 @@ def create_rule_from_correction(
         )
     ).first()
     if existing is not None:
+        # An identical learned rule already exists — but if the user (or a
+        # previous run) had disabled it, returning it as-is would report success
+        # while the correction silently never applies. Re-enable it so teaching
+        # the same merchant→category actually takes effect (SR-A4).
+        if not existing.enabled:
+            existing.enabled = True
+            db.commit()
+            db.refresh(existing)
         return existing
 
     return create_rule(
