@@ -28,6 +28,18 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+// The history endpoint takes a day count, but the range picker speaks in whole
+// months. Return the *actual* number of days spanned by going back `months`
+// calendar months from today, so the fetched window matches the selection
+// instead of overshooting (a flat months*31 pulled ~a week extra per year).
+function monthsToDays(months: number): number {
+  const end = new Date();
+  const start = new Date(end);
+  start.setMonth(start.getMonth() - months);
+  const dayMs = 24 * 60 * 60 * 1000;
+  return Math.max(1, Math.round((end.getTime() - start.getTime()) / dayMs));
+}
+
 // A signed-amount span: green when ≥ 0, red below. `pct` is optional.
 function Gain({ value, pct, currency }: Readonly<{ value: string | null; pct: number | null; currency: string }>) {
   if (value == null) return null;
@@ -64,7 +76,7 @@ export default function Investments() {
   const [months, setMonths] = useState(12);
   const history = useQuery({
     queryKey: ["investment-history", months],
-    queryFn: () => getInvestmentHistory(months * 31),
+    queryFn: () => getInvestmentHistory(monthsToDays(months)),
   });
 
   // Passed to every child card as the success callback (onChange/onCreated), so
@@ -416,8 +428,8 @@ function HoldingRow({
         <strong>{holding.symbol}</strong>
         {holding.name && <div className="muted" style={{ fontSize: "0.78rem" }}>{holding.name}</div>}
       </td>
-      <td><input value={units} style={{ width: 70 }} onChange={(e) => setUnits(e.target.value)} /></td>
-      <td><input value={avgCost} placeholder="—" style={{ width: 70 }} onChange={(e) => setAvgCost(e.target.value)} /></td>
+      <td><input inputMode="decimal" value={units} style={{ width: 70 }} onChange={(e) => setUnits(e.target.value)} /></td>
+      <td><input inputMode="decimal" value={avgCost} placeholder="—" style={{ width: 70 }} onChange={(e) => setAvgCost(e.target.value)} /></td>
       <td style={{ whiteSpace: "nowrap" }} title="Set automatically by the price feed (Settings → price source)">
         {holding.last_price ?? "—"}
       </td>
