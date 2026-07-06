@@ -25,7 +25,10 @@ interface Props {
 
 // Work in integer cents to avoid floating-point drift; the backend requires the
 // parts to sum to the transaction total to the penny (spec §17.2).
-const toCents = (v: string): number => Math.round((Number(v) || 0) * 100);
+// Accept European-style comma decimals ("12,50") by normalising the separator to
+// a dot before parsing — otherwise Number() yields NaN and the value silently
+// collapsed to 0.
+const toCents = (v: string): number => Math.round((Number(String(v).replace(",", ".")) || 0) * 100);
 const fromCents = (c: number): string => (c / 100).toFixed(2);
 
 // Monotonic source of stable row keys (unique within the editor's lifetime).
@@ -62,6 +65,12 @@ export default function SplitEditor({ txnId, amount, currency, isSplit, categori
     }
     prefilled.current = true;
   }, [existing.data]);
+
+  // A zero-amount transaction has nothing to divide — every part would have to be
+  // zero, which the penny-exact validation rejects — so it can never balance into a
+  // valid split. Treat it as a distinct, clearly-messaged state instead of letting
+  // the user get stuck on a perpetually-invalid "off by 0.00" form.
+  const zeroTotal = totalCents === 0;
 
   const sumCents = rows.reduce((acc, r) => acc + toCents(r.amount), 0);
   const remainingCents = totalCents - sumCents;
@@ -126,6 +135,25 @@ export default function SplitEditor({ txnId, amount, currency, isSplit, categori
     if (rows.some((r) => !r.categoryId)) return setError("Every part needs a category.");
     if (!balanced) return setError(`Parts must total ${fromCents(totalCents)} ${currency} (off by ${fromCents(remainingCents)}).`);
     save.mutate();
+  }
+
+  if (zeroTotal) {
+    return (
+      <div className="split-editor" style={{ padding: "0.75rem 0.25rem" }}>
+        <p className="muted" style={{ marginTop: 0 }}>
+          This transaction has a total of <strong>{amount} {currency}</strong>, so there is
+          nothing to split across categories. Assign a single category to it instead.
+        </p>
+        <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.75rem" }}>
+          {isSplit && (
+            <button className="btn btn--ghost" disabled={clear.isPending} onClick={() => clear.mutate()}>
+              {clear.isPending ? "Removing…" : "Remove split"}
+            </button>
+          )}
+          <button className="btn btn--ghost" onClick={onDone}>Close</button>
+        </div>
+      </div>
+    );
   }
 
   return (
