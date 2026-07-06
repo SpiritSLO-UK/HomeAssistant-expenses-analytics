@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { applyAiCategories, classifyBatch, type BatchSuggestion } from "../api/client";
+import { money } from "../lib/money";
 
 /**
  * Batch "AI categorise uncategorised" (local LLM only). Scans, shows each
@@ -50,7 +51,8 @@ export default function AiBatchPanel({ base, onClose }: Readonly<{ base: string;
   const toggle = (id: number) =>
     setPicked((p) => {
       const next = new Set(p);
-      next.has(id) ? next.delete(id) : next.add(id);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
 
@@ -115,7 +117,7 @@ export default function AiBatchPanel({ base, onClose }: Readonly<{ base: string;
                         <span className="tag" title="This transaction was AI-processed before">already AI'd</span>
                       )}
                     </td>
-                    <td className="num">{s.amount} {base}</td>
+                    <td className="num">{money(s.amount, base)}</td>
                     <td>{s.category_name}</td>
                     <td className="num">{s.confidence == null ? "—" : `${Math.round(s.confidence * 100)}%`}</td>
                   </tr>
