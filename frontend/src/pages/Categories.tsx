@@ -77,15 +77,23 @@ export default function Categories() {
     onError: fail,
   });
 
-  // Merge changes category assignments across transactions/budgets/etc, so refresh
-  // everything that reads them, not just the category list.
+  // Merge re-points transactions from the source category onto the target and
+  // removes the source, so refresh the category list plus the caches that read
+  // category assignments — the transactions list and the dashboard's category /
+  // vendor / geo / member breakdowns — rather than blowing away every query.
   const merge = useMutation({
     mutationFn: (v: { source: number; target: number }) => mergeCategory(v.source, v.target),
     onSuccess: () => {
       setErr(null);
       setMergeSource("");
       setMergeTarget("");
-      qc.invalidateQueries();
+      qc.invalidateQueries({ queryKey: ["categories"] });
+      qc.invalidateQueries({ queryKey: ["transactions"] });
+      qc.invalidateQueries({ queryKey: ["dash-categories"] });
+      qc.invalidateQueries({ queryKey: ["dash-vendors"] });
+      qc.invalidateQueries({ queryKey: ["dash-geo"] });
+      qc.invalidateQueries({ queryKey: ["dash-by-member"] });
+      qc.invalidateQueries({ queryKey: ["summary"] });
     },
     onError: fail,
   });
@@ -103,6 +111,19 @@ export default function Categories() {
 
   const cats = data ?? [];
   const nameOf = (id: string) => cats.find((c) => String(c.id) === id)?.name ?? "";
+
+  // Guard against creating a second category with the same name (case-insensitive)
+  // — the button stays enabled but we surface a clear message instead of firing a
+  // request the backend would reject.
+  function submitCreate() {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    if (cats.some((c) => c.name.trim().toLowerCase() === trimmed.toLowerCase())) {
+      setErr(`A category called "${trimmed}" already exists.`);
+      return;
+    }
+    create.mutate();
+  }
 
   function confirmDelete(c: Category) {
     const msg = c.is_system
@@ -135,7 +156,7 @@ export default function Categories() {
         <div className="form-row" style={{ marginBottom: 10 }}>
           <input placeholder="New category name" value={name} onChange={(e) => setName(e.target.value)} />
           <input type="color" value={colour} onChange={(e) => setColour(e.target.value)} title="Colour" />
-          <button className="btn" disabled={!name || create.isPending} onClick={() => create.mutate()}>
+          <button className="btn" disabled={!name || create.isPending} onClick={submitCreate}>
             Add
           </button>
         </div>
