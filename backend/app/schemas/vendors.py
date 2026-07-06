@@ -64,3 +64,7 @@ class AliasCreate(BaseModel):
 
 class SetDefaultCategory(BaseModel):
     category_id: int | None = None
+
+
+class VendorMerge(BaseModel):
+    target_id: int  # the vendor to merge this one into (it absorbs all references)
