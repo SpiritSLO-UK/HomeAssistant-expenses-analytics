@@ -14,7 +14,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
-from sqlalchemy import ColumnElement, select
+from sqlalchemy import ColumnElement, or_, select
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -31,6 +31,7 @@ from app.services import (
 )
 from app.services.household_service import get_or_create_default_household
 from app.services.ocr_service import OcrUnavailable
+from app.services.scope import account_scope_condition, archived_condition
 
 logger = get_logger("app.receipts")
 
@@ -75,7 +76,19 @@ def store_upload(db: Session, filename: str, content: bytes) -> tuple[Receipt, b
     """Save an uploaded receipt file (dedup by content hash). Returns
     ``(receipt, created)`` — ``created=False`` means it was already uploaded."""
     file_hash = _hash(content)
-    existing = db.scalars(select(Receipt).where(Receipt.file_hash == file_hash)).first()
+    household = get_or_create_default_household(db)
+    # Dedup only within this household and only against receipts that still hold
+    # their original file: another tenant's upload must never collapse into ours
+    # (latent cross-tenant leak), and an archived receipt (original dropped by
+    # retention / "delete after processing") must not be returned in place of a
+    # fresh upload — re-uploading is how a user restores the file.
+    existing = db.scalars(
+        select(Receipt).where(
+            Receipt.file_hash == file_hash,
+            Receipt.household_id == household.id,
+            Receipt.archived_at.is_(None),
+        )
+    ).first()
     if existing is not None:
         return existing, False
 
@@ -84,7 +97,7 @@ def store_upload(db: Session, filename: str, content: bytes) -> tuple[Receipt, b
     path.write_bytes(content)
 
     receipt = Receipt(
-        household_id=get_or_create_default_household(db).id,
+        household_id=household.id,
         source_filename=filename,
         file_hash=file_hash,
         storage_path=str(path),
@@ -229,13 +242,24 @@ def _flag(db: Session, receipt: Receipt, reason: str, action: str) -> None:
 # --- matching (spec §21.4) ---
 
 
+def _normalise_vendor(s: str) -> str:
+    """Canonicalise a vendor name for comparison: lower-case, spell out ``&`` as
+    ``and`` and turn every other punctuation run into a single space. This lets
+    trivial punctuation/spacing variants (e.g. ``M&S`` vs ``M & S``) compare as the
+    same name instead of scoring apart."""
+    s = s.lower().replace("&", " and ")
+    return re.sub(r"[^a-z0-9]+", " ", s).strip()
+
+
 def _vendor_similarity(a: str | None, b: str | None) -> float:
     if not a or not b:
         return 0.0
-    a, b = a.lower(), b.lower()
+    a, b = _normalise_vendor(a), _normalise_vendor(b)
+    if not a or not b:
+        return 0.0
     if a in b or b in a:
         return 1.0
-    wa, wb = set(re.findall(r"[a-z0-9]+", a)), set(re.findall(r"[a-z0-9]+", b))
+    wa, wb = set(a.split()), set(b.split())
     if not wa or not wb:
         return 0.0
     return len(wa & wb) / len(wa | wb)
@@ -276,8 +300,25 @@ def score_match(receipt: Receipt, txn: Transaction) -> tuple[int, dict]:
     return amount + proximity + vendor, parts
 
 
-def _candidates(db: Session, receipt: Receipt) -> list[Transaction]:
-    conds: list[ColumnElement[bool]] = [Transaction.is_duplicate.is_(False)]
+def _household_scope_condition(receipt: Receipt) -> list[ColumnElement[bool]]:
+    """Restrict candidates to the receipt's own household (orphan txns with no
+    household stay visible, matching the shared-account convention). A no-op for a
+    single-household install, but it stops a receipt matching another tenant's
+    transactions."""
+    if receipt.household_id is None:
+        return []
+    return [or_(Transaction.household_id == receipt.household_id, Transaction.household_id.is_(None))]
+
+
+def _candidates(
+    db: Session, receipt: Receipt, account_ids: set[int] | None = None
+) -> list[Transaction]:
+    conds: list[ColumnElement[bool]] = [
+        Transaction.is_duplicate.is_(False),
+        *_household_scope_condition(receipt),
+        *account_scope_condition(account_ids),
+        *archived_condition(),
+    ]
     if receipt.receipt_date is not None:
         conds.append(Transaction.transaction_date >= receipt.receipt_date - timedelta(days=DATE_WINDOW_DAYS))
         conds.append(Transaction.transaction_date <= receipt.receipt_date + timedelta(days=DATE_WINDOW_DAYS))
@@ -316,19 +357,29 @@ def _record_best_match(db: Session, receipt: Receipt, best_score: int, best_txn:
         receipt.needs_review = False
         review_service.resolve_for(db, item_type="receipt", item_id=receipt.id, reason="receipt_unmatched")
         _propagate_vat(best_txn, receipt)
-        # Processed & matched → optionally drop the original (backlog #147).
-        if settings_service.get_receipt_delete_after_processing(db):
-            drop_original(db, receipt, commit=False)
+        # NOTE: deliberately do NOT drop the original here. This is a purely
+        # automatic score-≥90 match that no human has confirmed; a single OCR
+        # misread on the amount/date could auto-match the wrong transaction, and
+        # dropping the file would irreversibly destroy the sole copy of the
+        # receipt (backlog #147). "Delete original after processing" only takes
+        # effect on a user-confirmed match (see confirm_match); an auto-match
+        # always keeps the file so the user can still verify or re-OCR it.
     return "auto_confirmed" if auto else "suggested"
 
 
-def match(db: Session, receipt: Receipt, mode: str | None = None) -> dict:
+def match(
+    db: Session, receipt: Receipt, mode: str | None = None, *, account_ids: set[int] | None = None
+) -> dict:
     """Score transactions, (re)create a suggested/auto match for the best, or
-    file an 'unmatched' review item. Returns ranked candidates (spec §21.4)."""
+    file an 'unmatched' review item. Returns ranked candidates (spec §21.4).
+
+    ``account_ids`` narrows the candidate transactions to a set of visible accounts
+    (``None`` = unrestricted); candidates are always confined to the receipt's own
+    household and exclude archived transactions."""
     mode = mode or settings_service.get(db, settings_service.RECEIPT_MATCH_MODE) or "suggest"
 
     scored = sorted(
-        ((score_match(receipt, t), t) for t in _candidates(db, receipt)),
+        ((score_match(receipt, t), t) for t in _candidates(db, receipt, account_ids)),
         key=lambda x: x[0][0],
         reverse=True,
     )[:5]
