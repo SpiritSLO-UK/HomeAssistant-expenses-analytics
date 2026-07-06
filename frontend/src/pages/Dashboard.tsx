@@ -35,6 +35,7 @@ import {
   uploadReceipt,
   type Member,
   type MonthlyPoint,
+  type OutlierItem,
   type TrendMetric,
 } from "../api/client";
 import {
@@ -112,6 +113,38 @@ function txnLink(params: Record<string, string | number | null | undefined>): st
   }
   const qs = sp.toString();
   return qs ? `/transactions?${qs}` : "/transactions";
+}
+
+// Per-device dismissed Heads-up items. Mirrors the defensive localStorage pattern
+// used by prefs.ts (and the shared `hafi_` prefix, so "Reset UI preferences" in
+// Settings clears these too) but is kept local to this page rather than added to
+// the shared prefs module. Whole-card enable/disable already lives in ⚙ Customise
+// (the "headsup" show/hide); this adds a per-item clear/tidy affordance.
+const HEADSUP_DISMISSED_KEY = "hafi_dashboard_headsup_dismissed";
+
+function readDismissedHeadsUp(): Set<string> {
+  try {
+    const raw = globalThis.localStorage.getItem(HEADSUP_DISMISSED_KEY);
+    if (!raw) return new Set();
+    const parsed: unknown = JSON.parse(raw);
+    return new Set(Array.isArray(parsed) ? parsed.map(String) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function writeDismissedHeadsUp(keys: Set<string>): void {
+  try {
+    globalThis.localStorage.setItem(HEADSUP_DISMISSED_KEY, JSON.stringify([...keys]));
+  } catch {
+    /* localStorage unavailable — dismissals just won't persist */
+  }
+}
+
+// Stable identity for a heads-up item, so a dismissal survives reloads and only
+// re-appears if that same alert recurs (not merely because the list re-ordered).
+function headsUpKey(it: OutlierItem): string {
+  return [it.type, it.transaction_id ?? "", it.category_id ?? "", it.budget_id ?? "", it.title].join("|");
 }
 
 // Quick-add (#user): drop a receipt straight from the dashboard — pick a file, or
@@ -290,9 +323,15 @@ export default function Dashboard() {
     setDashboardMember(memberId);
   }, [memberId]);
 
+  // Picking a member scopes to that member's accounts and the server ignores the
+  // Mine/Shared/All view (member takes precedence). So drop `view` from both the
+  // request and the query key when a member is selected — otherwise the key would
+  // vary by a `view` the response doesn't actually reflect. `mid` (number) also
+  // keeps the member portion of the key the same shape as the other cards.
+  const effectiveView = mid ? undefined : view;
   const summary = useQuery({
-    queryKey: ["summary", monthDate, view, memberId],
-    queryFn: () => getSummary(monthDate, view, mid),
+    queryKey: ["summary", monthDate, effectiveView, mid],
+    queryFn: () => getSummary(monthDate, effectiveView, mid),
   });
 
   return (
@@ -389,7 +428,13 @@ export default function Dashboard() {
         </div>
       )}
 
-      {summary.data && <NeedsAttentionCard uncategorised={summary.data.uncategorised_transactions} />}
+      {summary.data && (
+        <NeedsAttentionCard
+          uncategorised={summary.data.uncategorised_transactions}
+          scoped={effectiveView !== undefined && effectiveView !== "all"}
+          memberScoped={mid !== undefined}
+        />
+      )}
 
       {order.filter(show).map((key) => (
         <Fragment key={key}><DashboardCard cardKey={key} monthDate={monthDate} view={view} mid={mid} /></Fragment>
@@ -401,9 +446,14 @@ export default function Dashboard() {
 // One place for "things waiting on you": the review queue, uncategorised
 // transactions, and any foreign rows missing an FX rate. Each row links to where
 // you clear it. The whole card hides when there's nothing outstanding (it never
-// nags). Counts: review = the curated queue (matches the /review page);
-// uncategorised = scoped to the dashboard view (passed in from the summary).
-function NeedsAttentionCard({ uncategorised }: Readonly<{ uncategorised: number }>) {
+// nags). The counts mix scopes: `uncategorised` follows the dashboard view/member
+// (it comes from the scoped summary), whereas review + FX are account-wide. When a
+// scope is active we label that difference so the numbers aren't read as one total.
+function NeedsAttentionCard({
+  uncategorised,
+  scoped,
+  memberScoped,
+}: Readonly<{ uncategorised: number; scoped: boolean; memberScoped: boolean }>) {
   const review = useQuery({ queryKey: ["review", "count"], queryFn: getReviewCount });
   const fx = useQuery({ queryKey: ["fx-missing"], queryFn: getMissingFx });
   const reviewOpen = review.data?.open ?? 0;
@@ -429,6 +479,12 @@ function NeedsAttentionCard({ uncategorised }: Readonly<{ uncategorised: number 
           </li>
         ))}
       </ul>
+      {(scoped || memberScoped) && (
+        <p className="muted" style={{ margin: "8px 0 0", fontSize: "0.8rem" }}>
+          Uncategorised follows the current {memberScoped ? "member" : "view"}; review and
+          exchange-rate counts are across all accounts.
+        </p>
+      )}
     </div>
   );
 }
@@ -468,7 +524,7 @@ function ProjectsCard({ memberId }: Readonly<{ memberId?: number }>) {
 
 function CategoriesCard({ monthDate, view, memberId }: Readonly<{ monthDate: string; view: string; memberId?: number }>) {
   const q = useQuery({
-    queryKey: ["dash-categories", monthDate, view, memberId ?? ""],
+    queryKey: ["dash-categories", monthDate, view, memberId],
     queryFn: () => getCategoryBreakdown(monthDate, view, memberId),
   });
   const data = q.data ?? [];
@@ -516,7 +572,7 @@ function CategoriesCard({ monthDate, view, memberId }: Readonly<{ monthDate: str
 
 function VendorsCard({ monthDate, view, memberId }: Readonly<{ monthDate: string; view: string; memberId?: number }>) {
   const q = useQuery({
-    queryKey: ["dash-vendors", monthDate, view, memberId ?? ""],
+    queryKey: ["dash-vendors", monthDate, view, memberId],
     queryFn: () => getVendorBreakdown(monthDate, view, memberId),
   });
   const data = q.data ?? [];
@@ -544,7 +600,7 @@ function VendorsCard({ monthDate, view, memberId }: Readonly<{ monthDate: string
 
 function GeoCard({ monthDate, view, memberId }: Readonly<{ monthDate: string; view: string; memberId?: number }>) {
   const q = useQuery({
-    queryKey: ["dash-geo", monthDate, view, memberId ?? ""],
+    queryKey: ["dash-geo", monthDate, view, memberId],
     queryFn: () => getCountryBreakdown(monthDate, view, memberId),
   });
   const data = q.data ?? [];
@@ -616,37 +672,43 @@ function MemberBreakdownCard({ monthDate }: Readonly<{ monthDate: string }>) {
     <div className="card">
       <h2 className="card__title">Spending by member</h2>
       <ul className="bars">
-        {rows.map((r) => (
-          <li key={r.member_id ?? "shared"}>
-            <div className="bars__row">
-              {r.member_id == null ? (
-                <span className="bars__label">
-                  {r.display_name}
-                  {r.role && <span className="muted"> · {r.role}</span>}
-                </span>
-              ) : (
-                <Link
-                  className="bars__label"
-                  title={`See ${r.display_name}'s transactions this month`}
-                  to={txnLink({ member_id: r.member_id, date_from, date_to })}
-                >
-                  {r.display_name}
-                  {r.role && <span className="muted"> · {r.role}</span>}
-                </Link>
-              )}
-              <span className="bars__value">{money(r.spend)}</span>
-            </div>
-            <div className="bars__track">
-              <div
-                className="bars__fill"
-                style={{
-                  width: `${(Number(r.spend) / max) * 100}%`,
-                  background: r.member_id === null ? "var(--muted, #6b7280)" : "var(--sidebar-active, #3b82f6)",
-                }}
-              />
-            </div>
-          </li>
-        ))}
+        {rows.map((r) => {
+          // One nullish check drives the key, the label branch, and the colour, so
+          // the "Shared / unassigned" row can't render one way but be coloured the
+          // other (the member_id shape was previously compared inconsistently).
+          const isShared = r.member_id == null;
+          return (
+            <li key={isShared ? "shared" : r.member_id}>
+              <div className="bars__row">
+                {isShared ? (
+                  <span className="bars__label">
+                    {r.display_name}
+                    {r.role && <span className="muted"> · {r.role}</span>}
+                  </span>
+                ) : (
+                  <Link
+                    className="bars__label"
+                    title={`See ${r.display_name}'s transactions this month`}
+                    to={txnLink({ member_id: r.member_id, date_from, date_to })}
+                  >
+                    {r.display_name}
+                    {r.role && <span className="muted"> · {r.role}</span>}
+                  </Link>
+                )}
+                <span className="bars__value">{money(r.spend)}</span>
+              </div>
+              <div className="bars__track">
+                <div
+                  className="bars__fill"
+                  style={{
+                    width: `${(Number(r.spend) / max) * 100}%`,
+                    background: isShared ? "var(--muted, #6b7280)" : "var(--sidebar-active, #3b82f6)",
+                  }}
+                />
+              </div>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
@@ -984,22 +1046,84 @@ function HeadsUpCard({ monthDate, memberId }: Readonly<{ monthDate: string; memb
     queryKey: ["dash-outliers", monthDate, memberId],
     queryFn: () => getOutliers(monthDate, memberId),
   });
+  // Per-item dismiss (#user): a handled heads-up can be cleared and stays cleared
+  // across reloads (persisted per-device). Enable/disable of the whole card lives
+  // in ⚙ Customise (the "headsup" show/hide toggle) — this adds the tidy/clear.
+  const [dismissed, setDismissed] = useState<Set<string>>(() => readDismissedHeadsUp());
   const items = q.data?.items ?? [];
   if (items.length === 0) return null; // nothing to flag → no card (non-nagging)
+
+  const visible = items.filter((it) => !dismissed.has(headsUpKey(it)));
+  const clearedCount = items.length - visible.length;
+
+  const dismiss = (it: OutlierItem) =>
+    setDismissed((prev) => {
+      const next = new Set(prev);
+      next.add(headsUpKey(it));
+      writeDismissedHeadsUp(next);
+      return next;
+    });
+  const clearAll = () =>
+    setDismissed((prev) => {
+      const next = new Set(prev);
+      for (const it of items) next.add(headsUpKey(it));
+      writeDismissedHeadsUp(next);
+      return next;
+    });
+  const restore = () =>
+    setDismissed((prev) => {
+      const next = new Set(prev);
+      for (const it of items) next.delete(headsUpKey(it));
+      writeDismissedHeadsUp(next);
+      return next;
+    });
+
   return (
     <div className="card" style={{ borderLeft: "3px solid #e0a800" }}>
-      <h2 className="card__title">Heads-up</h2>
-      <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 8 }}>
-        {items.map((it) => (
-          <li
-            key={it.title}
-            style={{ borderLeft: `3px solid ${it.severity === "warn" ? "#e05555" : "#e0a800"}`, paddingLeft: 10 }}
-          >
-            <div><strong>{it.severity === "warn" ? "⚠️" : "💡"} {it.title}</strong></div>
-            <div className="muted" style={{ fontSize: "0.85rem" }}>{it.detail}</div>
-          </li>
-        ))}
-      </ul>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+        <h2 className="card__title" style={{ margin: 0 }}>Heads-up</h2>
+        <span style={{ display: "flex", gap: 12, alignItems: "baseline" }}>
+          {visible.length > 0 && (
+            <button className="link-btn" onClick={clearAll}>Clear all</button>
+          )}
+          {clearedCount > 0 && (
+            <button className="link-btn" onClick={restore}>Restore ({clearedCount})</button>
+          )}
+        </span>
+      </div>
+      {visible.length === 0 ? (
+        <p className="muted" style={{ margin: "8px 0 0", fontSize: "0.85rem" }}>
+          All caught up — {clearedCount} dismissed.
+        </p>
+      ) : (
+        <ul style={{ listStyle: "none", padding: 0, margin: "8px 0 0", display: "flex", flexDirection: "column", gap: 8 }}>
+          {visible.map((it) => (
+            <li
+              key={headsUpKey(it)}
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 8,
+                borderLeft: `3px solid ${it.severity === "warn" ? "#e05555" : "#e0a800"}`,
+                paddingLeft: 10,
+              }}
+            >
+              <div style={{ flex: 1 }}>
+                <div><strong>{it.severity === "warn" ? "⚠️" : "💡"} {it.title}</strong></div>
+                <div className="muted" style={{ fontSize: "0.85rem" }}>{it.detail}</div>
+              </div>
+              <button
+                className="link-btn"
+                title="Dismiss this heads-up"
+                aria-label={`Dismiss: ${it.title}`}
+                onClick={() => dismiss(it)}
+              >
+                ✕
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
