@@ -21,6 +21,8 @@ from app.services.household_service import get_or_create_default_household
 
 SAVINGS_TYPE = "savings"
 GOAL_STATUSES = {"active", "achieved", "archived"}
+# Nullable goal fields an update may explicitly clear (set back to ``None``).
+CLEARABLE_GOAL_FIELDS = {"target_date", "account_id"}
 TWO_DP = Decimal("0.01")
 
 
@@ -112,6 +114,33 @@ def balance_history(db: Session, account_id: int) -> list[SavingsBalance]:
     )
 
 
+def _snapshots_by_account(db: Session, account_ids: list[int]) -> dict[int, list[SavingsBalance]]:
+    """All snapshots for ``account_ids`` grouped by account, each date-ordered, in
+    ONE query (avoids the per-account N+1 of calling ``balance_history`` in a loop).
+    Every requested account gets a list (empty if it has no snapshots)."""
+    grouped: dict[int, list[SavingsBalance]] = {aid: [] for aid in account_ids}
+    if not account_ids:
+        return grouped
+    rows = db.scalars(
+        select(SavingsBalance)
+        .where(SavingsBalance.account_id.in_(account_ids))
+        .order_by(SavingsBalance.as_of_date, SavingsBalance.id)
+    ).all()
+    for row in rows:
+        grouped[row.account_id].append(row)
+    return grouped
+
+
+def _latest_balances(db: Session, account_ids: list[int]) -> dict[int, Decimal]:
+    """Latest snapshot balance per account (by date, ``id`` as tiebreak) in ONE
+    query. Accounts with no snapshot are omitted from the result."""
+    latest: dict[int, Decimal] = {}
+    for account_id, snaps in _snapshots_by_account(db, account_ids).items():
+        if snaps:  # ascending order → the last row is the newest
+            latest[account_id] = Decimal(snaps[-1].balance)
+    return latest
+
+
 def _balance_as_of(snaps: list, end: date) -> Decimal | None:
     """The latest snapshot balance strictly before ``end`` (snaps are date-ordered)."""
     as_of_balance = None
@@ -145,7 +174,7 @@ def history(db: Session, *, account_ids: set[int] | None = None, months: int = 1
     base = settings_service.get_base_currency(db)
     today = date.today()
     accounts = list_accounts(db, account_ids=account_ids)
-    snaps = {a.id: balance_history(db, a.id) for a in accounts}
+    snaps = _snapshots_by_account(db, [a.id for a in accounts])
     series = [
         {
             "month": start.strftime("%Y-%m"),
@@ -173,9 +202,11 @@ def total_savings(
     A foreign balance with no available rate is skipped."""
     base = settings_service.get_base_currency(db)
     today = date.today()
+    accounts = list_accounts(db, owner_user_id=owner_user_id, account_ids=account_ids)
+    latest = _latest_balances(db, [a.id for a in accounts])
     total = Decimal("0.00")
-    for account in list_accounts(db, owner_user_id=owner_user_id, account_ids=account_ids):
-        bal = latest_balance(db, account.id)
+    for account in accounts:
+        bal = latest.get(account.id)
         if bal is not None:
             converted = fx_service.convert_amount(db, bal, account.currency, base, today)
             if converted is not None:
@@ -201,6 +232,31 @@ def account_to_dict(db: Session, account: Account) -> dict:
         "interest_rate": str(rate) if rate is not None else None,
         "projected_annual_interest": str(projected) if projected is not None else None,
     }
+
+
+COMPOUNDS_PER_YEAR = {"monthly": 12, "annual": 1}
+
+
+def project_balance(
+    account: Account, months: int, *, principal: Decimal, frequency: str = "monthly"
+) -> Decimal:
+    """Project ``principal`` forward ``months`` months at ``account.interest_rate``
+    (an annual percentage from PR #42), compounding ``monthly`` or ``annual``.
+
+    Pure and DB-free: interest accrues once per full compounding period that fits
+    in the horizon, so the math stays exact ``Decimal`` (integer exponent) with no
+    float rounding. Returns the projected balance quantized to 2dp; an account with
+    no rate (or a non-positive horizon) yields ``principal`` unchanged.
+    """
+    if frequency not in COMPOUNDS_PER_YEAR:
+        raise ValueError(f"frequency must be one of {sorted(COMPOUNDS_PER_YEAR)}")
+    principal = Decimal(principal)
+    if account.interest_rate is None or months <= 0:
+        return principal.quantize(TWO_DP)
+    per_year = COMPOUNDS_PER_YEAR[frequency]
+    periods = months * per_year // 12  # whole compounding periods within the horizon
+    rate_per_period = (Decimal(account.interest_rate) / 100) / per_year
+    return (principal * (1 + rate_per_period) ** periods).quantize(TWO_DP)
 
 
 # --- Goals -------------------------------------------------------------------
@@ -262,7 +318,10 @@ def update_goal(db: Session, goal: SavingsGoal, **fields) -> SavingsGoal:
     if fields.get("account_id") is not None:
         get_savings_account(db, fields["account_id"])
     for key, value in fields.items():
-        if value is not None:
+        # The route passes only client-supplied fields (exclude_unset), so an
+        # explicit ``None`` here means "clear it". Honour that for the nullable
+        # fields; ignore ``None`` on required fields (can't null them out).
+        if value is not None or key in CLEARABLE_GOAL_FIELDS:
             setattr(goal, key, value)
     db.commit()
     db.refresh(goal)
