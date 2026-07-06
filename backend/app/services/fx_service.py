@@ -79,32 +79,72 @@ def set_manual_rate(db: Session, on: date, base: str, quote: str, rate: Decimal)
 def fetch_frankfurter(on: date, base: str, quote: str) -> Decimal | None:
     """Return base-per-1-quote for ``on`` from Frankfurter, or None on failure.
 
+    Network call — only used in ``frankfurter`` FX mode (opt-in). Thin wrapper
+    over ``fetch_frankfurter_batch``; a backfill should call the batch helper
+    directly so it issues one request per (date, base) rather than one per
+    (date, quote).
+    """
+    return fetch_frankfurter_batch(on, base, [quote]).get(quote.upper())
+
+
+def fetch_frankfurter_batch(on: date, base: str, quotes: list[str]) -> dict[str, Decimal]:
+    """Fetch base-per-1-quote for several ``quotes`` on ``on`` in ONE request.
+
+    Frankfurter's date endpoint takes ``base`` + a comma-joined ``symbols`` list
+    and returns quote-per-1-base for each symbol; we invert each into the
+    base-per-1-quote convention this module stores. This lets a backfill of N
+    foreign currencies for one date cost a single HTTP call instead of N.
+
+    A missing symbol (or a zero rate — guarded so we never divide by zero) is
+    simply omitted from the result. Any network/parse failure returns an empty
+    dict so the caller sees "no rates for this group" and can surface it, rather
+    than crashing an import.
+
     Network call — only used in ``frankfurter`` FX mode (opt-in).
     """
     import httpx  # local import so the dependency is only needed when used
 
+    base = base.upper()
+    # De-dupe, drop same-as-base, preserve order for a stable request/log.
+    wanted = [q for q in dict.fromkeys(q.upper() for q in quotes) if q != base]
+    if not wanted:
+        return {}
     url = f"{FRANKFURTER_BASE}/{on.isoformat()}"
     try:
-        resp = httpx.get(url, params={"base": quote, "symbols": base}, timeout=10.0)
+        resp = httpx.get(url, params={"base": base, "symbols": ",".join(wanted)}, timeout=10.0)
         resp.raise_for_status()
-        data = resp.json()
-        value = data.get("rates", {}).get(base)
-        return Decimal(str(value)) if value is not None else None
+        rates = resp.json().get("rates", {})
     except Exception as exc:  # network/parse errors must not break import
-        logger.warning("Frankfurter lookup failed (%s->%s %s): %s", quote, base, on, exc)
-        return None
+        logger.warning("Frankfurter batch lookup failed (%s->%s %s): %s", base, wanted, on, exc)
+        return {}
+    out: dict[str, Decimal] = {}
+    for quote in wanted:
+        value = rates.get(quote)  # quote-per-1-base
+        if value is None:
+            continue
+        quote_per_base = Decimal(str(value))
+        if quote_per_base == 0:  # guard divide-by-zero on a bad/zero rate
+            continue
+        out[quote] = Decimal(1) / quote_per_base  # -> base-per-1-quote
+    return out
 
 
 def get_rate(
     db: Session, on: date, quote: str, base: str, mode: str, allow_fetch: bool = True
 ) -> tuple[Decimal | None, str | None]:
-    """Resolve base-per-1-quote: same currency -> 1, then cache, then (if the
-    mode allows) an online fetch. Returns (rate, source) or (None, None)."""
+    """Resolve base-per-1-quote: same currency -> 1, then cache, then a cached
+    inverse (1/rate), then (if the mode allows) an online fetch. Returns
+    (rate, source) or (None, None)."""
     if quote == base:
         return Decimal(1), "same"
     cached = get_cached_rate(db, on, base, quote)
     if cached is not None:
         return cached, "cache"
+    # Derive from a cached inverse rather than fetching again: if we already hold
+    # base-per-1-quote we can serve quote-per-1-base as 1/rate (guard zero).
+    inverse = get_cached_rate(db, on, quote, base)
+    if inverse is not None and inverse != 0:
+        return Decimal(1) / inverse, "inverse"
     if mode == "frankfurter" and allow_fetch:
         fetched = fetch_frankfurter(on, base, quote)
         if fetched is not None:
@@ -176,19 +216,75 @@ def convert_amount(
     return (amount * rate).quantize(_CENTS, rounding=ROUND_HALF_UP)
 
 
+def _prefetch_rates(db: Session, base: str, needed: dict[date, set[str]]) -> int:
+    """Batch-fetch every (date -> {quotes}) that isn't already cached, one HTTP
+    call per date. Caches new rates (never overwriting an existing one) and
+    returns the number of (date, quote) rates that FAILED to fetch, so a caller
+    can log/surface a persistent Frankfurter outage instead of it being silently
+    swallowed row-by-row.
+    """
+    fetch_failures = 0
+    for on, quotes in needed.items():
+        # Only ask for what we don't already hold directly or via a cached inverse.
+        to_fetch = sorted(
+            q for q in quotes
+            if get_cached_rate(db, on, base, q) is None
+            and get_cached_rate(db, on, q, base) is None
+        )
+        if not to_fetch:
+            continue
+        rates = fetch_frankfurter_batch(on, base, to_fetch)
+        for quote in to_fetch:
+            rate = rates.get(quote)
+            if rate is None:
+                fetch_failures += 1
+                continue
+            upsert_rate(db, on, base, quote, rate, "frankfurter")  # never overwrites
+    # Flush so the just-cached rates are visible to the subsequent cache lookups
+    # (the session runs with autoflush disabled).
+    db.flush()
+    return fetch_failures
+
+
 def backfill_missing(db: Session, base: str, mode: str) -> dict:
-    """Try to convert all transactions still missing a base amount."""
+    """Try to convert all transactions still missing a base amount.
+
+    In Frankfurter mode this first batches the online lookups — grouping the
+    pending rows by date and fetching all needed currencies for that date in a
+    single request — so backfilling N foreign rows over K dates costs at most K
+    HTTP calls, not N. Rows then convert against the freshly-cached rates with no
+    further network calls. ``fetch_failures`` counts rates the online source
+    could not supply, so a persistent outage is a visible number, not silence.
+    """
+    base = base.upper()
     pending = db.scalars(
         select(Transaction).where(
             (Transaction.needs_rate.is_(True)) | (Transaction.base_amount.is_(None))
         )
     ).all()
+
+    fetch_failures = 0
+    if mode == "frankfurter":
+        needed: dict[date, set[str]] = {}
+        for txn in pending:
+            quote = (txn.currency or base).upper()
+            if quote != base:
+                needed.setdefault(txn.transaction_date, set()).add(quote)
+        fetch_failures = _prefetch_rates(db, base, needed)
+
+    # Rates are now cached (or derivable via inverse); convert without any
+    # per-row network call.
     filled = 0
     for txn in pending:
-        if convert_transaction(db, txn, base, mode, allow_fetch=(mode == "frankfurter")):
+        if convert_transaction(db, txn, base, mode, allow_fetch=False):
             filled += 1
     db.commit()
-    return {"checked": len(pending), "filled": filled, "still_missing": len(pending) - filled}
+    return {
+        "checked": len(pending),
+        "filled": filled,
+        "still_missing": len(pending) - filled,
+        "fetch_failures": fetch_failures,
+    }
 
 
 def recompute_all(db: Session, base: str, mode: str) -> dict:
