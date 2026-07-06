@@ -28,16 +28,40 @@ PDF_SUFFIXES = {".pdf"}
 
 # DoS caps for PDF text extraction (CR-SEC-9): a receipt/invoice is a handful of
 # pages, so read at most this many and clamp the extracted text so a "text bomb"
-# PDF can't blow up memory. (Image decompression bombs are caught by Pillow's
-# default Image.MAX_IMAGE_PIXELS guard, which we don't disable.)
+# PDF can't blow up memory.
 _MAX_PDF_PAGES = 200
 _MAX_TEXT_CHARS = 5_000_000
+
+# Image decompression-bomb guard (SR-D6): Pillow warns/raises past its default
+# MAX_IMAGE_PIXELS, but we (a) never disable it and (b) cap it explicitly so a
+# maliciously huge image degrades gracefully (skip → empty) instead of exhausting
+# memory. ~178 Mpx is well above any real receipt scan (a 600-dpi A4 page is ~35 Mpx).
+_MAX_IMAGE_PIXELS = 178_956_970
+
+# Rasterisation pixel budget (SR-D6): a rendered PDF page above this many pixels is
+# skipped so a huge / crafted page can't blow up memory during the OCR fallback. At the
+# default scale=2.0 a normal A4/Letter receipt renders well under this.
+_MAX_RENDER_PIXELS = 40_000_000
 
 # A monetary amount (e.g. 12.34 or 1,234.56). Embedded PDF text is only trusted as a
 # real digital statement when it contains one — otherwise a stray text layer on an
 # image-only PDF (a page number / watermark) would block the rasterise+OCR fallback.
 # The trailing (?!\.\d) rejects a dotted-date fragment like 01.05.2026 ("01.05" → no).
 _MONEY_RE = re.compile(r"\d[\d,]*\.\d{2}\b(?!\.\d)")
+
+# Beyond a money amount, a genuine digital statement/receipt has a real text layer —
+# not just a lone watermark that happens to look like "£9.99". Require a minimum word
+# count too, otherwise fall through to rasterise + OCR (SR-D6).
+_MIN_TEXT_WORDS = 8
+
+
+def _looks_like_digital_text(text: str) -> bool:
+    """True when embedded PDF text is substantial enough to trust as a digital
+    statement (a money amount *and* a real body of words) rather than a stray text
+    scrap on an image-only PDF that should fall through to the OCR fallback."""
+    if not _MONEY_RE.search(text):
+        return False
+    return len(text.split()) >= _MIN_TEXT_WORDS
 
 
 class OcrUnavailable(RuntimeError):
@@ -106,7 +130,18 @@ def _ocr_image(path: Path) -> tuple[str, float | None]:
     import pytesseract
     from PIL import Image
 
-    image = Image.open(path)
+    # Decompression-bomb guard (SR-D6): keep Pillow's protection on and cap it
+    # explicitly so a maliciously huge image is refused (DecompressionBombError) rather
+    # than decoded into memory. Never set MAX_IMAGE_PIXELS = None (that disables it).
+    if Image.MAX_IMAGE_PIXELS is None or Image.MAX_IMAGE_PIXELS > _MAX_IMAGE_PIXELS:
+        Image.MAX_IMAGE_PIXELS = _MAX_IMAGE_PIXELS
+    try:
+        image = Image.open(path)
+        image.load()  # force decode here so a bomb is caught inside this guard
+    except Image.DecompressionBombError:
+        # Refuse the image and degrade gracefully — no text, no confidence.
+        logger.warning("Refused decompression-bomb image %s", path.name)
+        return "", None
     data = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
     words = [w for w in data.get("text", []) if w and w.strip()]
     confs = [int(c) for c in data.get("conf", []) if str(c).lstrip("-").isdigit() and int(c) >= 0]
@@ -134,7 +169,15 @@ def ocr_pdf_pages(path: Path, *, scale: float = 2.0, max_pages: int = 20) -> str
         pdf = pdfium.PdfDocument(str(path))
         try:
             for i in range(min(len(pdf), max_pages)):
-                bitmap = pdf[i].render(scale=scale)  # pyright: ignore[reportArgumentType]  -- pypdfium2 render() takes a float scale
+                page = pdf[i]
+                # Pixel budget (SR-D6): skip any page that would rasterise beyond the
+                # cap so a crafted / oversized page can't blow up memory. A normal
+                # receipt at scale=2.0 is well under it.
+                width, height = page.get_size()  # points (1/72"), pre-scale
+                if int(width * scale) * int(height * scale) > _MAX_RENDER_PIXELS:
+                    logger.warning("Skipping oversized PDF page %d in %s", i, path.name)
+                    continue
+                bitmap = page.render(scale=scale)  # pyright: ignore[reportArgumentType]  -- pypdfium2 render() takes a float scale
                 parts.append(pytesseract.image_to_string(bitmap.to_pil()))
         finally:
             pdf.close()
@@ -181,11 +224,12 @@ def _pdf_text(path: Path) -> tuple[str, float | None]:
     text = "\n".join((page.extract_text() or "") for page in reader.pages[:_MAX_PDF_PAGES]).strip()
     if len(text) > _MAX_TEXT_CHARS:
         text = text[:_MAX_TEXT_CHARS]
-    # Trust embedded text as a real digital statement only if it actually contains a
-    # monetary amount. A tiny text layer on an image-only PDF (a page number, header or
-    # watermark) previously returned 0.95 confidence and blocked the OCR fallback — an
-    # empty-but-high-confidence parse. No amount ⇒ fall through to rasterise + OCR.
-    if _MONEY_RE.search(text):
+    # Trust embedded text as a real digital statement only if it's substantial — a
+    # monetary amount *and* a real body of words. A tiny text layer on an image-only PDF
+    # (a page number, header or lone "£9.99" watermark) previously returned 0.95
+    # confidence and blocked the OCR fallback — an empty-but-high-confidence parse.
+    # Below the bar ⇒ fall through to rasterise + OCR.
+    if _looks_like_digital_text(text):
         return text, 0.95  # embedded (digital) text is exact
     # Scanned / image-only PDF (or a no-amount text scrap) → rasterise + OCR.
     ocr_text = ocr_pdf_pages(path)
