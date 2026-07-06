@@ -25,15 +25,34 @@ from app.services import settings_service
 from app.services.household_service import get_or_create_default_household
 from app.services.scope import account_scope_condition, archived_condition
 
-FREQUENCY_INTERVALS = {"weekly": 7, "monthly": 30, "quarterly": 91, "yearly": 365}
+FREQUENCY_INTERVALS = {
+    "weekly": 7,
+    "fortnightly": 14,
+    "monthly": 30,
+    "bi_monthly": 61,
+    "quarterly": 91,
+    "yearly": 365,
+}
 # (low, high, frequency) bands for the median gap between occurrences, in days.
-_BANDS = [(5, 9, "weekly"), (24, 38, "monthly"), (80, 100, "quarterly"), (330, 400, "yearly")]
+# Bands are contiguous over the common cadences so a ~14d (fortnightly / bi-weekly),
+# ~42d (6-weekly, nearest band = monthly), or ~60d (bi-monthly) cadence isn't lost
+# in a gap between bands. A clean 7d/30d/91d/365d cadence still lands in its band.
+_BANDS = [
+    (5, 9, "weekly"),
+    (10, 19, "fortnightly"),
+    (20, 48, "monthly"),
+    (49, 74, "bi_monthly"),
+    (75, 135, "quarterly"),
+    (300, 430, "yearly"),
+]
 # Detection never flips a status the user set deliberately.
 USER_LOCKED = {"cancelled", "ignored"}
 # How many months a frequency works out to (for "monthly equivalent" cost).
 _PER_MONTH = {
     "weekly": Decimal("52") / Decimal("12"),
+    "fortnightly": Decimal("26") / Decimal("12"),
     "monthly": Decimal("1"),
+    "bi_monthly": Decimal("1") / Decimal("2"),
     "quarterly": Decimal("1") / Decimal("3"),
     "yearly": Decimal("1") / Decimal("12"),
 }
@@ -80,12 +99,35 @@ def _positive_gaps(dates: list[date]) -> list[int]:
     return [g for g in gaps if g > 0]
 
 
-def _confidence(db: Session, gaps: list[int], max_dev: Decimal, latest: Transaction) -> float:
+def _is_monotonic_increase(amounts: list[Decimal]) -> bool:
+    """True when charges only ever rise (or hold) over time — a legitimate price
+    increase / step-up rather than erratic noise. Requires at least one real rise
+    so a flat series doesn't trivially qualify (it's already handled as consistent)."""
+    if len(amounts) < 2:
+        return False
+    rose = False
+    for prev, cur in zip(amounts, amounts[1:], strict=False):
+        if cur < prev:
+            return False
+        if cur > prev:
+            rose = True
+    return rose
+
+
+def _confidence(
+    db: Session, gaps: list[int], max_dev: Decimal, latest: Transaction, amounts: list[Decimal]
+) -> float:
     gap_mean = statistics.mean(gaps)
     gap_cov = (statistics.pstdev(gaps) / gap_mean) if gap_mean else 0.0
     confidence = 0.5
     confidence += max(0.0, 0.3 * (1 - min(gap_cov, 1.0)))       # regular interval
-    confidence += max(0.0, 0.2 * (1 - float(max_dev) / 0.35))   # consistent amount
+    # A monotonic price rise is a legit increase, not noise, so it shouldn't be
+    # penalised the way an erratic (up-and-down) amount is. Give such a series the
+    # full "consistent amount" credit; genuine volatility still costs confidence.
+    if _is_monotonic_increase(amounts):
+        confidence += 0.2
+    else:
+        confidence += max(0.0, 0.2 * (1 - float(max_dev) / 0.35))   # consistent amount
     if _is_subscription_category(db, latest.category_id):
         confidence += 0.1
     return round(min(1.0, confidence), 2)
@@ -115,7 +157,7 @@ def _detect_group(db: Session, items: list[Transaction], min_occurrences: int) -
         return None  # too variable to be a fixed subscription
 
     latest = items[-1]
-    confidence = _confidence(db, gaps, max_dev, latest)
+    confidence = _confidence(db, gaps, max_dev, latest, amounts)
     interval = FREQUENCY_INTERVALS[freq]
     last_seen = dates[-1]
     return {
