@@ -14,6 +14,7 @@ import {
   type ChildBudgetStatus,
 } from "../api/client";
 import { isAmount } from "../lib/num";
+import { useServerState } from "../lib/useServerState";
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -33,7 +34,9 @@ const budgetColour = (s: string) => {
 };
 
 function BudgetBar({ b, base, manage }: Readonly<{ b: ChildBudgetStatus; base: string; manage?: BudgetManage }>) {
-  const [amount, setAmount] = useState(b.amount);
+  // Re-sync from the server value so the Save disabled-compare stays accurate after a
+  // refetch, rather than comparing against a baseline captured only at mount (FE-7).
+  const [amount, setAmount] = useServerState(b.amount);
   return (
     <li>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
@@ -41,6 +44,7 @@ function BudgetBar({ b, base, manage }: Readonly<{ b: ChildBudgetStatus; base: s
         {manage ? (
           <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
             <input
+              inputMode="decimal"
               value={amount}
               style={{ width: 90 }}
               aria-label={`${b.name} budget amount`}
@@ -49,8 +53,8 @@ function BudgetBar({ b, base, manage }: Readonly<{ b: ChildBudgetStatus; base: s
             <span className="muted">{base}/mo</span>
             <button
               className="btn btn--sm btn--ghost"
-              disabled={manage.busy || amount === b.amount}
-              onClick={() => manage.onSave(b.budget_id, amount)}
+              disabled={manage.busy || amount === b.amount || !isAmount(amount)}
+              onClick={() => { if (isAmount(amount)) manage.onSave(b.budget_id, amount); }}
             >
               Save
             </button>
@@ -132,7 +136,7 @@ function AllowanceView({ data, base, manage }: Readonly<{ data: AllowanceSummary
 function ChildHome() {
   const q = useQuery({ queryKey: ["allowance", "me"], queryFn: () => getAllowanceSummary() });
   if (q.isLoading) return <p className="muted">Loading…</p>;
-  if (!q.data) return <p className="status status--error">{String(q.error)}</p>;
+  if (!q.data) return <p className="status status--error">{q.error instanceof Error ? q.error.message : "Couldn't load your money."}</p>;
   return (
     <>
       <p className="muted">Here's your money — your budgets, savings, and what you've spent.</p>
@@ -165,6 +169,10 @@ function ParentManager({ canManage }: Readonly<{ canManage: boolean }>) {
   const invalidate = () => {
     setErr(null);
     qc.invalidateQueries({ queryKey: ["allowance", selected] });
+    // A budget/manual-item change also moves the household budget + savings figures,
+    // so refresh those views too (they key off separate queries).
+    qc.invalidateQueries({ queryKey: ["budget-summary"] });
+    qc.invalidateQueries({ queryKey: ["savings-summary"] });
   };
   const fail = (e: unknown) => setErr(String(e instanceof Error ? e.message : e));
 
@@ -309,7 +317,12 @@ function ParentManager({ canManage }: Readonly<{ canManage: boolean }>) {
                 <span>{it.as_of_date} · {it.description ?? "—"} <span className="muted">({it.category_name ?? "—"})</span></span>
                 <span>
                   {it.amount} {it.currency}{" "}
-                  <button className="link-btn" onClick={() => removeItem.mutate(it.id)}>remove</button>
+                  <button
+                    className="link-btn"
+                    onClick={() => { if (globalThis.confirm(`Remove "${it.description ?? "this item"}"?`)) removeItem.mutate(it.id); }}
+                  >
+                    remove
+                  </button>
                 </span>
               </li>
             ))}
