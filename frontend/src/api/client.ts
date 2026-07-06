@@ -1157,6 +1157,15 @@ export function deleteVendor(id: number): Promise<void> {
   return fetchJson<void>(`api/vendors/${id}`, { method: "DELETE" });
 }
 
+// Absorb one vendor into another: `sourceId` is deleted and its transactions +
+// aliases re-point to `targetId`. Owner only; returns the surviving target (#334).
+export function mergeVendors(sourceId: number, targetId: number): Promise<Vendor> {
+  return fetchJson<Vendor>(`api/vendors/${sourceId}/merge`, {
+    method: "POST",
+    body: JSON.stringify({ target_id: targetId }),
+  });
+}
+
 // --- Dashboard (spec §24.12) ---
 
 export interface DashboardSummary {
