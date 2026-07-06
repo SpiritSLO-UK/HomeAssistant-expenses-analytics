@@ -1,7 +1,8 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import {
+  ApiError,
   approveUser,
   deleteUser,
   getMe,
@@ -35,9 +36,11 @@ export default function Users() {
   const qc = useQueryClient();
   const [err, setErr] = useState<string | null>(null);
 
-  // Admin actions can require a fresh MFA step-up (#124). When one is challenged
-  // we stash the action and replay it after the user enters a code.
-  const lastAction = useRef<(() => void) | null>(null);
+  // Admin actions can require a fresh MFA step-up (#124). The action that was
+  // actually challenged stashes its own replay here — a per-action slot, not a
+  // single shared one — so a rapid second action can't clobber the pending replay
+  // and get re-submitted in its place after the code is entered.
+  const stepUpReplay = useRef<(() => void) | null>(null);
   const [stepUpOpen, setStepUpOpen] = useState(false);
   const [stepCode, setStepCode] = useState("");
   // Which user's page-access checklist is open (#108).
@@ -55,9 +58,14 @@ export default function Users() {
     qc.invalidateQueries({ queryKey: ["me"] });
   };
 
-  const onError = (e: unknown) => {
+  // On a step-up challenge, stash the failed action's own replay closure and open
+  // the code prompt; on any other failure surface the real error. The replay is
+  // captured per-call from the mutation's own variables, so it always replays the
+  // action that was challenged (fixes the shared-slot clobber).
+  const handleError = (e: unknown, replay: () => void) => {
     if (isStepUpError(e)) {
-      setStepUpOpen(true); // re-prompt; lastAction replays on success
+      stepUpReplay.current = replay;
+      setStepUpOpen(true);
       return;
     }
     setErr(humanError(e));
@@ -65,18 +73,32 @@ export default function Users() {
 
   const patch = useMutation({
     mutationFn: (v: { id: number; patch: UserPatch }) => updateUser(v.id, v.patch),
-    onSuccess: () => { setErr(null); invalidate(); },
-    onError,
+    // Optimistically apply the change to the cached row so the control reflects
+    // intent immediately (and lets rapid successive edits build on each other).
+    onMutate: async (v) => {
+      await qc.cancelQueries({ queryKey: ["users"] });
+      const prev = qc.getQueryData<User[]>(["users"]);
+      qc.setQueryData<User[]>(["users"], (old) =>
+        (old ?? []).map((u) => (u.id === v.id ? { ...u, ...v.patch } : u)),
+      );
+      return { prev };
+    },
+    onSuccess: () => setErr(null),
+    onError: (e, v, ctx) => {
+      if (ctx?.prev) qc.setQueryData(["users"], ctx.prev); // roll back the optimistic edit
+      handleError(e, () => patch.mutate(v));
+    },
+    onSettled: () => invalidate(),
   });
   const approve = useMutation({
     mutationFn: (id: number) => approveUser(id),
     onSuccess: () => { setErr(null); invalidate(); },
-    onError,
+    onError: (e, id) => handleError(e, () => approve.mutate(id)),
   });
   const remove = useMutation({
     mutationFn: (id: number) => deleteUser(id),
     onSuccess: () => { setErr(null); invalidate(); },
-    onError,
+    onError: (e, id) => handleError(e, () => remove.mutate(id)),
   });
 
   const stepUp = useMutation({
@@ -84,24 +106,16 @@ export default function Users() {
     onSuccess: () => {
       setStepUpOpen(false);
       setStepCode("");
-      lastAction.current?.(); // replay the challenged action
+      const replay = stepUpReplay.current;
+      stepUpReplay.current = null;
+      replay?.(); // replay the exact action that was challenged
     },
     onError: () => setErr("That code didn't match. Try again."),
   });
 
-  // Record then run an admin action so it can be replayed after a step-up.
-  const doPatch = (id: number, p: UserPatch) => {
-    lastAction.current = () => patch.mutate({ id, patch: p });
-    patch.mutate({ id, patch: p });
-  };
-  const doApprove = (id: number) => {
-    lastAction.current = () => approve.mutate(id);
-    approve.mutate(id);
-  };
-  const doRemove = (id: number) => {
-    lastAction.current = () => remove.mutate(id);
-    remove.mutate(id);
-  };
+  const doPatch = (id: number, p: UserPatch) => patch.mutate({ id, patch: p });
+  const doApprove = (id: number) => approve.mutate(id);
+  const doRemove = (id: number) => remove.mutate(id);
 
   if (me.data && !me.data.is_admin) {
     return (
@@ -177,7 +191,10 @@ export default function Users() {
                       </button>{" "}
                       <button
                         className="link-btn"
-                        onClick={() => doPatch(u.id, { status: "disabled" })}
+                        onClick={() => {
+                          if (globalThis.confirm(`Deny "${u.display_name}"? They won't get access.`))
+                            doPatch(u.id, { status: "disabled" });
+                        }}
                       >
                         deny
                       </button>
@@ -220,7 +237,6 @@ export default function Users() {
                         <select
                           value={u.role}
                           title={ROLE_HINT[u.role]}
-                          disabled={patch.isPending}
                           onChange={(e) => doPatch(u.id, { role: e.target.value })}
                         >
                           {ROLES.map((r) => (
@@ -231,7 +247,6 @@ export default function Users() {
                       <td>
                         <select
                           value={u.status}
-                          disabled={patch.isPending}
                           onChange={(e) => doPatch(u.id, { status: e.target.value })}
                         >
                           {STATUSES.map((s) => (
@@ -246,7 +261,6 @@ export default function Users() {
                           <input
                             type="checkbox"
                             checked={u.can_manage_settings}
-                            disabled={patch.isPending}
                             title="Allow this member to manage the general Settings + nav tabs"
                             onChange={(e) => doPatch(u.id, { can_manage_settings: e.target.checked })}
                           />
@@ -273,7 +287,6 @@ export default function Users() {
                         <select
                           value={u.mfa_policy}
                           title="Require two-factor for this user (they're blocked from the app until they enrol)"
-                          disabled={patch.isPending}
                           onChange={(e) => doPatch(u.id, { mfa_policy: e.target.value })}
                         >
                           <option value="optional">optional</option>
@@ -323,12 +336,21 @@ function RestrictPanel({ user, onToggle, onClose }: Readonly<{
   onToggle: (keys: string[]) => void;
   onClose: () => void;
 }>) {
-  const blocked = new Set(user.blocked_nav_keys);
+  // Track the current selection locally so a rapid second toggle builds on the
+  // first instead of on the (still-stale) server prop — otherwise the earlier
+  // change is dropped before the refetch lands. Re-sync when the prop settles.
+  const [keys, setKeys] = useState<string[]>(user.blocked_nav_keys);
+  useEffect(() => {
+    setKeys(user.blocked_nav_keys);
+  }, [user.blocked_nav_keys]);
+  const blocked = new Set(keys);
   const toggle = (key: string) => {
-    const next = new Set(blocked);
+    const next = new Set(keys);
     if (next.has(key)) next.delete(key);
     else next.add(key);
-    onToggle([...next]);
+    const arr = [...next];
+    setKeys(arr);
+    onToggle(arr);
   };
   return (
     <div className="card" style={{ borderLeft: "3px solid #6aa9ff" }}>
@@ -356,9 +378,13 @@ function RestrictPanel({ user, onToggle, onClose }: Readonly<{
 }
 
 function humanError(e: unknown): string {
-  const msg = String(e);
-  // fetchJson throws "API ... failed: 400 ...". Surface a friendlier hint for the
-  // last-owner guard, which is the common 400 here.
-  if (msg.includes("400")) return "That change isn't allowed (you can't remove the last owner).";
-  return msg;
+  // Surface a friendlier hint for the last-owner guard specifically; for any other
+  // failure show the real server detail rather than mislabelling it "last owner".
+  if (e instanceof ApiError) {
+    const detail = typeof e.body?.detail === "string" ? e.body.detail : null;
+    if (detail?.toLowerCase().includes("last active owner"))
+      return "That change isn't allowed (you can't remove the last owner).";
+    if (detail) return detail;
+  }
+  return String(e);
 }
