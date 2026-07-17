@@ -107,28 +107,46 @@ LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR"}
 # fewer than the most recent 3 regardless of age or size.
 _BACKUP_TRIM_DEFAULTS = {"max_age_days": 90, "max_total_mb": 500, "min_keep": 3}
 
+# Defaults that never vary at runtime — built once, not per call.
+_STATIC_DEFAULTS: dict[str, str] = {
+    FX_MODE: "manual",
+    RECEIPT_MATCH_MODE: "suggest",
+    AI_PROVIDER: "none",
+    AI_BASE_URL: "",
+    AI_MODEL: "",
+    CLOUD_AI_PRIVACY_DEFAULT: "normal",
+    INVESTMENT_PRICE_SOURCE: "manual",
+    DEFAULT_VENDOR_COUNTRY: "",
+    PAPERLESS_URL: "",
+    ENERGY_SOURCE: "off",
+    ENERGY_PRODUCTION_ENTITIES: "[]",
+    ENERGY_PRODUCTION_TOPICS: "[]",
+    ENERGY_TARIFF_PER_KWH: "",
+    ENERGY_CATEGORY_ID: "",
+    ENERGY_PRODUCTION_SEMANTICS: "cumulative",
+}
+
+# Memoised full defaults, keyed on the three env-derived values it depends on, so
+# the dict is rebuilt only when the underlying config actually changes (e.g. a test
+# overriding env_settings) rather than on every ``get``/``get_all`` call.
+_defaults_key: tuple[str, str, str] | None = None
+_defaults_cache: dict[str, str] = {}
+
 
 def _defaults() -> dict[str, str]:
-    return {
-        BASE_CURRENCY: env_settings.currency,
-        FX_MODE: "manual",
-        RECEIPT_MATCH_MODE: "suggest",
-        PRIVACY_MODE: env_settings.privacy_mode.value,
-        AI_PROVIDER: "none",
-        AI_BASE_URL: "",
-        AI_MODEL: "",
-        LOG_LEVEL: env_settings.log_level.upper(),
-        CLOUD_AI_PRIVACY_DEFAULT: "normal",
-        INVESTMENT_PRICE_SOURCE: "manual",
-        DEFAULT_VENDOR_COUNTRY: "",
-        PAPERLESS_URL: "",
-        ENERGY_SOURCE: "off",
-        ENERGY_PRODUCTION_ENTITIES: "[]",
-        ENERGY_PRODUCTION_TOPICS: "[]",
-        ENERGY_TARIFF_PER_KWH: "",
-        ENERGY_CATEGORY_ID: "",
-        ENERGY_PRODUCTION_SEMANTICS: "cumulative",
-    }
+    """The full default map. Callers must NOT mutate the returned dict — it is a
+    shared, cached instance (``get_all`` copies before it mutates)."""
+    global _defaults_key, _defaults_cache
+    key = (env_settings.currency, env_settings.privacy_mode.value, env_settings.log_level.upper())
+    if key != _defaults_key:
+        _defaults_cache = {
+            **_STATIC_DEFAULTS,
+            BASE_CURRENCY: key[0],
+            PRIVACY_MODE: key[1],
+            LOG_LEVEL: key[2],
+        }
+        _defaults_key = key
+    return _defaults_cache
 
 
 def get_privacy_mode(db: Session) -> str:
@@ -142,7 +160,7 @@ def get_log_level(db: Session) -> str:
 
 
 def get_all(db: Session) -> dict[str, str]:
-    values = _defaults()
+    values = dict(_defaults())  # copy: _defaults() is a shared cached instance
     for row in db.scalars(select(Setting)).all():
         if row.value is not None:
             values[row.key] = row.value
@@ -158,13 +176,45 @@ def get(db: Session, key: str) -> str | None:
     return _defaults().get(key)
 
 
+def _validate_entry(key: str, value: str | None) -> None:
+    """Reject a malformed key/value before any write (see ``set_many``)."""
+    if not isinstance(key, str) or not key or len(key) > 128:
+        raise ValueError(f"invalid setting key: {key!r}")
+    if value is not None and not isinstance(value, str):
+        raise ValueError(f"invalid value for setting {key!r}: {value!r}")
+
+
+def set_many(db: Session, values: dict[str, str]) -> None:
+    """Atomically upsert several settings in ONE transaction, so a multi-field save
+    is all-or-nothing.
+
+    The whole batch is validated up front — a single bad key/value raises
+    ``ValueError`` *before* anything is written — and a DB-level failure rolls the
+    session back, so a failed batch never leaves a partial write. Existing rows are
+    updated in place (keyed on ``key``, SR-2); unknown keys are inserted. Commits
+    exactly once.
+    """
+    if not values:
+        return
+    for key, value in values.items():
+        _validate_entry(key, value)
+    try:
+        for key, value in values.items():
+            row = db.scalars(select(Setting).where(Setting.key == key)).one_or_none()
+            if row is None:
+                db.add(Setting(key=key, value=value))
+            else:
+                row.value = value
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+
 def set_value(db: Session, key: str, value: str) -> None:
-    row = db.scalars(select(Setting).where(Setting.key == key)).one_or_none()
-    if row is None:
-        db.add(Setting(key=key, value=value))
-    else:
-        row.value = value
-    db.commit()
+    """Upsert a single setting and commit. Thin wrapper over the atomic
+    :func:`set_many` primitive."""
+    set_many(db, {key: value})
 
 
 # --- Config-import allowlist (backlog CR-SEC-2) -----------------------------
