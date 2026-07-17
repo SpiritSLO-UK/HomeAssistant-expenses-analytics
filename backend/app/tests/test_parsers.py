@@ -312,6 +312,49 @@ def test_generic_parser_keeps_uk_day_first_statement():
     assert txns[1].transaction_date == date(2024, 3, 15)
 
 
+def test_generic_parser_unambiguous_us_date_and_accounting_negative():
+    """Regression for #219: a US date whose day > 12 (6/28) auto-detects month-first,
+    and an accounting-style ``($29.01)`` parses as a negative amount."""
+    content = (
+        b"Date,Description,Amount\n"
+        b"6/28/2026,GROCERIES,($29.01)\n"  # day=28 > 12 ⇒ proves month-first
+    )
+    txns = GenericCsvParser().parse("us-bank.csv", content)
+    assert txns[0].transaction_date == date(2026, 6, 28)  # June 28, NOT an error
+    assert txns[0].amount == Decimal("-29.01")
+
+
+def test_generic_parser_all_ambiguous_us_needs_override():
+    """All dates have day ≤ 12, so auto-detection has no evidence and stays day-first
+    (documents the silent-misparse limitation). Passing ``month_first=True`` fixes it."""
+    content = (
+        b"Date,Description,Amount\n"
+        b"6/3/2026,COFFEE,-3.50\n"
+        b"7/8/2026,LUNCH,-8.00\n"
+    )
+    # Without the override: day-first default silently misreads month↔day.
+    day_first = GenericCsvParser().parse("us-bank.csv", content)
+    assert day_first[0].transaction_date == date(2026, 3, 6)   # wrong: read as 6 March
+    assert day_first[1].transaction_date == date(2026, 8, 7)   # wrong: read as 7 Aug
+
+    # With the explicit override: correct US month-first parsing.
+    us = GenericCsvParser(month_first=True).parse("us-bank.csv", content)
+    assert us[0].transaction_date == date(2026, 6, 3)   # June 3
+    assert us[1].transaction_date == date(2026, 7, 8)   # July 8
+
+
+def test_generic_parser_override_false_forces_uk_day_first():
+    """month_first=False forces day-first even for a file auto-detection would flip."""
+    content = (
+        b"Date,Description,Amount\n"
+        b"03/04/2024,COFFEE,-3.50\n"
+        b"09/15/2024,GROCERIES,-42.18\n"  # would auto-detect month-first (15 > 12)
+    )
+    txns = GenericCsvParser(month_first=False).parse("forced-uk.csv", content)
+    assert txns[0].transaction_date == date(2024, 4, 3)   # 3 April, day-first honoured
+    assert txns[1].transaction_date == date(2024, 9, 15)  # 15 Sep via fallback
+
+
 # --- detection ---
 
 def test_detection_by_headers():

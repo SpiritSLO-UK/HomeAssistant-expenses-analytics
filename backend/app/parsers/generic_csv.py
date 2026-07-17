@@ -95,10 +95,16 @@ class GenericCsvParser(BaseStatementParser):
         self,
         mapping: dict[str, str] | None = None,
         default_currency: str = "GBP",
+        *,
+        month_first: bool | None = None,
     ) -> None:
         # mapping: logical field -> actual header name in the file.
         self.mapping = mapping
         self.default_currency = default_currency
+        # None = auto-detect date order per file (default). Set True/False to force
+        # US month-first (MM/DD) / UK day-first (DD/MM) — needed when every date is
+        # ambiguous (all day components ≤ 12), where auto-detection has no evidence.
+        self.month_first = month_first
 
     def can_parse(self, filename: str, content: bytes) -> bool:
         # Generic is the fallback: it can parse anything with a date column and
@@ -133,9 +139,16 @@ class GenericCsvParser(BaseStatementParser):
         if not ({"amount", "debit", "credit"} & m.keys()):
             raise ParseError("Generic CSV: could not identify an amount column")
 
-        # Detect the date order once for the whole file (US MM/DD vs UK DD/MM) so an
-        # ambiguous-but-consistent statement imports with the right dates (SR / US-format).
-        month_first = detect_month_first(row.get(m["date"], "") for row in rows)
+        # Resolve the date order once for the whole file (US MM/DD vs UK DD/MM). An
+        # explicit override wins; otherwise infer it so an ambiguous-but-consistent
+        # statement imports with the right dates (SR / US-format). The override is the
+        # only way to fix an all-ambiguous US file (every day ≤ 12), where detection
+        # has no evidence and correctly stays on the day-first default.
+        month_first = (
+            self.month_first
+            if self.month_first is not None
+            else detect_month_first(row.get(m["date"], "") for row in rows)
+        )
 
         out: list[StandardTransaction] = []
         for i, row in enumerate(rows, start=1):
