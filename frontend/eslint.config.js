@@ -2,6 +2,7 @@
 // JS/TS rules (same S#### keys) — so the linter lines up with what SonarCloud
 // reports and catches these smells before code reaches the server.
 import sonarjs from "eslint-plugin-sonarjs";
+import reactHooks from "eslint-plugin-react-hooks";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
@@ -9,6 +10,7 @@ export default tseslint.config(
   {
     files: ["src/**/*.{ts,tsx}"],
     extends: [sonarjs.configs.recommended],
+    plugins: { "react-hooks": reactHooks },
     languageOptions: {
       parser: tseslint.parser,
       parserOptions: { ecmaFeatures: { jsx: true } },
@@ -20,6 +22,12 @@ export default tseslint.config(
       "sonarjs/no-nested-template-literals": "warn",
       "sonarjs/cognitive-complexity": "warn",
       "sonarjs/use-type-alias": "warn",
+      // CR-FEAT-11: catch hook-dependency bugs. rules-of-hooks is a real
+      // correctness rule (hard error); exhaustive-deps is surfaced as a warning
+      // (like the refactor rules above) so the lint gate stays green while the
+      // pre-existing dependency-array omissions are worked through.
+      "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "warn",
     },
   },
 );
