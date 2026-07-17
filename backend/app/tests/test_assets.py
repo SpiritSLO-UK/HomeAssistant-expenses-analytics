@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 
 import pytest
@@ -200,6 +201,38 @@ def test_segment_fuel_cost_separates_from_total(client):
     assert len(car["segments"]) == 1
     assert car["total_fuel_cost"] == "115.00"  # 55 + 45 + 15
     assert car["segment_fuel_cost"] == "45.00"  # only the 2nd (segment-anchoring) fill
+
+
+def test_add_log_service_rejects_nonsensical_values(client):
+    # The service layer guards against negative/nonsensical numbers on insert
+    # (defence-in-depth beyond the API schema), for direct/importer callers.
+    from app.db.session import SessionLocal
+    from app.services import asset_service
+
+    aid = _asset(client, distance_unit="mi")
+    bad_inserts = [
+        {"odometer": Decimal("-1"), "litres": Decimal("30")},          # negative odometer
+        {"odometer": Decimal("100"), "litres": Decimal("-5")},         # negative litres
+        {"odometer": Decimal("100"), "litres": Decimal("0")},          # zero litres
+        {"odometer": Decimal("100"), "litres": Decimal("30"), "cost": Decimal("-10")},  # negative cost
+        {"kind": "reading", "meter": "elec", "reading": Decimal("-3")},  # negative reading
+    ]
+    d1 = date(2026, 1, 1)
+    d2 = date(2026, 1, 15)
+    db = SessionLocal()
+    try:
+        for bad in bad_inserts:
+            with pytest.raises(ValueError):
+                asset_service.add_log(db, aid, log_date=d1, **bad)
+        # A backwards odometer (below an earlier fill) is NOT an insert error —
+        # it is tolerated and skipped by the tank-to-tank calc.
+        asset_service.add_log(db, aid, log_date=d1,
+                              odometer=Decimal("10000"), litres=Decimal("35"))
+        later = asset_service.add_log(db, aid, log_date=d2,
+                                      odometer=Decimal("9800"), litres=Decimal("30"))
+        assert later.odometer == Decimal("9800")
+    finally:
+        db.close()
 
 
 def test_list_filtered_by_kind(client):

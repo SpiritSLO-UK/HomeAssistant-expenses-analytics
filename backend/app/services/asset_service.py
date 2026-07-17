@@ -103,11 +103,27 @@ def get_log(db: Session, log_id: int) -> AssetLog:
     return log
 
 
+def _validate_numeric_fields(fields: dict) -> None:
+    """Reject nonsensical numeric inputs at insert (defence-in-depth beyond the
+    API schema, for direct/importer callers): a negative odometer/cost/reading,
+    or non-positive litres. A *backwards* odometer relative to earlier fills is
+    deliberately tolerated — it may be a corrected/edited entry and is skipped by
+    the tank-to-tank calc (see ``_refuel_segment``), not rejected as an error."""
+    for name in ("cost", "odometer", "reading"):
+        value = fields.get(name)
+        if value is not None and Decimal(value) < 0:
+            raise ValueError(f"{name} must not be negative")
+    litres = fields.get("litres")
+    if litres is not None and Decimal(litres) <= 0:
+        raise ValueError("litres must be positive")
+
+
 def add_log(db: Session, asset_id: int, *, log_date: date, kind: str = "refuel",
             **fields) -> AssetLog:
     get_asset(db, asset_id)  # validate existence
     if kind not in LOG_KINDS:
         raise ValueError(f"kind must be one of {sorted(LOG_KINDS)}")
+    _validate_numeric_fields(fields)
 
     def _money(value):
         return Decimal(value).quantize(TWO_DP) if value is not None else None
