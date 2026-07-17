@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.logging import get_logger
-from app.models import Account, Statement, Transaction
+from app.models import Account, Rule, Statement, Transaction, Vendor, VendorAlias
 from app.parsers import StandardTransaction, detect_parser, get_parser
 from app.parsers.base import ParseError
 from app.parsers.generic_csv import GenericCsvParser
@@ -61,6 +61,32 @@ class ImportReport:
             "duplicates": self.duplicate_count,
             "errors": self.error_count,
         }
+
+
+@dataclass
+class _CategoriserContext:
+    """Per-import snapshot of the data ``auto_categorise`` needs, loaded once so a
+    batch of rows reuses it instead of re-querying rules + aliases per row (SR-A1
+    §2). ``rules`` are the enabled rules in priority order; ``alias_pairs`` are all
+    ``(VendorAlias, Vendor)`` pairs (the Python vendor match scans these — the same
+    exact/contains/regex/fuzzy semantics as vendor_service.match_vendor)."""
+
+    rules: list[Rule]
+    alias_pairs: list[tuple[VendorAlias, Vendor]]
+
+
+def _load_categoriser_context(db: Session) -> _CategoriserContext:
+    rules = list(
+        db.scalars(
+            select(Rule).where(Rule.enabled.is_(True)).order_by(Rule.priority.desc(), Rule.id)
+        ).all()
+    )
+    alias_pairs = list(
+        db.execute(
+            select(VendorAlias, Vendor).join(Vendor, VendorAlias.vendor_id == Vendor.id)
+        ).all()
+    )
+    return _CategoriserContext(rules=rules, alias_pairs=alias_pairs)
 
 
 def _uploads_dir() -> Path:
@@ -103,15 +129,51 @@ def _resolve_parser(parser_id: str | None, filename: str, content: bytes, mappin
     return parser
 
 
+def _existing_hashes_for(
+    db: Session, account_id: int, parsed: list[StandardTransaction]
+) -> set[str]:
+    """Which per-transaction source-hashes already exist for this account.
+
+    Only the hashes present in *this* batch are looked up, via a single ``IN``
+    query per chunk, instead of loading every stored hash for the account (which
+    grows unbounded with history). Chunked to stay well under SQLite's bound-
+    variable cap (~999)."""
+    candidates = list({source_hash(account_id, txn) for txn in parsed})
+    if not candidates:
+        return set()
+    found: set[str] = set()
+    chunk = 500
+    for start in range(0, len(candidates), chunk):
+        batch = candidates[start : start + chunk]
+        found.update(
+            h
+            for h in db.scalars(
+                select(Transaction.source_hash).where(
+                    Transaction.account_id == account_id,
+                    Transaction.source_hash.in_(batch),
+                )
+            ).all()
+            if h is not None
+        )
+    return found
+
+
 def _build_preview(
     parsed: list[StandardTransaction],
     account_id: int,
     existing_hashes: set[str],
     cross: dict[int, curve_link_service.CrossMatch],
     preview_limit: int,
+    *,
+    file_already_imported: bool = False,
 ) -> tuple[int, int, list[dict]]:
     """Walk the parsed rows: tally new vs duplicate (same-account hash or a
-    high-confidence Curve cross-match) and build the capped preview list."""
+    high-confidence Curve cross-match) and build the capped preview list.
+
+    When ``file_already_imported`` is set (this exact file content was imported
+    before), every row is reported as a duplicate — the file is a known re-import,
+    so its rows must never be counted as brand-new even if per-row hashing can't
+    line them up (e.g. a different resolved account)."""
     new_count = 0
     dup_count = 0
     seen: set[str] = set()
@@ -122,12 +184,14 @@ def _build_preview(
         seen.add(h)
         match = cross.get(idx)
         cross_skip = match is not None and match.confidence == "high"
-        is_dup = same_dup or cross_skip
+        is_dup = same_dup or cross_skip or file_already_imported
         if is_dup:
             dup_count += 1
         else:
             new_count += 1
         dup_reason = match.reason if cross_skip else None
+        if file_already_imported and dup_reason is None:
+            dup_reason = "File already imported"
         warning = match.reason if (match is not None and not cross_skip and not same_dup) else None
         if len(preview) < preview_limit:
             preview.append(_preview_row(txn, is_dup, dup_reason=dup_reason, warning=warning))
@@ -172,14 +236,9 @@ def create_import(
     if already:
         warnings.append(f"This file was already imported (statement #{already.id}).")
 
-    # Existing per-transaction hashes for this account.
-    existing_hashes = {
-        h
-        for h in db.scalars(
-            select(Transaction.source_hash).where(Transaction.account_id == account.id)
-        ).all()
-        if h is not None
-    }
+    # Existing per-transaction hashes for this account (only the ones this batch
+    # could collide with — see _existing_hashes_for).
+    existing_hashes = _existing_hashes_for(db, account.id, parsed)
 
     # Cross-account dedup for Curve (overlay card): the same spend also lands on
     # the underlying funding card's own statement (curve_link_service). A
@@ -191,7 +250,8 @@ def create_import(
     )
 
     new_count, dup_count, preview = _build_preview(
-        parsed, account.id, existing_hashes, cross, preview_limit
+        parsed, account.id, existing_hashes, cross, preview_limit,
+        file_already_imported=already is not None,
     )
 
     statement = Statement(
@@ -315,6 +375,7 @@ def _persist_parsed_transaction(
     base_currency: str,
     fx_mode: str,
     review_reason: str | None = None,
+    categoriser: _CategoriserContext | None = None,
 ) -> tuple[int, int, int]:
     """Persist one parsed transaction, skipping exact duplicates.
 
@@ -332,7 +393,7 @@ def _persist_parsed_transaction(
         row.review_reason = review_reason
     db.add(row)
     db.flush()
-    categorised = 1 if auto_categorise(db, row) else 0
+    categorised = 1 if auto_categorise(db, row, categoriser) else 0
     # A parser may force a specific library category (e.g. earned Curve Cash →
     # Cashback), which must win over the keyword guess on its merchant text.
     if txn.category_library_id:
@@ -390,6 +451,7 @@ def _persist_rows(
     existing_hashes: set[str],
     base_currency: str,
     fx_mode: str,
+    categoriser: _CategoriserContext | None = None,
 ) -> tuple[int, int, int, int]:
     """Persist each parsed row (skipping exact + high-confidence Curve duplicates).
     Returns (new, duplicates, auto-categorised, needs-rate) counts."""
@@ -409,6 +471,7 @@ def _persist_rows(
             base_currency=base_currency,
             fx_mode=fx_mode,
             review_reason=flag,
+            categoriser=categoriser,
         )
         if not new_delta:
             dup_count += 1
@@ -439,13 +502,11 @@ def confirm_import(db: Session, import_id: int) -> dict:
     base_currency = settings_service.get_base_currency(db)
     fx_mode = settings_service.get_fx_mode(db)
 
-    existing_hashes = {
-        h
-        for h in db.scalars(
-            select(Transaction.source_hash).where(Transaction.account_id == account.id)
-        ).all()
-        if h is not None
-    }
+    existing_hashes = _existing_hashes_for(db, account.id, parsed)
+
+    # Preload the rule set + vendor aliases once for the whole batch instead of
+    # re-querying them for every row inside auto_categorise (SR-A1 §2).
+    categoriser = _load_categoriser_context(db)
 
     # Same cross-account Curve dedup as the preview (curve_link_service): skip a
     # Curve-marked match, keep-but-flag an unmarked possible match.
@@ -462,6 +523,7 @@ def confirm_import(db: Session, import_id: int) -> dict:
         existing_hashes=existing_hashes,
         base_currency=base_currency,
         fx_mode=fx_mode,
+        categoriser=categoriser,
     )
 
     statement.status = "imported"
@@ -556,16 +618,61 @@ def recategorise(db: Session, only_uncategorised: bool = True) -> int:
     return count
 
 
-def auto_categorise(db: Session, txn: Transaction) -> bool:
+def _apply_rules_preloaded(db: Session, txn: Transaction, rules: list[Rule]) -> None:
+    """Rule application against a preloaded rule set — mirrors
+    ``rule_service.apply_rules`` (highest priority per action type wins) but without
+    re-querying the rules for every row."""
+    used_actions: set[str] = set()
+    for rule in rules:
+        if rule.action_type in used_actions:
+            continue
+        if rule_service.matches(rule, txn) and rule_service.apply_action(rule, txn, db):
+            used_actions.add(rule.action_type)
+
+
+def _normalise_preloaded(txn: Transaction, alias_pairs: list[tuple[VendorAlias, Vendor]]) -> None:
+    """Vendor match + apply against preloaded aliases — mirrors
+    ``vendor_service.match_vendor`` + ``normalise_transaction`` (same precedence /
+    specificity tie-break and confidence), scanning the in-memory alias list rather
+    than issuing SQL per row."""
+    description = txn.description_raw
+    if not description:
+        return
+    best: tuple[int, int, Vendor, str] | None = None
+    for alias, vendor in alias_pairs:
+        if vendor_service._alias_matches(alias, description):
+            best = vendor_service._consider(best, alias, vendor)
+    if best is None:
+        return
+    vendor, match_type = best[2], best[3]
+    if txn.merchant_id is None:
+        txn.merchant_id = vendor.id
+    vendor.last_seen_at = datetime.now(UTC)
+    if txn.category_id is None and vendor.default_category_id is not None:
+        txn.category_id = vendor.default_category_id
+        txn.confidence_score = vendor_service._MATCH_CONFIDENCE.get(match_type or "contains", 0.90)
+
+
+def auto_categorise(
+    db: Session, txn: Transaction, ctx: _CategoriserContext | None = None
+) -> bool:
     """Categorisation order (spec §15.1): manual > rule > vendor default >
     keyword. Returns True if the transaction ends up with a category.
 
     Public so other services (e.g. a transaction materialised from a receipt)
-    can categorise a freshly-created row the same way an import does."""
-    # 1. Rules (highest precedence after manual; may also set vendor/flags).
-    rule_service.apply_rules(db, txn)
-    # 2. Vendor alias match (sets merchant; category only if still unset).
-    vendor_service.normalise_transaction(db, txn)
+    can categorise a freshly-created row the same way an import does.
+
+    ``ctx`` is an optional per-import snapshot (rules + vendor aliases loaded once)
+    used by the confirm hot loop to avoid re-querying them per row (SR-A1 §2). When
+    omitted (ad-hoc single-row callers), the rules/aliases are queried live."""
+    if ctx is None:
+        # 1. Rules (highest precedence after manual; may also set vendor/flags).
+        rule_service.apply_rules(db, txn)
+        # 2. Vendor alias match (sets merchant; category only if still unset).
+        vendor_service.normalise_transaction(db, txn)
+    else:
+        _apply_rules_preloaded(db, txn, ctx.rules)
+        _normalise_preloaded(txn, ctx.alias_pairs)
     if txn.category_id is not None:
         return True
     # 3. Category-library keyword fallback.
