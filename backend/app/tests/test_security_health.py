@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from app.services import security_service
+from app.models import Household, User
+from app.services import security_health_service, security_service
+from app.services.household_service import get_or_create_default_household
 
 
 def _normalise_unlocks():
@@ -86,6 +88,59 @@ def test_failed_unlocks_surface_as_a_warning(client):
     fu = _check(client.get("/api/security/health").json()["checks"], "failed_unlocks")
     assert fu is not None and fu["severity"] == "warn" and fu["active"] is True
     security_service.record_successful_unlock()  # cleanup for other tests
+
+
+def _owner(db, household_id, *, mfa=False, name="O"):
+    u = User(household_id=household_id, display_name=name, role="owner",
+             status="approved", is_active=True, mfa_enabled=mfa)
+    db.add(u)
+    db.flush()
+    return u
+
+
+def test_mfa_check_covers_all_owners_not_just_caller(db):
+    """SR-E6: the MFA posture must reflect every owner. A co-owner without a second
+    factor is a gap even when the caller has MFA on — the check must still warn."""
+    hh = get_or_create_default_household(db)
+    caller = _owner(db, hh.id, mfa=True, name="Caller")
+    _owner(db, hh.id, mfa=False, name="CoOwner")  # co-owner without MFA
+    db.commit()
+
+    health = security_health_service.evaluate(db, caller)
+    mfa = _check(health["checks"], "mfa")
+    assert mfa is not None and mfa["severity"] == "warn" and mfa["active"] is True
+
+
+def test_mfa_check_ok_when_all_owners_enrolled(db):
+    hh = get_or_create_default_household(db)
+    caller = _owner(db, hh.id, mfa=True, name="Caller")
+    _owner(db, hh.id, mfa=True, name="CoOwner")
+    db.commit()
+
+    mfa = _check(security_health_service.evaluate(db, caller)["checks"], "mfa")
+    assert mfa is not None and mfa["severity"] == "ok" and mfa["active"] is False
+
+
+def test_pending_count_is_household_scoped(db):
+    """SR-E6: users awaiting approval must be counted within the caller's household —
+    a pending user in another household must not surface on this owner's panel."""
+    hh = get_or_create_default_household(db)
+    caller = _owner(db, hh.id, mfa=True, name="Caller")
+    # A pending user in a *different* household must be excluded.
+    other_hh = Household(name="Other", currency="GBP", mode="household")
+    db.add(other_hh)
+    db.flush()
+    db.add(User(household_id=other_hh.id, display_name="Stranger", role="member",
+                status="pending", is_active=True))
+    db.commit()
+
+    assert _check(security_health_service.evaluate(db, caller)["checks"], "pending_users") is None
+
+    # A pending user in the caller's own household does surface.
+    db.add(User(household_id=hh.id, display_name="Newbie", role="member",
+                status="pending", is_active=True))
+    db.commit()
+    assert _check(security_health_service.evaluate(db, caller)["checks"], "pending_users") is not None
 
 
 def test_health_is_owner_only(client):

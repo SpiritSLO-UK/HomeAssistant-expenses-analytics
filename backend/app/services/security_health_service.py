@@ -55,6 +55,23 @@ def _dismissal_state(dismissals: dict, check_id: str) -> tuple[bool, str | None]
     return (True, until.isoformat()) if until > _now() else (False, None)
 
 
+def _owners_without_mfa(db: Session, household_id: int | None) -> int:
+    """Count approved owner accounts in the household that have no second factor.
+
+    The posture check must reflect *every* owner, not just the caller: a co-owner
+    without MFA is a gap even when you have it enabled. Scoped to the caller's
+    household so a multi-household deployment never leaks across boundaries.
+    """
+    return db.scalar(
+        select(func.count(User.id)).where(
+            User.household_id == household_id,
+            User.role == "owner",
+            User.status == "approved",
+            User.mfa_enabled.is_(False),
+        )
+    ) or 0
+
+
 def _add(checks: list, dismissals: dict, *, id: str, title: str, severity: str,
          recommendation: str, actionable: bool) -> None:
     dismissed, snoozed_until = _dismissal_state(dismissals, id)
@@ -96,15 +113,21 @@ def evaluate(db: Session, user: User) -> dict:
                  recommendation="Using a stored key (unattended unlock). 'Prompt me' is stronger "
                  "if you can enter the passphrase at each restart.")
 
-    # MFA on the current owner's account
-    if not user.mfa_enabled:
+    # MFA across all owner accounts in the household (not just the caller's own).
+    owners_without_mfa = _owners_without_mfa(db, user.household_id)
+    if owners_without_mfa:
+        if owners_without_mfa == 1 and not user.mfa_enabled:
+            rec = ("Your owner account has no second factor. Turn on MFA in "
+                   "Settings → Two-factor authentication.")
+        else:
+            rec = (f"{owners_without_mfa} owner account(s) have no second factor. "
+                   "Every owner should turn on MFA in Settings → Two-factor authentication.")
         _add(checks, dismissals, id="mfa", title="Two-factor authentication",
-             severity="warn", actionable=True,
-             recommendation="Your owner account has no second factor. Turn on MFA in "
-             "Settings → Two-factor authentication.")
+             severity="warn", actionable=True, recommendation=rec)
     else:
         _add(checks, dismissals, id="mfa", title="Two-factor authentication",
-             severity="ok", actionable=False, recommendation="MFA is enabled on your account.")
+             severity="ok", actionable=False,
+             recommendation="MFA is enabled on all owner accounts.")
 
     # Repeated failed unlock attempts
     recent = sec["failed_unlocks"]["recent"]
@@ -114,8 +137,13 @@ def evaluate(db: Session, user: User) -> dict:
              recommendation=f"{recent} failed database-unlock attempts in the last hour. "
              "If that wasn't you, change your passphrase.")
 
-    # Users awaiting approval
-    pending = db.scalar(select(func.count(User.id)).where(User.status == "pending")) or 0
+    # Users awaiting approval — scoped to the caller's household.
+    pending = db.scalar(
+        select(func.count(User.id)).where(
+            User.household_id == user.household_id,
+            User.status == "pending",
+        )
+    ) or 0
     if pending:
         _add(checks, dismissals, id="pending_users", title="Users awaiting approval",
              severity="info", actionable=True,
