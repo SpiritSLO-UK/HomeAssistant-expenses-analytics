@@ -42,6 +42,30 @@ def test_monthly_series_and_trend(db):
     assert s["trend"]["spend"]["pct"] == pytest.approx(50.0)  # (900-600)/600
 
 
+def test_trend_direction_flat_band_is_symmetric():
+    # The flat band must be symmetric around zero: a rise and an equal-magnitude
+    # fall are classified consistently (both flat inside the band, up/down once
+    # they clear it). Boundary is |pct| < TREND_FLAT_PCT → flat.
+    band = analytics_service.TREND_FLAT_PCT
+
+    # Within the band (equal magnitude either side) → both flat.
+    assert analytics_service._trend_direction(Decimal("5"), band - 0.1) == "flat"
+    assert analytics_service._trend_direction(Decimal("-5"), -(band - 0.1)) == "flat"
+
+    # Exactly at the band edge is no longer flat (strict <) — up vs down mirror.
+    assert analytics_service._trend_direction(Decimal("5"), band) == "up"
+    assert analytics_service._trend_direction(Decimal("-5"), -band) == "down"
+
+    # Clearly outside the band → up vs down mirror.
+    assert analytics_service._trend_direction(Decimal("50"), band + 5) == "up"
+    assert analytics_service._trend_direction(Decimal("-50"), -(band + 5)) == "down"
+
+    # No baseline (pct is None): only an exact-zero delta is flat, any move is real.
+    assert analytics_service._trend_direction(Decimal("1"), None) == "up"
+    assert analytics_service._trend_direction(Decimal("-1"), None) == "down"
+    assert analytics_service._trend_direction(Decimal("0"), None) == "flat"
+
+
 def test_large_charge_is_flagged(db):
     # Enough small charges to establish a "typical" baseline (median ~20)…
     for i in range(5):
