@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { QRCodeSVG } from "qrcode.react";
 import {
@@ -54,6 +54,7 @@ import {
   type RetentionTypePlan,
   type BackupTrim,
 } from "../api/client";
+import { useServerState } from "../lib/useServerState";
 import { clearAllPrefs, getThemePref, isCloudAiAcknowledged, setCloudAiAcknowledged } from "../prefs";
 import { setTheme, type ThemePref } from "../theme";
 import CloudAiDisclaimerDialog from "../components/CloudAiDisclaimerDialog";
@@ -167,11 +168,35 @@ export default function Settings() {
   function ok(m: string) {
     setMsg(m);
     setErr(null);
+    // Intentionally broad: the success handlers on this settings page cover
+    // whole-DB operations (backup restore, encrypted restore, config import,
+    // demo load/remove) that can touch nearly every query on the app. Narrowing
+    // to specific keys here would risk under-invalidation (stale data surviving a
+    // full-database swap), so we invalidate everything and let refetch reconcile.
     qc.invalidateQueries();
   }
   function fail(e: unknown) {
     setErr(String(e));
     setMsg(null);
+  }
+
+  // Encrypted-restore submit: an empty passphrase must surface a clear validation
+  // error and keep the chosen file, not silently wipe the input (kept in a helper
+  // so the file-input onChange stays trivial and low-complexity).
+  function submitEncryptedRestore(f: File | undefined, input: HTMLInputElement) {
+    if (!f) return;
+    if (!passphrase) {
+      fail("Enter the passphrase used to encrypt this backup before restoring.");
+      return; // keep the selected file; don't reset the input
+    }
+    if (!confirm("Restore will REPLACE your current database (backed up to <db>.bak first). Continue?")) {
+      input.value = "";
+      return;
+    }
+    restoreEncryptedDatabase(f, passphrase)
+      .then(() => ok("Database restored from encrypted backup."))
+      .catch(fail);
+    input.value = "";
   }
 
   const me = useQuery({ queryKey: ["me"], queryFn: getMe });
@@ -351,16 +376,7 @@ export default function Settings() {
             type="file"
             accept=".enc,application/octet-stream"
             style={{ display: "none" }}
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f && passphrase &&
-                  confirm("Restore will REPLACE your current database (backed up to <db>.bak first). Continue?")) {
-                restoreEncryptedDatabase(f, passphrase)
-                  .then(() => { ok("Database restored from encrypted backup."); qc.invalidateQueries(); })
-                  .catch(fail);
-              }
-              if (encRestoreInput.current) encRestoreInput.current.value = "";
-            }}
+            onChange={(e) => submitEncryptedRestore(e.target.files?.[0], e.target)}
           />
           <button className="btn btn--ghost" disabled={!passphrase} onClick={() => encRestoreInput.current?.click()}>
             ⬆ Restore encrypted…
@@ -1084,22 +1100,26 @@ function MfaCard({
     onSuccess: (s) => setSetup(s),
     onError,
   });
+  // After enable succeeds, mint a session with the same code so the user isn't
+  // bounced to the entry gate. Only report "enabled" on a verified success; if
+  // verify fails, surface that error instead of silently claiming success.
+  const finishEnable = () => {
+    mfaVerify(code)
+      .then(() => {
+        setCode("");
+        onMessage("Two-factor authentication enabled.");
+      })
+      .catch((e) => {
+        setCode("");
+        onError(e);
+      });
+  };
   const enable = useMutation({
-    mutationFn: async () => {
-      await mfaEnable(code, scope);
-      // Same code is still valid this period — mint a session so the user isn't
-      // immediately bounced to the entry gate.
-      try {
-        await mfaVerify(code);
-      } catch {
-        /* period rolled over — the entry gate will simply prompt once */
-      }
-    },
+    mutationFn: () => mfaEnable(code, scope),
     onSuccess: () => {
       setSetup(null);
-      setCode("");
-      onMessage("Two-factor authentication enabled.");
       qc.invalidateQueries();
+      finishEnable();
     },
     onError,
   });
@@ -1203,23 +1223,34 @@ function MfaCard({
           <div className="form-row" style={{ gap: 8, flexWrap: "wrap" }}>
             <button className="btn btn--ghost" onClick={lockNow}>🔒 Lock now (require a code)</button>
           </div>
-          <p className="muted" style={{ fontSize: "0.85rem", marginTop: 12, marginBottom: 4 }}>
-            To turn it off, enter the <strong>current 6-digit code</strong> from your authenticator.
-            (The button stays greyed until you type a code.)
-          </p>
-          <div className="form-row">
-            <input
-              inputMode="numeric"
-              placeholder="123456"
-              maxLength={8}
-              value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-              style={{ width: 150 }}
-            />
-            <button className="btn btn--ghost" disabled={!code || disable.isPending} onClick={() => disable.mutate()}>
-              {disable.isPending ? "Disabling…" : "Disable two-factor"}
-            </button>
-          </div>
+          {/* A required-MFA user can't turn it off (the server rejects it), so don't
+              offer a disable control that would only fail. */}
+          {me.data?.mfa_policy === "required" && (
+            <p className="muted" style={{ fontSize: "0.85rem", marginTop: 12 }}>
+              Two-factor is required by an administrator, so it can't be turned off here.
+            </p>
+          )}
+          {me.data?.mfa_policy !== "required" && (
+            <>
+              <p className="muted" style={{ fontSize: "0.85rem", marginTop: 12, marginBottom: 4 }}>
+                To turn it off, enter the <strong>current 6-digit code</strong> from your authenticator.
+                (The button stays greyed until you type a code.)
+              </p>
+              <div className="form-row">
+                <input
+                  inputMode="numeric"
+                  placeholder="123456"
+                  maxLength={8}
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+                  style={{ width: 150 }}
+                />
+                <button className="btn btn--ghost" disabled={!code || disable.isPending} onClick={() => disable.mutate()}>
+                  {disable.isPending ? "Disabling…" : "Disable two-factor"}
+                </button>
+              </div>
+            </>
+          )}
         </>
       )}
     </div>
@@ -1488,18 +1519,16 @@ function RetentionCard({
     enabled: isAdmin,
   });
 
-  const [draft, setDraft] = useState<RetentionPolicyResponse | null>(null);
+  // Re-syncs when the server policy changes (save/refetch) instead of seeding once
+  // and going stale (FE-7). React Query's structural sharing keeps the reference
+  // stable across no-op refetches, so in-progress edits aren't clobbered.
+  const [draft, setDraft] = useServerState<RetentionPolicyResponse | null>(policy.data ?? null);
   const [plan, setPlan] = useState<RetentionPlan | null>(null);
 
   // Admin actions can be challenged for a fresh MFA code (#124); replay on success.
   const lastAction = useRef<(() => void) | null>(null);
   const [stepUpOpen, setStepUpOpen] = useState(false);
   const [stepCode, setStepCode] = useState("");
-
-  // Seed the editable draft once the policy loads.
-  useEffect(() => {
-    if (policy.data && draft === null) setDraft(policy.data);
-  }, [policy.data, draft]);
 
   const handleError = (e: unknown) => {
     if (isStepUpError(e)) {
