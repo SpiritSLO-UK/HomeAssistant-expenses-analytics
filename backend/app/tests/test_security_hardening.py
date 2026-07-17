@@ -10,9 +10,14 @@ ingress proxy — don't expose the raw port) is documented in docs/security.md.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
-from app.models import User
-from app.services import mfa_service, totp
+import pytest
+from fastapi import HTTPException
+from sqlalchemy import func, select
+
+from app.models import Household, User
+from app.services import auth_service, mfa_service, totp
 
 
 def _hdr(uid: str, name: str | None = None) -> dict[str, str]:
@@ -143,6 +148,75 @@ def test_garbage_mfa_token_is_rejected(client):
     _enable_mfa(client)  # local owner turns MFA on
     blocked = client.get("/api/transactions", headers={"X-HAFI-Session": "not-a-real-token"})
     assert blocked.status_code == 403 and blocked.json()["mfa_required"] is True
+
+
+def test_default_trusts_proxy_headers_ha_ingress_safe(client):
+    """CR-SEC-4: the flag DEFAULTS to trusting X-Remote-User-* so HA ingress keeps
+    mapping the forwarded identity to a distinct user (turning this off there would
+    break login). A second HA identity therefore still appears as its own row."""
+    assert auth_service.settings.trust_proxy_headers is True
+    client.get("/api/users/me")  # local owner bootstraps
+    alice = client.get("/api/users/me", headers=_hdr("ha-alice", "Alice")).json()
+    # A distinct forwarded identity is honoured → its own (pending) user.
+    assert alice["role"] == "member" and alice["status"] == "pending"
+    users = client.get("/api/users").json()  # the local owner may list users
+    assert "ha-alice" in [u["external_id"] for u in users]
+
+
+def test_untrusted_proxy_headers_are_ignored(client, monkeypatch):
+    """CR-SEC-4 (standalone hardening): with the flag OFF the inbound identity
+    headers are ignored entirely — every request, whatever headers it forges,
+    resolves to the single 'local' owner, so a direct peer can't assert an
+    identity by sending X-Remote-User-*."""
+    monkeypatch.setattr(auth_service.settings, "trust_proxy_headers", False)
+    me = client.get("/api/users/me", headers=_hdr("ha-attacker", "Attacker")).json()
+    assert me["role"] == "owner" and me["status"] == "approved"
+    # Only the single local owner exists — the forged identity created no user.
+    users = client.get("/api/users", headers=_hdr("ha-attacker")).json()
+    assert [u["external_id"] for u in users] == ["local"]
+    # A different forged identity maps to the SAME local owner, not a new user.
+    me2 = client.get("/api/users/me", headers=_hdr("ha-someone-else")).json()
+    assert me2["id"] == me["id"]
+
+
+def test_get_current_user_does_not_resurrect_deleted_user(db):
+    """SR-E1: a stale request.state.user_id pointing at a since-deleted user must
+    NOT silently rebuild that account from the request headers. It resolves to
+    unauthenticated (401) and creates no user as a side effect."""
+    req = SimpleNamespace(state=SimpleNamespace(user_id=999999), headers={})
+    with pytest.raises(HTTPException) as exc:
+        auth_service.get_current_user(req, db)
+    assert exc.value.status_code == 401
+    assert db.scalar(select(func.count(User.id))) == 0
+
+
+def test_list_members_is_scoped_to_household(db):
+    """SR-E1: list_members never leaks members of another household. The default
+    (no explicit id) resolves to the first/default household; an explicit id scopes
+    to exactly that household."""
+    h1, h2 = Household(name="H1"), Household(name="H2")
+    db.add_all([h1, h2])
+    db.flush()
+    db.add_all([
+        User(household_id=h1.id, display_name="A", external_id="a", role="owner", status="approved"),
+        User(household_id=h2.id, display_name="B", external_id="b", role="member", status="approved"),
+    ])
+    db.commit()
+    assert [u.external_id for u in auth_service.list_members(db)] == ["a"]
+    assert [u.external_id for u in auth_service.list_members(db, household_id=h2.id)] == ["b"]
+
+
+def test_profile_fields_are_length_and_charset_bounded(client):
+    """SR-E1: an owner-supplied display_name/email is length- and charset-bounded
+    before it's persisted, so an over-long or control-char value is a 400."""
+    uid = _make_member(client, "ha-vic")
+    assert client.patch(f"/api/users/{uid}", json={"display_name": "x" * 201}).status_code == 400
+    assert client.patch(f"/api/users/{uid}", json={"display_name": "bad\x00name"}).status_code == 400
+    assert client.patch(f"/api/users/{uid}", json={"email": "not-an-email"}).status_code == 400
+    assert client.patch(f"/api/users/{uid}", json={"email": "x" * 316 + "@e.com"}).status_code == 400
+    ok = client.patch(f"/api/users/{uid}", json={"display_name": "Valid Name", "email": "v@example.com"})
+    assert ok.status_code == 200
+    assert ok.json()["display_name"] == "Valid Name" and ok.json()["email"] == "v@example.com"
 
 
 def test_mfa_session_is_bound_to_user_and_expiry(db):
