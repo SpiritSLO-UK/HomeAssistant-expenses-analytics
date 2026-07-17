@@ -24,14 +24,14 @@ export default function CloudAiDisclaimerDialog({
     <dialog
       ref={ref}
       className="modal-dialog"
-      aria-label="Before you enable cloud AI"
+      aria-labelledby="cloud-ai-disclaimer-title"
       onCancel={(e) => {
         e.preventDefault(); // Esc → treat as Cancel rather than a silent close
         onCancel();
       }}
     >
       <div className="card" style={{ maxWidth: 560, margin: 0 }}>
-        <h2 className="card__title">☁️ Before you enable cloud AI</h2>
+        <h2 className="card__title" id="cloud-ai-disclaimer-title">☁️ Before you enable cloud AI</h2>
         <p className="muted" style={{ marginTop: 0 }}>
           You're about to allow this app to send data to a cloud AI provider. Please read this once:
         </p>

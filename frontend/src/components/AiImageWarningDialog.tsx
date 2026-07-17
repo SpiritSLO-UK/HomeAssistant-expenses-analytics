@@ -25,14 +25,14 @@ export default function AiImageWarningDialog({
     <dialog
       ref={ref}
       className="modal-dialog"
-      aria-label="Send image to AI?"
+      aria-labelledby="ai-image-warning-title"
       onCancel={(e) => {
         e.preventDefault();
         onCancel();
       }}
     >
       <div className="card" style={{ maxWidth: 540, margin: 0 }}>
-        <h2 className="card__title">✨ Send this image to AI?</h2>
+        <h2 className="card__title" id="ai-image-warning-title">✨ Send this image to AI?</h2>
         <p className="muted" style={{ marginTop: 0 }}>
           The <strong>image</strong> will be sent to {provider ? <code>{provider}</code> : "your configured AI"} so it can
           read what OCR couldn't.
