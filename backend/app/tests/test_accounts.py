@@ -2,11 +2,29 @@
 
 from __future__ import annotations
 
+import json
 from datetime import date
 from decimal import Decimal
 
+import pytest
+from sqlalchemy import func, select
+
+from app.db.base import Base
 from app.db.session import SessionLocal
-from app.models import Account, Transaction
+from app.models import (
+    Account,
+    AccountValue,
+    AuditLog,
+    CurveFundingLink,
+    Holding,
+    Household,
+    SavingsBalance,
+    SavingsGoal,
+    Statement,
+    Transaction,
+    User,
+)
+from app.services import account_service
 
 
 def _hdr(uid: str, name: str | None = None) -> dict[str, str]:
@@ -183,3 +201,136 @@ def test_merge_unknown_account_404(client):
     ids = _setup(client)
     r = client.post(f"/api/accounts/{ids['shared']}/merge", json={"target_id": 999999})
     assert r.status_code == 404
+
+
+# --- merge scope / audit / FK-coverage (SR-E10) ---
+
+
+def _seed_all_refs(db, account_id: int, household_id: int) -> None:
+    """Create exactly one row in every table that references ``accounts.id`` so a
+    merge can be proven to re-point all of them."""
+    db.add_all([
+        Transaction(account_id=account_id, transaction_date=date(2026, 5, 2),
+                    description_raw="X", amount=Decimal("-5.00"), currency="GBP",
+                    direction="debit", base_amount=Decimal("-5.00"), fx_rate=Decimal("1")),
+        Statement(account_id=account_id, source_type="manual_upload"),
+        SavingsBalance(account_id=account_id, as_of_date=date(2026, 5, 2), balance=Decimal("100.00")),
+        SavingsGoal(account_id=account_id, name="Goal", target_amount=Decimal("500.00"),
+                    household_id=household_id),
+        AccountValue(account_id=account_id, as_of_date=date(2026, 5, 2), value=Decimal("100.00")),
+        Holding(account_id=account_id, symbol="VWRL", units=Decimal("1")),
+        CurveFundingLink(account_id=account_id, label="Card 1006", household_id=household_id),
+    ])
+    db.flush()
+
+
+def _count_refs_for(db, account_id: int) -> dict[str, int]:
+    return {
+        label: (db.scalar(select(func.count()).select_from(model).where(col == account_id)) or 0)
+        for label, model, col in account_service._ACCOUNT_REFS
+    }
+
+
+def test_merge_repoints_every_referencing_table(db):
+    """A normal same-scope merge re-points a row in EVERY account-FK table, not just
+    the six that were hand-listed before."""
+    hh = Household(name="H")
+    db.add(hh)
+    db.flush()
+    source = Account(household_id=hh.id, name="Src", account_type="current_account", currency="GBP")
+    target = Account(household_id=hh.id, name="Dst", account_type="current_account", currency="GBP")
+    db.add_all([source, target])
+    db.flush()
+    _seed_all_refs(db, source.id, hh.id)
+    db.commit()
+    src_id, dst_id = source.id, target.id
+
+    result = account_service.merge_account(db, src_id, dst_id, actor="tester")
+
+    assert result is not None and result.id == dst_id
+    assert db.get(Account, src_id) is None  # source deleted
+    # Every referencing table now points at the target and none at the source.
+    assert all(v == 0 for v in _count_refs_for(db, src_id).values())
+    moved = _count_refs_for(db, dst_id)
+    assert all(v == 1 for v in moved.values()), moved
+    assert set(moved) == {label for label, _m, _c in account_service._ACCOUNT_REFS}
+
+
+def test_merge_is_audited(db):
+    hh = Household(name="H")
+    db.add(hh)
+    db.flush()
+    source = Account(household_id=hh.id, name="Src", account_type="current_account", currency="GBP")
+    target = Account(household_id=hh.id, name="Dst", account_type="current_account", currency="GBP")
+    db.add_all([source, target])
+    db.flush()
+    _seed_all_refs(db, source.id, hh.id)
+    db.commit()
+    src_id, dst_id = source.id, target.id
+
+    account_service.merge_account(db, src_id, dst_id, actor="tester")
+
+    row = db.scalars(select(AuditLog).where(AuditLog.action == "account.merge")).one()
+    assert row.actor == "tester"
+    assert row.entity_id == dst_id
+    details = json.loads(row.details_json)
+    assert details["source_id"] == src_id and details["target_id"] == dst_id
+    assert details["repointed"]["transactions"] == 1
+    assert details["repointed"]["curve_funding_links"] == 1
+
+
+def test_merge_across_households_refused(db):
+    h1 = Household(name="One")
+    h2 = Household(name="Two")
+    db.add_all([h1, h2])
+    db.flush()
+    source = Account(household_id=h1.id, name="Src", account_type="current_account", currency="GBP")
+    target = Account(household_id=h2.id, name="Dst", account_type="current_account", currency="GBP")
+    db.add_all([source, target])
+    db.commit()
+    with pytest.raises(ValueError, match="across households"):
+        account_service.merge_account(db, source.id, target.id)
+    # Refused before any mutation: source still present, no audit row.
+    assert db.get(Account, source.id) is not None
+    assert db.scalar(select(func.count()).select_from(AuditLog).where(AuditLog.action == "account.merge")) == 0
+
+
+def test_merge_private_into_shared_refused_then_allowed(db):
+    hh = Household(name="H")
+    db.add(hh)
+    db.flush()
+    owner = User(household_id=hh.id, display_name="Owner", role="member")
+    db.add(owner)
+    db.flush()
+    source = Account(household_id=hh.id, name="Private", account_type="current_account",
+                     currency="GBP", owner_user_id=owner.id, is_shared=False)
+    target = Account(household_id=hh.id, name="Shared", account_type="current_account",
+                     currency="GBP", is_shared=True)
+    db.add_all([source, target])
+    db.flush()
+    _seed_all_refs(db, source.id, hh.id)
+    db.commit()
+    src_id, dst_id = source.id, target.id
+
+    with pytest.raises(ValueError, match="private"):
+        account_service.merge_account(db, src_id, dst_id)
+    assert db.get(Account, src_id) is not None  # not merged
+
+    # Explicit opt-in performs the merge.
+    result = account_service.merge_account(db, src_id, dst_id, actor="tester", allow_cross_scope=True)
+    assert result is not None and result.id == dst_id
+    assert db.get(Account, src_id) is None
+
+
+def test_account_refs_cover_all_fks():
+    """Fails if a new foreign key to ``accounts.id`` is added without extending
+    ``_ACCOUNT_REFS`` — otherwise a merge would orphan or CASCADE-drop those rows."""
+    covered = {model.__tablename__ for _label, model, _col in account_service._ACCOUNT_REFS}
+    referencing = {
+        table.name
+        for table in Base.metadata.tables.values()
+        for fk in table.foreign_keys
+        if fk.column.table.name == "accounts" and fk.column.name == "id"
+    }
+    missing = referencing - covered
+    assert not missing, f"account FKs missing from _ACCOUNT_REFS: {missing}"
