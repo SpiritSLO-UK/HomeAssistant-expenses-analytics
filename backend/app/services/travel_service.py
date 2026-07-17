@@ -19,7 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Project, Transaction
-from app.services import analytics_service, settings_service
+from app.services import analytics_service, geo, settings_service
 from app.services.household_service import get_or_create_default_household
 from app.services.scope import account_scope_condition, archived_condition
 
@@ -27,38 +27,45 @@ from app.services.scope import account_scope_condition, archived_condition
 # this many days (so a fortnight of euro spend = one "trip", not many).
 DEFAULT_TRIP_GAP_DAYS = 14
 
-# Currency → friendly place label (display only; unknown codes fall back to the
-# code itself). Currency is a coarse proxy for "where" — good enough to label a trip.
-_CURRENCY_PLACE = {
-    "EUR": "Eurozone", "USD": "United States", "JPY": "Japan", "CHF": "Switzerland",
-    "AUD": "Australia", "CAD": "Canada", "NZD": "New Zealand", "SEK": "Sweden",
-    "NOK": "Norway", "DKK": "Denmark", "PLN": "Poland", "CZK": "Czechia",
-    "HUF": "Hungary", "THB": "Thailand", "TRY": "Türkiye", "AED": "UAE",
-    "INR": "India", "CNY": "China", "HKD": "Hong Kong", "SGD": "Singapore",
-    "ZAR": "South Africa", "MXN": "Mexico", "BRL": "Brazil", "ISK": "Iceland",
-}
+# The currency → "where" mapping lives once, in geo.CURRENCY_COUNTRY (used by the
+# spend-by-location map too); we reuse it here instead of a divergent copy. These
+# few labels intentionally differ from geo.name() — shorter, friendlier trip
+# labels where the full ISO country name is needlessly long.
+_PLACE_LABEL_OVERRIDE = {"AE": "UAE", "HK": "Hong Kong"}
 
 
 def place_for(currency: str) -> str:
-    return _CURRENCY_PLACE.get(currency.upper(), currency.upper())
+    """Friendly place label for a currency (display only). Reuses geo's
+    currency→country map; unknown currencies fall back to the code itself."""
+    code = geo.CURRENCY_COUNTRY.get(currency.upper())
+    if code is None:
+        return currency.upper()
+    return _PLACE_LABEL_OVERRIDE.get(code, geo.name(code))
 
 
-def _foreign_spend(db: Session, account_ids: set[int] | None) -> list[Transaction]:
-    """Spendable foreign-currency transactions (money out), oldest first."""
+def _foreign_spend(
+    db: Session, account_ids: set[int] | None, *, ids: list[int] | None = None
+) -> list[Transaction]:
+    """Spendable foreign-currency transactions (money out), oldest first.
+
+    Pass ``ids`` to restrict to specific rows while still enforcing every trip
+    predicate (account scope, not archived/transfer/duplicate, foreign, money
+    out) — i.e. to validate that caller-supplied ids are genuine trip rows."""
     base = settings_service.get_base_currency(db)
+    conditions = [
+        Transaction.currency != base,
+        Transaction.base_amount.is_not(None),
+        Transaction.base_amount < 0,  # money out
+        Transaction.is_transfer.is_(False),
+        Transaction.is_duplicate.is_(False),
+        *account_scope_condition(account_ids),
+        *archived_condition(),
+    ]
+    if ids is not None:
+        conditions.append(Transaction.id.in_(ids))
     return list(
         db.scalars(
-            select(Transaction)
-            .where(
-                Transaction.currency != base,
-                Transaction.base_amount.is_not(None),
-                Transaction.base_amount < 0,  # money out
-                Transaction.is_transfer.is_(False),
-                Transaction.is_duplicate.is_(False),
-                *account_scope_condition(account_ids),
-                *archived_condition(),
-            )
-            .order_by(Transaction.transaction_date)
+            select(Transaction).where(*conditions).order_by(Transaction.transaction_date)
         ).all()
     )
 
@@ -184,6 +191,13 @@ def create_project_from_trip(
 ) -> Project:
     """Create a Project from a detected trip and assign its (visible) transactions
     to it, dating the project from the assigned spend so a budget period fits."""
+    # Resolve the passed ids to genuine, visible trip rows before creating the
+    # project: this excludes archived rows and rejects ids that aren't actually
+    # foreign-spend (trip) rows for the caller's accounts.
+    txns = _foreign_spend(db, account_ids, ids=transaction_ids)
+    if not txns:
+        raise ValueError("No valid trip transactions to add.")
+
     household = get_or_create_default_household(db)
     project = Project(
         household_id=household.id,
@@ -194,18 +208,12 @@ def create_project_from_trip(
     db.add(project)
     db.flush()
 
-    txns = db.scalars(
-        select(Transaction).where(
-            Transaction.id.in_(transaction_ids), *account_scope_condition(account_ids)
-        )
-    ).all()
     dates = []
     for t in txns:
         t.project_id = project.id
         dates.append(t.transaction_date)
-    if dates:
-        project.start_date = min(dates)
-        project.end_date = max(dates)
+    project.start_date = min(dates)
+    project.end_date = max(dates)
 
     db.commit()
     db.refresh(project)
