@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { Route, Routes } from "react-router-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { QRCodeSVG } from "qrcode.react";
 import Sidebar from "./components/Sidebar";
 import Dashboard from "./pages/Dashboard";
@@ -28,7 +28,7 @@ import Users from "./pages/Users";
 import FamilySetup from "./pages/FamilySetup";
 import Setup from "./pages/Setup";
 import Logs from "./pages/Logs";
-import { getMe, getSecurityStatus, getSettings, mfaEnable, mfaSetup, mfaVerify, unlockDatabase } from "./api/client";
+import { getMe, getSecurityStatus, getSettings, mfaEnable, mfaSetup, mfaVerify, unlockDatabase, type Me, type SecurityStatus } from "./api/client";
 import { setDisplayCurrency } from "./lib/money";
 import { NAV_ITEMS } from "./nav";
 
@@ -36,8 +36,14 @@ export default function App() {
   // If the database is encrypted and locked, gate the whole app behind unlock.
   const status = useQuery({ queryKey: ["security-status"], queryFn: getSecurityStatus });
   // Who is using the app (resolved from HA ingress identity). Drives the
-  // approval gate and the owner-only nav.
-  const me = useQuery({ queryKey: ["me"], queryFn: getMe, enabled: !status.data?.locked });
+  // approval gate and the owner-only nav. Gated on the security status having
+  // resolved (and the DB being unlocked) so we don't fire a wasted /me request
+  // before we even know whether the app is locked.
+  const me = useQuery({
+    queryKey: ["me"],
+    queryFn: getMe,
+    enabled: status.isSuccess && !status.data?.locked,
+  });
   // Keep the app-wide display currency in sync with the configured base currency, so
   // money() renders the right symbol everywhere (FE-5). Set during render so it's
   // current before any child card formats — App re-renders when settings resolve or
@@ -45,25 +51,16 @@ export default function App() {
   const settings = useQuery({
     queryKey: ["settings"],
     queryFn: getSettings,
-    enabled: !status.data?.locked && me.data?.status === "approved",
+    enabled: status.isSuccess && !status.data?.locked && me.data?.status === "approved",
   });
   setDisplayCurrency(settings.data?.base_currency);
 
-  if (status.data?.locked) {
-    return <UnlockGate failedRecent={status.data.failed_unlocks?.recent ?? 0} />;
-  }
-
-  if (me.data && me.data.status !== "approved") {
-    return <AccountGate status={me.data.status} name={me.data.display_name} />;
-  }
-
-  // Admin requires MFA but the user hasn't enrolled (#157) — make them set it up.
-  if (me.data?.mfa_setup_required) {
-    return <MfaSetupGate />;
-  }
-
-  if (me.data?.mfa_required) {
-    return <MfaGate />;
+  // Resolve the lock/identity state before rendering any real shell, so the
+  // owner-only UI can't flash for a non-owner (or a locked DB) while these load,
+  // and a failed load shows a recoverable error instead of a blank hang.
+  const gate = resolveGate(status, me);
+  if (gate) {
+    return gate;
   }
 
   // The child role is a narrow view: mount only the routes flagged `childVisible`
@@ -121,6 +118,72 @@ export default function App() {
   );
 }
 
+// Everything that must resolve (or block) before a role-specific shell can render:
+// status load/error, DB lock, identity load/error, account approval and MFA. Returns
+// the element to show, or `null` once the user is cleared through to their shell.
+// Kept out of App() so the component stays under the cognitive-complexity limit.
+function resolveGate(
+  status: UseQueryResult<SecurityStatus>,
+  me: UseQueryResult<Me>,
+): ReactNode | null {
+  if (status.isError) {
+    return <AppError onRetry={() => { status.refetch(); }} />;
+  }
+  if (!status.data) {
+    return <AppLoading />;
+  }
+  if (status.data.locked) {
+    return <UnlockGate failedRecent={status.data.failed_unlocks?.recent ?? 0} />;
+  }
+  // Unlocked → `me` is enabled; wait for it before choosing owner/child/gate.
+  if (me.isError) {
+    return <AppError onRetry={() => { me.refetch(); }} />;
+  }
+  if (!me.data) {
+    return <AppLoading />;
+  }
+  if (me.data.status !== "approved") {
+    return <AccountGate status={me.data.status} name={me.data.display_name} />;
+  }
+  // Admin requires MFA but the user hasn't enrolled (#157) — make them set it up.
+  if (me.data.mfa_setup_required) {
+    return <MfaSetupGate />;
+  }
+  if (me.data.mfa_required) {
+    return <MfaGate />;
+  }
+  return null;
+}
+
+// Neutral placeholder shown while the lock/identity state is still resolving, so
+// no role-specific shell is rendered (and can't flash) before we know the role.
+function AppLoading() {
+  return (
+    <div className="unlock">
+      <div className="unlock__card">
+        <h1>💷 Finance</h1>
+        <p className="muted">Loading…</p>
+      </div>
+    </div>
+  );
+}
+
+// Recoverable error state when the initial status/identity load fails, rather
+// than leaving the user on a blank hang (FE-App item 4).
+function AppError({ onRetry }: Readonly<{ onRetry: () => void }>) {
+  return (
+    <div className="unlock">
+      <div className="unlock__card">
+        <h1>⚠️ Couldn't load</h1>
+        <p className="muted">
+          Something went wrong reaching the server. Check your connection and try again.
+        </p>
+        <button className="btn" onClick={onRetry}>Retry</button>
+      </div>
+    </div>
+  );
+}
+
 function AppShell({
   role,
   canManageTabs = false,
@@ -159,20 +222,31 @@ function AppShell({
 }
 
 // Shown when an admin has required MFA for this user but they haven't enrolled
-// (#157). Walks them through setup → confirm; on success the `me` query clears the
-// gate (enable also mints a session, so they aren't bounced to the entry gate).
+// (#157). Walks them through setup → confirm. `mfaEnable` turns MFA on but does NOT
+// mint a session; `mfaVerify` is what mints the app-entry session (it calls
+// setSessionToken) — so we chain them with the same code and a successful confirm
+// drops the user straight into the app without a second prompt.
 function MfaSetupGate() {
   const qc = useQueryClient();
   const [setup, setSetup] = useState<{ secret: string; otpauth_uri: string } | null>(null);
   const [code, setCode] = useState("");
-  const begin = useMutation({ mutationFn: mfaSetup, onSuccess: (s) => setSetup(s) });
   const enable = useMutation({
     mutationFn: async () => {
       await mfaEnable(code);
-      try { await mfaVerify(code); } catch { /* period rolled over — entry gate prompts once */ }
+      // Mint the app-entry session with the same code. If the TOTP period rolled
+      // over between enable and verify this throws — MFA is already on and the
+      // pending secret is now consumed, so we can't retry enable in place. We let
+      // the error propagate (surfaced below as enable.isError) rather than swallow
+      // it, and onSettled re-fetches `me`, which flips to mfa_required and routes
+      // the user to the app-entry gate to enter a fresh code.
+      await mfaVerify(code);
     },
-    onSuccess: () => qc.invalidateQueries(),
+    // Runs on success and failure: on success the session is minted and `me`
+    // clears the gate into the app; on a rollover failure `me` becomes
+    // mfa_required, sending the user to the entry gate for a fresh code.
+    onSettled: () => qc.invalidateQueries(),
   });
+  const begin = useMutation({ mutationFn: mfaSetup, onSuccess: (s) => setSetup(s) });
   return (
     <div className="unlock">
       <div className="unlock__card">
