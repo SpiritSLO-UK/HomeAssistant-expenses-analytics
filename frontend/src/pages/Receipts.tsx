@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import AiImageWarningDialog from "../components/AiImageWarningDialog";
 import CameraCaptureButton from "../components/CameraCaptureButton";
 import ReceiptPreview from "../components/ReceiptPreview";
+import { useServerState } from "../lib/useServerState";
 import { isImageAiWarningDismissed, setImageAiWarningDismissed } from "../prefs";
 import {
   aiExtractReceipt,
@@ -105,11 +106,14 @@ function PaperlessCard({ onError }: Readonly<{ onError: (e: unknown) => void }>)
   const status = useQuery({ queryKey: ["paperless-status"], queryFn: getPaperlessStatus });
   const [query, setQuery] = useState("");
   const [submitted, setSubmitted] = useState<string | null>(null);
+  // Bump on every submit so re-searching the *same* text still refetches — the query
+  // key changes, so React Query re-runs even when `submitted` is unchanged.
+  const [nonce, setNonce] = useState(0);
   const [msg, setMsg] = useState<string | null>(null);
   const configured = status.data?.configured ?? false;
 
   const docs = useQuery({
-    queryKey: ["paperless-docs", submitted],
+    queryKey: ["paperless-docs", submitted, nonce],
     queryFn: () => listPaperlessDocuments(submitted || undefined, 25),
     enabled: configured && submitted !== null,
   });
@@ -134,7 +138,7 @@ function PaperlessCard({ onError }: Readonly<{ onError: (e: unknown) => void }>)
       <p className="muted" style={{ marginTop: 0 }}>
         Connected to <code>{status.data?.url}</code>. Search your documents and import one as a receipt.
       </p>
-      <form className="form-row" onSubmit={(e) => { e.preventDefault(); setSubmitted(query); }}>
+      <form className="form-row" onSubmit={(e) => { e.preventDefault(); setSubmitted(query); setNonce((n) => n + 1); }}>
         <input
           placeholder="Search (blank = most recent)"
           value={query}
@@ -177,9 +181,11 @@ function matchedByLabel(by: string): string {
 
 function ReceiptCard({ r, onError, focused = false }: Readonly<{ r: Receipt; onError: (e: string) => void; focused?: boolean }>) {
   const qc = useQueryClient();
-  const [merchant, setMerchant] = useState(r.merchant_raw ?? "");
-  const [date, setDate] = useState(r.receipt_date ?? "");
-  const [total, setTotal] = useState(r.total_amount ?? "");
+  // Re-sync from the server value when the receipts query refetches (e.g. after OCR
+  // finishes, merchant/date/total arrive) — without clobbering an in-progress edit.
+  const [merchant, setMerchant] = useServerState(r.merchant_raw ?? "");
+  const [date, setDate] = useServerState(r.receipt_date ?? "");
+  const [total, setTotal] = useServerState(r.total_amount ?? "");
   const [result, setResult] = useState<MatchResult | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
 
