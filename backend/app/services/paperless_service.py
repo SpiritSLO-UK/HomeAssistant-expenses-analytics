@@ -29,6 +29,11 @@ from app.services import receipt_service, settings_service
 logger = get_logger(__name__)
 
 _TIMEOUT = 15.0
+_MB = 1024 * 1024
+# Download cap for a pulled document — matches the receipts upload cap (15 MB,
+# routes_receipts.MAX_BYTES) so Paperless imports can't smuggle in something the
+# normal upload path would reject, and can't be buffered unbounded (CR-SEC-8).
+_MAX_DOWNLOAD_BYTES = 15 * _MB
 _EXT_BY_TYPE = {
     "application/pdf": ".pdf",
     "image/jpeg": ".jpg",
@@ -37,6 +42,11 @@ _EXT_BY_TYPE = {
     "image/webp": ".webp",
     "image/tiff": ".tiff",
 }
+# Extensions we're willing to derive from (untrusted) filename metadata.
+_ALLOWED_EXTS = set(_EXT_BY_TYPE.values())
+# Neutral extension for bytes we can't confidently classify — never mislabel an
+# arbitrary blob as ``.pdf``.
+_GENERIC_EXT = ".bin"
 
 
 def effective_url(db: Session) -> str:
@@ -116,17 +126,76 @@ def list_documents(db: Session, *, query: str | None = None, limit: int = 25) ->
     return out
 
 
+def _ext_from_filename(name: str | None) -> str | None:
+    """Extension from a (untrusted) filename, but only if it's one we accept."""
+    if not name:
+        return None
+    suffix = Path(name).suffix.lower()
+    if suffix == ".jpeg":
+        suffix = ".jpg"
+    return suffix if suffix in _ALLOWED_EXTS else None
+
+
+def _resolve_extension(content_type: str, meta: dict) -> str:
+    """Choose a file extension without blindly trusting the content-type header.
+
+    Prefer an explicit content-type mapping; if the type is unknown or missing,
+    fall back to the Paperless filename metadata; otherwise use a neutral
+    extension so arbitrary bytes are never mislabelled as a PDF."""
+    if content_type in _EXT_BY_TYPE:
+        return _EXT_BY_TYPE[content_type]
+    for key in ("archived_file_name", "original_file_name", "title"):
+        ext = _ext_from_filename(meta.get(key))
+        if ext:
+            return ext
+    return _GENERIC_EXT
+
+
+def _download_capped(db: Session, doc_id: int) -> tuple[str, bytes]:
+    """Stream a document's bytes, enforcing the receipt-sized download cap so an
+    oversized/hostile Paperless response can't be buffered unbounded (CR-SEC-8).
+
+    Returns ``(content_type, content)``; raises ``ValueError`` when the body
+    exceeds the cap (by declared Content-Length or by actual bytes read)."""
+    import httpx  # local import so the dependency is only needed when used
+
+    base = _require_config(db)
+    headers = {"Authorization": f"Token {env_settings.paperless_token}"}
+    limit_mb = _MAX_DOWNLOAD_BYTES // _MB
+    too_large = ValueError(f"Paperless document {doc_id} is too large (max {limit_mb} MB).")
+    # follow_redirects=False (CR-SEC-3): never bounce our token to another host.
+    with httpx.stream(
+        "GET",
+        f"{base}/api/documents/{doc_id}/download/",
+        headers=headers,
+        timeout=_TIMEOUT,
+        follow_redirects=False,
+    ) as resp:
+        resp.raise_for_status()
+        declared = resp.headers.get("content-length")
+        if declared and declared.isdigit() and int(declared) > _MAX_DOWNLOAD_BYTES:
+            raise too_large
+        content_type = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
+        chunks: list[bytes] = []
+        total = 0
+        for chunk in resp.iter_bytes():
+            total += len(chunk)
+            if total > _MAX_DOWNLOAD_BYTES:
+                raise too_large
+            chunks.append(chunk)
+    return content_type, b"".join(chunks)
+
+
 def fetch_document(db: Session, doc_id: int) -> tuple[str, bytes]:
     """Return ``(filename, content)`` for a Paperless document."""
     meta = _get(db, f"/api/documents/{doc_id}/").json()
     title = meta.get("title") or f"paperless-{doc_id}"
-    resp = _get(db, f"/api/documents/{doc_id}/download/")
-    content_type = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
-    ext = _EXT_BY_TYPE.get(content_type, ".pdf")
+    content_type, content = _download_capped(db, doc_id)
+    ext = _resolve_extension(content_type, meta)
     safe = re.sub(r"[^A-Za-z0-9._-]", "_", Path(title).name)[:100] or f"paperless-{doc_id}"
     if not safe.lower().endswith(ext):
         safe = f"{safe}{ext}"
-    return safe, resp.content
+    return safe, content
 
 
 def import_document(db: Session, doc_id: int) -> dict:

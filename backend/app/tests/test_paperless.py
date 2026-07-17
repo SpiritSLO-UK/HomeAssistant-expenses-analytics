@@ -24,6 +24,39 @@ class _Resp:
         return self._json
 
 
+class _StreamResp:
+    """Fake of an ``httpx.stream(...)`` context manager for download tests."""
+
+    def __init__(self, *, content=b"", headers=None):
+        self._content = content
+        self.headers = headers or {}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def raise_for_status(self):
+        return None
+
+    def iter_bytes(self, chunk_size=None):
+        # Emit in small chunks so the byte-count cap logic is actually exercised.
+        step = chunk_size or (1024 * 1024)
+        for i in range(0, len(self._content), step):
+            yield self._content[i:i + step]
+
+
+def _stream_download(content=b"", headers=None):
+    """Return an ``httpx.stream`` replacement serving one download body."""
+    def fake_stream(method, url, **kw):
+        assert method == "GET"
+        assert url.endswith("/download/")
+        return _StreamResp(content=content, headers=headers)
+
+    return fake_stream
+
+
 def _configure(monkeypatch):
     monkeypatch.setattr(env_settings, "paperless_url", "http://paperless.test")
     monkeypatch.setattr(env_settings, "paperless_token", "tok-123")
@@ -112,11 +145,10 @@ def test_import_creates_receipt_and_dedups(client, monkeypatch):
     def fake_get(url, **kw):
         if url.endswith("/api/documents/7/"):
             return _Resp(json_data={"id": 7, "title": "Tesco receipt"})
-        if url.endswith("/api/documents/7/download/"):
-            return _Resp(content=pdf, headers={"content-type": "application/pdf"})
         raise AssertionError(f"unexpected url {url}")
 
     monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(httpx, "stream", _stream_download(pdf, {"content-type": "application/pdf"}))
 
     r1 = client.post("/api/paperless/documents/7/import").json()
     assert r1["created"] is True
@@ -132,3 +164,89 @@ def test_import_creates_receipt_and_dedups(client, monkeypatch):
 def test_import_requires_config(client, monkeypatch):
     _unconfigure(monkeypatch)
     assert client.post("/api/paperless/documents/1/import").status_code == 400
+
+
+def test_unknown_content_type_falls_back_to_metadata_extension(db, monkeypatch):
+    """An unknown/empty content-type must not be labelled ``.pdf``; the extension
+    is derived from the Paperless filename metadata instead."""
+    from app.services import paperless_service
+
+    _configure(monkeypatch)
+
+    def fake_get(url, **kw):
+        return _Resp(json_data={
+            "id": 9, "title": "Groceries",
+            "original_file_name": "scan_0001.PNG",
+        })
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(
+        httpx, "stream",
+        _stream_download(b"\x89PNG fake", {"content-type": "application/octet-stream"}),
+    )
+
+    filename, content = paperless_service.fetch_document(db, 9)
+    assert filename.endswith(".png")
+    assert content == b"\x89PNG fake"
+
+
+def test_unknown_content_type_and_no_metadata_uses_generic_extension(db, monkeypatch):
+    """No usable content-type and no filename metadata → neutral ``.bin``, never
+    a mislabelled ``.pdf``."""
+    from app.services import paperless_service
+
+    _configure(monkeypatch)
+
+    def fake_get(url, **kw):
+        return _Resp(json_data={"id": 9, "title": "mystery"})
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(httpx, "stream", _stream_download(b"\x00\x01\x02", {}))
+
+    filename, content = paperless_service.fetch_document(db, 9)
+    assert filename.endswith(".bin")
+    assert content == b"\x00\x01\x02"
+
+
+def test_download_exceeding_cap_by_actual_bytes_is_rejected(db, monkeypatch):
+    """A body larger than the cap (with no declared Content-Length) is aborted."""
+    import pytest
+
+    from app.services import paperless_service
+
+    _configure(monkeypatch)
+    monkeypatch.setattr(paperless_service, "_MAX_DOWNLOAD_BYTES", 8)
+
+    def fake_get(url, **kw):
+        return _Resp(json_data={"id": 9, "title": "big"})
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(
+        httpx, "stream",
+        _stream_download(b"x" * 64, {"content-type": "application/pdf"}),
+    )
+
+    with pytest.raises(ValueError, match="too large"):
+        paperless_service.fetch_document(db, 9)
+
+
+def test_download_exceeding_cap_by_content_length_is_rejected(db, monkeypatch):
+    """An oversized declared Content-Length is rejected cheaply, before reading."""
+    import pytest
+
+    from app.services import paperless_service
+
+    _configure(monkeypatch)
+    monkeypatch.setattr(paperless_service, "_MAX_DOWNLOAD_BYTES", 8)
+
+    def fake_get(url, **kw):
+        return _Resp(json_data={"id": 9, "title": "big"})
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(
+        httpx, "stream",
+        _stream_download(b"x" * 4, {"content-type": "application/pdf", "content-length": "999"}),
+    )
+
+    with pytest.raises(ValueError, match="too large"):
+        paperless_service.fetch_document(db, 9)
