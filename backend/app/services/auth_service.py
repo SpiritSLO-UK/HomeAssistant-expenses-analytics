@@ -24,8 +24,9 @@ from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.db.session import get_db
-from app.models import Account, User
+from app.models import Account, Household, User
 from app.models.user import ADMIN_ROLES, MFA_POLICIES, ROLES, STATUSES, WRITE_ROLES
 from app.services import audit_service
 from app.services.household_service import get_or_create_default_household
@@ -85,7 +86,14 @@ def _now() -> datetime:
 
 def _identity_from_request(request: Request) -> tuple[str, str]:
     """Return ``(external_id, display_name)`` from ingress headers or the local
-    fallback. Never raises — an unauthenticated edge resolves to the local user."""
+    fallback. Never raises — an unauthenticated edge resolves to the local user.
+
+    When ``trust_proxy_headers`` is off (CR-SEC-4, standalone hardening) the
+    inbound ``X-Remote-User-*`` headers are ignored entirely and every request
+    resolves to the single ``local`` owner, so a direct peer can't forge an
+    identity by supplying them. The default (on) preserves the HA-ingress model."""
+    if not settings.trust_proxy_headers:
+        return LOCAL_EXTERNAL_ID, "Local User"
     headers = request.headers
     ext_id = (headers.get(HEADER_ID) or "").strip()
     display = (headers.get(HEADER_DISPLAY) or headers.get(HEADER_NAME) or "").strip()
@@ -277,6 +285,17 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
         user = db.get(User, uid)
         if user is not None:
             return user
+        # The middleware already resolved a user for this request but their row is
+        # gone — deleted mid-request, or a stale ``request.state`` id (SR-E1). Do
+        # NOT fall through to ``resolve_current_user``: that would silently rebuild
+        # the deleted account from the request headers (resurrecting a removed
+        # user). Treat it as unauthenticated instead.
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Your session is no longer valid. Please reload.",
+        )
+    # No id on state → the legitimate first-run / direct-resolve path (bootstrap
+    # or a unit test hitting a route without the middleware).
     user = resolve_current_user(db, request)
     db.commit()
     return user
@@ -348,13 +367,21 @@ def list_users(db: Session) -> list[User]:
     return list(db.scalars(select(User).order_by(User.id)).all())
 
 
-def list_members(db: Session) -> list[User]:
+def list_members(db: Session, household_id: int | None = None) -> list[User]:
     """Approved household members for the per-member spend filter dropdown.
     Excludes pending/disabled accounts. Readable by any approved user — the data
-    those members map to is still scoped per the caller's own visibility."""
-    return list(
-        db.scalars(select(User).where(User.status == "approved").order_by(User.id)).all()
-    )
+    those members map to is still scoped per the caller's own visibility.
+
+    Scoped to a single household (SR-E1): members of another household are never
+    listed. ``household_id`` picks the household explicitly; when omitted it
+    resolves to the default household — the only one in a single-household
+    install — via a read-only lookup (no row is created in this read path)."""
+    if household_id is None:
+        household_id = db.scalar(select(Household.id).order_by(Household.id).limit(1))
+    stmt = select(User).where(User.status == "approved")
+    if household_id is not None:
+        stmt = stmt.where(User.household_id == household_id)
+    return list(db.scalars(stmt.order_by(User.id)).all())
 
 
 def approved_owner_count(db: Session) -> int:
@@ -398,6 +425,37 @@ def _validate_user_update(
     remains_active_owner = effective_role == "owner" and effective_status == "approved"
     if _is_last_owner(db, target) and not remains_active_owner:
         raise ValueError("Cannot demote, disable, or remove the last active owner.")
+
+
+# Profile-field bounds (SR-E1). Match the DB column widths (display_name
+# String(200), email String(320)) so a value can never overflow the column, and
+# reject control characters that have no place in a name/address.
+_MAX_DISPLAY_NAME = 200
+_MAX_EMAIL = 320
+
+
+def _has_control_chars(value: str) -> bool:
+    return any(ord(ch) < 32 or ord(ch) == 127 for ch in value)
+
+
+def _validate_profile_fields(display_name: str | None, email: str | None) -> None:
+    """Bound + sanity-check owner-supplied profile fields before they're persisted
+    (SR-E1). Raises ``ValueError`` (→ 400) on an over-long or malformed value; an
+    empty/whitespace ``display_name`` is left for the apply step to ignore."""
+    if display_name is not None:
+        name = display_name.strip()
+        if len(name) > _MAX_DISPLAY_NAME:
+            raise ValueError(f"Display name must be at most {_MAX_DISPLAY_NAME} characters.")
+        if _has_control_chars(name):
+            raise ValueError("Display name contains invalid characters.")
+    if email is not None:
+        addr = email.strip()
+        if not addr:
+            return  # clearing the email is allowed
+        if len(addr) > _MAX_EMAIL:
+            raise ValueError(f"Email must be at most {_MAX_EMAIL} characters.")
+        if _has_control_chars(addr) or addr.count("@") != 1 or addr[0] == "@" or addr[-1] == "@":
+            raise ValueError("Email address is not valid.")
 
 
 def _set_audited(changes: dict, target: User, field: str, new) -> None:
@@ -463,6 +521,7 @@ def update_user(
     _validate_user_update(
         db, actor=actor, target=target, role=role, new_status=new_status
     )
+    _validate_profile_fields(display_name, email)
     if blocked_nav_keys is not None:
         unknown = [k for k in blocked_nav_keys if k not in BLOCKABLE_NAV]
         if unknown:

@@ -59,6 +59,16 @@ class Settings(BaseSettings):
     # header; FastAPI's root_path handling + forwarded headers cover this.
     behind_ingress: bool = True
 
+    # --- Proxy identity headers (CR-SEC-4) ---
+    # Whether to trust the inbound ``X-Remote-User-*`` identity headers. DEFAULT
+    # TRUE preserves the HA-ingress model, where HA authenticates the user and
+    # forwards their identity — turning this off there would break login. Set it
+    # to false for a standalone/compose deployment that exposes the port directly:
+    # the app then ignores those headers and resolves every request to the single
+    # ``local`` owner, so a peer can't forge an identity by sending them
+    # (defence-in-depth; the reverse-proxy/forwarded-ip hardening is separate).
+    trust_proxy_headers: bool = True
+
     # --- CORS (local frontend dev only; empty in production) ---
     cors_origins: list[str] = []
 
