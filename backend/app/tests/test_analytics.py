@@ -8,7 +8,7 @@ from decimal import Decimal
 import pytest
 
 from app.models import Budget, Category, Transaction
-from app.services import analytics_service
+from app.services import analytics_service, dashboard_service
 
 REF = date(2026, 3, 15)  # tests bucket data into Jan/Feb/Mar 2026
 
@@ -208,6 +208,52 @@ def test_outliers_single_pass_across_lookback_window(db):
     assert Decimal(large[0]["amount"]) == Decimal("500")
     assert [i["title"] for i in new if "FreshCo" in i["title"]]
     assert not [i for i in new if "OldMerch" in i["title"]]
+
+
+def _reference_prior_totals(db, ref, history_months):
+    """Pre-optimisation prior-month category accumulation: one
+    ``category_breakdown`` call per prior month. Kept here so the single-pass
+    GROUP BY (``_prior_category_totals``) can be proven equivalent."""
+    prior_totals: dict[int | None, list[Decimal]] = {}
+    months_with_data = 0
+    for start, _end in analytics_service._month_windows(ref, history_months + 1)[:-1]:
+        rows = dashboard_service.category_breakdown(db, start)
+        if rows:
+            months_with_data += 1
+        for r in rows:
+            prior_totals.setdefault(r["category_id"], []).append(Decimal(r["total"]))
+    return prior_totals, months_with_data
+
+
+def test_prior_category_totals_single_pass_matches_per_month(db):
+    # Multi-month, multi-category dataset (incl. an uncategorised bucket and a
+    # category absent from one month). history_months=3 → Dec 2025, Jan and Feb
+    # 2026 are the prior months for REF (March); March itself must be excluded.
+    groc = Category(name="Groceries")
+    fuel = Category(name="Fuel")
+    db.add_all([groc, fuel])
+    db.flush()
+    _debit(db, date(2025, 12, 5), "-40.50", category_id=groc.id)
+    _debit(db, date(2025, 12, 6), "-10", category_id=fuel.id)
+    _debit(db, date(2025, 12, 7), "-5", desc="uncat")  # uncategorised (category_id None)
+    _debit(db, date(2026, 1, 8), "-60", category_id=groc.id)  # no fuel this month
+    _debit(db, date(2026, 2, 9), "-20.25", category_id=groc.id)
+    _debit(db, date(2026, 2, 10), "-30", category_id=fuel.id)
+    _debit(db, date(2026, 3, 11), "-999", category_id=groc.id)  # current month → excluded
+    db.commit()
+
+    got_totals, got_months = analytics_service._prior_category_totals(db, REF, 3)
+    exp_totals, exp_months = _reference_prior_totals(db, REF, 3)
+
+    assert got_months == exp_months
+    assert set(got_totals) == set(exp_totals)
+    for cid in exp_totals:
+        # Per-category multiset of monthly Decimals must match (list order within
+        # a category is irrelevant to the average the caller derives). Decimal
+        # compares only — no float ==.
+        assert sorted(got_totals[cid]) == sorted(exp_totals[cid])
+    # The excluded current-month £999 must not leak into any prior total.
+    assert all(Decimal("999") not in totals for totals in got_totals.values())
 
 
 def test_no_false_positives_without_history(db):
