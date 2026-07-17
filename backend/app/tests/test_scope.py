@@ -24,7 +24,6 @@ from sqlalchemy import select
 
 from app.db.session import SessionLocal
 from app.models import Account, Transaction, User
-from app.services import auth_service
 from app.services.scope import account_scope_condition
 
 
