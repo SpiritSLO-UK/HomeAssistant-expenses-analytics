@@ -135,9 +135,33 @@ are present.
 
 ### Encryption at rest (optional)
 
+Off by default. `HAFI_DB_KEY` supplies the SQLCipher passphrase that unlocks the
+finance database at rest.
+
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `HAFI_DB_KEY` | — | SQLCipher passphrase for at-rest DB encryption in "stored" unlock mode (so the app can start unattended). In "prompt" mode leave this empty and unlock via the UI each start. On the **Home Assistant add-on**, set the `db_key` option in the **Configuration** tab instead (it maps to this var) — see the add-on options table below. See [security.md](security.md). |
+
+> **⚠️ By default the database is stored UNENCRYPTED (plaintext SQLite) on the
+> volume.** At-rest encryption is **opt-in**, and neither the standalone
+> (Docker/compose) path nor the add-on sets `HAFI_DB_KEY` for you — so unless you
+> turn encryption on, anyone who can read the raw DB file (a stolen disk, an
+> untrusted backup destination, host/root access) can read your data. To enable it:
+>
+> 1. Turn on encryption **in the app** — **Settings → Database encryption** —
+>    choosing a passphrase. This encrypts the existing DB in place.
+> 2. Decide how it unlocks after a restart:
+>    - **"Stored" (unattended):** set `HAFI_DB_KEY` (standalone/compose env var) or
+>      the `db_key` add-on option to that same passphrase, and the app unlocks
+>      itself on every start. The key then lives on the device — weaker, but no
+>      manual step.
+>    - **"Prompt":** leave `HAFI_DB_KEY` empty and re-enter the passphrase via the
+>      UI after each restart; it's never written to disk.
+>
+> The SQLCipher driver ships in the Linux add-on image (amd64 + aarch64/Raspberry
+> Pi) but has **no Windows wheel**, so encryption is unavailable on Windows dev.
+> A lost passphrase is **unrecoverable**. See [security.md](security.md) for the
+> threat model and what encryption does / doesn't protect against.
 
 ---
 
