@@ -21,6 +21,59 @@ class FakeClient:
         self.disconnected = True
 
 
+class _PublishInfo:
+    """Minimal stand-in for paho's MQTTMessageInfo (only ``rc`` is inspected)."""
+
+    def __init__(self, rc: int) -> None:
+        self.rc = rc
+
+
+class RejectingClient(FakeClient):
+    """A client whose publishes are dropped by the broker (non-zero ``rc``)."""
+
+    def __init__(self, rc: int = 4) -> None:  # 4 == MQTT_ERR_NO_CONN
+        super().__init__()
+        self._rc = rc
+
+    def publish(self, topic: str, payload: str, retain: bool = False) -> _PublishInfo:
+        super().publish(topic, payload, retain)
+        return _PublishInfo(self._rc)
+
+
+class ReadClient:
+    """Fake broker client for ``read_topics``; records its lifecycle calls."""
+
+    def __init__(self, *, fail_subscribe: bool = False, deliver=None) -> None:
+        self.on_message = None
+        self.loop_started = False
+        self.loop_stopped = False
+        self.disconnected = False
+        self._fail_subscribe = fail_subscribe
+        self._deliver = deliver  # list of (topic, payload) delivered on loop_start
+
+    def subscribe(self, topic: str) -> None:
+        if self._fail_subscribe:
+            raise RuntimeError("subscribe boom")
+
+    def loop_start(self) -> None:
+        self.loop_started = True
+        for topic, payload in self._deliver or []:
+            if self.on_message:
+                self.on_message(self, None, _Msg(topic, payload))
+
+    def loop_stop(self) -> None:
+        self.loop_stopped = True
+
+    def disconnect(self) -> None:
+        self.disconnected = True
+
+
+class _Msg:
+    def __init__(self, topic: str, payload: bytes) -> None:
+        self.topic = topic
+        self.payload = payload
+
+
 def _cat(client, name: str) -> int:
     return next(c["id"] for c in client.get("/api/categories").json() if c["name"] == name)
 
@@ -75,10 +128,49 @@ def test_publish_all_when_enabled(db, monkeypatch):
 
     assert report["enabled"] is True
     assert report["published"] == 2 * report["sensors"]  # discovery + state per sensor
+    assert report["failed"] == 0
     topics = [t for (t, _p, _r) in fake.published]
     assert any(t == "homeassistant/sensor/finance/finance_spend_this_month/config" for t in topics)
     assert any(t == "homeassistant/finance/state/spend_this_month" for t in topics)
     assert all(retain for (_t, _p, retain) in fake.published)  # sensors must be retained
+    assert fake.disconnected
+
+
+def test_publish_counts_broker_rejections(db, monkeypatch):
+    from app.services import mqtt_service
+
+    monkeypatch.setattr(mqtt_service.settings, "mqtt_enabled", True)
+    fake = RejectingClient(rc=4)  # broker drops every message
+    report = mqtt_service.publish_all(db, connect=lambda: fake)
+
+    # Nothing counted as published; every attempted publish is a failure...
+    assert report["published"] == 0
+    assert report["failed"] == 2 * report["sensors"] + report["cleared"]
+    # ...and the client is still cleaned up.
+    assert fake.disconnected
+
+
+def test_read_topics_stops_loop_even_on_error(monkeypatch):
+    from app.services import mqtt_service
+
+    monkeypatch.setattr(mqtt_service.settings, "mqtt_enabled", True)
+    fake = ReadClient(fail_subscribe=True)  # error mid-read
+    result = mqtt_service.read_topics(["home/x"], connect=lambda: fake, timeout=0.1)
+
+    assert result == {}
+    assert fake.loop_stopped  # loop_stop must run in finally, not just on the happy path
+    assert fake.disconnected
+
+
+def test_read_topics_reads_retained_payloads(monkeypatch):
+    from app.services import mqtt_service
+
+    monkeypatch.setattr(mqtt_service.settings, "mqtt_enabled", True)
+    fake = ReadClient(deliver=[("home/x", b"42")])
+    result = mqtt_service.read_topics(["home/x"], connect=lambda: fake, timeout=0.5)
+
+    assert result == {"home/x": "42"}
+    assert fake.loop_stopped
     assert fake.disconnected
 
 
