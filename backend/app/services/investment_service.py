@@ -2,9 +2,13 @@
 
 Investment and pension accounts are regular :class:`Account` rows with
 ``account_type in {"investment", "pension"}``, scoped exactly like every other
-account (shared vs private; #66/#82). All money is ``Decimal`` in the base
-currency — a mixed-currency total would need FX conversion (out of scope here,
-noted for later, mirroring savings).
+account (shared vs private; #66/#82). All money is ``Decimal``. A per-account
+figure is kept in that account's own currency, and every cross-account total
+(portfolio value, cost, gain, period changes) is converted to the base currency
+via ``fx_service.convert_amount`` before summing (SR-3, #211) — a figure with no
+available rate is skipped, never added 1:1. Period changes are like-for-like:
+only positions valued at BOTH endpoints count, so a newly-added holding can't
+masquerade as a gain (#223).
 
 An account's worth comes from holdings when it has any (market value =
 Σ units × last_price), otherwise from its latest value snapshot. Unrealised gain
