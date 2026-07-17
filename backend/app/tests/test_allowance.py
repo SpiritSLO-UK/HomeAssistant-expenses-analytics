@@ -14,7 +14,7 @@ import pytest
 from sqlalchemy import select
 
 from app.db.session import SessionLocal
-from app.models import Account, Household, Transaction, User
+from app.models import Account, Household, Transaction
 from app.services import allowance_service, split_service
 from app.services.split_service import SplitInput
 
