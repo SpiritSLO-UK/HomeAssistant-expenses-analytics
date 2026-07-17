@@ -206,11 +206,13 @@ export async function uploadImport(
   file: File,
   parserId?: string,
   mapping?: Record<string, string>,
+  dateFormat?: DateFormat,
 ): Promise<UploadResponse> {
   const form = new FormData();
   form.append("file", file);
   if (parserId) form.append("parser_id", parserId);
   if (mapping) form.append("mapping", JSON.stringify(mapping));
+  if (dateFormat) form.append("date_format", dateFormat);
   return fetchForm<UploadResponse>("api/imports/upload", form);
 }
 
@@ -235,17 +237,23 @@ export async function inspectCsv(file: File): Promise<InspectResponse> {
   return fetchForm<InspectResponse>("api/imports/inspect", form);
 }
 
+// Per-profile CSV date order: "auto" keeps the historic per-file heuristic,
+// "dmy" pins UK day-first, "mdy" pins US month-first (matches backend DateFormat).
+export type DateFormat = "auto" | "dmy" | "mdy";
+
 export interface ImportProfile {
   id: number;
   name: string;
   mapping: Record<string, string>;
   default_currency: string;
+  date_format: DateFormat;
 }
 
 export interface ImportProfileInput {
   name: string;
   mapping: Record<string, string>;
   default_currency: string;
+  date_format?: DateFormat;
 }
 
 export function listImportProfiles(): Promise<ImportProfile[]> {
