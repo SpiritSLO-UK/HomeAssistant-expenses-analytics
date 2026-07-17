@@ -158,12 +158,16 @@ def prune_backups(db: Session) -> dict:
 
     max_bytes = policy["max_total_mb"] * 1024 * 1024
 
-    def total_size() -> int:
-        return sum(x.stat().st_size for x in [*protected, *survivors] if x.exists())
+    # Stat every surviving file once, then track the running total as we delete
+    # so the size-cap loop stays O(n) instead of re-scanning on each iteration.
+    sizes = {p: p.stat().st_size for p in [*protected, *survivors] if p.exists()}
+    running_total = sum(sizes.values())
 
     # survivors is newest-first; pop the oldest until under the size cap.
-    while survivors and total_size() > max_bytes:
-        survivors.pop().unlink(missing_ok=True)
+    while survivors and running_total > max_bytes:
+        victim = survivors.pop()
+        running_total -= sizes.get(victim, 0)
+        victim.unlink(missing_ok=True)
         removed += 1
 
     kept = len([p for p in files if p.exists()])
@@ -213,20 +217,16 @@ def export_config(db: Session) -> dict:
     }
 
 
-def import_config(db: Session, data: dict) -> dict:
-    """Merge a config export back in (non-destructive upsert by name/key)."""
-    from app.services.household_service import get_or_create_default_household
-
-    household = get_or_create_default_household(db)
-    cats_added = vendors_added = 0
-
+def _import_categories(db: Session, data: dict, household_id: int) -> int:
+    """Upsert categories by name; return the number newly added."""
+    added = 0
     existing_cats = {c.name: c for c in db.scalars(select(Category)).all()}
     for entry in data.get("categories", []):
         if entry["name"] in existing_cats:
             continue
         db.add(
             Category(
-                household_id=household.id,
+                household_id=household_id,
                 name=entry["name"],
                 path=entry["name"],
                 library_id=entry.get("library_id"),
@@ -237,14 +237,19 @@ def import_config(db: Session, data: dict) -> dict:
                 is_system=entry.get("is_system", False),
             )
         )
-        cats_added += 1
+        added += 1
+    return added
 
+
+def _import_vendors(db: Session, data: dict, household_id: int) -> int:
+    """Upsert vendors (and their aliases) by canonical name; return count added."""
+    added = 0
     existing_vendors = {v.canonical_name: v for v in db.scalars(select(Vendor)).all()}
     for entry in data.get("vendors", []):
         if entry["canonical_name"] in existing_vendors:
             continue
         vendor = Vendor(
-            household_id=household.id,
+            household_id=household_id,
             canonical_name=entry["canonical_name"],
             display_name=entry.get("display_name"),
             service_type=entry.get("service_type"),
@@ -263,14 +268,33 @@ def import_config(db: Session, data: dict) -> dict:
                     source="import",
                 )
             )
-        vendors_added += 1
+        added += 1
+    return added
 
-    # Settings: only allowlisted, validated keys are applied (CR-SEC-2). An import
-    # must not be able to flip privacy_mode, set an internal AI/Paperless URL, or
-    # write arbitrary keys — see settings_service.IMPORTABLE_SETTINGS.
-    settings_result = settings_service.apply_imported_settings(db, data.get("settings", []))
 
-    db.commit()
+def import_config(db: Session, data: dict) -> dict:
+    """Merge a config export back in (non-destructive upsert by name/key).
+
+    The whole merge runs as a single transaction: if any step fails the session
+    is rolled back so the settings/library tables are never left partially
+    written, and the original error is re-raised for the caller to surface.
+    """
+    from app.services.household_service import get_or_create_default_household
+
+    household = get_or_create_default_household(db)
+
+    try:
+        cats_added = _import_categories(db, data, household.id)
+        vendors_added = _import_vendors(db, data, household.id)
+        # Settings: only allowlisted, validated keys are applied (CR-SEC-2). An
+        # import must not be able to flip privacy_mode, set an internal AI/Paperless
+        # URL, or write arbitrary keys — see settings_service.IMPORTABLE_SETTINGS.
+        settings_result = settings_service.apply_imported_settings(db, data.get("settings", []))
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
     return {
         "categories_added": cats_added,
         "vendors_added": vendors_added,
