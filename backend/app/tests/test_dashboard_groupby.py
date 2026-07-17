@@ -109,6 +109,55 @@ def test_category_breakdown_groupby_matches_known_dataset(db):
     )
 
 
+def _seed_drift(db) -> tuple[int, int]:
+    """A split whose per-part ``amount * fx_rate`` rounds a cent short of the
+    parent's stored ``base_amount``, forcing the distributed-split allocation to
+    hand out the odd penny (``split_service._distributed_base_amounts``)."""
+    cat_a = Category(name="Alpha", colour="#111111")
+    cat_b = Category(name="Beta", colour="#222222")
+    db.add_all([cat_a, cat_b])
+    db.commit()
+    for c in (cat_a, cat_b):
+        db.refresh(c)
+
+    # EUR -100.00 @ 0.3333. Naive per-part rounding: -33.34*0.3333 -> -11.11 and
+    # -66.66*0.3333 -> -22.22 (sum -33.33), a cent short of the parent's stored
+    # base_amount -33.34. The distributed allocation nudges part A to -11.12 so
+    # the parts sum back to -33.34 exactly (no drift vs. summary).
+    parent = _txn(
+        db,
+        amount=Decimal("-100.00"),
+        currency="EUR",
+        base_amount=Decimal("-33.34"),
+        fx_rate=Decimal("0.3333"),
+        is_split=True,
+        category_id=cat_a.id,
+    )
+    db.add_all(
+        [
+            TransactionSplit(transaction_id=parent.id, category_id=cat_a.id, amount=Decimal("-33.34")),
+            TransactionSplit(transaction_id=parent.id, category_id=cat_b.id, amount=Decimal("-66.66")),
+        ]
+    )
+    db.commit()
+    return cat_a.id, cat_b.id
+
+
+def test_category_breakdown_reconciles_with_summary_under_rounding_drift(db):
+    cat_a, cat_b = _seed_drift(db)
+    rows = {r["category_id"]: r for r in dashboard_service.category_breakdown(db, MONTH)}
+    s = dashboard_service.summary(db, MONTH)
+
+    # The odd penny lands on part A (rounded furthest in the drift direction).
+    assert Decimal(rows[cat_a]["total"]) == Decimal("11.12")
+    assert Decimal(rows[cat_b]["total"]) == Decimal("22.22")
+    # The core invariant: split-allocated category rows sum to exactly the same
+    # base-currency spend the summary reports (no cent drift — SR-B1 item 1).
+    category_total = sum(Decimal(r["total"]) for r in rows.values())
+    assert category_total == Decimal("33.34")
+    assert category_total == Decimal(s["spend_this_month"])
+
+
 def test_summary_conditional_aggregates_match_known_dataset(db):
     _seed(db)
     s = dashboard_service.summary(db, MONTH)
