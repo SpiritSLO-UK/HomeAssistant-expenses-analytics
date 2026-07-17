@@ -36,11 +36,11 @@ export default function Users() {
   const qc = useQueryClient();
   const [err, setErr] = useState<string | null>(null);
 
-  // Admin actions can require a fresh MFA step-up (#124). The action that was
-  // actually challenged stashes its own replay here — a per-action slot, not a
-  // single shared one — so a rapid second action can't clobber the pending replay
-  // and get re-submitted in its place after the code is entered.
-  const stepUpReplay = useRef<(() => void) | null>(null);
+  // Admin actions can require a fresh MFA step-up (#124). Every challenged action
+  // enqueues its own replay closure here — a queue, not a single shared slot — so a
+  // rapid second action can't clobber the first pending replay. On a successful
+  // step-up we drain the queue and replay each challenged action exactly once.
+  const stepUpReplays = useRef<Array<() => void>>([]);
   const [stepUpOpen, setStepUpOpen] = useState(false);
   const [stepCode, setStepCode] = useState("");
   // Which user's page-access checklist is open (#108).
@@ -58,13 +58,13 @@ export default function Users() {
     qc.invalidateQueries({ queryKey: ["me"] });
   };
 
-  // On a step-up challenge, stash the failed action's own replay closure and open
-  // the code prompt; on any other failure surface the real error. The replay is
-  // captured per-call from the mutation's own variables, so it always replays the
-  // action that was challenged (fixes the shared-slot clobber).
+  // On a step-up challenge, enqueue the failed action's own replay closure and open
+  // the code prompt; on any other failure surface the real error. Each replay is
+  // captured per-call from the mutation's own variables, so a rapid second challenge
+  // adds to the queue instead of clobbering the first (fixes the shared-slot loss).
   const handleError = (e: unknown, replay: () => void) => {
     if (isStepUpError(e)) {
-      stepUpReplay.current = replay;
+      stepUpReplays.current.push(replay);
       setStepUpOpen(true);
       return;
     }
@@ -106,9 +106,9 @@ export default function Users() {
     onSuccess: () => {
       setStepUpOpen(false);
       setStepCode("");
-      const replay = stepUpReplay.current;
-      stepUpReplay.current = null;
-      replay?.(); // replay the exact action that was challenged
+      const replays = stepUpReplays.current;
+      stepUpReplays.current = [];
+      for (const replay of replays) replay(); // replay every challenged action once
     },
     onError: () => setErr("That code didn't match. Try again."),
   });
@@ -168,7 +168,7 @@ export default function Users() {
             <button className="btn" type="submit" disabled={!stepCode || stepUp.isPending}>
               {stepUp.isPending ? "Verifying…" : "Verify"}
             </button>
-            <button className="btn btn--ghost" type="button" onClick={() => { setStepUpOpen(false); setStepCode(""); }}>
+            <button className="btn btn--ghost" type="button" onClick={() => { setStepUpOpen(false); setStepCode(""); stepUpReplays.current = []; }}>
               Cancel
             </button>
           </form>
