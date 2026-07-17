@@ -23,17 +23,24 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.config import settings as env_settings
+from app.logging import get_logger
 from app.models import AIRequest, Category, Transaction
 from app.services import redaction, review_service, settings_service
 from app.services.ai_provider import AIError, AIProvider, NoAIProvider, OpenAICompatibleProvider
 from app.services.household_service import get_or_create_default_household
 from app.services.rule_service import MANUAL_CONFIDENCE
 
+logger = get_logger("app.ai")
+
 CLOUD_MODES = {"cloud_manual", "cloud_auto"}
 BATCH_SCOPES = {"uncategorised", "recheck"}
 OFF_MODES = {"strict_local", "no_ai"}
 
 _NO_AI_PROVIDER = "No AI provider configured"
+# Hard cap on the raw image bytes we will send to a vision model. Mirrors the
+# route-level upload cap (uploads.AI_IMAGE_MAX = 15 MB) so a direct service /
+# API caller can't push an unbounded payload to the provider (SR-D1).
+_MAX_IMAGE_BYTES = 15 * 1024 * 1024
 
 
 class AIDisabled(RuntimeError):
@@ -196,6 +203,41 @@ def _run(req: AIRequest, provider: AIProvider, payload: dict, cats: list[Categor
     return _suggest(req, result, cats)
 
 
+def _never_cloud_category_reason(db: Session, txn: Transaction) -> str | None:
+    """Block reason if ``txn`` is categorised into a never-cloud category (spec
+    §28.4), else None. An uncategorised row has no category, so this returns
+    None — the ``contains_sensitive`` text gate covers those (CR-SEC-10)."""
+    if txn.category_id is None:
+        return None
+    cat = db.get(Category, txn.category_id)
+    if cat is not None and cat.privacy_sensitivity == "never_cloud":
+        return "This transaction's category is marked never-cloud; cloud AI is blocked for it."
+    return None
+
+
+def _cloud_block_reason(db: Session, txn: Transaction, mode: str) -> str | None:
+    """Decide whether ``txn`` may be sent to cloud AI under ``mode``.
+
+    Fires **regardless of whether the row is categorised** (CR-SEC-10 + SR-D1):
+    the previous gate only ran the never-cloud check for already-categorised rows,
+    so an *uncategorised* transaction — the main AI target — bypassed it entirely.
+    Now a never-cloud category always blocks, and under an *automatic* cloud mode a
+    transaction whose raw text still looks sensitive (``redaction.contains_sensitive``)
+    is refused rather than auto-sent — the user must route it through the manual
+    approval path instead."""
+    if mode not in CLOUD_MODES:
+        return None
+    reason = _never_cloud_category_reason(db, txn)
+    if reason:
+        return reason
+    if mode == "cloud_auto" and redaction.contains_sensitive(txn.description_raw):
+        return (
+            "This transaction's text still looks sensitive after redaction checks; "
+            "cloud_auto would send it automatically — approve it manually (cloud_manual) instead."
+        )
+    return None
+
+
 def classify_transaction(db: Session, txn: Transaction, *, provider=None) -> dict:
     """Ask AI to suggest a category. Returns a suggestion (never applies it).
 
@@ -210,12 +252,11 @@ def classify_transaction(db: Session, txn: Transaction, *, provider=None) -> dic
         raise AIDisabled(_NO_AI_PROVIDER)
 
     is_cloud = mode in CLOUD_MODES
-    # Sensitive-category blocking (spec §28): never send a never-cloud category
-    # to a cloud provider.
-    if is_cloud and txn.category_id is not None:
-        cat = db.get(Category, txn.category_id)
-        if cat is not None and cat.privacy_sensitivity == "never_cloud":
-            raise AIDisabled("This transaction's category is marked never-cloud; cloud AI is blocked for it.")
+    # Sensitive blocking (spec §28): never auto-send never-cloud categories or
+    # obviously-sensitive uncategorised rows to a cloud provider.
+    block = _cloud_block_reason(db, txn, mode)
+    if block:
+        raise AIDisabled(block)
 
     cats = _candidate_categories(db)
     payload = {
@@ -256,6 +297,22 @@ def run_request(db: Session, ai_request: AIRequest, *, provider=None) -> dict:
     resolves its review item, and returns the suggestion."""
     if ai_request.status != "pending":
         raise AIDisabled("This AI request is not awaiting approval.")
+    # Re-validate against the CURRENT privacy mode — a payload staged earlier must
+    # not be flushed after the user changed mode, and the target category may have
+    # since been marked never-cloud (SR-D1).
+    mode = settings_service.get_privacy_mode(db)
+    if mode in OFF_MODES:
+        raise AIDisabled(f"AI is disabled (privacy mode: {mode}); refusing to send this stored request.")
+    if ai_request.privacy_mode in CLOUD_MODES and mode not in CLOUD_MODES:
+        raise AIDisabled(
+            "This request was prepared for a cloud mode, but the current privacy "
+            "mode no longer permits cloud AI — refusing to send it."
+        )
+    if mode in CLOUD_MODES and ai_request.transaction_id is not None:
+        txn = db.get(Transaction, ai_request.transaction_id)
+        reason = _never_cloud_category_reason(db, txn) if txn is not None else None
+        if reason:
+            raise AIDisabled(reason)
     provider = provider or get_provider(db)
     if not provider.available():
         raise AIDisabled(_NO_AI_PROVIDER)
@@ -313,6 +370,10 @@ def classify_batch(
             res = classify_transaction(db, txn, provider=provider)
         except AIError:
             continue  # skip a failed item, keep going through the batch
+        except Exception:  # noqa: BLE001 - one bad item must not kill the batch (SR-D1)
+            logger.exception("classify_batch: unexpected error on transaction %s", txn.id)
+            db.rollback()  # drop this item's uncommitted audit row; keep committed successes
+            continue
         # Surface only a *new* category — re-checking shouldn't repeat the one already set.
         if res.get("status") == "ok" and res.get("category_id") and res["category_id"] != txn.category_id:
             suggestions.append(
@@ -365,14 +426,30 @@ _RECEIPT_VISION_SYSTEM = (
 )
 
 
-def _require_vision(db: Session) -> tuple[AIProvider, str]:
+def _require_vision(db: Session, *, approved: bool = False) -> tuple[AIProvider, str]:
     mode = settings_service.get_privacy_mode(db)
     if mode in OFF_MODES:
         raise AIDisabled("AI is off — enable a local or cloud mode to extract images.")
+    # A raw statement/receipt image can't be redacted, so an automatic cloud mode
+    # would leak the whole image on a frontend-bypassable call. Refuse cloud_auto
+    # unless this specific request was explicitly approved (CR-SEC-10).
+    if mode == "cloud_auto" and not approved:
+        raise AIDisabled(
+            "Vision image-extract won't auto-send a raw image to cloud AI in cloud_auto "
+            "(the image can't be redacted) — approve the send explicitly to proceed."
+        )
     provider = get_provider(db)
     if not provider.available():
         raise AIDisabled(_NO_AI_PROVIDER)
     return provider, mode
+
+
+def _check_image_size(content: bytes) -> None:
+    """Refuse an over-large image before it reaches the provider (SR-D1)."""
+    if len(content) > _MAX_IMAGE_BYTES:
+        raise AIDisabled(
+            f"Image is too large for vision AI ({len(content)} bytes > {_MAX_IMAGE_BYTES})."
+        )
 
 
 def _audit_image(db: Session, provider: AIProvider, mode: str, *, kind: str, size: int) -> AIRequest:
@@ -403,31 +480,49 @@ def _run_image(db: Session, req: AIRequest, provider: AIProvider, content: bytes
         req.completed_at = datetime.now(UTC)
         db.commit()
         raise
+    # Validate the shape before any caller does result.get(...) on it (SR-D1).
+    if not isinstance(result, dict):
+        req.status = "failed"
+        req.error_message = "AI vision response was not a JSON object"
+        req.completed_at = datetime.now(UTC)
+        db.commit()
+        raise AIError("AI vision response was not a JSON object.")
     req.status = "completed"
     req.completed_at = datetime.now(UTC)
     db.commit()
     return result
 
 
-def extract_statement_image(db: Session, content: bytes, mime: str) -> list[dict]:
+def extract_statement_image(db: Session, content: bytes, mime: str, *, approved: bool = False) -> list[dict]:
     """Vision-extract statement transactions from an image. Returns a list of
-    ``{date, description, amount}`` dicts (the route turns them into an import)."""
-    provider, mode = _require_vision(db)
+    ``{date, description, amount}`` dicts (the route turns them into an import).
+
+    ``approved`` must be True to run under ``cloud_auto`` (the raw image can't be
+    redacted, so an automatic cloud send needs explicit per-request approval)."""
+    _check_image_size(content)
+    provider, mode = _require_vision(db, approved=approved)
     req = _audit_image(db, provider, mode, kind="statement", size=len(content))
     result = _run_image(db, req, provider, content, mime,
                         system=_STATEMENT_VISION_SYSTEM, instruction="Extract every transaction in this statement.")
     txns = result.get("transactions")
-    return txns if isinstance(txns, list) else []
+    if not isinstance(txns, list):
+        return []
+    # Keep only well-shaped rows — the model can return junk / non-dict entries.
+    return [t for t in txns if isinstance(t, dict)]
 
 
-def extract_receipt_image(db: Session, content: bytes, mime: str) -> dict:
+def extract_receipt_image(db: Session, content: bytes, mime: str, *, approved: bool = False) -> dict:
     """Vision-extract a receipt's merchant/date/total/currency from an image, and —
     in the *same* call — a suggested category (backlog #110). The candidate
     category names are listed in the instruction; the returned name is resolved to
     a category id (``category_id``/``category_name``, None when unmatched) so the
     transaction matched to / created from this receipt can reuse it instead of a
-    separate AI classification call."""
-    provider, mode = _require_vision(db)
+    separate AI classification call.
+
+    ``approved`` must be True to run under ``cloud_auto`` (see
+    :func:`extract_statement_image`)."""
+    _check_image_size(content)
+    provider, mode = _require_vision(db, approved=approved)
     cats = _candidate_categories(db)
     names = ", ".join(c.name for c in cats)
     instruction = (
@@ -553,6 +648,13 @@ def _send_one_approved(
     try:
         res = _run(req, provider, payload, cats)
     except AIError:
+        failed.append(rid)
+        return
+    except Exception:  # noqa: BLE001 - one bad item must not kill the batch (SR-D1)
+        logger.exception("cloud_batch_send: unexpected error on request %s", rid)
+        req.status = "failed"
+        req.error_message = "unexpected error"
+        req.completed_at = datetime.now(UTC)
         failed.append(rid)
         return
     if res.get("category_id"):
