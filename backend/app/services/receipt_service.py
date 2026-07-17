@@ -271,7 +271,12 @@ def score_match(receipt: Receipt, txn: Transaction) -> tuple[int, dict]:
     # amount (50)
     amount = 0
     if receipt.total_amount is not None and txn.amount is not None:
-        r, t = Decimal(receipt.total_amount), abs(Decimal(txn.amount))
+        # Compare by magnitude on BOTH sides. The transaction amount is signed
+        # (debit = money out, credit = money in) and a refund receipt may be
+        # recorded with a negative total; abs()-ing both means a refund receipt
+        # matches a credit transaction of the same size instead of being left
+        # unmatchable. Matching is direction-agnostic, never hardcoded to a debit.
+        r, t = abs(Decimal(receipt.total_amount)), abs(Decimal(txn.amount))
         if r == t:
             amount = 50
         else:

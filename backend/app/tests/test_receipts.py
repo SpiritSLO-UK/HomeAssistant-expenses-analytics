@@ -466,6 +466,40 @@ def test_vendor_similarity_normalises_punctuation():
     assert receipt_service._vendor_similarity("Tesco", "Aldi") == pytest.approx(0.0)
 
 
+def test_refund_receipt_matches_credit_transaction(db):
+    """A refund receipt (money in) matches a credit transaction of the same size.
+
+    SR-D4: scoring compares amount magnitude on both sides, so a refund receipt —
+    even one recorded with a negative total — matches a credit (positive-amount)
+    transaction instead of being left unmatchable by a hardcoded debit assumption.
+    """
+    hh = get_or_create_default_household(db).id
+    # A refund: money IN (positive amount, credit direction).
+    credit_txn = Transaction(
+        household_id=hh,
+        transaction_date=date.today(),
+        description_raw="TESCO",
+        merchant_raw="TESCO",
+        amount=Decimal("42.18"),
+        currency="GBP",
+        direction="credit",
+    )
+    db.add(credit_txn)
+    db.commit()
+    db.refresh(credit_txn)
+
+    # The credit transaction is a candidate (no direction filter)...
+    receipt = _seed_receipt(db, total="-42.18")
+    assert credit_txn.id in {t.id for t in receipt_service._candidates(db, receipt)}
+    # ...and a refund receipt recorded as money-in (negative total) scores a full
+    # amount match against it (was 0 before the abs() fix).
+    _, parts = receipt_service.score_match(receipt, credit_txn)
+    assert parts["amount"] == 50
+    # A conventional positive-total receipt still matches the same magnitude too.
+    _, pos_parts = receipt_service.score_match(_seed_receipt(db, total="42.18"), credit_txn)
+    assert pos_parts["amount"] == 50
+
+
 def test_candidates_confined_to_receipt_household(db):
     """A receipt only matches transactions in its own household (latent
     cross-tenant fix); a same-household txn is still a candidate."""
