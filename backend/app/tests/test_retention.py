@@ -18,7 +18,7 @@ import pytest
 from sqlalchemy import func, select
 
 from app.config import settings
-from app.models import AIRequest, AuditLog, Receipt, Transaction, User
+from app.models import AIRequest, AuditLog, Category, Receipt, Transaction, User
 from app.services import (
     ai_service,
     backup_service,
@@ -284,6 +284,54 @@ def test_prune_backups_honours_min_keep_over_size(db):
     # min_keep=2 protects the two newest; only the oldest is deletable for size.
     assert res["kept"] == 2
     assert res["removed"] == 1
+
+
+def test_prune_backups_size_cap_removes_multiple(db):
+    """Size cap deletes several oldest survivors in one pass (O(n) running total)."""
+    d = backup_service.backups_dir()
+    now = time.time()
+    for i in range(5):
+        p = d / f"s-{i}.db"
+        p.write_bytes(b"x" * (1024 * 1024))  # 1 MB each
+        os.utime(p, (now - i, now - i))  # distinct mtimes, s-0 newest
+    settings_service.set_value(db, settings_service.BACKUP_MIN_KEEP, "1")
+    settings_service.set_value(db, settings_service.BACKUP_MAX_AGE_DAYS, "9999")
+    settings_service.set_value(db, settings_service.BACKUP_MAX_TOTAL_MB, "2")
+    res = backup_service.prune_backups(db)
+    # Keep the newest until under the 2 MB cap: s-0 (protected) + s-1 = 2 MB.
+    assert res["kept"] == 2
+    assert res["removed"] == 3
+
+
+def test_import_config_rolls_back_on_failure(db, monkeypatch):
+    """A failure mid-import must leave no partial rows behind (atomic transaction)."""
+    before = db.scalar(select(func.count()).select_from(Category))
+    data = {
+        "categories": [{"name": "ImportRollbackCat"}],
+        "vendors": [],
+        "settings": [],
+    }
+
+    def _boom(*_args, **_kwargs):
+        raise RuntimeError("settings import blew up")
+
+    monkeypatch.setattr(
+        backup_service.settings_service, "apply_imported_settings", _boom
+    )
+    with pytest.raises(RuntimeError):
+        backup_service.import_config(db, data)
+
+    db.rollback()  # drop any session-local state before re-querying
+    after = db.scalar(select(func.count()).select_from(Category))
+    assert after == before
+    assert (
+        db.scalar(
+            select(func.count())
+            .select_from(Category)
+            .where(Category.name == "ImportRollbackCat")
+        )
+        == 0
+    )
 
 
 # --- security-health notification ----------------------------------------
