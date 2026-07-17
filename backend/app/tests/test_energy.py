@@ -84,6 +84,27 @@ def test_unit_price_derived_from_meter_readings(db):
     assert out["saving"] == "28.00"  # 100 * 0.28
 
 
+def test_meter_reset_skips_both_cost_and_kwh(db):
+    """A meter reset (reading goes DOWN between two costed readings) must drop BOTH
+    the interval's kWh and its cost, so the blended £/kWh isn't skewed. Here the
+    only *valid* interval is 100 -> 300 (=200 kWh) costing £50 → £0.25/kWh; the
+    reset interval (300 -> 20, £999) is ignored entirely."""
+    asset = Asset(name="Home", kind="home")
+    db.add(asset)
+    db.flush()
+    db.add(AssetLog(asset_id=asset.id, kind="reading", meter="electricity",
+                    reading=Decimal("100"), log_date=date(2026, 4, 1)))
+    db.add(AssetLog(asset_id=asset.id, kind="reading", meter="electricity",
+                    reading=Decimal("300"), cost=Decimal("50.00"), log_date=date(2026, 5, 1)))
+    # Meter reset: reading drops to 20 with a (would-be-distorting) cost attached.
+    db.add(AssetLog(asset_id=asset.id, kind="reading", meter="electricity",
+                    reading=Decimal("20"), cost=Decimal("999.00"), log_date=date(2026, 6, 1)))
+    db.commit()
+
+    # £50 / 200 kWh = £0.25 — the reset interval's kWh and its £999 are both excluded.
+    assert energy_service.derive_unit_price(db) == Decimal("0.2500")
+
+
 def test_no_price_means_zero_saving(db):
     out = energy_service.offset(db, REF, readings={"s": 100})
     assert out["unit_price"] is None
@@ -192,6 +213,19 @@ def test_history_daily_and_yearly(db):
 def test_history_zero_without_category(db):
     h = energy_service.history(db, period="month", count=2, today=date(2026, 6, 15))
     assert all(Decimal(b["spend"]) == 0 for b in h["buckets"])
+
+
+def test_history_count_guard_handles_bad_input(db):
+    """A None / non-numeric ``count`` (service is callable outside the API's validated
+    Query) must not raise — it falls back to the default and clamps to [1, 366]."""
+    cid = _energy_category(db)
+    energy_service.validate_and_save(db, {"energy_category_id": cid})
+
+    assert len(energy_service.history(db, period="month", count=None, today=REF)["buckets"]) == 12
+    assert len(energy_service.history(db, period="month", count="abc", today=REF)["buckets"]) == 12
+    # Clamping still applies to valid-but-out-of-range values.
+    assert len(energy_service.history(db, period="day", count=0, today=REF)["buckets"]) == 1
+    assert len(energy_service.production_history(db, period="month", count=None, today=REF)["buckets"]) == 12
 
 
 def test_history_endpoint(client):
