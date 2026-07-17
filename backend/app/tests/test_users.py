@@ -116,6 +116,53 @@ def test_cannot_lock_yourself_out(client):
     assert client.patch(f"/api/users/{me['id']}", json={"role": "member"}).status_code == 200
 
 
+# --- /users/members roster access contract (CR-SEC-16) ---
+
+
+def _make_approved(client, uid: str, name: str, role: str) -> int:
+    """Bootstrap the owner, surface a new HA user, then set their role + approve."""
+    client.get("/api/users/me")  # owner bootstraps on the first header-less request
+    client.get("/api/users/me", headers=_hdr(uid, name))
+    mid = next(u["id"] for u in client.get("/api/users").json() if u["external_id"] == uid)
+    client.patch(f"/api/users/{mid}", json={"role": role, "status": "approved"})
+    return mid
+
+
+def test_viewer_may_read_members_roster(client):
+    """The per-member spend filter (Dashboard + Transactions) is a read-only feature
+    a viewer can use, so a viewer must still get the roster. The names carry no
+    financial figures and the spend they map to is scoped to the caller (CR-SEC-16)."""
+    _make_approved(client, "ha-vic", "Vic", "viewer")
+    r = client.get("/api/users/members", headers=_hdr("ha-vic", "Vic"))
+    assert r.status_code == 200
+    body = r.json()
+    # Response shape is preserved: minimal identity only (id/display_name/role).
+    assert all(set(m) == {"id", "display_name", "role"} for m in body)
+    assert {m["display_name"] for m in body} >= {"Vic"}
+
+
+def test_child_cannot_read_members_roster(client):
+    """A child is confined to its allowance view by the middleware gate, so it can
+    never enumerate the household roster (CR-SEC-16)."""
+    _make_approved(client, "ha-kid", "Kid", "child")
+    assert client.get("/api/users/members", headers=_hdr("ha-kid", "Kid")).status_code == 403
+
+
+def test_pending_user_cannot_read_members_roster(client):
+    """A not-yet-approved account is blocked from the roster like any other data API."""
+    client.get("/api/users/me")  # owner bootstraps
+    client.get("/api/users/me", headers=_hdr("ha-new", "New"))  # -> pending
+    assert client.get("/api/users/members", headers=_hdr("ha-new", "New")).status_code == 403
+
+
+def test_disabled_user_cannot_read_members_roster(client):
+    """A disabled account keeps no roster access (CR-SEC-16 / SR-6)."""
+    _make_approved(client, "ha-off", "Off", "member")
+    off_id = next(u["id"] for u in client.get("/api/users").json() if u["external_id"] == "ha-off")
+    client.patch(f"/api/users/{off_id}", json={"status": "disabled"})
+    assert client.get("/api/users/members", headers=_hdr("ha-off", "Off")).status_code == 403
+
+
 # --- per-user page restrictions (admin chooses which pages a user can reach, #108) ---
 
 

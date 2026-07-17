@@ -45,13 +45,32 @@ def get_me(
     )
 
 
+def require_roster_reader(user: Annotated[User, Depends(get_current_user)]) -> User:
+    """Gate the member roster at the route level (CR-SEC-16).
+
+    ``/users/members`` cannot lean on the ``_auth_guard`` middleware: its path
+    matches ``"/api/users/me".startswith`` (a prefix collision with the gate-exempt
+    ``/users/me``), so the middleware's ``_access_denied`` checks are skipped for it
+    and pending / disabled / child accounts would otherwise read the whole household
+    roster. So enforce here: admit only an approved, active account, and exclude the
+    read-only **child** role (confined elsewhere to its own allowance view). That
+    leaves owner + member + viewer — each keeps the per-member spend filter, and the
+    spend it maps to is still intersected with the caller's own visibility
+    (``member_account_scope``), so no one can peek at another member's accounts."""
+    if user.status != "approved" or not user.is_active:
+        raise HTTPException(status_code=403, detail="Your account is not approved for this action.")
+    if user.role == "child":
+        raise HTTPException(status_code=403, detail="This area isn't available for your account.")
+    return user
+
+
 @router.get("/members", response_model=list[MemberOut])
 def list_members(
-    db: Annotated[Session, Depends(get_db)], _user: Annotated[User, Depends(get_current_user)]
+    db: Annotated[Session, Depends(get_db)], _user: Annotated[User, Depends(require_roster_reader)]
 ) -> list[User]:
     """Approved members for the per-member spend filter (Dashboard + Transactions).
-    Any approved user may read this — the spend it maps to is still scoped to the
-    caller's own visibility."""
+    Access is gated by ``require_roster_reader`` (see there); the roster carries only
+    display-name/role, and the spend it maps to stays scoped to the caller."""
     return auth_service.list_members(db)
 
 
