@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { Route, Routes } from "react-router-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { QRCodeSVG } from "qrcode.react";
 import Sidebar from "./components/Sidebar";
 import Dashboard from "./pages/Dashboard";
@@ -28,7 +28,7 @@ import Users from "./pages/Users";
 import FamilySetup from "./pages/FamilySetup";
 import Setup from "./pages/Setup";
 import Logs from "./pages/Logs";
-import { getMe, getSecurityStatus, getSettings, mfaEnable, mfaSetup, mfaVerify, unlockDatabase } from "./api/client";
+import { getMe, getSecurityStatus, getSettings, mfaEnable, mfaSetup, mfaVerify, unlockDatabase, type Me, type SecurityStatus } from "./api/client";
 import { setDisplayCurrency } from "./lib/money";
 import { NAV_ITEMS } from "./nav";
 
@@ -58,33 +58,9 @@ export default function App() {
   // Resolve the lock/identity state before rendering any real shell, so the
   // owner-only UI can't flash for a non-owner (or a locked DB) while these load,
   // and a failed load shows a recoverable error instead of a blank hang.
-  if (status.isError) {
-    return <AppError onRetry={() => void status.refetch()} />;
-  }
-  if (!status.data) {
-    return <AppLoading />;
-  }
-  if (status.data.locked) {
-    return <UnlockGate failedRecent={status.data.failed_unlocks?.recent ?? 0} />;
-  }
-  // Unlocked → `me` is enabled; wait for it before choosing owner/child/gate.
-  if (me.isError) {
-    return <AppError onRetry={() => void me.refetch()} />;
-  }
-  if (!me.data) {
-    return <AppLoading />;
-  }
-  if (me.data.status !== "approved") {
-    return <AccountGate status={me.data.status} name={me.data.display_name} />;
-  }
-
-  // Admin requires MFA but the user hasn't enrolled (#157) — make them set it up.
-  if (me.data?.mfa_setup_required) {
-    return <MfaSetupGate />;
-  }
-
-  if (me.data?.mfa_required) {
-    return <MfaGate />;
+  const gate = resolveGate(status, me);
+  if (gate) {
+    return gate;
   }
 
   // The child role is a narrow view: mount only the routes flagged `childVisible`
@@ -140,6 +116,43 @@ export default function App() {
       </Routes>
     </AppShell>
   );
+}
+
+// Everything that must resolve (or block) before a role-specific shell can render:
+// status load/error, DB lock, identity load/error, account approval and MFA. Returns
+// the element to show, or `null` once the user is cleared through to their shell.
+// Kept out of App() so the component stays under the cognitive-complexity limit.
+function resolveGate(
+  status: UseQueryResult<SecurityStatus>,
+  me: UseQueryResult<Me>,
+): ReactNode | null {
+  if (status.isError) {
+    return <AppError onRetry={() => { status.refetch(); }} />;
+  }
+  if (!status.data) {
+    return <AppLoading />;
+  }
+  if (status.data.locked) {
+    return <UnlockGate failedRecent={status.data.failed_unlocks?.recent ?? 0} />;
+  }
+  // Unlocked → `me` is enabled; wait for it before choosing owner/child/gate.
+  if (me.isError) {
+    return <AppError onRetry={() => { me.refetch(); }} />;
+  }
+  if (!me.data) {
+    return <AppLoading />;
+  }
+  if (me.data.status !== "approved") {
+    return <AccountGate status={me.data.status} name={me.data.display_name} />;
+  }
+  // Admin requires MFA but the user hasn't enrolled (#157) — make them set it up.
+  if (me.data.mfa_setup_required) {
+    return <MfaSetupGate />;
+  }
+  if (me.data.mfa_required) {
+    return <MfaGate />;
+  }
+  return null;
 }
 
 // Neutral placeholder shown while the lock/identity state is still resolving, so
