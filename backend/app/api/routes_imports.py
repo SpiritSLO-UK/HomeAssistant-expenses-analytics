@@ -57,6 +57,7 @@ async def upload(
     parser_id: Annotated[str | None, Form()] = None,
     account_id: Annotated[int | None, Form()] = None,
     mapping: Annotated[str | None, Form()] = None,
+    date_format: Annotated[str | None, Form()] = None,
 ) -> dict:
     content = await uploads.read_capped(file, uploads.IMPORT_MAX, label="Statement")
     if not content:
@@ -79,6 +80,7 @@ async def upload(
                 parser_id=parser_id or None,
                 account_id=account_id,
                 mapping=mapping_dict,
+                date_format=date_format,
             )
         )
     except ImportFailed as exc:
@@ -206,7 +208,8 @@ def list_import_profiles(db: Annotated[Session, Depends(get_db)]) -> list[dict]:
 def create_import_profile(payload: ImportProfileIn, db: Annotated[Session, Depends(get_db)]) -> dict:
     try:
         return import_profile_service.create_profile(
-            db, name=payload.name, mapping=payload.mapping, default_currency=payload.default_currency
+            db, name=payload.name, mapping=payload.mapping,
+            default_currency=payload.default_currency, date_format=payload.date_format,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -222,7 +225,8 @@ def update_import_profile(
 ) -> dict:
     try:
         result = import_profile_service.update_profile(
-            db, profile_id, name=payload.name, mapping=payload.mapping, default_currency=payload.default_currency
+            db, profile_id, name=payload.name, mapping=payload.mapping,
+            default_currency=payload.default_currency, date_format=payload.date_format,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

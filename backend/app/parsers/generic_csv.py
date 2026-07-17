@@ -35,6 +35,18 @@ LOGICAL_FIELDS: list[dict[str, object]] = [
     {"key": "posted_date", "label": "Posted date", "required": False},
 ]
 
+# Stored profile date_format -> GenericCsvParser(month_first): "auto" keeps the
+# per-file heuristic (None), "dmy"/"mdy" force UK day-first / US month-first.
+DATE_FORMAT_MONTH_FIRST: dict[str, bool | None] = {"auto": None, "dmy": False, "mdy": True}
+DATE_FORMATS: tuple[str, ...] = tuple(DATE_FORMAT_MONTH_FIRST)
+
+
+def month_first_for(date_format: str | None) -> bool | None:
+    """Map a stored profile ``date_format`` to GenericCsvParser's ``month_first``.
+    Unknown/empty values fall back to "auto" (None) for back-compat."""
+    return DATE_FORMAT_MONTH_FIRST.get(date_format or "auto")
+
+
 # Logical field -> candidate header names (lowercase) for heuristic mapping.
 _HEURISTICS: dict[str, tuple[str, ...]] = {
     "date": ("date", "transaction date", "started date", "posted date"),

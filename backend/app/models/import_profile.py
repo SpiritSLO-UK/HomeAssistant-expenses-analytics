@@ -27,3 +27,10 @@ class ImportProfile(Base, TimestampMixin):
     # merchant/currency/category/external_id/posted_date) to the CSV header name.
     mapping_json: Mapped[str] = mapped_column(Text, nullable=False)
     default_currency: Mapped[str] = mapped_column(String(8), nullable=False, default="GBP")
+    # How to read ambiguous CSV dates: "auto" (heuristic per-file detection, the
+    # historic behaviour), "dmy" (force UK day-first DD/MM) or "mdy" (force US
+    # month-first MM/DD). Needed for all-ambiguous US statements (every day ≤ 12),
+    # where auto-detection has no evidence. Maps to GenericCsvParser(month_first=…).
+    date_format: Mapped[str] = mapped_column(
+        String(8), nullable=False, server_default="auto", default="auto"
+    )
