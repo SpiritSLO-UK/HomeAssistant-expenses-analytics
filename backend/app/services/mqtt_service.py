@@ -254,6 +254,24 @@ def _safe_disconnect(client) -> None:
         pass
 
 
+def _safe_loop_stop(client) -> None:
+    try:
+        client.loop_stop()
+    except Exception:  # pragma: no cover - best effort
+        pass
+
+
+def _publish(client, topic: str, payload: str) -> bool:
+    """Publish one retained message; return ``True`` only if the broker accepted it.
+
+    paho's ``publish()`` returns an ``MQTTMessageInfo`` whose ``rc`` is non-zero
+    when the message was dropped (e.g. the client isn't connected). Checking it
+    stops a dropped message being reported as a success. A fake/``None`` result
+    (used by tests) has no ``rc`` and counts as success.
+    """
+    return getattr(client.publish(topic, payload, retain=True), "rc", 0) == 0
+
+
 def publish_all(db: Session, ref: date | None = None, connect=None) -> dict:
     """Publish discovery + state for every sensor. Returns a small report.
 
@@ -270,24 +288,32 @@ def publish_all(db: Session, ref: date | None = None, connect=None) -> dict:
     disabled = [s for s in all_sensors if not _is_enabled(s, dg, dk)]
     client = (connect or _default_connect)()
     published = 0
+    failed = 0
     try:
         for sensor in sensors:
-            client.publish(
-                _discovery_topic(sensor["object_id"]),
-                json.dumps(_discovery_config(sensor)),
-                retain=True,
-            )
-            published += 1
+            if _publish(client, _discovery_topic(sensor["object_id"]),
+                        json.dumps(_discovery_config(sensor))):
+                published += 1
+            else:
+                failed += 1
         for sensor in sensors:
-            client.publish(_state_topic(sensor["key"]), str(sensor["value"]), retain=True)
-            published += 1
+            if _publish(client, _state_topic(sensor["key"]), str(sensor["value"])):
+                published += 1
+            else:
+                failed += 1
         # Clear the retained discovery config for any sensor the user has disabled,
         # so Home Assistant drops the entity instead of leaving it stale.
         for sensor in disabled:
-            client.publish(_discovery_topic(sensor["object_id"]), "", retain=True)
+            if not _publish(client, _discovery_topic(sensor["object_id"]), ""):
+                failed += 1
     finally:
         _safe_disconnect(client)
-    return {"enabled": True, "published": published, "sensors": len(sensors), "cleared": len(disabled)}
+    if failed:
+        logger.warning("MQTT publish: broker rejected %s message(s)", failed)
+    return {
+        "enabled": True, "published": published, "failed": failed,
+        "sensors": len(sensors), "cleared": len(disabled),
+    }
 
 
 def publish_safe(db: Session, ref: date | None = None) -> None:
@@ -297,8 +323,8 @@ def publish_safe(db: Session, ref: date | None = None) -> None:
     try:
         result = publish_all(db, ref=ref)
         logger.info(
-            "MQTT published %s messages for %s sensors",
-            result.get("published"), result.get("sensors"),
+            "MQTT published %s messages for %s sensors (%s failed)",
+            result.get("published"), result.get("sensors"), result.get("failed", 0),
         )
     except Exception as exc:
         logger.warning("MQTT publish failed (non-fatal): %s", exc)
@@ -338,10 +364,12 @@ def read_topics(topics: list[str], *, connect=None, timeout: float = 2.0) -> dic
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline and len(results) < len(wanted):
             time.sleep(0.05)
-        client.loop_stop()
     except Exception as exc:  # best-effort
         logger.warning("MQTT read_topics failed (non-fatal): %s", exc)
     finally:
+        # Always stop the network loop (and disconnect); an error mid-read must
+        # never leak the paho loop thread.
+        _safe_loop_stop(client)
         _safe_disconnect(client)
     return results
 
