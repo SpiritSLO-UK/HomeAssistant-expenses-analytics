@@ -6,11 +6,23 @@ aliases work, and the dashboard groups by category.
 
 from __future__ import annotations
 
+import pytest
+
 from app.services import category_service, vendor_service
 
 # A fixed month matching the sample CSV data, so dashboard tests are
 # independent of the real system clock.
 MONTH = "2026-05-15"
+
+
+@pytest.fixture(autouse=True)
+def _reset_category_map_cache():
+    """The library_id -> id map is cached process-globally (SR-A2). Clear it around
+    every test so a map built against one throwaway test DB can never leak into the
+    next, independent of the automatic version-signal invalidation."""
+    category_service.invalidate_category_map_cache()
+    yield
+    category_service.invalidate_category_map_cache()
 
 
 def _import_curve(client, samples_dir):
@@ -279,6 +291,52 @@ def test_categorise_text_prefers_longest_keyword(db, monkeypatch):
     assert conf == category_service.KEYWORD_CONFIDENCE
     # A description matching only the generic keyword still resolves to it.
     assert category_service.categorise_text(db, "THE LOCAL CAFE")[0] == generic.id
+
+
+def test_keyword_pattern_compiled_once(db):
+    """The word-boundary regex for a keyword is compiled once and cached (SR-A2)."""
+    first = category_service._keyword_pattern("cafe nero")
+    second = category_service._keyword_pattern("cafe nero")
+    assert first is second  # same compiled object reused, not recompiled
+
+
+def test_categorise_map_cached_and_results_unchanged(db):
+    """The library_id -> id map is built once and reused across calls, and repeated
+    categorisation is deterministic (perf change must not alter results, SR-A2)."""
+    category_service.import_library(db)
+
+    first = category_service.categorise_text(db, "TESCO STORES 3142 DARTFORD")
+    cached_map = category_service._lib_map_cache
+    assert cached_map is not None  # cache warmed by the first call
+
+    # A second call reuses the very same map object (no rebuild) and is identical.
+    second = category_service.categorise_text(db, "TESCO STORES 3142 DARTFORD")
+    assert second == first
+    assert category_service._lib_map_cache is cached_map
+
+    groceries = next(c for c in category_service.list_categories(db) if c.name == "Groceries")
+    assert first[0] == groceries.id
+    # Identity, not float ==: categorise_text returns the KEYWORD_CONFIDENCE constant.
+    assert first[1] is category_service.KEYWORD_CONFIDENCE
+
+
+def test_categorise_map_cache_reflects_runtime_category_change(db):
+    """A runtime category change (here a delete) must invalidate the cached map so the
+    next categorisation reflects it, rather than returning a stale id (SR-A2)."""
+    category_service.import_library(db)
+    subscriptions = next(
+        c for c in category_service.list_categories(db) if c.name == "Subscriptions"
+    )
+
+    # Warm the cache: "netflix" keyword -> Subscriptions.
+    first_id, _ = category_service.categorise_text(db, "NETFLIX.COM")
+    assert first_id == subscriptions.id
+
+    # Delete the category at runtime; the cache's version signal must invalidate.
+    assert category_service.delete_category(db, subscriptions.id) is True
+    second_id, second_conf = category_service.categorise_text(db, "NETFLIX.COM")
+    assert second_id is None  # category gone -> no longer suggestable
+    assert second_conf is None
 
 
 def test_learn_vendor_category_reuses_existing_vendor(db):

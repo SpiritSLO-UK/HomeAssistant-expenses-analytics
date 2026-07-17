@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import json
 import re
-from functools import lru_cache
+from functools import cache, lru_cache
 from pathlib import Path
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.db.session import dml_rowcount
@@ -46,6 +46,18 @@ PRIVACY_LEVELS = ("normal", "sensitive", "never_cloud")
 def load_library() -> dict:
     """Load and cache the bundled category library JSON."""
     return json.loads(_LIBRARY_PATH.read_text(encoding="utf-8"))
+
+
+@cache
+def _keyword_pattern(keyword: str) -> re.Pattern[str]:
+    """Compile (once) the word-boundary matcher for a keyword and cache it.
+
+    Keyword regexes are otherwise recompiled on every ``categorise_text`` call —
+    hundreds of times per import batch (SR-A2). Matches at a word boundary so a
+    short keyword like "tfl" doesn't match mid-word ("neTFLix"), while allowing
+    prefixes so "sainsbury" still matches "sainsburys".
+    """
+    return re.compile(r"\b" + re.escape(keyword.lower()))
 
 
 def import_library(db: Session) -> int:
@@ -272,6 +284,58 @@ def merge_category(db: Session, source_id: int, target_id: int) -> Category | No
     return target
 
 
+# Process-global cache for the library_id -> db category-id map, plus the cheap
+# version signal it was built at. The map is otherwise rebuilt (a full ORM query)
+# on every categorise call (SR-A2). Production uses one long-lived engine with a
+# fresh Session per request, so a session-scoped cache would never be reused —
+# hence a process-global cache invalidated by a content signal instead.
+_lib_map_cache: dict[str, int] | None = None
+_lib_map_version: tuple | None = None
+
+
+def invalidate_category_map_cache() -> None:
+    """Drop the cached library_id -> id map (used by tests; the version signal
+    already invalidates it automatically on any category change)."""
+    global _lib_map_cache, _lib_map_version
+    _lib_map_cache = None
+    _lib_map_version = None
+
+
+def _category_map_version(db: Session) -> tuple:
+    """A cheap signal that changes whenever the library_id -> id mapping could
+    have: (row count, max id, max updated_at) over library-linked categories.
+
+    Adding/removing a library-linked category moves the count and/or max id;
+    (re)assigning a ``library_id`` bumps ``updated_at`` via the model's onupdate.
+    Computed as a single aggregate row — far cheaper than hydrating every row.
+    """
+    return tuple(
+        db.execute(
+            select(
+                func.count(Category.id),
+                func.max(Category.id),
+                func.max(Category.updated_at),
+            ).where(Category.library_id.is_not(None))
+        ).one()
+    )
+
+
+def _library_category_map(db: Session) -> dict[str, int]:
+    """library_id -> db category id for seeded library categories, cached and
+    rebuilt only when the cheap version signal changes (SR-A2)."""
+    global _lib_map_cache, _lib_map_version
+    version = _category_map_version(db)
+    if _lib_map_cache is None or version != _lib_map_version:
+        _lib_map_cache = {
+            c.library_id: c.id
+            for c in db.scalars(
+                select(Category).where(Category.library_id.is_not(None))
+            ).all()
+        }
+        _lib_map_version = version
+    return _lib_map_cache
+
+
 def categorise_text(db: Session, description: str) -> tuple[int | None, float | None]:
     """Suggest a category id for a description via library keyword match.
 
@@ -282,11 +346,9 @@ def categorise_text(db: Session, description: str) -> tuple[int | None, float | 
     text = description.lower()
     library = load_library()
 
-    # Map library_id -> db category id (only seeded library categories).
-    lib_rows = {
-        c.library_id: c.id
-        for c in db.scalars(select(Category).where(Category.library_id.is_not(None))).all()
-    }
+    # Map library_id -> db category id (only seeded library categories). Cached
+    # and reused across calls; invalidated on any category change (SR-A2).
+    lib_rows = _library_category_map(db)
 
     # Choose the best matching keyword deterministically, not the first in file order
     # (which let an arbitrary early keyword shadow a better one). Rank by (earliest
@@ -303,10 +365,8 @@ def categorise_text(db: Session, description: str) -> tuple[int | None, float | 
         if db_id is None:  # library category not seeded → can't be suggested
             continue
         for kw in entry.get("keywords") or []:
-            # Match at a word boundary so short keywords like "tfl" don't match
-            # mid-word (e.g. inside "neTFLix"). Allows prefixes so "sainsbury"
-            # still matches "sainsburys".
-            match = re.search(r"\b" + re.escape(kw.lower()), text)
+            # Word-boundary matcher, compiled once and cached (see _keyword_pattern).
+            match = _keyword_pattern(kw).search(text)
             if match is None:
                 continue
             rank = (match.start(), -len(kw))
