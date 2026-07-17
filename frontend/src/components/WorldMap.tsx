@@ -16,12 +16,11 @@ export const MAP_PALETTE = [
 ];
 export const colorForIndex = (i: number): string => MAP_PALETTE[i % MAP_PALETTE.length];
 
-// "EU" is our EUR-currency fallback pseudo-code, not a real country — plot it at
-// central Europe so eurozone spend still shows on the map.
-const EXTRA_CENTROIDS: Record<string, [number, number]> = { EU: [50, 10] };
-
+// Only real ISO countries carry centroids. Non-ISO buckets (e.g. the "EU"
+// EUR-currency fallback) resolve to null and simply aren't plotted — they still
+// appear in the legend/list, they just don't get a phantom map point.
 function centroidOf(code: string): [number, number] | null {
-  return COUNTRY_CENTROIDS[code] ?? EXTRA_CENTROIDS[code] ?? null;
+  return COUNTRY_CENTROIDS[code] ?? null;
 }
 
 // Cropped equirectangular projection — must match scripts/gen_worldmap.mjs so
@@ -89,7 +88,10 @@ function Bubble({
       <title>{label}</title>
     </>
   );
-  if (!plot.href) return <g>{circle}</g>;
+  // Non-drillable point: a static, non-interactive graphic (no focus/click
+  // affordance). role="img" + aria-label give it the same accessible name the
+  // drillable <a> conveys, without a phantom link.
+  if (!plot.href) return <g role="img" aria-label={label}>{circle}</g>;
   return (
     <a href={plot.href} className="worldmap__point" aria-label={`See ${plot.name} transactions`}>
       {circle}
