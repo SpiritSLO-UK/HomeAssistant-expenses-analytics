@@ -6,6 +6,7 @@ import CameraCaptureButton from "../components/CameraCaptureButton";
 import { isImageAiWarningDismissed, setImageAiWarningDismissed } from "../prefs";
 import {
   aiExtractImport,
+  ApiError,
   confirmImport,
   createImportProfile,
   deleteImportProfile,
@@ -18,11 +19,24 @@ import {
   uploadImport,
   uploadReceipt,
   type ConfirmResponse,
+  type DateFormat,
   type FundingLabel,
   type ImportProfile,
   type PreviewRow,
   type UploadResponse,
 } from "../api/client";
+
+// Prefer the typed ApiError's parsed body/detail over a stringified error: a raw
+// String(error) leaks the "API <endpoint> failed:" prefix and is fragile to match
+// on. Fall back gracefully to a plain Error message, then String().
+function errorMessage(error: unknown): string {
+  if (error instanceof ApiError) {
+    const detail = error.body?.detail;
+    return typeof detail === "string" ? detail : error.message;
+  }
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
 
 export default function Import() {
   const queryClient = useQueryClient();
@@ -84,15 +98,30 @@ export default function Import() {
     setPreview(null);
     setConfirmed(null);
     setShowMapper(false);
+    setShowAiWarn(false);
     upload.reset();
     confirm.reset();
+    // Also clear the recovery-path mutations so a prior ai-extract / add-receipt
+    // error doesn't linger under a fresh file (previously left stuck on-screen).
+    aiExtract.reset();
+    addAsReceipt.reset();
     if (fileInput.current) fileInput.current.value = "";
   }
 
+  // While any upload path is in flight, disable the others: they all act on the
+  // same `file`, so concurrent submits race and confuse the preview/confirm state.
+  const anyPending =
+    upload.isPending || aiExtract.isPending || addAsReceipt.isPending || confirm.isPending;
+
   // A statement-image that yielded no rows is almost always a receipt — surface
   // the receipt/AI recovery path as the primary message instead of the raw error.
+  // Detect from typed signals (the picked file is an image, or the backend's
+  // ApiError detail says no transactions) rather than a regex on String(error).
   const isReceiptish =
-    upload.isError && !!file && /image|No transactions recognised/i.test(String(upload.error));
+    upload.isError &&
+    !!file &&
+    (file.type.startsWith("image/") ||
+      /no transactions recognised/i.test(errorMessage(upload.error)));
 
   return (
     <div className="page">
@@ -142,7 +171,7 @@ export default function Import() {
           </select>
           <button
             className="btn"
-            disabled={!file || upload.isPending}
+            disabled={!file || anyPending}
             onClick={() => upload.mutate()}
           >
             {upload.isPending ? "Uploading…" : "Preview"}
@@ -168,7 +197,7 @@ export default function Import() {
           />
         )}
         {upload.isError && !isReceiptish && (
-          <p className="status status--error">{String(upload.error)}</p>
+          <p className="status status--error">{errorMessage(upload.error)}</p>
         )}
         {isReceiptish && (
           <div className="card" style={{ marginTop: 8, padding: 12 }}>
@@ -180,11 +209,11 @@ export default function Import() {
               read it. (For statements, a <strong>CSV export</strong> is the most reliable.)
             </p>
             <div className="form-row" style={{ gap: 8, flexWrap: "wrap" }}>
-              <button className="btn" disabled={addAsReceipt.isPending} onClick={() => addAsReceipt.mutate()}>
+              <button className="btn" disabled={anyPending} onClick={() => addAsReceipt.mutate()}>
                 {addAsReceipt.isPending ? "Adding…" : "🧾 Add as a receipt instead"}
               </button>
               {aiStatus.data?.enabled && (
-                <button className="btn btn--ghost" disabled={aiExtract.isPending} onClick={tryAiExtract}>
+                <button className="btn btn--ghost" disabled={anyPending} onClick={tryAiExtract}>
                   {aiExtract.isPending ? "Asking AI…" : "✨ Extract with AI"}
                 </button>
               )}
@@ -192,8 +221,8 @@ export default function Import() {
             </div>
           </div>
         )}
-        {aiExtract.isError && <p className="status status--error">{String(aiExtract.error)}</p>}
-        {addAsReceipt.isError && <p className="status status--error">{String(addAsReceipt.error)}</p>}
+        {aiExtract.isError && <p className="status status--error">{errorMessage(aiExtract.error)}</p>}
+        {addAsReceipt.isError && <p className="status status--error">{errorMessage(addAsReceipt.error)}</p>}
         {showAiWarn && (
           <AiImageWarningDialog
             provider={aiStatus.data?.base_url}
@@ -225,7 +254,7 @@ export default function Import() {
           <div className="form-row">
             <button
               className="btn"
-              disabled={confirm.isPending || preview.report.new === 0}
+              disabled={anyPending || preview.report.new === 0}
               onClick={() => confirm.mutate()}
             >
               {confirm.isPending
@@ -236,7 +265,7 @@ export default function Import() {
               <span className="muted">Nothing new to import (all duplicates).</span>
             )}
           </div>
-          {confirm.isError && <p className="status status--error">{String(confirm.error)}</p>}
+          {confirm.isError && <p className="status status--error">{errorMessage(confirm.error)}</p>}
         </div>
       )}
 
@@ -285,7 +314,7 @@ function ReceiptImportPanel() {
       queryClient.invalidateQueries({ queryKey: ["review"] });
       navigate(`/receipts?focus=${r.id}`);
     },
-    onError: (e) => setMsg(String(e instanceof Error ? e.message : e)),
+    onError: (e) => setMsg(errorMessage(e)),
   });
   const send = (f: File) => { setMsg(null); upload.mutate(f); };
 
@@ -384,7 +413,7 @@ function FundingLinkPanel({
           </tbody>
         </table>
       </div>
-      {save.isError && <p className="status status--error">{String(save.error)}</p>}
+      {save.isError && <p className="status status--error">{errorMessage(save.error)}</p>}
     </div>
   );
 }
@@ -480,7 +509,11 @@ function cleanMapping(m: Record<string, string>): Record<string, string> {
 
 /** A profile is just column names — safe to download/share (no transaction data). */
 function profileBlob(p: ImportProfile): string {
-  return JSON.stringify({ name: p.name, mapping: p.mapping, default_currency: p.default_currency }, null, 2);
+  return JSON.stringify(
+    { name: p.name, mapping: p.mapping, default_currency: p.default_currency, date_format: p.date_format },
+    null,
+    2,
+  );
 }
 
 function exportProfile(p: ImportProfile): void {
@@ -520,6 +553,9 @@ function CsvMappingPanel({
   const profiles = useQuery({ queryKey: ["import-profiles"], queryFn: listImportProfiles });
 
   const [mapping, setMapping] = useState<Record<string, string>>({});
+  // CSV date order for this profile/preview: auto (per-file heuristic) / UK day-first
+  // / US month-first. Persisted on the profile and sent with each preview request.
+  const [dateFormat, setDateFormat] = useState<DateFormat>("auto");
   const [selectedId, setSelectedId] = useState<number | "">("");
   const [profileName, setProfileName] = useState("");
   const [err, setErr] = useState<string | null>(null);
@@ -530,14 +566,19 @@ function CsvMappingPanel({
   }, [inspect.data]);
 
   const preview = useMutation({
-    mutationFn: () => uploadImport(file, "generic_csv", cleanMapping(mapping)),
+    mutationFn: () => uploadImport(file, "generic_csv", cleanMapping(mapping), dateFormat),
     onSuccess: (data) => { setErr(null); onPreview(data); },
-    onError: (e) => setErr(String(e instanceof Error ? e.message : e)),
+    onError: (e) => setErr(errorMessage(e)),
   });
 
   const save = useMutation({
     mutationFn: () =>
-      createImportProfile({ name: profileName.trim(), mapping: cleanMapping(mapping), default_currency: "GBP" }),
+      createImportProfile({
+        name: profileName.trim(),
+        mapping: cleanMapping(mapping),
+        default_currency: "GBP",
+        date_format: dateFormat,
+      }),
     // BUGFIX: after saving, refetch the profiles list AND select the profile we
     // just created so it's immediately usable (previously it stayed on
     // "— choose —" and the new profile appeared unselectable). We seed the cache
@@ -554,8 +595,9 @@ function CsvMappingPanel({
       qc.invalidateQueries({ queryKey: ["import-profiles"] });
       setSelectedId(created.id);
       setMapping({ ...created.mapping });
+      setDateFormat(created.date_format);
     },
-    onError: (e) => setErr(String(e instanceof Error ? e.message : e)),
+    onError: (e) => setErr(errorMessage(e)),
   });
 
   const del = useMutation({
@@ -572,7 +614,7 @@ function CsvMappingPanel({
   if (inspect.isError) {
     return (
       <div className="card" style={{ background: "var(--surface)" }}>
-        <p className="status status--error">Couldn't read this as a CSV: {String(inspect.error)}</p>
+        <p className="status status--error">Couldn't read this as a CSV: {errorMessage(inspect.error)}</p>
       </div>
     );
   }
@@ -607,7 +649,10 @@ function CsvMappingPanel({
     const id = raw ? Number(raw) : "";
     setSelectedId(id);
     const p = profiles.data?.find((x) => x.id === id);
-    if (p) setMapping({ ...p.mapping });
+    if (p) {
+      setMapping({ ...p.mapping });
+      setDateFormat(p.date_format);
+    }
   };
 
   return (
@@ -640,10 +685,18 @@ function CsvMappingPanel({
         </div>
       )}
 
-      <div className="form-row" style={{ flexWrap: "wrap", gap: 8 }}>
+      <div className="form-row" style={{ flexWrap: "wrap", gap: 8, alignItems: "center" }}>
         <button className="btn btn--ghost" onClick={applyAutodetect} title="Guess columns from their header names">
           ✨ Auto-detect columns
         </button>
+        <label title="How dates like 01/02/2024 are read — pick your bank's order if auto-detect gets it wrong">
+          Date format{" "}
+          <select value={dateFormat} onChange={(e) => setDateFormat(e.target.value as DateFormat)}>
+            <option value="auto">Auto-detect</option>
+            <option value="dmy">Day-first DD/MM</option>
+            <option value="mdy">Month-first MM/DD</option>
+          </select>
+        </label>
       </div>
 
       <div className="table-wrap">
