@@ -18,9 +18,9 @@ jobs:
     name: Backend (ruff + pytest)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
           cache: pip
@@ -46,9 +46,9 @@ jobs:
     name: Frontend (type-check + build)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "20"
           cache: npm
@@ -70,7 +70,7 @@ jobs:
     name: Docker image (build + smoke test)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       # Build the runnable image (multi-stage: frontend build + backend runtime),
       # so the standalone `docker compose up` path is verified on every change.
@@ -83,8 +83,13 @@ jobs:
       # dev deps aren't baked into the slim image (.dockerignore strips tests), so
       # mount the backend and install the test extras in-container before running.
       - name: Run the test suite inside the runtime image
+        # The shipped image runs as a non-root user (CR-SEC-7), but this step
+        # installs the dev/test extras into the image's root-owned site-packages,
+        # so run it as root (-u 0). This only affects the in-CI test install; the
+        # smoke test below still boots the image as its default non-root user.
         run: |
           docker run --rm \
+            -u 0 \
             -v "${{ github.workspace }}:/work" \
             -w /work/backend \
             --entrypoint sh \
