@@ -10,10 +10,11 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
+import pytest
 from sqlalchemy import select
 
 from app.db.session import SessionLocal
-from app.models import Account, Transaction
+from app.models import Account, Household, Transaction
 from app.services import allowance_service, split_service
 from app.services.split_service import SplitInput
 
@@ -96,6 +97,67 @@ def test_split_attribution_uses_split_base_amount(client):
         )
         assert alloc.amount == Decimal("5.00")  # the split line, not the whole shop
         assert alloc.category_id == cat
+
+
+def test_whole_txn_allocation_uses_base_not_original_amount(client):
+    """A foreign-currency transaction's allocation carries the base-converted
+    amount, never the original-currency amount (SR-C7)."""
+    kid = _make_child(client)
+    txn_id = _import_txn(client, desc="PARIS CAFE", amt="-20.00")
+    with SessionLocal() as db:
+        txn = db.get(Transaction, txn_id)
+        txn.currency = "EUR"
+        txn.fx_rate = Decimal("0.85")
+        txn.base_amount = Decimal("-17.00")  # 20 EUR -> 17 GBP
+        txn.needs_rate = False
+        db.commit()
+        alloc = allowance_service.create_allocation(db, child_id=kid, transaction_id=txn_id)
+        assert alloc.amount == Decimal("17.00")  # base GBP, not the 20.00 original
+
+
+def test_needs_rate_txn_allocation_is_rejected(client):
+    """A needs-rate transaction has no base amount, so allocating it (without an
+    explicit amount) is refused rather than silently mislabelling the original."""
+    kid = _make_child(client)
+    txn_id = _import_txn(client, desc="TOKYO SHOP", amt="-3000.00")
+    with SessionLocal() as db:
+        txn = db.get(Transaction, txn_id)
+        txn.currency = "JPY"
+        txn.fx_rate = None
+        txn.base_amount = None
+        txn.needs_rate = True
+        db.commit()
+        with pytest.raises(ValueError):
+            allowance_service.create_allocation(db, child_id=kid, transaction_id=txn_id)
+        # …but an explicit amount override still works.
+        alloc = allowance_service.create_allocation(
+            db, child_id=kid, transaction_id=txn_id, amount=Decimal("18.50")
+        )
+        assert alloc.amount == Decimal("18.50")
+
+
+def test_zero_amount_allocation_is_rejected(client):
+    """A zero (or effectively-zero) manual amount is refused before ``abs`` (SR-C7)."""
+    kid = _make_child(client)
+    with SessionLocal() as db:
+        with pytest.raises(ValueError):
+            allowance_service.create_allocation(db, child_id=kid, amount=Decimal("0"))
+
+
+def test_txn_outside_child_household_is_rejected(client):
+    """A transaction from another household is not in the child's visible scope,
+    so it cannot be attributed to the child (SR-C7)."""
+    kid = _make_child(client)
+    txn_id = _import_txn(client, desc="ELSEWHERE", amt="-9.00")
+    with SessionLocal() as db:
+        other = Household(name="Neighbours", currency="GBP")
+        db.add(other)
+        db.flush()
+        txn = db.get(Transaction, txn_id)
+        txn.household_id = other.id  # a real, but foreign, household
+        db.commit()
+        with pytest.raises(ValueError):
+            allowance_service.create_allocation(db, child_id=kid, transaction_id=txn_id)
 
 
 def test_child_budget_spend_comes_from_allocations(client):
