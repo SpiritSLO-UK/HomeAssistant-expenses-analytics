@@ -9,6 +9,8 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
+import pytest
+
 from app.db import session as dbsession
 from app.models import Transaction
 from app.services import settings_service, travel_service
@@ -90,6 +92,35 @@ def test_create_project_from_trip_assigns_txns(db):
     for tid in trip["transaction_ids"]:
         assert db.get(Transaction, tid).project_id == project.id
     assert project.start_date is not None and project.end_date is not None
+
+
+def test_create_project_excludes_archived_and_non_trip_ids(db):
+    """Passed ids are validated as genuine trip rows: archived and home-currency
+    rows are never assigned into the new project (SR-F5)."""
+    _gbp(db)
+    good = _txn(db, currency="EUR", base="-10.00", days_ago=5)
+    archived = _txn(db, currency="EUR", base="-99.00", days_ago=4, archived=True)
+    home = _txn(db, currency="GBP", base="-7.00", days_ago=3)  # not foreign
+    project = travel_service.create_project_from_trip(
+        db, name="Trip", transaction_ids=[good.id, archived.id, home.id]
+    )
+    assert db.get(Transaction, good.id).project_id == project.id
+    assert db.get(Transaction, archived.id).project_id is None
+    assert db.get(Transaction, home.id).project_id is None
+    # Dates come only from the one valid trip row.
+    assert project.start_date == good.transaction_date
+    assert project.end_date == good.transaction_date
+
+
+def test_create_project_rejects_when_no_valid_trip_ids(db):
+    """If none of the passed ids are genuine trip rows, no project is created."""
+    _gbp(db)
+    archived = _txn(db, currency="EUR", base="-10.00", archived=True)
+    before = db.query(travel_service.Project).count()
+    with pytest.raises(ValueError, match="No valid trip transactions"):
+        travel_service.create_project_from_trip(db, name="X", transaction_ids=[archived.id])
+    db.rollback()
+    assert db.query(travel_service.Project).count() == before
 
 
 # --- API ------------------------------------------------------------------
