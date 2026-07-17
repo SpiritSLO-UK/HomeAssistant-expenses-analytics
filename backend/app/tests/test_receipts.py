@@ -498,17 +498,27 @@ def test_candidates_exclude_archived_transactions(db):
 
 
 def test_candidates_respect_account_scope(db):
-    """An explicit visible-account scope narrows candidates; None is unrestricted."""
+    """An explicit visible-account scope narrows candidates; None is unrestricted.
+
+    SR-E7: a restricted (non-None) scope now confines candidates to exactly
+    ``account_id IN (<set>)`` — orphan transactions (``account_id IS NULL``) are
+    owner-visible only, not leaked into a restricted scope. The seeded txn has no
+    account (an orphan), so it is a candidate only on the unrestricted (``None``)
+    owner path; a restricted scope that doesn't list it excludes it.
+
+    No production regression: receipt matching is always invoked unrestricted
+    (``routes_receipts`` calls ``match()`` with no ``account_ids``), so orphans stay
+    matchable in the real flow — this scoped path only mirrors member visibility.
+    """
     hh = get_or_create_default_household(db).id
     receipt = _seed_receipt(db)
     txn = _make_txn(db, household_id=hh)
 
-    # Empty scope → nothing visible (the txn has no account so it's an orphan,
-    # which stays visible); a scope that excludes it hides it.
+    # Unrestricted (owner) → the orphan txn is a candidate.
     assert txn.id in {t.id for t in receipt_service._candidates(db, receipt, account_ids=None)}
+    # Restricted scope that doesn't include the orphan → excluded (owner-only rule).
     scoped = receipt_service._candidates(db, receipt, account_ids={999_999})
-    # Orphan (account_id IS NULL) txns stay visible under any scope by design.
-    assert {t.id for t in scoped} == {txn.id}
+    assert {t.id for t in scoped} == set()
 
 
 def test_auto_match_never_drops_sole_original(db):
