@@ -128,10 +128,19 @@ def _count(db: Session, model, *conds) -> int:
     return db.scalar(select(func.count()).select_from(model).where(*conds)) or 0
 
 
+def _as_naive_utc(dt: datetime) -> datetime:
+    """Normalise to a naive-UTC datetime so it compares cleanly with ``_cutoff``
+    (which is naive). An aware value is converted to UTC then stripped; a naive one
+    is assumed already-UTC and returned unchanged."""
+    if dt.tzinfo is not None:
+        return dt.astimezone(UTC).replace(tzinfo=None)
+    return dt
+
+
 def _receipt_age(r: Receipt) -> datetime:
     if r.receipt_date is not None:
         return datetime(r.receipt_date.year, r.receipt_date.month, r.receipt_date.day)
-    return r.created_at or _now()
+    return _as_naive_utc(r.created_at or _now())
 
 
 def _archive_due(db: Session, dtype: str, days: int) -> int:
@@ -194,7 +203,11 @@ def preview(db: Session) -> dict:
 
 # --- Mutating stages ------------------------------------------------------
 
-def _archive(db: Session, dtype: str, days: int) -> int:
+def _archive(db: Session, dtype: str, days: int, counter: dict) -> None:
+    """Archive one type, recording the applied count in ``counter['archived']``.
+    Bulk-DML types set the count only after their commit; receipts self-commit per
+    row, so the running count is incremented as each lands — a mid-loop abort still
+    reports the rows already archived."""
     cutoff = _cutoff(days)
     if dtype == "transactions":
         res = db.execute(
@@ -203,61 +216,92 @@ def _archive(db: Session, dtype: str, days: int) -> int:
             .values(archived_at=_now())
         )
         db.commit()
-        return dml_rowcount(res) or 0
-    if dtype == "ai_requests":
+        counter["archived"] = dml_rowcount(res) or 0
+    elif dtype == "ai_requests":
         res = db.execute(
             update(AIRequest)
             .where(AIRequest.created_at < cutoff, AIRequest.archived_at.is_(None))
             .values(archived_at=_now())
         )
         db.commit()
-        return dml_rowcount(res) or 0
-    if dtype == "audit_logs":
+        counter["archived"] = dml_rowcount(res) or 0
+    elif dtype == "audit_logs":
         res = db.execute(
             update(AuditLog)
             .where(AuditLog.created_at < cutoff, AuditLog.archived_at.is_(None))
             .values(archived_at=_now())
         )
         db.commit()
-        return dml_rowcount(res) or 0
-    if dtype == "receipts":
+        counter["archived"] = dml_rowcount(res) or 0
+    elif dtype == "receipts":
         rows = db.scalars(select(Receipt).where(Receipt.archived_at.is_(None))).all()
-        n = 0
         for r in rows:
             if _receipt_age(r) < cutoff:
                 receipt_service.drop_original(db, r)  # unlinks file, sets archived_at, commits
-                n += 1
-        return n
-    return 0
+                counter["archived"] += 1
 
 
-def _purge(db: Session, dtype: str, days: int) -> int:
+def _audit_purge(db: Session, dtype: str, actor: str, count: int) -> None:
+    audit_service.record(db, actor=actor, action=f"purge_{dtype}",
+                         entity_type="retention", details={"count": count})
+
+
+def _purge_dml(db: Session, stmt, dtype: str, actor: str, counter: dict) -> None:
+    """Bulk-DML purge: the audit row joins the DELETE's transaction and both commit
+    together — either both land or neither. The count is reported only once that
+    commit succeeds, so a failed purge reports 0 rather than a phantom deletion."""
+    res = db.execute(stmt)
+    n = dml_rowcount(res) or 0
+    if n:
+        _audit_purge(db, dtype, actor, n)
+    db.commit()
+    counter["purged"] = n
+
+
+def _purge_receipts(db: Session, cutoff: datetime, actor: str, counter: dict) -> None:
+    """Receipts self-commit per row, so true delete+audit atomicity isn't possible.
+    Instead keep the running count accurate and audit whatever actually landed —
+    including a partial count if the loop aborts partway."""
+    rows = db.scalars(select(Receipt)).all()
+    try:
+        for r in rows:
+            if _receipt_age(r) < cutoff:
+                receipt_service.delete(db, r)  # row + file + review items, commits
+                counter["purged"] += 1
+    finally:
+        if counter["purged"]:
+            _audit_purge(db, "receipts", actor, counter["purged"])
+            db.commit()
+
+
+def _purge_failed_unlock(db: Session, days: int, actor: str, counter: dict) -> None:
+    """The failed-unlock record is a flat JSON file pruned outside the DB; audit and
+    commit the count once it's gone."""
+    n = security_service.prune_failed_unlocks(days)
+    counter["purged"] = n
+    if n:
+        _audit_purge(db, "failed_unlock", actor, n)
+        db.commit()
+
+
+def _purge(db: Session, dtype: str, days: int, actor: str, counter: dict) -> None:
+    """Purge one type and audit it durably in the same step, recording the applied
+    count in ``counter['purged']``. See the per-branch helpers for the exact
+    delete/audit/commit ordering each type can guarantee."""
     cutoff = _cutoff(days)
     if dtype == "transactions":
         # FK cascades (PRAGMA foreign_keys=ON) drop splits + receipt matches and
         # null child_allocations / ai_requests references.
-        res = db.execute(delete(Transaction).where(Transaction.transaction_date < cutoff.date()))
-        db.commit()
-        return dml_rowcount(res) or 0
-    if dtype == "ai_requests":
-        res = db.execute(delete(AIRequest).where(AIRequest.created_at < cutoff))
-        db.commit()
-        return dml_rowcount(res) or 0
-    if dtype == "audit_logs":
-        res = db.execute(delete(AuditLog).where(AuditLog.created_at < cutoff))
-        db.commit()
-        return dml_rowcount(res) or 0
-    if dtype == "receipts":
-        rows = db.scalars(select(Receipt)).all()
-        n = 0
-        for r in rows:
-            if _receipt_age(r) < cutoff:
-                receipt_service.delete(db, r)  # row + file + review items, commits
-                n += 1
-        return n
-    if dtype == "failed_unlock":
-        return security_service.prune_failed_unlocks(days)
-    return 0
+        _purge_dml(db, delete(Transaction).where(Transaction.transaction_date < cutoff.date()),
+                   dtype, actor, counter)
+    elif dtype == "ai_requests":
+        _purge_dml(db, delete(AIRequest).where(AIRequest.created_at < cutoff), dtype, actor, counter)
+    elif dtype == "audit_logs":
+        _purge_dml(db, delete(AuditLog).where(AuditLog.created_at < cutoff), dtype, actor, counter)
+    elif dtype == "receipts":
+        _purge_receipts(db, cutoff, actor, counter)
+    elif dtype == "failed_unlock":
+        _purge_failed_unlock(db, days, actor, counter)
 
 
 def _purge_types(policy: dict, purge_mode: str) -> list[str]:
@@ -288,44 +332,50 @@ def _run_archive_stage(db: Session, policy: dict, counts: dict) -> None:
         if days is None:
             continue
         try:
-            counts[dtype]["archived"] = _archive(db, dtype, days)
+            _archive(db, dtype, days, counts[dtype])
         except Exception:  # pragma: no cover - isolate one type's failure
+            db.rollback()
             logger.exception("Retention archive failed for %s", dtype)
 
 
-def _run_purge_stage(db: Session, policy: dict, purge_mode: str, counts: dict) -> bool:
+def _take_safety_backup(db: Session) -> bool:
+    try:
+        backup_service.create_safety_backup("retention")
+        backup_service.prune_backups(db)
+        return True
+    except Exception:  # pragma: no cover - never purge without a backup
+        logger.exception("Safety backup before purge failed — skipping purge this run.")
+        return False
+
+
+def _run_purge_stage(db: Session, policy: dict, actor: str, purge_mode: str, counts: dict) -> bool:
     """Purge stage — permanent, so take a safety backup first if it will delete.
-    Updates ``counts`` in place; returns whether a backup was taken. One type's
-    failure is logged and isolated; no purge runs if the backup fails."""
+    Each type is purged *and* audited durably before the next (see ``_purge``), so a
+    successful purge is always audited and a mid-run failure never leaves an
+    un-audited deletion. Updates ``counts`` in place; returns whether a backup was
+    taken. One type's failure is logged and isolated; no purge runs without a backup."""
     purge_types = _purge_types(policy, purge_mode)
     will_delete = any(_purge_due(db, t, policy[t]["purge_after_days"]) > 0 for t in purge_types)
-    backup_taken = False
-    if will_delete:
+    if not will_delete:
+        return False
+    if not _take_safety_backup(db):
+        return False
+    for dtype in purge_types:
         try:
-            backup_service.create_safety_backup("retention")
-            backup_service.prune_backups(db)
-            backup_taken = True
-        except Exception:  # pragma: no cover - never purge without a backup
-            logger.exception("Safety backup before purge failed — skipping purge this run.")
-
-    if will_delete and backup_taken:
-        for dtype in purge_types:
-            try:
-                counts[dtype]["purged"] = _purge(db, dtype, policy[dtype]["purge_after_days"])
-            except Exception:  # pragma: no cover - isolate one type's failure
-                logger.exception("Retention purge failed for %s", dtype)
-    return backup_taken
+            _purge(db, dtype, policy[dtype]["purge_after_days"], actor, counts[dtype])
+        except Exception:  # pragma: no cover - isolate one type's failure
+            db.rollback()
+            logger.exception("Retention purge failed for %s", dtype)
+    return True
 
 
-def _audit_retention_actions(db: Session, actor: str, counts: dict) -> None:
-    """Audit every non-zero archive/purge action."""
+def _audit_archive_actions(db: Session, actor: str, counts: dict) -> None:
+    """Audit every non-zero archive action. Purges are audited as they run, in the
+    same transaction as (or immediately after) each delete — see ``_purge``."""
     for dtype, c in counts.items():
         if c["archived"]:
             audit_service.record(db, actor=actor, action=f"archive_{dtype}",
                                  entity_type="retention", details={"count": c["archived"]})
-        if c["purged"]:
-            audit_service.record(db, actor=actor, action=f"purge_{dtype}",
-                                 entity_type="retention", details={"count": c["purged"]})
 
 
 def run(db: Session, *, actor: str, purge_mode: str) -> dict:
@@ -340,10 +390,12 @@ def run(db: Session, *, actor: str, purge_mode: str) -> dict:
     _run_archive_stage(db, policy, counts)
 
     # 2. Purge stage — permanent, so take a safety backup first if it will delete.
-    backup_taken = _run_purge_stage(db, policy, purge_mode, counts)
+    #    Each purge is audited durably as it runs (same tx as the delete for bulk
+    #    DML; immediately after for per-row receipt/failed-unlock deletes).
+    backup_taken = _run_purge_stage(db, policy, actor, purge_mode, counts)
 
-    # 3. Audit every non-zero action.
-    _audit_retention_actions(db, actor, counts)
+    # 3. Audit every non-zero archive action (purges already audited above).
+    _audit_archive_actions(db, actor, counts)
     db.commit()
     return {"counts": counts, "backup_taken": backup_taken}
 

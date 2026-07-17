@@ -186,6 +186,79 @@ def test_receipt_purge_deletes_row_and_file(db):
     assert not Path(path).exists()
 
 
+def test_receipt_purge_reports_partial_count_on_midloop_failure(db, monkeypatch):
+    """A per-receipt delete that fails mid-loop must still report the receipts already
+    purged (running count), never 0 — the deletions already committed are real."""
+    for name in ("a.jpg", "b.jpg"):
+        r, _ = receipt_service.store_upload(db, name, b"purge-" + name.encode())
+        r.receipt_date = date.today() - timedelta(days=400)
+        db.commit()
+    _set(db, {"receipts": {"purge_after_days": 30, "auto_purge": True}})
+
+    real_delete = receipt_service.delete
+    calls = {"n": 0}
+
+    def _flaky(session, receipt):
+        calls["n"] += 1
+        if calls["n"] >= 2:
+            raise RuntimeError("boom on the second receipt")
+        return real_delete(session, receipt)
+
+    monkeypatch.setattr(retention_service.receipt_service, "delete", _flaky)
+    result = retention_service.run(db, actor="t", purge_mode="auto")
+
+    assert calls["n"] == 2                                 # loop aborted on the 2nd
+    assert result["counts"]["receipts"]["purged"] == 1     # partial progress reported
+    db.rollback()
+    assert db.scalar(select(func.count()).select_from(Receipt)) == 1  # exactly one gone
+
+
+def test_purge_is_audited_and_partial_purge_still_audited(db, monkeypatch):
+    """Every successful purge is audited durably (in/with the delete's transaction),
+    and a mid-loop abort still audits the count that actually landed."""
+    _ai(db, 400)
+    _set(db, {"ai_requests": {"purge_after_days": 30, "auto_purge": True}})
+    retention_service.run(db, actor="owner", purge_mode="auto")
+    assert db.scalar(
+        select(func.count()).select_from(AuditLog).where(AuditLog.action == "purge_ai_requests")
+    ) == 1
+
+    # Now a partial receipt purge: one receipt deleted, then the loop blows up.
+    for name in ("x.jpg", "y.jpg"):
+        r, _ = receipt_service.store_upload(db, name, b"a-" + name.encode())
+        r.receipt_date = date.today() - timedelta(days=400)
+        db.commit()
+    _set(db, {"receipts": {"purge_after_days": 30, "auto_purge": True}})
+    real_delete = receipt_service.delete
+    calls = {"n": 0}
+
+    def _flaky(session, receipt):
+        calls["n"] += 1
+        if calls["n"] >= 2:
+            raise RuntimeError("boom")
+        return real_delete(session, receipt)
+
+    monkeypatch.setattr(retention_service.receipt_service, "delete", _flaky)
+    retention_service.run(db, actor="owner", purge_mode="auto")
+    db.rollback()
+    rec = db.scalar(
+        select(AuditLog).where(AuditLog.action == "purge_receipts").order_by(AuditLog.id.desc())
+    )
+    assert rec is not None
+    assert json.loads(rec.details_json)["count"] == 1  # the one that actually landed
+
+
+def test_receipt_age_normalises_aware_created_at():
+    """`_receipt_age` must return a naive datetime so it compares with a naive cutoff
+    without raising, even when created_at comes back timezone-aware."""
+    r = Receipt(created_at=datetime.now(UTC))  # tz-aware, no receipt_date
+    r.receipt_date = None
+    age = retention_service._receipt_age(r)
+    assert age.tzinfo is None
+    # comparison against the naive cutoff must not raise
+    _ = age < retention_service._cutoff(0)
+
+
 def _txn(db) -> Transaction:
     t = Transaction(
         transaction_date=date.today(),
