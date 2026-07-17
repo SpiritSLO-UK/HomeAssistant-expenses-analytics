@@ -10,6 +10,7 @@ import {
   listMembers,
   listUsers,
   updateAccount,
+  updateBudget,
   updateUser,
   type Member,
   type User,
@@ -34,7 +35,16 @@ export default function FamilySetup() {
     const msg = String(e instanceof Error ? e.message : e);
     setErr(msg.includes("step_up") ? "That needs a fresh two-factor code — do it from the Users page." : msg);
   };
-  const ok = () => { setErr(null); qc.invalidateQueries(); };
+  // Narrowed from a blanket invalidateQueries(): this wizard only ever changes
+  // people/roles, account sharing, and the kids' pocket-money budgets, so refresh
+  // just those queries. ["dash-allowance"] is a prefix that matches every child's
+  // ["dash-allowance", id] summary.
+  const ok = () => {
+    setErr(null);
+    for (const key of [["users"], ["members"], ["accounts"], ["budget-summary"], ["dash-allowance"]]) {
+      qc.invalidateQueries({ queryKey: key });
+    }
+  };
 
   const role = useMutation({ mutationFn: (v: { id: number; role: string }) => updateUser(v.id, { role: v.role }), onSuccess: ok, onError: onErr });
   const approve = useMutation({ mutationFn: (id: number) => approveUser(id), onSuccess: ok, onError: onErr });
@@ -215,8 +225,14 @@ function KidRow({ child, onError, onDone }: Readonly<{ child: User; onError: (e:
   const summary = useQuery({ queryKey: ["dash-allowance", child.id], queryFn: () => getAllowanceSummary(child.id) });
   const [amount, setAmount] = useState("");
   const existing = summary.data?.budgets[0];
+  // Upsert, don't stack: if this child already has a budget, PATCH its amount;
+  // otherwise create one. Previously this always POSTed, so re-running the wizard
+  // (or editing an amount) piled up duplicate "Pocket money" budgets per child.
   const set = useMutation({
-    mutationFn: () => createBudget({ owner_user_id: child.id, name: "Pocket money", period: "monthly", amount }),
+    mutationFn: () =>
+      existing
+        ? updateBudget(existing.budget_id, { amount })
+        : createBudget({ owner_user_id: child.id, name: "Pocket money", period: "monthly", amount }),
     onSuccess: () => { setAmount(""); onDone(); summary.refetch(); },
     onError,
   });
@@ -235,7 +251,7 @@ function KidRow({ child, onError, onDone }: Readonly<{ child: User; onError: (e:
           onChange={(e) => setAmount(e.target.value)}
         />
         <button className="btn btn--sm" disabled={!amount || set.isPending} onClick={() => set.mutate()}>
-          {existing ? "Add budget" : "Set pocket money"}
+          {existing ? "Update budget" : "Set pocket money"}
         </button>
       </span>
     </li>
