@@ -102,7 +102,19 @@ chmod 700 "$DATA_DIR" || true
 
 echo "[run.sh] Applying database migrations..."
 cd /app/backend
-alembic upgrade head || echo "[run.sh] alembic upgrade failed; app will create tables on startup"
+if ! alembic upgrade head; then
+  # A failed migration means the finance database may be in an inconsistent
+  # state. Starting the app anyway risks corrupting data or serving wrong
+  # figures, so we FAIL HARD by default and refuse to start the server.
+  echo "[run.sh] ERROR: 'alembic upgrade head' failed." >&2
+  echo "[run.sh] The finance database may be in an inconsistent state; refusing to start the app." >&2
+  if [[ "${HAFI_ALLOW_MIGRATION_FAILURE:-0}" == "1" ]]; then
+    echo "[run.sh] HAFI_ALLOW_MIGRATION_FAILURE=1 set — continuing despite the migration failure (recovery mode). The database may be inconsistent." >&2
+  else
+    echo "[run.sh] To override for recovery (at your own risk), restart with HAFI_ALLOW_MIGRATION_FAILURE=1." >&2
+    exit 1
+  fi
+fi
 
 echo "[run.sh] Starting HA Finance Intelligence on port ${HAFI_PORT}..."
 # Run from the source tree, NOT site-packages: app.main resolves the bundled
