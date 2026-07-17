@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
+
+# How a saved profile reads ambiguous CSV dates (maps to GenericCsvParser):
+# "auto" = per-file heuristic (default), "dmy" = UK day-first, "mdy" = US month-first.
+DateFormat = Literal["auto", "dmy", "mdy"]
 
 
 class ImportReportSchema(BaseModel):
@@ -116,6 +121,9 @@ class ImportProfileIn(BaseModel):
     name: str
     mapping: dict[str, str]
     default_currency: str = "GBP"
+    # Pin the CSV date order for this bank's statements (US month-first / UK
+    # day-first); "auto" keeps the historic per-file heuristic.
+    date_format: DateFormat = "auto"
 
 
 class ImportProfileOut(BaseModel):
@@ -123,3 +131,4 @@ class ImportProfileOut(BaseModel):
     name: str
     mapping: dict[str, str]
     default_currency: str
+    date_format: DateFormat = "auto"

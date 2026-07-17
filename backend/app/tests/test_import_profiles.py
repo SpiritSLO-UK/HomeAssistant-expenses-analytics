@@ -56,6 +56,48 @@ def test_import_profile_crud(client):
     assert client.delete(f"/api/imports/profiles/{pid}").status_code == 404
 
 
+def test_import_profile_persists_date_format(client):
+    # date_format defaults to "auto" and round-trips through create/read/update.
+    created = client.post(
+        "/api/imports/profiles",
+        json={"name": "USBank", "mapping": {"date": "Date", "amount": "Amount"}},
+    ).json()
+    assert created["date_format"] == "auto"
+    pid = created["id"]
+
+    upd = client.put(
+        f"/api/imports/profiles/{pid}",
+        json={"name": "USBank", "mapping": {"date": "Date", "amount": "Amount"}, "date_format": "mdy"},
+    ).json()
+    assert upd["date_format"] == "mdy"
+    assert next(p for p in client.get("/api/imports/profiles").json() if p["id"] == pid)["date_format"] == "mdy"
+
+
+def test_import_profile_rejects_invalid_date_format(client):
+    r = client.post(
+        "/api/imports/profiles",
+        json={"name": "Bad", "mapping": {"date": "Date", "amount": "Amount"}, "date_format": "iso"},
+    )
+    assert r.status_code == 422, r.text
+
+
+def test_upload_date_format_forces_us_month_first(client):
+    # Every day component is ≤ 12, so auto-detection has no evidence and stays
+    # day-first; date_format="mdy" must force US month-first parsing.
+    csv = b"Date,Amount,Description\n6/3/2026,-3.50,Coffee\n7/8/2026,-8.00,Lunch\n"
+    files = {"file": ("us.csv", csv, "text/csv")}
+    mapping = json.dumps({"date": "Date", "amount": "Amount", "description": "Description"})
+
+    auto = client.post("/api/imports/upload", files=files,
+                       data={"parser_id": "generic_csv", "mapping": mapping}).json()
+    assert auto["preview"][0]["transaction_date"] == "2026-03-06"  # misread day-first
+
+    us = client.post("/api/imports/upload", files=files,
+                     data={"parser_id": "generic_csv", "mapping": mapping, "date_format": "mdy"}).json()
+    assert us["preview"][0]["transaction_date"] == "2026-06-03"  # June 3, month-first
+    assert us["preview"][1]["transaction_date"] == "2026-07-08"  # July 8
+
+
 def test_import_with_custom_mapping_parses_unrecognised_csv(client):
     # Headers no built-in parser / heuristic recognises — only an explicit mapping works.
     csv = b"When,Paid,Note\n2026-01-02,-5.00,Coffee\n"

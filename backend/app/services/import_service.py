@@ -26,7 +26,7 @@ from app.logging import get_logger
 from app.models import Account, Rule, Statement, Transaction, Vendor, VendorAlias
 from app.parsers import StandardTransaction, detect_parser, get_parser
 from app.parsers.base import ParseError
-from app.parsers.generic_csv import GenericCsvParser
+from app.parsers.generic_csv import GenericCsvParser, month_first_for
 from app.services import (
     category_service,
     curve_link_service,
@@ -115,17 +115,30 @@ def source_hash(account_id: int | None, txn: StandardTransaction) -> str:
 
 # --- Bootstrap helpers (single-user MVP still needs a household + account) ---
 
-def _resolve_parser(parser_id: str | None, filename: str, content: bytes, mapping: dict | None):
+def _resolve_parser(
+    parser_id: str | None,
+    filename: str,
+    content: bytes,
+    mapping: dict | None,
+    date_format: str | None = None,
+):
+    # A stored profile's date_format pins the CSV date order (auto/dmy/mdy) so an
+    # all-ambiguous US statement imports correctly; "auto"/None keeps detection.
+    month_first = month_first_for(date_format)
     if parser_id:
         if parser_id == "generic_csv":
-            return GenericCsvParser(mapping=mapping, default_currency=settings.currency)
+            return GenericCsvParser(
+                mapping=mapping, default_currency=settings.currency, month_first=month_first
+            )
         parser = get_parser(parser_id)
         if parser is None:
             raise ImportFailed(f"Unknown parser: {parser_id}")
         return parser
     parser = detect_parser(filename, content)
-    if isinstance(parser, GenericCsvParser) and mapping:
-        return GenericCsvParser(mapping=mapping, default_currency=settings.currency)
+    if isinstance(parser, GenericCsvParser) and (mapping or month_first is not None):
+        return GenericCsvParser(
+            mapping=mapping, default_currency=settings.currency, month_first=month_first
+        )
     return parser
 
 
@@ -207,13 +220,15 @@ def create_import(
     mapping: dict | None = None,
     preview_limit: int = 20,
     parser: Any = None,
+    date_format: str | None = None,
 ) -> dict:
     """Parse + dedupe a file and create a pending Statement. Returns the upload
     response (spec §24.3) with a preview and report. ``parser`` may be supplied
     pre-built (e.g. the AI image-extract path injects already-parsed rows);
-    otherwise it's resolved from ``parser_id``/detection."""
+    otherwise it's resolved from ``parser_id``/detection. ``date_format`` pins the
+    generic-CSV date order (auto/dmy/mdy) from a saved import profile."""
     if parser is None:
-        parser = _resolve_parser(parser_id, filename, content, mapping)
+        parser = _resolve_parser(parser_id, filename, content, mapping, date_format)
 
     try:
         parsed = parser.parse(filename, content)
@@ -274,6 +289,8 @@ def create_import(
         "mapping": mapping,
         "account_id": account.id,
         "stored_path": str(stored_path),
+        # Pin the generic-CSV date order so confirm re-parses exactly as preview did.
+        "date_format": date_format,
     }
     # AI image-extract rows can't be re-parsed from the stored image on confirm,
     # so persist the already-parsed rows to rebuild them there (fixes the
@@ -427,7 +444,10 @@ def _load_parsed_rows(db: Session, statement: Statement, config: dict) -> list[S
     ai_rows = config.get("ai_rows")
     if ai_rows is not None:
         return _deserialize_rows(ai_rows)
-    parser = _resolve_parser(config.get("parser_id"), statement.source_filename or "", b"", config.get("mapping"))
+    parser = _resolve_parser(
+        config.get("parser_id"), statement.source_filename or "", b"",
+        config.get("mapping"), config.get("date_format"),
+    )
     stored_path = Path(config["stored_path"])
     if not stored_path.is_file():
         raise ImportFailed("Uploaded file is no longer available; please re-upload")
