@@ -70,3 +70,40 @@ def test_set_status_rejects_unknown_status_at_service_level(db):
     db.commit()
     with pytest.raises(ValueError, match="Unknown review status"):
         review_service.set_status(db, item, "nonsense")
+
+
+def test_add_dedupes_within_a_single_unit_of_work(db):
+    # SR-F9: two adds for the same (type, id, reason) in ONE unit of work (before
+    # any commit) must collapse to a single open row, not create a duplicate. The
+    # session runs autoflush=False, so this guards the per-call flush in add().
+    from sqlalchemy import func, select
+
+    from app.models import ReviewItem
+    from app.services import review_service
+
+    first = review_service.add(db, item_type="vendor", item_id=7, reason="unknown_vendor")
+    second = review_service.add(db, item_type="vendor", item_id=7, reason="unknown_vendor")
+    db.commit()
+
+    assert first.id == second.id
+    count = db.scalar(
+        select(func.count())
+        .select_from(ReviewItem)
+        .where(ReviewItem.item_id == 7, ReviewItem.status == "open")
+    )
+    assert count == 1
+
+
+def test_list_items_is_bounded_by_limit(db):
+    # list_items must never return an unbounded result set: a small explicit limit
+    # caps the rows, and the module default is finite.
+    from app.services import review_service
+
+    for n in range(5):
+        review_service.add(db, item_type="vendor", item_id=100 + n, reason="unknown_vendor")
+    db.commit()
+
+    assert len(review_service.list_items(db, limit=2)) == 2
+    assert review_service.DEFAULT_LIST_LIMIT >= 1
+    # default (generous but finite) still returns everything for a small backlog
+    assert len(review_service.list_items(db)) == 5
