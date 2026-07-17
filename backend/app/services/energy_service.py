@@ -350,6 +350,16 @@ def _period_buckets(period: str, count: int, today: date) -> list[tuple[str, dat
     return out
 
 
+def _clamp_count(count) -> int:
+    """Coerce ``count`` to an int in ``[1, 366]``; fall back to 12 on None/non-numeric
+    input so a direct (non-API) call can't raise on a bad value."""
+    try:
+        n = int(count)
+    except (TypeError, ValueError):
+        n = 12
+    return max(1, min(n, 366))
+
+
 def _spend_in_range(
     db: Session, category_id: int, start: date, end: date, account_ids: set[int] | None
 ) -> Decimal:
@@ -381,7 +391,7 @@ def history(
     history, independent of when the offset was first configured."""
     if period not in HISTORY_PERIODS:
         period = "month"
-    count = max(1, min(int(count), 366))
+    count = _clamp_count(count)
     ref = today or date.today()
     cid = get_config(db)["energy_category_id"]
     buckets = [
@@ -438,7 +448,7 @@ def production_history(
     live reads). See the semantics note on ``_produced_in_bucket``."""
     if period not in HISTORY_PERIODS:
         period = "month"
-    count = max(1, min(int(count), 366))
+    count = _clamp_count(count)
     ref = today or date.today()
     cfg = get_config(db)
     semantics = cfg["production_semantics"]
