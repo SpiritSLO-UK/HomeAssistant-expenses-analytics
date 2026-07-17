@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -213,6 +213,21 @@ export default function Transactions() {
     categoryFilter, vendorFilter, countryFilter, projectFilter, memberFilter, page, focusId,
   ]);
 
+  // Selection is scoped to the *visible page*: reset it whenever the user pages
+  // or re-filters. Without this the Set silently accumulates ids from earlier
+  // pages, so a bulk action (archive/delete/…) could hit rows that scrolled
+  // off-screen — acting on more than the user can see. Clearing here keeps the
+  // header select-all, the row checkboxes, the bulk-bar count and the bulk
+  // mutation all operating on exactly the same loaded set. (Not keyed on `data`
+  // so a post-mutation refetch doesn't wipe a selection the user is still using.)
+  useEffect(() => {
+    setSelected(new Set());
+  }, [
+    page, debouncedSearch, dateFrom, dateTo, needsReview, uncategorisedOnly,
+    showArchived, businessOnly, categoryFilter, vendorFilter, countryFilter,
+    projectFilter, memberFilter, focusId,
+  ]);
+
   const setCategory = useMutation({
     mutationFn: (v: { id: number; categoryId: number | null }) =>
       categoriseTransaction(v.id, v.categoryId),
@@ -405,6 +420,26 @@ export default function Transactions() {
 
   const total = data?.total ?? 0;
   const maxPage = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1);
+
+  // Header select-all state, computed against the currently loaded page only.
+  const pageCount = data?.items.length ?? 0;
+  const selectedOnPage = useMemo(
+    () => (data?.items ?? []).filter((t) => selected.has(t.id)).length,
+    [data, selected],
+  );
+  const pageAllSelected = pageCount > 0 && selectedOnPage === pageCount;
+  const pageSomeSelected = selectedOnPage > 0 && selectedOnPage < pageCount;
+
+  // Select/clear every row on the current page (indeterminate → select-all).
+  const toggleAllOnPage = (checked: boolean) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const t of data?.items ?? []) {
+        if (checked) next.add(t.id);
+        else next.delete(t.id);
+      }
+      return next;
+    });
 
   return (
     <div className="page">
@@ -654,20 +689,10 @@ export default function Transactions() {
                 <thead>
                   <tr>
                     <th className="col-select">
-                      <input
-                        type="checkbox"
-                        title="Select all on this page"
-                        checked={data.items.every((t) => selected.has(t.id))}
-                        onChange={(e) =>
-                          setSelected((prev) => {
-                            const next = new Set(prev);
-                            for (const t of data.items) {
-                              if (e.target.checked) next.add(t.id);
-                              else next.delete(t.id);
-                            }
-                            return next;
-                          })
-                        }
+                      <SelectAllCheckbox
+                        allSelected={pageAllSelected}
+                        someSelected={pageSomeSelected}
+                        onToggle={toggleAllOnPage}
                       />
                     </th>
                     <ResizableTh col="date" cols={cols}>Date</ResizableTh>
@@ -960,6 +985,35 @@ export default function Transactions() {
         )}
       </div>
     </div>
+  );
+}
+
+// Header "select all on this page" checkbox. React has no `indeterminate` prop,
+// so the DOM property is set imperatively via a ref: unchecked when none of the
+// page's rows are selected, checked when all are, and indeterminate when only
+// some are. Clicking while none/some are selected selects the whole page;
+// clicking while all are selected clears it (native checkbox semantics).
+function SelectAllCheckbox({
+  allSelected,
+  someSelected,
+  onToggle,
+}: Readonly<{
+  allSelected: boolean;
+  someSelected: boolean;
+  onToggle: (checked: boolean) => void;
+}>) {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = someSelected;
+  }, [someSelected]);
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      title="Select all on this page"
+      checked={allSelected}
+      onChange={(e) => onToggle(e.target.checked)}
+    />
   );
 }
 
