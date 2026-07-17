@@ -10,8 +10,10 @@ import { isAmount } from "../lib/num";
  */
 export default function AssignToChildButton({ txn, base }: Readonly<{ txn: Transaction; base: string }>) {
   const qc = useQueryClient();
-  const users = useQuery({ queryKey: ["users"], queryFn: listUsers });
-  const categories = useQuery({ queryKey: ["categories"], queryFn: listCategories });
+  // Reference data rendered per transaction row — a staleTime keeps these from
+  // refetching on every row mount / window focus (see main.tsx global default).
+  const users = useQuery({ queryKey: ["users"], queryFn: listUsers, staleTime: 60_000 });
+  const categories = useQuery({ queryKey: ["categories"], queryFn: listCategories, staleTime: 60_000 });
   const children = (users.data ?? []).filter((u) => u.role === "child");
   const [open, setOpen] = useState(false);
   const [childId, setChildId] = useState("");
@@ -38,7 +40,13 @@ export default function AssignToChildButton({ txn, base }: Readonly<{ txn: Trans
     onSuccess: () => {
       setOpen(false);
       setAmount("");
+      // The allocation moves money onto the child's allowance and off the parent's
+      // books, so refresh every view that reflects it: the allowance lists, the
+      // dashboard (incl. its per-child allowance card), and the transactions list.
       qc.invalidateQueries({ queryKey: ["allowance"] });
+      qc.invalidateQueries({ queryKey: ["dash-allowance"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: ["transactions"] });
     },
     onError: (e) => globalThis.alert(String(e instanceof Error ? e.message : e)),
   });
