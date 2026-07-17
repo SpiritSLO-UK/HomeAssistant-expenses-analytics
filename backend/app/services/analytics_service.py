@@ -23,7 +23,7 @@ from decimal import Decimal
 from statistics import median
 
 from sqlalchemy import case, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.models import Transaction
 from app.services import budget_service, dashboard_service, settings_service, subscription_service
@@ -249,19 +249,75 @@ def _large_charges(
     return items
 
 
+def _prior_month_category_spend(
+    db: Session, windows: list[tuple[date, date]], *, account_ids: set[int] | None = None
+) -> dict[str, dict[int | None, Decimal]]:
+    """Split-aware spend per ``(YYYY-MM, category)`` over ``windows`` in one pass.
+
+    Mirrors ``dashboard_service.category_breakdown`` — bulk non-split spend rolls
+    up in a single ``GROUP BY strftime('%Y-%m'), category`` pass; the far fewer
+    split parts are allocated penny-exactly in Python (reusing the dashboard's
+    allocation so the split base share is unchanged) — but covers every prior
+    month at once. This replaces a ``category_breakdown`` call per month, which
+    re-queried and reloaded the whole Category table each time (CR-FEAT-5). The
+    per-(month, category) figures are identical to the per-month breakdown."""
+    if not windows:
+        return {}
+    range_start, range_end = windows[0][0], windows[-1][1]
+    month_key = func.strftime("%Y-%m", Transaction.transaction_date)
+    scope = [
+        Transaction.transaction_date >= range_start,
+        Transaction.transaction_date < range_end,
+        Transaction.base_amount < 0,  # spend only (money out)
+        Transaction.is_transfer.is_(False),
+        Transaction.is_duplicate.is_(False),
+        Transaction.base_amount.is_not(None),
+        *account_scope_condition(account_ids),
+        *archived_condition(),
+    ]
+    by_month: dict[str, dict[int | None, Decimal]] = defaultdict(
+        lambda: defaultdict(lambda: Decimal("0.00"))
+    )
+    # Bulk (non-split) spend: one GROUP BY month+category in the database.
+    for mkey, cid, total in db.execute(
+        select(month_key, Transaction.category_id, func.sum(-Transaction.base_amount))
+        .where(*scope, Transaction.is_split.is_(False))
+        .group_by(month_key, Transaction.category_id)
+    ).all():
+        by_month[mkey][cid] += total
+    # Split parts: one eager-loaded scan, each part attributed to its own category
+    # for its month via the dashboard's penny-exact allocation (no duplication).
+    split_txns = db.scalars(
+        select(Transaction)
+        .where(*scope, Transaction.is_split.is_(True))
+        .options(selectinload(Transaction.splits))
+    ).all()
+    discard_counts: dict[int | None, int] = defaultdict(int)
+    for txn in split_txns:
+        mkey = txn.transaction_date.strftime("%Y-%m")
+        dashboard_service._accumulate_split(txn, by_month[mkey], discard_counts)
+    return by_month
+
+
 def _prior_category_totals(
     db: Session, ref: date, history_months: int, *, account_ids: set[int] | None = None
 ) -> tuple[dict[int | None, list[Decimal]], int]:
     """Per-category prior-month totals (excluding the current month) and the
-    number of prior months that had any data."""
+    number of prior months that had any data. Derived from one split-aware GROUP
+    BY pass over the whole prior window instead of a query per month (CR-FEAT-5);
+    the per-month figures — and the averages the caller builds from them — are
+    unchanged."""
+    windows = _month_windows(ref, history_months + 1)[:-1]  # exclude current month
+    by_month = _prior_month_category_spend(db, windows, account_ids=account_ids)
+
     prior_totals: dict[int | None, list[Decimal]] = defaultdict(list)
     months_with_data = 0
-    for start, _end in _month_windows(ref, history_months + 1)[:-1]:  # exclude current
-        rows = dashboard_service.category_breakdown(db, start, account_ids=account_ids)
-        if rows:
-            months_with_data += 1
-        for r in rows:
-            prior_totals[r["category_id"]].append(Decimal(r["total"]))
+    for cat_totals in by_month.values():
+        if not cat_totals:
+            continue
+        months_with_data += 1
+        for cid, total in cat_totals.items():
+            prior_totals[cid].append(total)
     return prior_totals, months_with_data
 
 
