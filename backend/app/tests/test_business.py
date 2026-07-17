@@ -77,6 +77,19 @@ def test_summary_year_scope(db):
     assert business_service.summary(db, year=2030)["transaction_count"] == 0
 
 
+def test_summary_year_scope_is_boundary_inclusive(db):
+    """The SQL year filter is an inclusive [Jan 1, Dec 31] date range: rows on
+    either edge of the calendar year are kept, adjacent years excluded."""
+    settings_service.set_value(db, settings_service.BASE_CURRENCY, "GBP")
+    _txn(db, business=True, amount="-1.00", txn_date=date(2024, 12, 31))  # prev-year edge
+    _txn(db, business=True, amount="-10.00", txn_date=date(2025, 1, 1))   # Jan 1 edge
+    _txn(db, business=True, amount="-20.00", txn_date=date(2025, 12, 31))  # Dec 31 edge
+    _txn(db, business=True, amount="-3.00", txn_date=date(2026, 1, 1))   # next-year edge
+    s = business_service.summary(db, year=2025)
+    assert Decimal(s["total"]) == Decimal("30.00")  # both 2025 edges, neither neighbour
+    assert s["transaction_count"] == 2
+
+
 def test_summary_groups_by_period_with_bounds(db):
     settings_service.set_value(db, settings_service.BASE_CURRENCY, "GBP")
     _txn(db, business=True, amount="-100.00", vat="20.00")  # today

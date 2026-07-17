@@ -70,8 +70,22 @@ def _vat_base(txn: Transaction) -> Decimal:
     return (vat * Decimal(rate)).quantize(Decimal("0.01"))
 
 
-def _business_spend(db: Session, account_ids: set[int] | None) -> list[Transaction]:
-    """Business money-out transactions (excludes transfers/duplicates/archived)."""
+def _business_spend(
+    db: Session, account_ids: set[int] | None, year: int | None = None
+) -> list[Transaction]:
+    """Business money-out transactions (excludes transfers/duplicates/archived).
+
+    ``year`` (when given) is filtered in SQL via an index-friendly date range on
+    ``transaction_date`` so the DB — not Python — narrows the rows to that calendar
+    year."""
+    year_conditions = (
+        (
+            Transaction.transaction_date >= date(year, 1, 1),
+            Transaction.transaction_date <= date(year, 12, 31),
+        )
+        if year is not None
+        else ()
+    )
     return list(
         db.scalars(
             select(Transaction).where(
@@ -80,6 +94,7 @@ def _business_spend(db: Session, account_ids: set[int] | None) -> list[Transacti
                 Transaction.base_amount < 0,  # money out
                 Transaction.is_transfer.is_(False),
                 Transaction.is_duplicate.is_(False),
+                *year_conditions,
                 *account_scope_condition(account_ids),
                 *archived_condition(),
             )
@@ -98,9 +113,7 @@ def summary(
     single calendar year (a Budgets-style date scope); ``None`` is all-time."""
     if period not in PERIODS:
         period = "month"
-    txns = _business_spend(db, account_ids)
-    if year is not None:
-        txns = [t for t in txns if t.transaction_date.year == year]
+    txns = _business_spend(db, account_ids, year)
     total = _ZERO
     vat_total = _ZERO
     by_cat: dict[int | None, Decimal] = defaultdict(lambda: Decimal("0.00"))
