@@ -134,6 +134,66 @@ def test_all_mutating_api_calls_are_audited(client):
     assert "api_call" in client.get("/api/logs/actions").json()
 
 
+def test_api_call_row_is_scoped_to_the_actor_household(db):
+    # A generic api_call audit row must carry a household scope (SR-E8): the
+    # acting user's household when it can be resolved by display name.
+    from app.models import Household, User
+    from app.services import audit_service
+
+    household = Household(name="H", currency="GBP", mode="single")
+    db.add(household)
+    db.flush()
+    db.add(User(household_id=household.id, display_name="Al", role="owner"))
+    db.flush()
+
+    audit_service.record_api_action(
+        db, actor="Al", method="POST", path="/api/x", status=200
+    )
+    db.commit()
+
+    entry = next(e for e in audit_service.recent(db) if e.action == "api_call")
+    assert entry.household_id == household.id
+
+
+def test_api_call_row_falls_back_to_single_household(db):
+    # With no user matching the actor, the row still gets a household scope from
+    # the single household of this MVP rather than being written unscoped (SR-E8).
+    from app.models import Household
+    from app.services import audit_service
+
+    household = Household(name="H", currency="GBP", mode="single")
+    db.add(household)
+    db.flush()
+
+    audit_service.record_api_action(
+        db, actor="system", method="DELETE", path="/api/y", status=204
+    )
+    db.commit()
+
+    entry = next(e for e in audit_service.recent(db) if e.action == "api_call")
+    assert entry.household_id == household.id
+
+
+def test_api_call_household_id_can_be_passed_explicitly(db):
+    # An explicit household_id wins over derivation (forward-compat for callers
+    # that already know the scope).
+    from app.models import Household
+    from app.services import audit_service
+
+    household = Household(name="H", currency="GBP", mode="single")
+    db.add(household)
+    db.flush()
+
+    audit_service.record_api_action(
+        db, actor="Al", method="PUT", path="/api/z", status=200,
+        household_id=household.id,
+    )
+    db.commit()
+
+    entry = next(e for e in audit_service.recent(db) if e.action == "api_call")
+    assert entry.household_id == household.id
+
+
 def test_recent_action_prefix_escapes_like_metacharacters(db):
     # A prefix containing LIKE wildcards must filter literally, not as a pattern
     # (SR-E8). "api" must not match via the "_" wildcard etc.

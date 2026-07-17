@@ -70,20 +70,61 @@ def record(
         logger.exception("Failed to write audit log for action=%s", action)
 
 
+def _household_for_actor(db: Session, actor: str | None) -> int | None:
+    """Best-effort household scope for a per-request audit row (SR-E8). Prefers the
+    acting user's household (matched by display name); falls back to the single
+    household of this single-household MVP. Read-only and swallow-all: it must never
+    raise into the audit write, and never *creates* a household as a side effect."""
+    from app.models import Household, User  # local: keep the module import surface small
+
+    try:
+        if actor and actor != "system":
+            hid = db.scalar(
+                select(User.household_id).where(User.display_name == actor).limit(1)
+            )
+            if hid is not None:
+                return hid
+        return db.scalar(select(Household.id).order_by(Household.id).limit(1))
+    except Exception:  # pragma: no cover - scoping is best-effort, never fatal
+        return None
+
+
 def record_api_action(
-    db: Session, *, actor: str | None, method: str, path: str, status: int
+    db: Session,
+    *,
+    actor: str | None,
+    method: str,
+    path: str,
+    status: int,
+    household_id: int | None = None,
 ) -> None:
     """Generic per-request audit entry for any mutating API call (backlog: "track
     all user + API actions in logs"). Complements the richer, action-specific
     records elsewhere; intentionally logs no request body (privacy). Action is the
     fixed label ``api_call`` so the Logs action-filter stays small; method/path/
-    status live in the details."""
+    status live in the details.
+
+    The row is scoped to a household (SR-E8): callers may pass ``household_id``
+    explicitly, otherwise it is derived best-effort from the acting user (or the
+    single household of this MVP) so the entry is never written unscoped.
+
+    Session note (CR-FEAT-4, by design): the audit middleware calls this on a
+    *fresh* SQLAlchemy session and commits it separately from the request's own
+    unit of work. That extra session + commit per mutation is accepted on purpose:
+    the middleware runs outermost, *after* the route's transaction has already been
+    committed or rolled back, so its session is closed by then and cannot be
+    reused; a separate unit of work also guarantees the audit row survives even
+    when the request transaction itself rolled back. Audit durability outweighs the
+    small cost of one extra short-lived write."""
+    if household_id is None:
+        household_id = _household_for_actor(db, actor)
     record(
         db,
         action="api_call",
         actor=actor,
         entity_type="api",
         details={"method": method, "path": path, "status": status},
+        household_id=household_id,
     )
 
 
