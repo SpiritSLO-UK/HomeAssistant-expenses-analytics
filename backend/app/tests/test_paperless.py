@@ -169,7 +169,6 @@ def test_import_requires_config(client, monkeypatch):
 def test_unknown_content_type_falls_back_to_metadata_extension(db, monkeypatch):
     """An unknown/empty content-type must not be labelled ``.pdf``; the extension
     is derived from the Paperless filename metadata instead."""
-    from app.services import paperless_service
 
     _configure(monkeypatch)
 
@@ -193,7 +192,6 @@ def test_unknown_content_type_falls_back_to_metadata_extension(db, monkeypatch):
 def test_unknown_content_type_and_no_metadata_uses_generic_extension(db, monkeypatch):
     """No usable content-type and no filename metadata → neutral ``.bin``, never
     a mislabelled ``.pdf``."""
-    from app.services import paperless_service
 
     _configure(monkeypatch)
 
@@ -212,7 +210,6 @@ def test_download_exceeding_cap_by_actual_bytes_is_rejected(db, monkeypatch):
     """A body larger than the cap (with no declared Content-Length) is aborted."""
     import pytest
 
-    from app.services import paperless_service
 
     _configure(monkeypatch)
     monkeypatch.setattr(paperless_service, "_MAX_DOWNLOAD_BYTES", 8)
@@ -234,7 +231,6 @@ def test_download_exceeding_cap_by_content_length_is_rejected(db, monkeypatch):
     """An oversized declared Content-Length is rejected cheaply, before reading."""
     import pytest
 
-    from app.services import paperless_service
 
     _configure(monkeypatch)
     monkeypatch.setattr(paperless_service, "_MAX_DOWNLOAD_BYTES", 8)
