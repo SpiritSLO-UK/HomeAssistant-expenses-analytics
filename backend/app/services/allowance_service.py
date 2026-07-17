@@ -24,8 +24,44 @@ TWO_DP = Decimal("0.01")
 
 
 def _out(value: Decimal) -> Decimal:
-    """Store spend as a positive number, 2dp."""
-    return abs(Decimal(value)).quantize(TWO_DP)
+    """Store spend as a positive number, 2dp.
+
+    A transaction's money-out is negative, so ``abs`` is expected; but reject a
+    non-finite (NaN/Inf) or effectively-zero amount before it, rather than
+    silently storing a nonsensical 0.00 allocation.
+    """
+    d = Decimal(value)
+    if not d.is_finite():
+        raise ValueError("Allocation amount must be a real number")
+    out = abs(d).quantize(TWO_DP)
+    if out <= 0:
+        raise ValueError("Allocation amount must be greater than zero")
+    return out
+
+
+def _base_amount_for(amount: Decimal | None, base: Decimal | None) -> Decimal:
+    """Pick the explicit override, else the base-currency amount.
+
+    Refuse to fall back to the transaction's original-currency amount when the
+    base amount is missing (a needs-rate row): storing foreign money as if it
+    were base currency would mislabel the child's allocation (SR-C7). The rest
+    of the codebase excludes needs-rate rows the same way (backlog #29).
+    """
+    if amount is not None:
+        return amount
+    if base is None:
+        raise ValueError(
+            "This transaction has no exchange rate yet, so its base-currency "
+            "amount is unknown — set the rate or enter an amount"
+        )
+    return base
+
+
+def _in_scope(txn: Transaction, child: User) -> bool:
+    """A transaction is allocatable only within the child's household. Orphans
+    (``household_id`` NULL, e.g. a deleted account) stay visible, mirroring the
+    shared-orphan convention in ``services/scope.py``."""
+    return txn.household_id is None or txn.household_id == child.household_id
 
 
 def _status(spent: Decimal, amount: Decimal, threshold: int | None) -> str:
@@ -48,9 +84,8 @@ def _resolve_split_fields(
     as_of: date | None,
 ) -> tuple[Decimal, int | None, date, str | None]:
     """Resolve (amount, category, date, description) for a split allocation."""
-    derived = split_service.split_base_amount(txn, split)
-    fallback = derived if derived is not None else split.amount
-    amt = _out(amount if amount is not None else fallback)
+    base = split_service.split_base_amount(txn, split)
+    amt = _out(_base_amount_for(amount, base))
     cat = category_id if category_id is not None else split.category_id
     when = as_of or txn.transaction_date
     desc = description or split.description or txn.description_raw
@@ -66,8 +101,7 @@ def _resolve_txn_fields(
     as_of: date | None,
 ) -> tuple[Decimal, int | None, date, str | None]:
     """Resolve (amount, category, date, description) for a whole-transaction allocation."""
-    fallback = txn.base_amount if txn.base_amount is not None else txn.amount
-    amt = _out(amount if amount is not None else fallback)
+    amt = _out(_base_amount_for(amount, txn.base_amount))
     cat = category_id if category_id is not None else txn.category_id
     when = as_of or txn.transaction_date
     desc = description or txn.description_raw
@@ -106,6 +140,10 @@ def create_allocation(
         raise ValueError("Unknown user")
     txn = db.get(Transaction, transaction_id) if transaction_id else None
     if transaction_id and txn is None:
+        raise ValueError("Unknown transaction")
+    # A parent may only attribute a transaction that is within the child's
+    # (household's) visible scope — never one from another household.
+    if txn is not None and not _in_scope(txn, child):
         raise ValueError("Unknown transaction")
     split = db.get(TransactionSplit, split_id) if split_id else None
     if split_id and split is None:
