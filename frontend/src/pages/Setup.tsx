@@ -81,6 +81,13 @@ function SoloSetup({ onBack }: Readonly<{ onBack: () => void }>) {
     },
     onError: (e) => setErr(String(e)),
   });
+  // Guarantee the configured base is always a selectable option, even when it
+  // isn't in the curated list — otherwise the control renders blank and a save
+  // could silently overwrite the real base currency.
+  const curated = currencies.data ?? [];
+  const currencyOptions = curated.some((c) => c.code === base)
+    ? curated
+    : [{ code: base, name: base, symbol: base }, ...curated];
   return (
     <div className="card">
       <h2 className="card__title">Just me</h2>
@@ -89,7 +96,7 @@ function SoloSetup({ onBack }: Readonly<{ onBack: () => void }>) {
           <strong>Base currency</strong> — everything is shown in this currency.
           <div style={{ marginTop: 6 }}>
             <select value={base} disabled={save.isPending} onChange={(e) => save.mutate(e.target.value)}>
-              {(currencies.data ?? []).map((c) => (
+              {currencyOptions.map((c) => (
                 <option key={c.code} value={c.code}>{c.symbol} {c.code} — {c.name}</option>
               ))}
             </select>
