@@ -3,10 +3,11 @@
 # serves the built frontend. Build context is the repository root.
 
 # ---- Stage 1: build frontend ----
-# Base images are pinned by immutable multi-arch digest (supply-chain hardening,
-# CR-FEAT-9); the human-readable tag stays in the comment. Refresh the digest when
-# intentionally bumping the base.
-FROM node:22-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3 AS frontend
+# Base images are pinned digest-only by immutable multi-arch digest (supply-chain
+# hardening, CR-FEAT-9); the human-readable tag lives in the comment above each
+# FROM (Docker has no inline comments). Refresh the digest when bumping the base.
+# node:22-slim
+FROM node@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3 AS frontend
 WORKDIR /build/frontend
 # Copy the lockfile explicitly (no glob) so a missing lock fails the build loudly,
 # and use `npm ci` for a clean, reproducible install of the locked, CI-verified tree.
@@ -21,7 +22,8 @@ RUN npm run build
 # against Debian's SQLCipher here, in a throwaway stage, and copy just the
 # resulting wheel into the runtime — keeping the build toolchain out of the final
 # image. On amd64 this stage is a no-op (empty /wheels).
-FROM python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de AS sqlcipher
+# python:3.12-slim
+FROM python@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de AS sqlcipher
 ARG TARGETARCH
 RUN mkdir -p /wheels \
     && if [ "$TARGETARCH" = "arm64" ]; then \
@@ -32,7 +34,8 @@ RUN mkdir -p /wheels \
     fi
 
 # ---- Stage 2: backend runtime ----
-FROM python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de AS runtime
+# python:3.12-slim
+FROM python@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de AS runtime
 WORKDIR /app
 
 ENV PYTHONUNBUFFERED=1 \
@@ -78,17 +81,17 @@ COPY --from=frontend /build/frontend/dist /app/frontend/dist
 
 # Entry script translates HA add-on options into env vars and starts the app.
 COPY addon/run.sh /run.sh
-RUN chmod +x /run.sh
 
 # Run unprivileged (CR-SEC-7): the app, Tesseract and the web server all run as a
 # non-root system user instead of UID 0. /data holds the SQLite finance DB and is
 # a runtime volume, so create + own it at build time — a fresh Docker volume (the
 # standalone `docker compose` / CI path) inherits this ownership and stays
 # writable by the app user. /app is chowned too so anything the app touches under
-# its tree is writable.
+# its tree is writable. The entrypoint is made executable in the same layer.
 # ⚠️ Needs on-Pi verification before release: Home Assistant's Supervisor mounts
 # /data itself, and its runtime ownership must let UID 10001 write (see PR notes).
-RUN useradd --system --uid 10001 --create-home --home-dir /home/appuser appuser \
+RUN chmod +x /run.sh \
+    && useradd --system --uid 10001 --create-home --home-dir /home/appuser appuser \
     && mkdir -p /data/finance \
     && chown -R 10001:10001 /data /app
 USER 10001
