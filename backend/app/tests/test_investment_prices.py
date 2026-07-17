@@ -114,3 +114,52 @@ def test_stooq_csv_parsing(monkeypatch):
 
     monkeypatch.setattr(httpx, "get", lambda *a, **k: _ND())
     assert price_service.fetch_stooq("xxx") is None
+
+
+def _resp(text):
+    class _R:
+        def __init__(self, t):
+            self.text = t
+
+        def raise_for_status(self):
+            return None
+
+    return _R(text)
+
+
+def test_stooq_close_parsed_by_header_not_position(monkeypatch):
+    # Close appears in a different position than the usual index 6; parsing by
+    # header name must still pick the right column.
+    import httpx
+
+    text = "Symbol,Date,Close,Open,High,Low,Volume\nAAPL.US,2026-05-31,192.25,191,193,189,1000\n"
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: _resp(text))
+    assert price_service.fetch_stooq("aapl.us") == Decimal("192.25")
+
+
+def test_stooq_missing_close_column_is_no_quote(monkeypatch):
+    # An error/HTML-ish response without a Close column must not crash or read a
+    # wrong field — it resolves to None (the ValueError is caught + logged).
+    import httpx
+
+    text = "Symbol,Date,Time\nAAPL.US,2026-05-31,22:00:04\n"
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: _resp(text))
+    assert price_service.fetch_stooq("aapl.us") is None
+
+
+def test_stooq_zero_close_is_no_quote(monkeypatch):
+    # A 0 close (delisting / bad row) must not be persisted as a real quote.
+    import httpx
+
+    text = "Symbol,Date,Time,Open,High,Low,Close,Volume\nDEAD.US,2026-05-31,22:00:04,0,0,0,0,0\n"
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: _resp(text))
+    assert price_service.fetch_stooq("dead.us") is None
+
+
+def test_stooq_case_insensitive_header(monkeypatch):
+    # Header casing/whitespace shouldn't matter.
+    import httpx
+
+    text = "symbol, date, time, open, high, low, CLOSE, volume\nAAPL.US,2026-05-31,22:00:04,191,193,189,192.25,1000\n"
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: _resp(text))
+    assert price_service.fetch_stooq("aapl.us") == Decimal("192.25")

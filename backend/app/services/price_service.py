@@ -21,6 +21,7 @@ fails just leaves the existing (manual) price untouched.
 
 from __future__ import annotations
 
+import csv
 from decimal import Decimal, InvalidOperation
 
 from app.logging import get_logger
@@ -37,7 +38,34 @@ def _to_decimal(value: object) -> Decimal | None:
         price = Decimal(str(value))
     except (InvalidOperation, TypeError, ValueError):
         return None
+    # A non-positive quote (0 / negative) is a delisting or bad row, never a real
+    # price — treat it as "no quote" so we don't persist a 0 that wrecks valuation.
     return price if price > 0 else None
+
+
+def _parse_stooq_close(text: str) -> Decimal | None:
+    """Extract the Close price from Stooq's light-quote CSV by *header name*.
+
+    Parsing by header (not a fixed column index) means a reordered/extra column
+    or an error page can't silently read the wrong field. Raises ``ValueError``
+    when the expected ``Close`` column is absent (e.g. an HTML error response);
+    the caller logs it and returns None.
+    """
+    rows = list(csv.reader(text.strip().splitlines()))
+    if len(rows) < 2:  # header only ⇒ unknown symbol
+        return None
+    header = [h.strip().lower() for h in rows[0]]
+    try:
+        close_idx = header.index("close")
+    except ValueError as exc:
+        raise ValueError(f"Stooq CSV missing 'Close' column (header={rows[0]})") from exc
+    data = rows[1]
+    if close_idx >= len(data):
+        raise ValueError(f"Stooq CSV row shorter than header (row={data})")
+    raw = data[close_idx].strip()
+    if raw in ("N/D", ""):  # Stooq's no-data marker for an unknown/stale symbol
+        return None
+    return _to_decimal(raw)  # non-positive / non-numeric ⇒ None
 
 
 def fetch_stooq(symbol: str) -> Decimal | None:
@@ -51,14 +79,7 @@ def fetch_stooq(symbol: str) -> Decimal | None:
             timeout=_TIMEOUT,
         )
         resp.raise_for_status()
-        lines = [ln for ln in resp.text.strip().splitlines() if ln]
-        if len(lines) < 2:  # header only ⇒ unknown symbol
-            return None
-        # Columns: Symbol,Date,Time,Open,High,Low,Close,Volume — Close is index 6.
-        cols = lines[1].split(",")
-        if len(cols) < 7 or cols[6] in ("N/D", ""):
-            return None
-        return _to_decimal(cols[6])
+        return _parse_stooq_close(resp.text)
     except Exception as exc:  # network/parse errors must never break the caller
         logger.warning("Stooq quote failed for %s: %s", symbol, exc)
         return None
