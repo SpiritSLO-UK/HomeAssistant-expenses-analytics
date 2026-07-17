@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useId, useRef } from "react";
 
 /**
  * In-app preview of a receipt's original image/PDF — opens as a modal popup in the
@@ -16,6 +16,7 @@ export default function ReceiptPreview({
   onClose: () => void;
 }>) {
   const ref = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
   useEffect(() => {
     ref.current?.showModal();
   }, []);
@@ -26,7 +27,7 @@ export default function ReceiptPreview({
     <dialog
       ref={ref}
       className="modal-dialog"
-      aria-label={`Receipt preview: ${filename ?? "original"}`}
+      aria-labelledby={titleId}
       // Native <dialog> handles Esc via the cancel event; preventDefault stops the
       // native close so React drives the unmount through onClose (single fire).
       // (Close via the ✕ button or Esc — no backdrop-click handler, which would
@@ -36,6 +37,7 @@ export default function ReceiptPreview({
       <div className="card" style={{ margin: 0, maxWidth: "92vw" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
           <h2
+            id={titleId}
             className="card__title"
             style={{ margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
           >
@@ -48,7 +50,14 @@ export default function ReceiptPreview({
         </div>
         <div style={{ marginTop: 10 }}>
           {isPdf ? (
-            <iframe src={url} title="Receipt PDF" sandbox="allow-same-origin" style={{ width: "82vw", height: "78vh", border: "none" }} />
+            <iframe src={url} title="Receipt PDF" sandbox="allow-same-origin" style={{ width: "82vw", height: "78vh", border: "none" }}>
+              {/* Shown when the browser can't render the PDF inline (or blocks the frame). */}
+              <p style={{ padding: 16 }}>
+                This PDF can’t be previewed here.{" "}
+                <a href={url} target="_blank" rel="noreferrer">Open in a new tab ↗</a> or{" "}
+                <a href={url} download={filename ?? true}>download it</a>.
+              </p>
+            </iframe>
           ) : (
             <img
               src={url}
