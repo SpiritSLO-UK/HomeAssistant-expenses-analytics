@@ -13,6 +13,7 @@ import {
   type Rule,
   type RuleTestResult,
 } from "../api/client";
+import { useServerState } from "../lib/useServerState";
 
 const NO_VALUE_ACTIONS = new Set([
   "mark_transfer",
@@ -93,7 +94,7 @@ export default function Rules() {
       return `→ vendor: ${v?.canonical_name ?? r.action_value}`;
     }
     if (r.action_type === "set_country") return `→ country: ${r.action_value}`;
-    return `→ ${r.action_type.replace("_", " ")}` + (r.action_value ? `: ${r.action_value}` : "");
+    return `→ ${r.action_type.replace(/_/g, " ")}` + (r.action_value ? `: ${r.action_value}` : "");
   }
 
   return (
@@ -200,10 +201,7 @@ export default function Rules() {
                     <td>{r.name}{r.created_from === "manual_correction" && <span className="tag"> learned</span>}</td>
                     <td className="muted">{r.condition_type.replace(/_/g, " ")}: “{r.condition_value}”</td>
                     <td>{describeAction(r)}</td>
-                    <td className="num">
-                      <input type="number" style={{ width: 60 }} defaultValue={r.priority}
-                        onBlur={(e) => { const p = Number(e.target.value); if (p !== r.priority) setPrio.mutate({ id: r.id, priority: p }); }} />
-                    </td>
+                    <PriorityCell rule={r} onCommit={(priority) => setPrio.mutate({ id: r.id, priority })} />
                     <td><button className="btn btn--ghost" onClick={() => { if (globalThis.confirm(`Delete the rule “${r.name}”? This can't be undone (existing transactions keep their current categories).`)) remove.mutate(r.id); }}>Delete</button></td>
                   </tr>
                 ))}
@@ -213,6 +211,23 @@ export default function Rules() {
         )}
       </div>
     </div>
+  );
+}
+
+function PriorityCell({ rule, onCommit }: { rule: Rule; onCommit: (priority: number) => void }) {
+  // Controlled + re-syncs to the server value after a refetch, so edits aren't
+  // lost on navigation and the field never goes stale (FE-7).
+  const [priority, setPriority] = useServerState(rule.priority);
+  return (
+    <td className="num">
+      <input
+        type="number"
+        style={{ width: 60 }}
+        value={priority}
+        onChange={(e) => setPriority(Number(e.target.value))}
+        onBlur={() => { if (priority !== rule.priority) onCommit(priority); }}
+      />
+    </td>
   );
 }
 
