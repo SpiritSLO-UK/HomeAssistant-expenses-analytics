@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type Dispatch, type SetStateAction } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   applyAiCategories,
@@ -88,11 +88,15 @@ export default function CloudAiBatchPanel({ base, onClose }: Readonly<{ base: st
     onError: (e) => setErr(String(e instanceof Error ? e.message : e)),
   });
 
-  const toggle = (set: Set<number>, setter: (s: Set<number>) => void, id: number) => {
-    const next = new Set(set);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    setter(next);
+  const toggle = (setter: Dispatch<SetStateAction<Set<number>>>, id: number) => {
+    // Functional updater so rapid successive toggles each apply against the
+    // latest state instead of a stale closure (which dropped fast updates).
+    setter((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   };
 
   function applyThreshold(raw: number) {
@@ -150,7 +154,7 @@ export default function CloudAiBatchPanel({ base, onClose }: Readonly<{ base: st
                       <input
                         type="checkbox"
                         checked={toSend.has(it.ai_request_id)}
-                        onChange={() => toggle(toSend, setToSend, it.ai_request_id)}
+                        onChange={() => toggle(setToSend, it.ai_request_id)}
                       />
                     </td>
                     <td>
@@ -161,7 +165,7 @@ export default function CloudAiBatchPanel({ base, onClose }: Readonly<{ base: st
                         </span>
                       )}
                       {showPayload === it.ai_request_id && (
-                        <pre style={{ whiteSpace: "pre-wrap", fontSize: "0.72rem", marginTop: 4 }}>
+                        <pre style={{ whiteSpace: "pre-wrap", fontSize: "0.72rem", marginTop: 4, maxHeight: 240, overflow: "auto" }}>
                           {JSON.stringify(it.payload, null, 2)}
                         </pre>
                       )}
@@ -213,7 +217,7 @@ export default function CloudAiBatchPanel({ base, onClose }: Readonly<{ base: st
               <tbody>
                 {suggestions.map((s) => (
                   <tr key={s.transaction_id}>
-                    <td><input type="checkbox" checked={picked.has(s.transaction_id)} onChange={() => toggle(picked, setPicked, s.transaction_id)} /></td>
+                    <td><input type="checkbox" checked={picked.has(s.transaction_id)} onChange={() => toggle(setPicked, s.transaction_id)} /></td>
                     <td title={s.rationale ?? ""}>{s.description}</td>
                     <td className="num">{s.amount} {base}</td>
                     <td>{s.category_name}</td>
