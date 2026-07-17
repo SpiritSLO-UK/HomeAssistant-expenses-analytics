@@ -83,6 +83,56 @@ def test_setting_key_is_unique(client):
         db.rollback()
 
 
+def test_set_many_commits_all_in_one_transaction(client):
+    """``set_many`` upserts a whole batch and commits once — every key persists."""
+    from app.db.session import SessionLocal
+    from app.services import settings_service
+
+    with SessionLocal() as db:
+        settings_service.set_many(db, {"sm_a": "1", "sm_b": "2", "sm_c": "3"})
+    with SessionLocal() as db:  # fresh session → proves it was committed
+        assert settings_service.get(db, "sm_a") == "1"
+        assert settings_service.get(db, "sm_b") == "2"
+        assert settings_service.get(db, "sm_c") == "3"
+
+
+def test_set_many_is_atomic_bad_value_rolls_back_whole_batch(client):
+    """A mid-batch invalid value aborts the ENTIRE save with no partial write:
+    neither the earlier valid key nor the bad one is persisted."""
+    from app.db.session import SessionLocal
+    from app.models import Setting
+    from app.services import settings_service
+
+    with SessionLocal() as db:
+        settings_service.set_value(db, "atomic_probe", "before")
+
+    with SessionLocal() as db:
+        with pytest.raises(ValueError):
+            # First entry is a valid change to the existing key; the second entry has
+            # a non-string value → the whole batch must be rejected untouched.
+            settings_service.set_many(db, {"atomic_probe": "after", "atomic_bad": 123})
+
+    with SessionLocal() as db:  # fresh session → sees only what was committed
+        assert settings_service.get(db, "atomic_probe") == "before"  # unchanged
+        rows = db.scalars(select(Setting).where(Setting.key == "atomic_bad")).all()
+        assert rows == []  # the bad key was never written
+
+
+def test_set_value_delegates_to_set_many(client):
+    """The single-key wrapper still upserts and commits (regression guard)."""
+    from app.db.session import SessionLocal
+    from app.models import Setting
+    from app.services import settings_service
+
+    with SessionLocal() as db:
+        settings_service.set_value(db, "delegate_probe", "one")
+        settings_service.set_value(db, "delegate_probe", "two")  # upsert, not a 2nd row
+    with SessionLocal() as db:
+        assert settings_service.get(db, "delegate_probe") == "two"
+        rows = db.scalars(select(Setting).where(Setting.key == "delegate_probe")).all()
+        assert len(rows) == 1
+
+
 def test_base_currency_must_be_supported(client):
     # A curated code is accepted and recomputes conversions for display.
     ok = client.put("/api/settings", json={"base_currency": "USD"})
