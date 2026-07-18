@@ -15,9 +15,11 @@ deliberately varied so every page has something to show:
   reclaimable VAT by category and month.
 
 It runs through the real import pipeline (parse -> dedupe -> auto-categorise) and
-then enriches the imported rows (FX + business/VAT), so re-running within the
-same day is idempotent thanks to source-hash dedup. Generated in-code (no
-packaged CSV files) so it works inside the add-on image too.
+then enriches the imported rows (FX + business/VAT). Re-loading is idempotent
+regardless of the day: an already-present demo is removed first, so a re-load
+refreshes the dataset (regenerated for the current month) instead of stacking a
+second copy. Generated in-code (no packaged CSV files) so it works inside the
+add-on image too.
 """
 
 from __future__ import annotations
@@ -266,7 +268,10 @@ def _enrich(db: Session, statement_id: int, specs: list[_Spec]) -> None:
         ).all()
     )
 
-    # 1. Seed a manual rate per (date, currency) for foreign spend, then convert.
+    # 1. Seed a manual rate per (date, currency) for foreign spend, then convert
+    #    *only these demo rows*. A global ``backfill_missing`` would also touch a
+    #    real import's still-pending rows; scoping to the just-imported statement
+    #    keeps the enrich to demo data (and the rates were just seeded, so no fetch).
     seeded = False
     for row in rows:
         rate = _DEMO_FX_RATES.get(row.currency)
@@ -276,7 +281,9 @@ def _enrich(db: Session, statement_id: int, specs: list[_Spec]) -> None:
             )
             seeded = True
     if seeded:
-        fx_service.backfill_missing(db, base, fx_mode)
+        db.flush()  # make the seeded rates visible (session runs autoflush-off)
+        for row in rows:
+            fx_service.convert_transaction(db, row, base, fx_mode, allow_fetch=False)
 
     # 2. Flag business expenses + their VAT (in the row's own currency).
     for row in rows:
@@ -552,19 +559,22 @@ def _seed_household(db: Session, rows: list[Transaction]) -> None:
             allowance_service.create_allocation(db, child_id=child.id, transaction_id=t.id)
 
 
-def _claim_main_account(db: Session, rows: list[Transaction]) -> None:
+def _claim_main_account(db: Session, rows: list[Transaction]) -> int | None:
     """Give the main imported account an owner (the household owner), so the
     per-member filter + Mine/Shared/All toggle attribute its spend to that person.
     Without an owner every account is household-shared and those views are empty.
-    Idempotent: a re-run imports no rows, so this is a no-op."""
+    Returns the id of the account it claimed (so ``remove_demo`` can revert the
+    owner if the account is kept), or ``None`` if nothing was claimed."""
     if not rows:
-        return
+        return None
     owner = db.scalar(
         select(User).where(User.role == "owner", User.status == "approved").order_by(User.id)
     )
     main = db.get(Account, rows[0].account_id)
     if owner is not None and main is not None and main.owner_user_id is None:
         main.owner_user_id = owner.id
+        return main.id
+    return None
 
 
 def _build_member_csv(today: date) -> str:
@@ -767,10 +777,10 @@ def _seed_receipt(db: Session, rows: list[Transaction]) -> None:
     receipt_service.attach_to_transaction(db, receipt, waitrose.id)
 
 
-def _seed_examples(db: Session, statement_id: int) -> None:
+def _seed_examples(db: Session, statement_id: int) -> int | None:
     """Seed one example of each feature so a fresh demo shows off every page.
-    Idempotent — each piece is guarded by a recognizable name/id, and a re-run
-    imports no new transactions so ``rows`` is empty."""
+    Each piece is guarded by a recognizable name/id. Returns the id of the account
+    the demo claimed an owner on (so a later remove can revert that claim)."""
     rows = list(
         db.scalars(select(Transaction).where(Transaction.statement_id == statement_id)).all()
     )
@@ -783,11 +793,12 @@ def _seed_examples(db: Session, statement_id: int) -> None:
     _seed_assets(db)
     _seed_investments(db)
     _seed_household(db, rows)
-    _claim_main_account(db, rows)
+    claimed_account_id = _claim_main_account(db, rows)
     _seed_review_queue(db, rows)
     _seed_split(db, rows)
     _seed_receipt(db, rows)
     db.commit()
+    return claimed_account_id
 
 
 # --- Demo manifest (so "Remove demo data" deletes exactly what a load made) ---
@@ -823,22 +834,48 @@ def _snapshot_ids(db: Session) -> dict[str, set[int]]:
     }
 
 
-def _record_manifest(db: Session, before: dict[str, set[int]], after: dict[str, set[int]]) -> None:
+def _record_manifest(
+    db: Session,
+    before: dict[str, set[int]],
+    after: dict[str, set[int]],
+    extra: dict | None = None,
+) -> None:
     """Persist the rows this load created, merged with any prior manifest, so a
     later "Remove demo data" deletes only the demo's own rows (never a real import
     or anything the user added afterwards). Pre-existing rows are in ``before`` and
-    so are never captured."""
+    so are never captured. ``extra`` carries non-model bookkeeping (the claimed
+    account, the pre-demo log level) alongside the id sets."""
     raw = settings_service.get(db, settings_service.DEMO_MANIFEST)
-    manifest: dict[str, list[int]] = json.loads(raw) if raw else {}
+    manifest: dict = json.loads(raw) if raw else {}
     for name in _MANIFEST_MODELS:
         created = after[name] - before[name]
         manifest[name] = sorted(set(manifest.get(name, [])) | created)
+    if extra:
+        manifest.update(extra)
     settings_service.set_value(db, settings_service.DEMO_MANIFEST, json.dumps(manifest))
 
 
 def load_demo(db: Session) -> dict:
-    """Import + enrich the demo dataset, then seed an example of each feature.
-    Idempotent within a day (duplicates are skipped); returns the import report."""
+    """Import + enrich the demo dataset, then seed an example of each feature;
+    returns the import report.
+
+    Idempotent regardless of the day: the dataset is generated relative to *today*,
+    so re-loading on a later day would otherwise import a whole second dataset and
+    stack it in the manifest. If a demo is already present we remove it first, so a
+    re-load *refreshes* (regenerated for the current month) instead of duplicating.
+    """
+    # Already loaded → remove first so a re-load refreshes rather than stacks a
+    # second copy (same day the import would dedup, but a later day's shifted dates
+    # import an entirely new dataset). ``remove_demo`` also restores the pre-demo log
+    # level, so snapshot it *after* this — a refresh then preserves the user's choice
+    # rather than re-snapshotting the demo's own DEBUG override.
+    if has_demo_data(db):
+        remove_demo(db)
+
+    # Snapshot the user's configured log level so the demo's DEBUG override can be
+    # undone back to the user's choice on removal.
+    prior_log_level = settings_service.get(db, settings_service.LOG_LEVEL)
+
     today = date.today()
     before = _snapshot_ids(db)
     specs = _build_specs()
@@ -853,7 +890,7 @@ def load_demo(db: Session) -> dict:
     statement_id = result["import_id"]
     confirmed = import_service.confirm_import(db, statement_id)
     _enrich(db, statement_id, specs)
-    _seed_examples(db, statement_id)
+    claimed_account_id = _seed_examples(db, statement_id)
 
     # The partner member imports their own statement onto their own account (the
     # normal household flow) so the per-member filter has data. Combine its counts
@@ -864,8 +901,14 @@ def load_demo(db: Session) -> dict:
         for key in ("rows_detected", "new", "duplicates", "errors"):
             report[key] = report.get(key, 0) + member_report.get(key, 0)
 
-    # Record exactly what this load created so "Remove demo data" can undo it.
-    _record_manifest(db, before, _snapshot_ids(db))
+    # Record exactly what this load created so "Remove demo data" can undo it —
+    # plus the claimed account + pre-demo log level so removal can revert both.
+    extra: dict = {}
+    if claimed_account_id is not None:
+        extra["claimed_account"] = claimed_account_id
+    if prior_log_level is not None:
+        extra["prior_log_level"] = prior_log_level
+    _record_manifest(db, before, _snapshot_ids(db), extra=extra)
 
     # Demo defaults to DEBUG logging so there's something to see in the Logs/
     # add-on panel while exploring (reversible from Settings → Logging).
@@ -946,14 +989,36 @@ def _delete_if_unreferenced(db: Session, model: type, ids: list[int], ref_column
     return removed
 
 
-def _reset_demo_settings(db: Session) -> None:
-    """Clear the spent manifest and undo the demo's DEBUG logging default."""
+def _reset_demo_settings(db: Session, manifest: dict) -> None:
+    """Clear the spent manifest and undo the demo's DEBUG logging override, restoring
+    the log level the user had *before* the demo was loaded (snapshotted at load) so a
+    manually-chosen level isn't clobbered. Falls back to the default if none was
+    recorded (e.g. a demo loaded before this bookkeeping existed)."""
     from app.logging import set_level
 
     settings_service.set_value(db, settings_service.DEMO_MANIFEST, "")
-    default_level = settings_service._defaults()[settings_service.LOG_LEVEL]
-    settings_service.set_value(db, settings_service.LOG_LEVEL, default_level)
-    set_level(default_level)
+    prior = manifest.get("prior_log_level")
+    level = (
+        prior
+        if prior in settings_service.LOG_LEVELS
+        else settings_service._defaults()[settings_service.LOG_LEVEL]
+    )
+    settings_service.set_value(db, settings_service.LOG_LEVEL, level)
+    set_level(level)
+
+
+def _revert_claimed_account(db: Session, manifest: dict, counts: dict[str, int]) -> None:
+    """If the demo claimed the owner of an account that *survives* removal (a real
+    import also used it, so it's kept), revert that owner assignment — otherwise the
+    demo's ``owner_user_id`` would leak into the user's real config. No-op when the
+    account was deleted (unreferenced) or nothing was claimed."""
+    account_id = manifest.get("claimed_account")
+    if account_id is None:
+        return
+    account = db.get(Account, account_id)
+    if account is not None and account.owner_user_id is not None:
+        account.owner_user_id = None
+        counts["reverted_account_owner"] = 1
 
 
 def remove_demo(db: Session) -> dict:
@@ -966,7 +1031,7 @@ def remove_demo(db: Session) -> dict:
     raw = settings_service.get(db, settings_service.DEMO_MANIFEST)
     if not raw:
         return {"removed": False, "counts": {}}
-    manifest: dict[str, list[int]] = json.loads(raw)
+    manifest: dict = json.loads(raw)
     counts: dict[str, int] = {}
 
     # 1. Transactions on the demo statements (derived — not stored in the manifest).
@@ -994,6 +1059,9 @@ def remove_demo(db: Session) -> dict:
     counts["accounts"] = _delete_if_unreferenced(
         db, Account, manifest.get("accounts", []), Transaction.account_id
     )
+    # 3b. If the demo claimed the owner of an account that was *kept* (a real import
+    #     also used it), revert that claim so demo state doesn't leak into the config.
+    _revert_claimed_account(db, manifest, counts)
 
     # 4. Vendors — only those no surviving transaction still links to (demo txns are
     #    gone, so demo vendors are now unreferenced). Aliases cascade (FK ON DELETE).
@@ -1012,8 +1080,8 @@ def remove_demo(db: Session) -> dict:
         removed_users += 1
     counts["users"] = removed_users
 
-    # The manifest is spent; clear it and undo the demo's DEBUG logging default.
-    _reset_demo_settings(db)
+    # The manifest is spent; clear it and restore the pre-demo log level.
+    _reset_demo_settings(db, manifest)
 
     db.commit()
     return {"removed": True, "counts": counts}
