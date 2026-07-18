@@ -16,10 +16,10 @@ The strongest privacy protection is architectural, not a feature you switch on:
 
 - **No external network calls by default.** Strict Local Mode is the default
   (`privacy_mode: strict_local`). In this mode the app makes **zero** outbound
-  requests — no AI, no telemetry, no vendor lookups, no exchange-rate fetches.
+  requests - no AI, no telemetry, no vendor lookups, no exchange-rate fetches.
 - **All data stays on your device.** The database is a local SQLite file in the
-  add-on's **private `/data`** volume (not the shared HA `/config`), or — running
-  standalone — the `finance_data` Docker volume. See [security.md](security.md).
+  add-on's **private `/data`** volume (not the shared HA `/config`), or - running
+  standalone - the `finance_data` Docker volume. See [security.md](security.md).
 - **No accounts, no SaaS.** The app never phones home.
 
 If you never enable AI, **none of your financial data ever leaves your
@@ -29,28 +29,28 @@ cloud AI mode.
 ## 2. When you enable cloud AI
 
 Cloud AI is opt-in and is layered behind several safeguards
-([spec §22](../ha_finance_intelligence_spec.md)) — **all of these now ship**:
+([spec §22](../ha_finance_intelligence_spec.md)) - **all of these now ship**:
 
 | Safeguard | What it means | Status |
 |-----------|---------------|--------|
-| Minimal payload | We send one transaction at a time, only `description`, `amount`, `currency`, and candidate category names — nothing else. | ✅ `redact_for_cloud()` |
+| Minimal payload | We send one transaction at a time, only `description`, `amount`, `currency`, and candidate category names - nothing else. | ✅ `redact_for_cloud()` |
 | Redaction | Card/account/IBAN/sort-code/postcode/email tokens are stripped before sending. | ✅ `redaction.py` (unit-tested) |
-| Never-cloud categories | **Opt-in per category, off by default.** Mark any category **never-cloud** (Categories → Cloud-AI privacy) and a transaction already assigned to it is never sent to a cloud provider, regardless of AI mode. **No category ships as never-cloud** — the shipped defaults set seven categories (Income, Cashback, Transfers, Housing, Health, Insurance, Cash) to *sensitive*, but *sensitive* is a label only and does **not** itself block a cloud send or add extra redaction; enable the hard block yourself by switching a category to *never-cloud*. Two caveats: the block keys off the **assigned** category, so an as-yet-**uncategorised** row (e.g. a not-yet-categorised medical payment) is **not** protected by it; and it applies to the category-suggestion call, not the image/vision path (which has its own per-send warning). | ✅ `never_cloud` block in `ai_service` |
+| Never-cloud categories | **Opt-in per category, off by default.** Mark any category **never-cloud** (Categories → Cloud-AI privacy) and a transaction already assigned to it is never sent to a cloud provider, regardless of AI mode. **No category ships as never-cloud** - the shipped defaults set seven categories (Income, Cashback, Transfers, Housing, Health, Insurance, Cash) to *sensitive*, but *sensitive* is a label only and does **not** itself block a cloud send or add extra redaction; enable the hard block yourself by switching a category to *never-cloud*. Two caveats: the block keys off the **assigned** category, so an as-yet-**uncategorised** row (e.g. a not-yet-categorised medical payment) is **not** protected by it; and it applies to the category-suggestion call, not the image/vision path (which has its own per-send warning). | ✅ `never_cloud` block in `ai_service` |
 | Manual approval | In `cloud_manual` mode you see the exact payload and approve each request; the cloud **batch** flow previews the whole redacted list before you approve it in one go. | ✅ per-call + batch |
 | One-time disclaimer | The first time you select a cloud mode, a dialog spells out what it means and the choice is gated until you confirm. | ✅ |
 | Full audit log | Every external request (provider, model, redacted payload, response) is logged and viewable. | ✅ `ai_requests` + Logs page |
 
 **Honest limitations.** Redaction is **pattern-based and still somewhat
-region-centric** — it matches structured PII shapes only (card/PAN, IBAN, UK
+region-centric** - it matches structured PII shapes only (card/PAN, IBAN, UK
 sort code, 8-digit account number, UK postcode, email). It does **not** remove
 names or other free-text personal information from a description, nor phone
 numbers or street addresses, so review what you enable. And "zero outbound
 requests" in **strict-local** describes the **AI gateway** only; it does **not**
-cover **MQTT** if you enable it — MQTT talks to *your own* broker regardless of
+cover **MQTT** if you enable it - MQTT talks to *your own* broker regardless of
 the AI privacy mode.
 
 **Receipts never go to AI.** Only a transaction's `description` (redacted) is ever
-sent — receipt images and OCR text are never included in an AI payload. The
+sent - receipt images and OCR text are never included in an AI payload. The
 **re-process** action (re-run AI over already-categorised rows to find better
 matches) uses the same gated, redacted, suggestion-only path and never overwrites
 a manual choice.
@@ -58,7 +58,7 @@ a manual choice.
 **AI usage shrinks over time.** AI is only ever consulted for transactions that
 your **rules, vendor defaults and the category keyword library didn't already
 categorise** (that ordering is described in [rules.md](rules.md)). Every correction
-you teach it — a learned rule, a vendor's default category — settles more of each
+you teach it - a learned rule, a vendor's default category - settles more of each
 future import deterministically, so the proportion that reaches the AI keeps
 falling. Enabling AI is not an ongoing "send everything forever" cost: the longer
 you run it, the fewer external calls it needs to make.
@@ -69,11 +69,11 @@ Being honest about the boundary of what software can enforce:
 
 **We *can* guarantee (in code):**
 - The AI only ever receives the minimal, redacted payload above.
-- The AI is **stateless from our side** — it has no connection back to your
+- The AI is **stateless from our side** - it has no connection back to your
   database. It cannot "read" anything except the single request we send it. It
   cannot browse, query, or retain access to your data.
 - A transaction whose **assigned** category you have set to *never-cloud* is
-  never sent to a cloud provider (this is opt-in — see §2; nothing ships as
+  never sent to a cloud provider (this is opt-in - see §2; nothing ships as
   never-cloud by default).
 - Raw statements and receipt/statement **images** are never sent on the
   category-suggestion path; the only time an image leaves is the opt-in
@@ -90,7 +90,7 @@ Being honest about the boundary of what software can enforce:
   your network at all. The app surfaces a one-time disclaimer when you choose a
   cloud mode and records the provider/mode you've configured.
 
-**Recommendation:** if privacy is paramount, use **Local LLM Mode** — you get
+**Recommendation:** if privacy is paramount, use **Local LLM Mode** - you get
 AI assistance with the same local-only guarantee as Strict Local Mode.
 
 ## 3. Redaction details
@@ -127,18 +127,18 @@ app *does* do is keep this in your control:
 
 - **It's opt-in and logged.** Cloud AI is off by default. When you do enable it,
   every external send is recorded in **Logs → Decisions** (and the AI-requests
-  log) with the date, who, and what was sent — so you always have a record of
+  log) with the date, who, and what was sent - so you always have a record of
   exactly what a provider received and could be asked to delete.
 - **Prefer not sending in the first place.** A **local LLM** (Ollama / LM Studio)
-  keeps everything on your network — there is nothing to retain or delete. This
+  keeps everything on your network - there is nothing to retain or delete. This
   is the recommended setup if retention worries you at all.
 
 If you do use a cloud provider, here's how retention/deletion works in practice.
-**Provider terms change — always verify the current policy at the links below.**
+**Provider terms change - always verify the current policy at the links below.**
 
 | Provider | Training on your data? | Retention / zero-retention | Deletion |
 |----------|------------------------|----------------------------|----------|
-| **Local LLM** (Ollama / LM Studio) | Never — runs on your hardware | Nothing leaves your network | N/A — there is nothing stored externally |
+| **Local LLM** (Ollama / LM Studio) | Never - runs on your hardware | Nothing leaves your network | N/A - there is nothing stored externally |
 | **OpenAI API** | Not used to train models by default for API traffic | Inputs/outputs held for a short abuse-monitoring window, then deleted; **Zero Data Retention** is available for eligible accounts (nothing is stored) | Request via your account / support; ZDR avoids storage entirely ([platform.openai.com/docs](https://platform.openai.com/docs/guides/your-data)) |
 | **Anthropic API** | Not used to train by default for API traffic | Held per the commercial data-retention policy | Request via support / your account ([anthropic.com/legal](https://www.anthropic.com/legal/commercial-terms)) |
 | **Azure OpenAI** | Not used to train | Optional **no content logging**; data stays in your tenant/region | Managed through your Azure subscription ([learn.microsoft.com](https://learn.microsoft.com/azure/ai-services/openai/concepts/data-privacy)) |

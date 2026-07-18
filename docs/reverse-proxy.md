@@ -2,8 +2,8 @@
 
 HA Finance Intelligence serves **plain HTTP** on port `8099` by design. That's
 fine when you reach it over `localhost` on the same machine. The moment you reach
-it from **another device** — a phone, a second laptop, anything across your
-network — that traffic (including your login and the `X-HAFI-Session` token) is
+it from **another device** - a phone, a second laptop, anything across your
+network - that traffic (including your login and the `X-HAFI-Session` token) is
 unencrypted on the wire. The fix is to put a **reverse proxy in front of the app
 that terminates TLS** and forwards plain HTTP to the app over a private network.
 
@@ -11,7 +11,7 @@ that terminates TLS** and forwards plain HTTP to the app over a private network.
 > trust are a solved problem that dedicated proxies (Caddy, nginx, Traefik) do far
 > better than we could re-implement. Baking it in would add a fragile, security-
 > sensitive surface for no benefit. So the app stays HTTP-only internally and you
-> terminate TLS at the edge — the standard pattern for self-hosted apps.
+> terminate TLS at the edge - the standard pattern for self-hosted apps.
 
 > **Home Assistant users need none of this.** HA ingress (and Nabu Casa, or
 > whatever reverse proxy already fronts your HA) terminates TLS for you, and the
@@ -22,11 +22,11 @@ that terminates TLS** and forwards plain HTTP to the app over a private network.
 
 The app keeps no session **cookie**. After unlocking, the browser stores a session
 token in `localStorage` and sends it in a custom `X-HAFI-Session` header. There's
-therefore no cookie to mark `Secure`/`HttpOnly` — but the token still travels over
+therefore no cookie to mark `Secure`/`HttpOnly` - but the token still travels over
 the network on every request, so **TLS is what protects it in transit**. Serve the
 app over HTTPS whenever it's reachable beyond `localhost`.
 
-## Quick start — Caddy (bundled)
+## Quick start - Caddy (bundled)
 
 The repo ships a ready-to-use [`docker-compose.tls.yml`](../docker-compose.tls.yml)
 and [`Caddyfile`](../Caddyfile). Caddy is the simplest option: automatic HTTPS with
@@ -71,7 +71,7 @@ you only want to try HTTPS on the same machine.)
 
 ## Already running nginx / Traefik?
 
-Any reverse proxy works — just forward to the app's port `8099` and let the proxy
+Any reverse proxy works - just forward to the app's port `8099` and let the proxy
 hold the certificate. Minimal **nginx** server block:
 
 ```nginx
@@ -93,13 +93,13 @@ server {
 ```
 
 **Traefik** users: route a TLS router to the `app` service on port `8099` and let
-Traefik's resolver handle the certificate — the same shape as Caddy.
+Traefik's resolver handle the certificate - the same shape as Caddy.
 
 Serve the app at the **root** of its hostname (not under a sub-path) for the
 standalone deployment; sub-path hosting is handled by HA ingress in HA mode.
 
 ## See also
 
-- [Security & isolation](security.md) — the wider threat model and the private
+- [Security & isolation](security.md) - the wider threat model and the private
   `/data` volume.
-- [Configuration reference](configuration.md) — all `HAFI_*` settings.
+- [Configuration reference](configuration.md) - all `HAFI_*` settings.

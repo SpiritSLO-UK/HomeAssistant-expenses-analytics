@@ -1,4 +1,4 @@
-# Home Assistant Personal Finance App — Full Product, Architecture and Build Specification
+# Home Assistant Personal Finance App - Full Product, Architecture and Build Specification
 
 **Working name:** HA Finance Intelligence  
 **Primary target:** Home Assistant add-on / app  
@@ -10,34 +10,34 @@
 
 ## 0. Build Status
 
-_Living section — updated as the project is built (see git history / README)._
+_Living section - updated as the project is built (see git history / README)._
 
 | Stage (§29) | Scope | Status |
 |------|-------|--------|
 | 0 | Project skeleton: FastAPI + SQLite + SQLAlchemy/Alembic, all data models (§12), React shell, HA add-on | ✅ Done |
 | 1 | CSV import: Curve/Barclays/Lloyds/Monzo/generic parsers, dedup, import preview/confirm, transactions table | ✅ Done |
 | 2 | Categories & vendors: library load, CRUD, vendor aliases, auto-categorisation, dashboard | ✅ Done |
-| — | Data-safety pass (from backlog): redaction (§22.4), backup/restore (§26.5), demo data, add-on isolation (§28) | ✅ Done |
-| — | Multi-currency + historical FX (backlog #29): original + base amount, manual rates, opt-in Frankfurter (§12.3, §13) | ✅ Done |
-| — | Encryption (backlog #15): encrypted backups (AES-256-GCM) + optional at-rest SQLCipher (§26.5, §28) | ✅ Done |
+| - | Data-safety pass (from backlog): redaction (§22.4), backup/restore (§26.5), demo data, add-on isolation (§28) | ✅ Done |
+| - | Multi-currency + historical FX (backlog #29): original + base amount, manual rates, opt-in Frankfurter (§12.3, §13) | ✅ Done |
+| - | Encryption (backlog #15): encrypted backups (AES-256-GCM) + optional at-rest SQLCipher (§26.5, §28) | ✅ Done |
 | 3 | Rules & learning (§36, §15.1) | ✅ Done |
 | 4 | Split transactions (§17): split service + validation, API, split-aware dashboard, editor UI | ✅ Done |
 | 5 | Projects & tags (§18): project service (split-aware spend, summary, dashboard totals), tags + assignment, CRUD APIs, Projects UI, project/tag controls on Transactions, per-project MQTT sensors | ✅ Done |
 | 6 | Budgets + alerts (§19) and MQTT sensor publishing to Home Assistant (§27): budget service, CRUD/summary API, Budgets UI, MQTT discovery/state | ✅ Done |
 | 7 | Review queue (§23): review_service + API, Review Queue UI (resolve/ignore), fed by receipts (and ready for low-confidence/duplicate items) | ✅ Done |
 | 8 | Receipts & OCR (§21): upload/store, optional Tesseract/pypdf OCR (`ocr` extra), field extraction, transaction matching (§21.4), manual entry, Receipts UI | ✅ Done |
-| — | Recurring payments & subscriptions (§20): detection, CRUD/detect API, dashboard total, Subscriptions UI, subscriptions_total MQTT sensor | ✅ Done |
+| - | Recurring payments & subscriptions (§20): detection, CRUD/detect API, dashboard total, Subscriptions UI, subscriptions_total MQTT sensor | ✅ Done |
 | 9 | Local AI (§22): provider abstraction (NoAI + OpenAI-compatible), classify-transaction task, privacy gating, audit log, AI settings + "suggest" UI; off by default, suggestion-only | ✅ Done |
 | 10 | Cloud AI approval (§22.5): per-call approve/reject of a pending request with payload preview, never-cloud category blocking (§28), full audit log + UI | ✅ Done |
 | 11 | PDF statement import (§11): generic PDF parser (pypdf text → heuristic rows), review-heavy (rows flagged needs-review), Import UI accepts PDF | ✅ Done |
 | 12 | Polish: CI, dashboard trends/outliers, savings, logs viewer, security/multi-user (S1–S4), data retention, CSV export, global search, per-device UI prefs | ✅ Done |
-| — | **🎉 v0.9.0-beta released** (standalone, no HA) — see [CHANGELOG.md](CHANGELOG.md) | ✅ Done |
-| — | Post-beta wave: investments & pensions (holdings + price feed + value-over-time), cars/home/assets, geo + world map + per-txn country (`set_country` rule), Paperless-ngx import, period over-time charts, "Needs attention" + Review Uncategorised tab, AI re-process, dark mode, HTTPS reverse-proxy, parallel tests, SonarCloud green | ✅ Done |
-| — | **Home Assistant packaging** (add-on repository + one-click install, ingress SSO, MQTT sensors) + HA energy-cost offset | 📋 Planned (the next milestone) |
+| - | **🎉 v0.9.0-beta released** (standalone, no HA) - see [CHANGELOG.md](CHANGELOG.md) | ✅ Done |
+| - | Post-beta wave: investments & pensions (holdings + price feed + value-over-time), cars/home/assets, geo + world map + per-txn country (`set_country` rule), Paperless-ngx import, period over-time charts, "Needs attention" + Review Uncategorised tab, AI re-process, dark mode, HTTPS reverse-proxy, parallel tests, SonarCloud green | ✅ Done |
+| - | **Home Assistant packaging** (add-on repository + one-click install, ingress SSO, MQTT sensors) + HA energy-cost offset | 📋 Planned (the next milestone) |
 
-Notable deviation from the original spec: the database default path moved from `/config/finance/finance.db` (§26.4) to the add-on's **private** `/data/finance/finance.db` for isolation — see `docs/security.md`.
+Notable deviation from the original spec: the database default path moved from `/config/finance/finance.db` (§26.4) to the add-on's **private** `/data/finance/finance.db` for isolation - see `docs/security.md`.
 
-> Note: the canonical spec filename is `ha_finance_intelligence_spec.md` (Markdown). Earlier notes referred to a `.mc` extension — that was a typo.
+> Note: the canonical spec filename is `ha_finance_intelligence_spec.md` (Markdown). Earlier notes referred to a `.mc` extension - that was a typo.
 
 ---
 
@@ -2605,7 +2605,7 @@ Audit:
 
 ## 29. Implementation Roadmap
 
-### Stage 0 — Project skeleton
+### Stage 0 - Project skeleton
 
 Deliverables:
 
@@ -2626,7 +2626,7 @@ Acceptance criteria:
 - `/api/health` returns OK.
 - Database initialises.
 
-### Stage 1 — CSV import MVP
+### Stage 1 - CSV import MVP
 
 Deliverables:
 
@@ -2647,7 +2647,7 @@ Acceptance criteria:
 - Duplicate upload does not duplicate transactions.
 - Import report is shown.
 
-### Stage 2 — Categories and vendors
+### Stage 2 - Categories and vendors
 
 Deliverables:
 
@@ -2664,7 +2664,7 @@ Acceptance criteria:
 - Vendor aliases work.
 - Dashboard groups by category.
 
-### Stage 3 — Rules and learning
+### Stage 3 - Rules and learning
 
 Deliverables:
 
@@ -2679,7 +2679,7 @@ Acceptance criteria:
 - User creates rule.
 - Future Screwfix transactions are categorised automatically.
 
-### Stage 4 — Split transactions
+### Stage 4 - Split transactions
 
 Deliverables:
 
@@ -2693,7 +2693,7 @@ Acceptance criteria:
 - User splits Amazon transaction across categories.
 - Category totals use split amounts.
 
-### Stage 5 — Projects and tags
+### Stage 5 - Projects and tags
 
 Deliverables:
 
@@ -2708,7 +2708,7 @@ Acceptance criteria:
 - Transactions can be assigned.
 - Project total appears.
 
-### Stage 6 — Budgets and alerts
+### Stage 6 - Budgets and alerts
 
 Deliverables:
 
@@ -2724,7 +2724,7 @@ Acceptance criteria:
 - HA sensor shows spend.
 - HA notification automation can trigger.
 
-### Stage 7 — Review queue
+### Stage 7 - Review queue
 
 Deliverables:
 
@@ -2740,7 +2740,7 @@ Acceptance criteria:
 - User resolves review item.
 - Sensor count updates.
 
-### Stage 8 — Receipts
+### Stage 8 - Receipts
 
 Deliverables:
 
@@ -2756,7 +2756,7 @@ Acceptance criteria:
 - OCR extracts total.
 - App suggests matching transaction.
 
-### Stage 9 — Local AI
+### Stage 9 - Local AI
 
 Deliverables:
 
@@ -2774,7 +2774,7 @@ Acceptance criteria:
 - Result is JSON and validated.
 - No cloud call occurs.
 
-### Stage 10 — Cloud AI approval
+### Stage 10 - Cloud AI approval
 
 Deliverables:
 
@@ -2791,7 +2791,7 @@ Acceptance criteria:
 - AI response is stored.
 - Audit log shows request.
 
-### Stage 11 — PDF imports
+### Stage 11 - PDF imports
 
 Deliverables:
 
@@ -2806,7 +2806,7 @@ Acceptance criteria:
 - User uploads PDF statement.
 - Transactions are extracted or flagged for review.
 
-### Stage 12 — Open-source polish
+### Stage 12 - Open-source polish
 
 Deliverables:
 

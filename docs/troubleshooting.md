@@ -5,7 +5,7 @@ logging (Settings → Logging → `DEBUG`, or `HAFI_LOG_LEVEL=DEBUG`) and check 
 logs, then open an issue with the relevant lines (redact any account details).
 
 > Reminder: everything is local. Most "it didn't reach the internet" symptoms are
-> **expected** — AI, online FX, the investment price feed and Paperless are all
+> **expected** - AI, online FX, the investment price feed and Paperless are all
 > **off by default** and opt-in.
 
 ---
@@ -14,7 +14,7 @@ logs, then open an issue with the relevant lines (redact any account details).
 
 **The page won't load / connection refused.**
 - Standalone: confirm the container is up (`docker compose ps`) and hit
-  **`http://127.0.0.1:8099`** — use the IPv4 address, not `localhost` (which can
+  **`http://127.0.0.1:8099`** - use the IPv4 address, not `localhost` (which can
   resolve to IPv6 `::1` first and time out).
 - Check logs: `docker compose logs -f` (standalone) or the add-on **Log** tab.
 
@@ -33,8 +33,8 @@ logs, then open an issue with the relevant lines (redact any account details).
 
 **"Database is locked. Unlock with your passphrase."**
 - At-rest encryption is enabled in "prompt" mode. Enter your passphrase on the
-  unlock screen. There is **no recovery** if the passphrase is lost — by design.
-- **Asked to unlock after every restart?** That's "prompt" mode working as designed —
+  unlock screen. There is **no recovery** if the passphrase is lost - by design.
+- **Asked to unlock after every restart?** That's "prompt" mode working as designed -
   the key is held in memory only and cleared on restart. To start unattended instead,
   use "stored" mode: on the **Home Assistant add-on** set the `db_key` option in the
   **Configuration** tab (standalone Docker: the `HAFI_DB_KEY` env var) to the same
@@ -51,7 +51,7 @@ logs, then open an issue with the relevant lines (redact any account details).
 
 **"Already imported" / rows skipped.**
 - Duplicates are detected by a content hash of each row (account, date, amount,
-  currency, description). Re-uploading the same statement is safe — matching rows
+  currency, description). Re-uploading the same statement is safe - matching rows
   are skipped, not duplicated.
 
 **A CSV won't parse / columns look wrong.**
@@ -69,7 +69,7 @@ logs, then open an issue with the relevant lines (redact any account details).
 - Curve is a pass-through ("transient") card: each payment is charged to one of
   your real cards, so the same purchase also appears on that card's own
   statement. When you preview a Curve export, a **Curve funding cards** panel
-  lists each `Card Name` it found — map each one to the real account behind it.
+  lists each `Card Name` it found - map each one to the real account behind it.
   After that, importing both statements skips the duplicate: a bank row tagged
   `CURVE`/`CRV*…` is skipped automatically, and an amount+date match without that
   tag (within a few days) is kept but flagged for review so you can decide.
@@ -80,7 +80,7 @@ points (1 CPT = 1p). Rows like `Curve Cash: Lidl` are cashback you **earned** �
 imported as **income** in the **Cashback** category. A real merchant funded by
 Curve Cash (it carries a GBP *Foreign Spend* value) is treated as a normal
 **spend** in that category. So earning books as money in and spending it books as
-money out — they net out, which is the correct accounting.
+money out - they net out, which is the correct accounting.
 
 ---
 
@@ -102,7 +102,7 @@ money out — they net out, which is the correct accounting.
 
 **OCR isn't reading receipts.**
 - Both the add-on and the standard `docker compose` images build from
-  `addon/Dockerfile`, which installs **Tesseract** — so OCR works in both. Only a
+  `addon/Dockerfile`, which installs **Tesseract** - so OCR works in both. Only a
   custom/minimal image without Tesseract falls back to **manual entry** (the
   fields are editable). Confirm OCR is on in Settings → Services.
 - A receipt that reads poorly is flagged for review; correct the merchant/date/
@@ -110,7 +110,7 @@ money out — they net out, which is the correct accounting.
 
 **A receipt has no matching transaction (cash, or the statement isn't imported).**
 - When nothing matches and a total is set, the app **recommends a transaction**
-  pre-filled from the receipt (merchant, date, amount, suggested category) — on
+  pre-filled from the receipt (merchant, date, amount, suggested category) - on
   the receipt itself and in the **Review Queue**. Add it in one click (to a
   chosen account, or a dedicated "Cash & receipts" account); the receipt is then
   attached to the new transaction.
@@ -123,7 +123,7 @@ money out — they net out, which is the correct accounting.
 - A foreign-currency row needs an FX rate before it counts toward base-currency
   totals. Either enter a manual rate, or enable **online FX** (Settings →
   Services → online rates = Frankfurter) and use **Sync** to backfill missing
-  rates. Online FX is free, no key, ECB data — but off by default.
+  rates. Online FX is free, no key, ECB data - but off by default.
 
 **Changing the base currency didn't change stored amounts.**
 - That's correct: amounts are stored in their original currency. Changing the
@@ -157,7 +157,7 @@ money out — they net out, which is the correct accounting.
 ## Investments price feed
 
 **"Sync prices" does nothing.**
-- The source is `manual` (default) — no network. Switch it (Settings or the
+- The source is `manual` (default) - no network. Switch it (Settings or the
   Investments page) to `stooq` (keyless; use suffixed tickers like `aapl.us`,
   `vwrl.uk`) or `alphavantage` (set `HAFI_INVESTMENT_API_KEY`). A symbol that
   can't be resolved is counted as "not found" and its price is left unchanged.
@@ -167,7 +167,7 @@ money out — they net out, which is the correct accounting.
 ## Paperless import
 
 **The "Import from Paperless" card isn't on the Receipts page.**
-- By design — it only appears once Paperless is configured. Set the **token**
+- By design - it only appears once Paperless is configured. Set the **token**
   (`HAFI_PAPERLESS_TOKEN`, a secret) and a **URL** (env `HAFI_PAPERLESS_URL` or
   Settings → Integrations), then restart if you changed env. Settings →
   Integrations shows the live status and a **Test connection** button. Full
@@ -185,5 +185,5 @@ money out — they net out, which is the correct accounting.
 **Aggregates feel slow on a large ledger.**
 - The hot columns are indexed (transactions/splits by account, date, category,
   vendor, project, archived). If you imported a very large history, the first
-  page load builds caches; subsequent loads are fast. SQLite is light by design —
+  page load builds caches; subsequent loads are fast. SQLite is light by design -
   see [architecture.md](architecture.md).

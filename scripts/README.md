@@ -10,9 +10,9 @@ Windows) and where `npm` lives.
 
 | Script | What it does |
 |--------|--------------|
-| `test.sh` | Backend pytest (runs across all CPU cores via `pytest-xdist`) + frontend TypeScript type-check. Exits non-zero on any failure — safe for a pre-commit hook or CI. |
+| `test.sh` | Backend pytest (runs across all CPU cores via `pytest-xdist`) + frontend TypeScript type-check. Exits non-zero on any failure - safe for a pre-commit hook or CI. |
 | `dev.sh` | Starts the backend (`:8099`) and the Vite dev server (`:5173`) together; Ctrl-C stops both. |
-| `functional_test.py` | **End-to-end smoke test against a running instance** (not the unit test DB): health → parsers → import a sample statement → categorise → dashboard → review → service status, with a pass/fail summary + non-zero exit on failure. Dependency-free stdlib (runs on the Pi too). Read-mostly — point it at a standalone/demo instance; `--skip-import` stays read-only. |
+| `functional_test.py` | **End-to-end smoke test against a running instance** (not the unit test DB): health → parsers → import a sample statement → categorise → dashboard → review → service status, with a pass/fail summary + non-zero exit on failure. Dependency-free stdlib (runs on the Pi too). Read-mostly - point it at a standalone/demo instance; `--skip-import` stays read-only. |
 
 ```bash
 ./scripts/test.sh                     # validate the codebase (unit + type-check)
@@ -23,7 +23,7 @@ python scripts/functional_test.py --skip-import   # read-only checks
 
 `functional_test.py` hits the API directly, so run it against the standalone
 `docker compose` instance or a dev server. The Home Assistant add-on serves its
-API only through ingress (authenticated) — validate that via the UI checklist in
+API only through ingress (authenticated) - validate that via the UI checklist in
 [`docs/ha-testing.md`](../docs/ha-testing.md).
 
 If the scripts are not executable after cloning:

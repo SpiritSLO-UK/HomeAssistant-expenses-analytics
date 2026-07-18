@@ -1,11 +1,11 @@
 # Standalone (docker-compose)
 
-Run **HA Finance Intelligence** on its own with Docker — the same complete,
+Run **HA Finance Intelligence** on its own with Docker - the same complete,
 privacy-first finance app, **without Home Assistant**. With no HA identity in
 front, it runs **single-user** as a local owner. Current version: **v1.0.2**.
 
 > Prefer to run it **inside Home Assistant** as an ingress sidebar panel (SSO,
-> MQTT sensors, energy-cost offset)? Use the **add-on** package instead — see
+> MQTT sensors, energy-cost offset)? Use the **add-on** package instead - see
 > [ha-install.md](ha-install.md).
 
 ## Requirements
@@ -49,7 +49,7 @@ back it up (or use the in-app **encrypted backups**) before anything destructive
 
 ## Configuration (env vars)
 
-Copy the template and edit the values you care about — every key is **optional**
+Copy the template and edit the values you care about - every key is **optional**
 and falls back to a safe, fully-local default (AI off, MQTT off, no external
 calls):
 
@@ -75,10 +75,10 @@ docker compose up -d              # Compose reads ./.env automatically
 
 Most runtime knobs (AI provider/endpoint/model, OCR, online FX rates, retention,
 the base currency after first run) are edited **in-app** on the **Settings** page
-and stored in the database — not here. The full list is in the
+and stored in the database - not here. The full list is in the
 [configuration reference](configuration.md).
 
-## Exposure & trust model — read before going beyond localhost
+## Exposure & trust model - read before going beyond localhost
 
 The shipped `docker-compose.yml` publishes the app on **`8099:8099`**, which binds
 the port to **every** host interface with **no reverse proxy in front**. That is
@@ -89,13 +89,13 @@ the raw port could forge those headers and take over.
 
 Before exposing it beyond the host, do **one** of:
 
-1. **Keep it localhost-only** — bind the published port to loopback:
+1. **Keep it localhost-only** - bind the published port to loopback:
    `ports: ["127.0.0.1:8099:8099"]`.
 2. **Front it with an authenticating, header-stripping reverse proxy** that
-   terminates TLS and injects its own trusted identity — see
+   terminates TLS and injects its own trusted identity - see
    [reverse-proxy.md](reverse-proxy.md) and the bundled `docker-compose.tls.yml` /
    `Caddyfile`.
-3. **Turn off header trust** — set `HAFI_TRUST_PROXY_HEADERS=false` so the app
+3. **Turn off header trust** - set `HAFI_TRUST_PROXY_HEADERS=false` so the app
    ignores all `X-Remote-User-*` headers and resolves every request to the single
    `local` owner.
 
@@ -114,7 +114,7 @@ docker compose up -d --build      # rebuild the image and restart
 The `finance_data` volume carries over and **database migrations run automatically
 on start**, so your data and config survive the upgrade. See the
 [CHANGELOG](../CHANGELOG.md) for what each release changes. Back up first if you
-like — the in-app **encrypted backups** (Settings) give you an off-device copy.
+like - the in-app **encrypted backups** (Settings) give you an off-device copy.
 
 > Provided **"as is", without warranty**, and **not** financial advice. You are
 > responsible for your own backups and for verifying figures before relying on

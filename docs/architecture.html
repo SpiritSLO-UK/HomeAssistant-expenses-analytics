@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>HA Finance Intelligence — Architecture</title>
+<title>HA Finance Intelligence - Architecture</title>
 <meta name="description" content="Self-contained architecture &amp; flow diagrams for HA Finance Intelligence (inline SVG, no external dependencies)." />
 <style>
   :root {
@@ -64,7 +64,7 @@
   .edge { stroke: var(--accent); stroke-width: 1.6; fill: none; }
   .edge-opt { stroke: var(--opt); stroke-width: 1.4; fill: none; stroke-dasharray: 5 4; }
   .elbl { fill: var(--muted); font-size: 10.5px; }
-  /* marker fills — var() only resolves via CSS, not as a presentation attribute */
+  /* marker fills - var() only resolves via CSS, not as a presentation attribute */
   .mk-accent { fill: var(--accent); }
   .mk-opt { fill: var(--opt); }
   .mk-muted { fill: var(--muted); }
@@ -76,8 +76,8 @@
 <body>
 <div class="wrap">
   <header>
-    <h1>HA Finance Intelligence — Architecture</h1>
-    <p>Self-contained visual companion to <code>ha_finance_intelligence_spec.md</code> and <code>docs/context.md</code>. Pure inline SVG — renders offline, no external scripts.</p>
+    <h1>HA Finance Intelligence - Architecture</h1>
+    <p>Self-contained visual companion to <code>ha_finance_intelligence_spec.md</code> and <code>docs/context.md</code>. Pure inline SVG - renders offline, no external scripts.</p>
     <p class="legend">Legend: <b>solid</b> = core data path · <span style="color:var(--opt)">dashed</span> = optional / opt-in / external. The Markdown version (<a href="architecture.md" style="color:var(--accent)">architecture.md</a>) carries the same diagrams as Mermaid for GitHub.</p>
     <nav>
       <a href="#sys">1 · System</a>
@@ -165,7 +165,7 @@
       <path class="edge-opt" marker-end="url(#ao)" d="M636 316 C 672 330, 678 320, 700 304"/>
     </svg>
     </div>
-    <p class="note"><b>Standalone (no Home Assistant):</b> the same container runs behind an optional TLS reverse proxy instead of HA ingress — see <a href="reverse-proxy.md">reverse-proxy.md</a>. Bind it to localhost or a header-stripping proxy (the app trusts <code>X-Remote-User-*</code>).</p>
+    <p class="note"><b>Standalone (no Home Assistant):</b> the same container runs behind an optional TLS reverse proxy instead of HA ingress - see <a href="reverse-proxy.md">reverse-proxy.md</a>. Bind it to localhost or a header-stripping proxy (the app trusts <code>X-Remote-User-*</code>).</p>
   </section>
 
   <!-- 2. REQUEST FLOW ------------------------------------------------------>
@@ -360,7 +360,7 @@
 
   <!-- 5. DATA MODEL -------------------------------------------------------->
   <section id="data">
-    <h2>5 · Data model — core spine</h2>
+    <h2>5 · Data model - core spine</h2>
     <p class="sub">The full model has ~30 tables (spec §12); this shows the core relationships.</p>
     <div class="figure">
     <svg viewBox="0 0 900 420" role="img" aria-label="Entity spine: Household has Users and Accounts; Account produces Statements which contain Transactions; Transactions split, and link to Category, Vendor, Project and Receipt matches.">
@@ -396,7 +396,7 @@
 
   <!-- 6. DEPLOYMENT -------------------------------------------------------->
   <section id="dep">
-    <h2>6 · Deployment — add-on image</h2>
+    <h2>6 · Deployment - add-on image</h2>
     <p class="sub">Multi-stage build: the frontend is built with Node, then served by the Python runtime alongside the backend; data lives on a private volume.</p>
     <div class="figure">
     <svg viewBox="0 0 900 280" role="img" aria-label="Build stage compiles the frontend with node into dist; the python runtime serves dist plus the backend at root; run.sh maps options to env, migrates and starts; a private /data volume holds the database and uploads.">
@@ -425,7 +425,7 @@
       <path class="edge-opt" marker-end="url(#ah5)" d="M530 164 L580 232"/>
     </svg>
     </div>
-    <p class="note">The runtime image is <b>multi-arch</b> (amd64 / arm64). At-rest DB encryption (SQLCipher) ships as a prebuilt wheel on amd64; on arm64 the <code>sqlcipher3</code> wheel is compiled in a throwaway build stage so the Pi gets it too. It's opt-in — off by default.</p>
+    <p class="note">The runtime image is <b>multi-arch</b> (amd64 / arm64). At-rest DB encryption (SQLCipher) ships as a prebuilt wheel on amd64; on arm64 the <code>sqlcipher3</code> wheel is compiled in a throwaway build stage so the Pi gets it too. It's opt-in - off by default.</p>
   </section>
 
   <footer>

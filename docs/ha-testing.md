@@ -9,7 +9,7 @@ add-on test** (the real thing).
 
 ---
 
-## Layer 0 — standalone smoke test (no HA)
+## Layer 0 - standalone smoke test (no HA)
 
 Quickest sanity check that the image boots and serves the app:
 
@@ -26,7 +26,7 @@ frontend on every PR, so this rarely surprises you.)
 
 ---
 
-## Layer 1 — full HA add-on test
+## Layer 1 - full HA add-on test
 
 The add-on installs from a **prebuilt multi-arch image on GHCR**, so your Pi *pulls*
 the image (no on-device build). That means two things must be true before you can
@@ -34,7 +34,7 @@ install: the image has to be **published**, and its GHCR package must be **publi
 
 ### 1. Publish a release-candidate image
 
-Tag an RC — the release workflow builds + pushes `amd64` and `aarch64` images.
+Tag an RC - the release workflow builds + pushes `amd64` and `aarch64` images.
 Replace `N` with the RC number and the version with the one you're cutting (e.g.
 `v1.0.2-rc1`):
 
@@ -44,10 +44,10 @@ git push origin v1.0.0-rcN
 ```
 
 Watch it: `gh run watch <id> --exit-status`. Keep `addon/config.yaml`'s `version:`
-equal to the tag (minus the leading `v`) — Supervisor pulls `image:version`, so they
+equal to the tag (minus the leading `v`) - Supervisor pulls `image:version`, so they
 **must** match.
 
-> **First time only — make the GHCR packages public.** New GHCR packages are
+> **First time only - make the GHCR packages public.** New GHCR packages are
 > **private**, so Supervisor can't pull them and the install fails with
 > `[403] … manifests/…: denied`. Set **both** packages public, once:
 > `https://github.com/users/SpiritSLO-UK/packages/container/{aarch64,amd64}-ha-finance-intelligence/settings`
@@ -67,13 +67,13 @@ equal to the tag (minus the leading `v`) — Supervisor pulls `image:version`, s
    `https://github.com/SpiritSLO-UK/HomeAssistant-expenses-analytics` (or click the
    **"Add to my Home Assistant"** badge in the README) → **Add**.
 2. Open **HA Finance Intelligence** in the store → **Install** (Supervisor pulls the
-   `aarch64` image — about a minute, no compiling).
+   `aarch64` image - about a minute, no compiling).
 3. **Configuration** tab → set `currency`; optionally `mqtt_enabled: true`, an AI
    mode, or the energy options → **Save** → **Start**.
 
 ### 3. Open it + check ingress SSO
 
-- Click **Open Web UI**. You should land in the app with **no login** — you're signed
+- Click **Open Web UI**. You should land in the app with **no login** - you're signed
   in as your Home Assistant user (ingress SSO), and the **first** user to open it is
   the **owner**. Confirm under **Settings → Users** that you show as **owner /
   approved**.
@@ -84,7 +84,7 @@ equal to the tag (minus the leading `v`) — Supervisor pulls `image:version`, s
 ### 4. MQTT sensors (optional)
 
 With `mqtt_enabled: true`, the add-on **auto-discovers the broker from the
-Supervisor** — you don't enter host/credentials (it connects as the Supervisor's
+Supervisor** - you don't enter host/credentials (it connects as the Supervisor's
 `addons` user). Then:
 
 - **Settings → Devices & Services → MQTT** → an **HA Finance Intelligence** device
@@ -92,9 +92,9 @@ Supervisor** — you don't enter host/credentials (it connects as the Supervisor
   and the energy offset when configured).
 - In the app, **Settings → Home Assistant sensors (MQTT)** shows status + a
   **Publish now** button. The Mosquitto add-on log should show
-  `New client connected … (… u'addons')` — that's a successful connect.
+  `New client connected … (… u'addons')` - that's a successful connect.
 - If the broker log shows `received null username or password … not authorised`, the
-  add-on is connecting with no credentials — make sure you're on a build with MQTT
+  add-on is connecting with no credentials - make sure you're on a build with MQTT
   auto-discovery (v1.0.0-rc2+), or set `mqtt_username`/`mqtt_password` manually.
 
 ### 5. Energy-cost offset (optional)
@@ -102,7 +102,7 @@ Supervisor** — you don't enter host/credentials (it connects as the Supervisor
 If you have HA energy sensors, open the **Energy** page → **Settings**:
 
 - Source **Home Assistant API** → add a production entity (ideally a "this-month"
-  kWh **Utility Meter** sensor) — this needs the add-on's `homeassistant_api` access
+  kWh **Utility Meter** sensor) - this needs the add-on's `homeassistant_api` access
   (granted at install). Or source **MQTT** → list the topics.
 - Set your **energy-bill category** and a **tariff** (or leave it blank to derive the
   price from your Home electricity meter readings).

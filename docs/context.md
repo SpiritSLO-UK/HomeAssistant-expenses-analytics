@@ -4,11 +4,11 @@ A durable, committed record of how HA Finance Intelligence is built and **why**,
 so nothing important gets lost between sessions or contributors (backlog #80).
 This complements:
 
-- [`ha_finance_intelligence_spec.md`](../ha_finance_intelligence_spec.md) — the full product/architecture spec (see §0 Build Status).
-- [`README.md`](../README.md) — how to run/develop/test.
-- [`docs/architecture.md`](architecture.md) — system / flow / data-model diagrams (Mermaid).
-- [`docs/privacy.md`](privacy.md) / [`docs/security.md`](security.md) — privacy & isolation model.
-- `things-to-add-change-consider.md` — the owner's backlog (kept local/untracked).
+- [`ha_finance_intelligence_spec.md`](../ha_finance_intelligence_spec.md) - the full product/architecture spec (see §0 Build Status).
+- [`README.md`](../README.md) - how to run/develop/test.
+- [`docs/architecture.md`](architecture.md) - system / flow / data-model diagrams (Mermaid).
+- [`docs/privacy.md`](privacy.md) / [`docs/security.md`](security.md) - privacy & isolation model.
+- `things-to-add-change-consider.md` - the owner's backlog (kept local/untracked).
 
 > Keep this file current when a major decision is made or a stage lands.
 
@@ -49,7 +49,7 @@ HA integration holds no business logic (spec §9.4).
 |----------|-----|
 | **License: Apache-2.0** | Max adoption over AGPL (owner's call, 2026-05-31). |
 | **SQLite for MVP** | Simple inside an add-on; Postgres later if needed (spec §9.2). |
-| **DB in the add-on's private `/data`** (not `/config`) | Isolation: other add-ons / the HA config share can't read it, and we can't read HA secrets. Deviation from spec §26.4 — see docs/security.md. |
+| **DB in the add-on's private `/data`** (not `/config`) | Isolation: other add-ons / the HA config share can't read it, and we can't read HA secrets. Deviation from spec §26.4 - see docs/security.md. |
 | **Enums stored as `String` columns** | Portability across SQLite/Postgres; values documented in the model. |
 | **Frontend: relative base + HashRouter** | Works under any HA ingress path without knowing it. |
 | **Signed amounts** (negative = debit/out) | One convention everywhere (spec §13). |
@@ -62,7 +62,7 @@ HA integration holds no business logic (spec §9.4).
 
 - **Never commit** `things-to-add-change-consider.md` (owner's backlog; excluded via `.git/info/exclude`). Update it with status + spec section after each major step.
 - Reference spec sections as clickable links in all comms/docs (backlog #20).
-- `sqlite3.connect(...)` in a `with` block commits but does **not close** — close explicitly or the file stays locked on Windows (bit us in backup snapshot).
+- `sqlite3.connect(...)` in a `with` block commits but does **not close** - close explicitly or the file stays locked on Windows (bit us in backup snapshot).
 - Hit the running server at `http://127.0.0.1:8099`, not `localhost` (IPv6 `::1` vs IPv4 bind).
 - Run everything via `scripts/test.sh` (pytest + tsc) and `scripts/dev.sh`.
 - **CI** (`.github/workflows/ci.yml`): ruff + backend pytest + frontend build +
@@ -71,20 +71,20 @@ HA integration holds no business logic (spec §9.4).
   (line-length 120; FastAPI injectors whitelisted for B008; E501 ignored in tests).
   The pytest suite runs **across all CPU cores** (`pytest-xdist`, `-n auto` in
   `pyproject.toml`); each xdist worker is its own process with an isolated temp DB,
-  so it's safe — run `-n0` to go serial under a debugger.
+  so it's safe - run `-n0` to go serial under a debugger.
 - **Type-checking:** Pyright in "basic" mode over `app` (config in
-  `pyproject.toml`, tests excluded); kept at 0 errors / 0 warnings. Not in CI —
+  `pyproject.toml`, tests excluded); kept at 0 errors / 0 warnings. Not in CI -
   run locally before a backend PR.
 - **Quality:** SonarCloud Automatic Analysis on `main` (gate green). Frontend lint
   mirrors SonarCloud via `eslint-plugin-sonarjs` (CI-enforced).
 
 ## Build status (summary)
 
-Stages 0–12 done, **`v0.9.0-beta` released** (standalone, no HA — see
+Stages 0–12 done, **`v0.9.0-beta` released** (standalone, no HA - see
 [CHANGELOG.md](../CHANGELOG.md)), plus a large **post-beta** wave. Stages 0–11:
 skeleton, CSV import, categories/vendors + dashboard, rules & learning, splits,
 projects & tags, budgets + MQTT, recurring/subscriptions, review queue,
-receipts + OCR, local AI, cloud-AI approval, PDF import — plus data-safety
+receipts + OCR, local AI, cloud-AI approval, PDF import - plus data-safety
 (redaction, backup/restore, demo, isolation) and multi-currency. **Stage 12**
 (security/multi-user S1–S4, trends/outliers, savings, logs viewer, data
 retention, CSV export, global search, per-device UI prefs) is complete.
@@ -100,11 +100,11 @@ HTTPS reverse-proxy, parallel tests, and a SonarCloud-green pass.
 install, ingress SSO, MQTT sensors) **and** the HA energy-cost offset all landed
 in **v1.0.0**; v1.0.1–v1.0.2 added polish, security hardening and broader
 bank/receipt import. **Next:** the v2 horizon (net worth + liabilities, cash-flow
-forecasting — see the backlog).
+forecasting - see the backlog).
 
 > Stage-numbering note: the spec §29 order is Stage 7 = review queue, Stage 8 =
 > receipts. We built recurring/subscriptions (§20, not a numbered §29 stage)
-> earlier; the build-status table lists it as a "—" feature row.
+> earlier; the build-status table lists it as a "-" feature row.
 
 Categorisation order (spec §15.1): **manual > rule > vendor default > keyword**.
 Rules (`rule_service`) run on import and re-categorise; a manually-set category
@@ -115,7 +115,7 @@ location for the map) · `mark_transfer`/`mark_income`/`mark_subscription` ·
 `require_review` · `block_cloud_ai`. The in-app "How rules work" guide
 (docs/rules.md) documents every condition + action with worked examples.
 
-## Splits (Stage 4 — spec §17)
+## Splits (Stage 4 - spec §17)
 
 `split_service` divides one transaction across categories/projects. Validation
 (spec §17.2): ≥2 parts, parts sum to the transaction total **to the penny**
@@ -123,22 +123,22 @@ location for the map) · `mark_transfer`/`mark_income`/`mark_subscription` ·
 parts share the transaction's sign. The transaction stays the source of truth
 (`is_split` flag; splits cascade-delete). API: `GET /api/transactions/{id}/splits`,
 `POST /…/split` (replace), `DELETE /…/split` (clear). The **dashboard category
-breakdown** is split-aware (spec §37.4) — split parts contribute to their own
+breakdown** is split-aware (spec §37.4) - split parts contribute to their own
 categories, converted with the parent's FX rate; monthly spend/income totals are
 unchanged because parts sum to the whole. UI: an inline `SplitEditor` (add/remove
 parts, **auto-balance** the remainder) on the Transactions page. Project-level
 split reporting waits for Stage 5 (projects).
 
-## Projects & tags (Stage 5 — spec §18)
+## Projects & tags (Stage 5 - spec §18)
 
 `project_service` reports on **projects** (first-class cost collectors:
 renovation, holiday, car, …). A transaction belongs to a project via its
-`project_id` or — for splits — a split part's `project_id` (split transactions
+`project_id` or - for splits - a split part's `project_id` (split transactions
 are driven by their parts, never the whole). `summary(project)` gives total
 spend, by-category, by-vendor, transaction count and timeline (first/last dates),
 plus budget progress when `budget_amount` is set; `totals()` powers
 `GET /api/dashboard/projects` (the "Project totals" card). Spend is money-out,
-base-currency, split-aware — consistent with budgets. API: `/api/projects` CRUD +
+base-currency, split-aware - consistent with budgets. API: `/api/projects` CRUD +
 `/api/projects/{id}/summary`. Assigning a transaction to a project is just
 `PATCH /api/transactions/{id} {project_id}` (validated; also a `project_id` list
 filter). Project budgets work through `budget_service` (project_id budgets).
@@ -155,7 +155,7 @@ breakdowns) and, on **Transactions**, a project `<select>` + tag chips
 (click-to-remove, "+ tag" prompt) per row. Per-project total sensors are
 published over MQTT (spec §27.3).
 
-## Subscriptions / recurring payments (Stage 7 — spec §20)
+## Subscriptions / recurring payments (Stage 7 - spec §20)
 
 `subscription_service.detect()` groups spend by vendor (or normalised merchant
 name when no vendor matched) and flags groups that recur at a regular interval
@@ -174,7 +174,7 @@ page (monthly cost, table with per-row status, "Detect now", delete).
 **Alerts (Stage 12 / §20.3):** `subscription_service.alerts(ref, within_days=7,
 overdue_grace=3)` over **active** subs with a `next_expected_date` →
 `{upcoming, overdue}` (upcoming = due within the window or just passed; overdue =
-expected > grace days ago and not seen since — a missed payment or a forgotten
+expected > grace days ago and not seen since - a missed payment or a forgotten
 cancellation). `GET /api/subscriptions/alerts`; shown as an "Alerts" card on the
 Subscriptions page. Also folded into the **dashboard heads-up** via
 `analytics_service._subscription_alerts` (always relative to *today*), so renewals
@@ -182,16 +182,16 @@ and misses appear alongside the other outliers.
 
 ## AI assistant (Stage 9 / §22)
 
-**Off by default** and **suggestion-only** — AI never writes a category itself
+**Off by default** and **suggestion-only** - AI never writes a category itself
 (spec §22.1, §43); routing stays rules → vendor → keyword first. `ai_service` is
 the single gateway: it gates by **privacy mode** (`strict_local`/`no_ai` → refuse;
 `local_llm` → on-device call; `cloud_manual` → per-call approval; `cloud_auto` →
 auto), redacts cloud payloads through `redaction.redact_for_cloud` (the one choke
-point — description/amount/currency/candidate-categories only), and **audits
+point - description/amount/currency/candidate-categories only), and **audits
 every call** to `AIRequest` (provider/model/task/mode/approval/payload/response/
 status, spec §22.6). `ai_provider` has `NoAIProvider` + `OpenAICompatibleProvider`
 (httpx → `/chat/completions`, JSON-validated) which covers Ollama / LM Studio /
-llama.cpp / HA LLM / cloud — local vs cloud is just base URL + key. The API key
+llama.cpp / HA LLM / cloud - local vs cloud is just base URL + key. The API key
 is **env-only** (`HAFI_AI_API_KEY`), never in the DB; endpoint/model are DB
 settings. API: `GET /api/ai/status`, `POST /api/ai/classify/{txn}?approve=`,
 `GET /api/ai/requests`. UI: an AI Settings card (mode/provider/URL/model) and a
@@ -202,14 +202,14 @@ the user confirms to apply via the normal manual-categorise path).
 uncategorised transactions and returns suggestions; `apply_suggestions` applies
 the user-approved ones (treated as manual → confidence 1.0). It's **`local_llm`
 only** (auto-batching to cloud would bypass per-call approval) and never applies
-silently — the UI (`AiBatchPanel`) pre-ticks high-confidence rows by a threshold,
+silently - the UI (`AiBatchPanel`) pre-ticks high-confidence rows by a threshold,
 but the user clicks Apply. API: `POST /api/ai/classify-batch?limit=`,
 `POST /api/ai/apply`.
 
 **Cloud AI approval (Stage 10 / §22.5, §28):** in `cloud_manual` mode
 `classify_transaction` always returns `approval_required` with the exact redacted
 payload + a pending `AIRequest` (now carrying `transaction_id`) + a
-`cloud_ai_approval_required` review item — nothing is sent. The user previews and
+`cloud_ai_approval_required` review item - nothing is sent. The user previews and
 calls `POST /api/ai/requests/{id}/approve` (`run_request` sends it, stores the
 response, resolves the review item) or `/reject` (`reject_request`, nothing
 sent). **Sensitive-category blocking:** cloud classification refuses a
@@ -218,26 +218,26 @@ the Settings AI card. Only `classify_transaction` is implemented;
 enrich_vendor/parse_receipt/match_receipt are deferred.
 
 **Cloud batch (Stage 12 / §22.3, §22.5; #154):** the cloud sibling of the local
-batch — review the whole list, then approve in one go. Two service stages (fake
+batch - review the whole list, then approve in one go. Two service stages (fake
 provider injected in tests, no network):
-- `cloud_batch_prepare(limit)` — requires a cloud mode; for each uncategorised
+- `cloud_batch_prepare(limit)` - requires a cloud mode; for each uncategorised
   transaction it builds the **redacted** payload and records a *pending*
-  `AIRequest` (no per-item review-queue entries — the batch panel is the approval
+  `AIRequest` (no per-item review-queue entries - the batch panel is the approval
   surface), then returns the redacted previews. **Nothing is sent.**
-- `cloud_batch_send(approve_ids, reject_ids)` — sends the approved pending
+- `cloud_batch_send(approve_ids, reject_ids)` - sends the approved pending
   requests via the provider (reusing `_run`), marks the rest rejected, and returns
   suggestions (same shape as the local batch). Apply via `POST /api/ai/apply`.
 - API: `POST /api/ai/cloud-batch/{prepare,send}`. UI: `CloudAiBatchPanel`
-  (Transactions, shown when `is_cloud`) — stage 1 lists the redacted payloads with
+  (Transactions, shown when `is_cloud`) - stage 1 lists the redacted payloads with
   a "view payload" toggle + per-row include checkbox; stage 2 shows suggestions
   pre-ticked by a confidence threshold → Apply.
 
-**Re-process (post-beta — `scope=recheck`):** `_select_for_batch(scope)` is the
+**Re-process (post-beta - `scope=recheck`):** `_select_for_batch(scope)` is the
 shared selector for both batches. Default `scope="uncategorised"` fills blanks
 only; `scope="recheck"` (a "Re-check already-categorised" toggle on both panels)
 also re-examines rows the app auto-categorised (rule/vendor/keyword/AI, confidence
 < 1.0) so the user can re-run after plugging in / improving a model and find new
-matches — a **manual** choice (confidence 1.0) is never selected, and the local
+matches - a **manual** choice (confidence 1.0) is never selected, and the local
 batch only surfaces a suggestion when it *differs* from the current category.
 Defence in depth: `apply_suggestions` also refuses to overwrite a manual category.
 Routes take a validated `scope` query param.
@@ -250,7 +250,7 @@ on a bare dev box → a clear error, works in the add-on) and hands it to the pu
 unit-tested `parse_statement_text`: per line, a leading date + the **first** money
 amount (a trailing balance is ignored) + the text between as the description;
 `CR`/leading `+` = credit, else debit. PDF layouts vary and text extraction loses
-columns, so it's **review-heavy** — every extracted row sets
+columns, so it's **review-heavy** - every extracted row sets
 `StandardTransaction.needs_review=True`, which the import flags on the
 transaction (`review_reason="pdf_unverified"`) so the user verifies them
 (Transactions → "Needs review"). Detection: `detect_parser` routes `%PDF-` /
@@ -275,7 +275,7 @@ UI: a Receipts page (upload, per-receipt manual fields, "Find match" → confirm
 Receipt **line items** (§21.2 level 2) and "apply items to a split" are deferred.
 Upload is **deduped by content hash** (`store_upload` returns `created`); a
 byte-identical re-upload returns the existing receipt and the UI says "already
-imported" (post-beta — the receipt sibling of statement dedup). Receipts can also
+imported" (post-beta - the receipt sibling of statement dedup). Receipts can also
 be **attached directly to a transaction** (kept regardless of the retention
 delete-after-processing toggle) and imported from **Paperless-ngx** (below).
 
@@ -288,15 +288,15 @@ Note: the dashboard's existing `review_items` count is transaction-level
 (`needs_review`), distinct from the `ReviewItem` queue.
 
 **Needs-attention + Uncategorised tab (post-beta):** the Review page now has two
-tabs — **To review** (the curated `ReviewItem` queue) and **Uncategorised** (a
+tabs - **To review** (the curated `ReviewItem` queue) and **Uncategorised** (a
 paginated list of category-less transactions with inline quick-categorise). The
 dashboard gains one **"Needs attention"** card combining the review-queue open
 count + uncategorised + FX-rate-missing, each linking to where you clear it (the
 uncategorised link deep-links to `?tab=uncategorised`). The two stay **separate
-data** — uncategorised is high-volume and deliberately *not* folded into the
-curated queue — they're just co-located so there's one place to clear both.
+data** - uncategorised is high-volume and deliberately *not* folded into the
+curated queue - they're just co-located so there's one place to clear both.
 
-## Budgets + MQTT (Stage 6 — spec §19, §27)
+## Budgets + MQTT (Stage 6 - spec §19, §27)
 
 `budget_service` caps spend over a period. Three flavours (spec §19.1):
 **category** (`category_id`), **project** (`project_id`), or **total** (neither).
@@ -322,7 +322,7 @@ default `core-mosquitto`, port, optional user/pass). `/api/mqtt/{status,preview,
 Settings has an MQTT card with a "Publish now" button. The subscriptions-total
 sensor (spec §30.11) waits for recurring detection (Stage 7).
 
-## Encryption (#15 — DONE)
+## Encryption (#15 - DONE)
 
 - **Encrypted backups** (`crypto_service`): passphrase AES-256-GCM + scrypt,
   pure-Python, works everywhere.
@@ -343,9 +343,9 @@ default distro is Docker's and has no userland. Python 3.12 was provisioned via
 (`pip install -e backend[dev] sqlcipher3-binary`). Run Linux tests:
 `/opt/hafi-venv/bin/python -m pytest` from `/mnt/c/.../backend`.
 
-## Multi-user & access control (Stage 12-S1 — spec §6, §8.2, §28; #82/#126/#74)
+## Multi-user & access control (Stage 12-S1 - spec §6, §8.2, §28; #82/#126/#74)
 
-Identity is **not** owned by this app — Home Assistant authenticates the user at
+Identity is **not** owned by this app - Home Assistant authenticates the user at
 the ingress edge and forwards `X-Remote-User-Id` / `-Name` / `-Display-Name`.
 `auth_service.resolve_current_user` maps that header to a `User` row; with **no
 header** (standalone/local dev) it falls back to a single `"local"` owner, so the
@@ -354,7 +354,7 @@ single-user row (null `external_id`) is **adopted** as the local owner rather th
 duplicated.
 
 - **Bootstrap rule:** the first user ever seen → `owner` + `approved`. Everyone
-  after → `member` + `pending` (no access until the owner approves — #126).
+  after → `member` + `pending` (no access until the owner approves - #126).
 - **Roles** (`models/user.py`): `owner` (admin), `member` (read/write), `viewer`,
   `child` (read-only). `WRITE_ROLES = {owner, member}`, `ADMIN_ROLES = {owner}`.
 - **Enforcement** is a single `_auth_guard` middleware in `main.py` (runs after
@@ -367,17 +367,17 @@ duplicated.
   (owner), `PATCH /users/{id}`, `POST /users/{id}/approve`, `DELETE /users/{id}`.
   Guard (#74): can't demote/disable/delete the **last active owner**; the role is
   always read from the stored row, never trusted from the client.
-- **Audit:** `audit_service.record()` (new — the `audit_logs` table existed but
+- **Audit:** `audit_service.record()` (new - the `audit_logs` table existed but
   was unwritten) logs user-management actions; reused for failed-unlock/sensitive
   actions in S3.
 - **UI:** owner-only **Users** page (approve queue + role/status/remove); a
   pending/disabled user sees an `AccountGate` instead of the app; the Users nav
   item is owner-only. Migration `d1e2f3a4b5c6` adds `users.external_id`/`status`/
   `last_seen_at`.
-### MFA / TOTP (Stage 12-S2 — #124)
+### MFA / TOTP (Stage 12-S2 - #124)
 
 Optional per-user second factor on top of HA auth. TOTP is implemented in-house
-(`services/totp.py`, RFC 6238, stdlib only — no dependency) so it works on every
+(`services/totp.py`, RFC 6238, stdlib only - no dependency) so it works on every
 platform and matches Google Authenticator / Aegis / 1Password defaults (SHA-1, 6
 digits, 30s).
 
@@ -385,14 +385,14 @@ digits, 30s).
   and returns the otpauth URI; `mfa_enabled` flips true only after `enable`
   confirms a code. `disable` (code required) clears the secret + all sessions.
 - **Entry gate:** a user with MFA on must `POST /auth/mfa/verify` a code, which
-  mints a per-device session — a random token whose **SHA-256 hash** is stored in
+  mints a per-device session - a random token whose **SHA-256 hash** is stored in
   `user_sessions` (raw token lives in the browser, sent as `X-HAFI-Session`).
   The `_auth_guard` middleware blocks data APIs with 403 `{mfa_required:true}`
   until a valid, unexpired session is presented. `/auth/mfa/*` is exempt (so the
   user can verify) but still approval-gated. `/users/me` reports `mfa_required`
   so the SPA shows the gate.
 - **Admin step-up (#124 "re-enter for admin stuff"):** owner mutations use the
-  `require_owner_step_up` dependency — if the owner has MFA on and their session's
+  `require_owner_step_up` dependency - if the owner has MFA on and their session's
   `last_step_up_at` is older than `STEP_UP_TTL` (10 min), it returns 403
   `step_up_required`; `POST /auth/mfa/step-up` refreshes it. The Users page
   catches that error, prompts for a code, and replays the action.
@@ -405,17 +405,17 @@ digits, 30s).
   the protection for a stolen disk. Setup shows a scannable **QR code** (with the
   otpauth URI/secret also shown for manual entry).
 
-### Security health + failed-unlock alerts (Stage 12-S3 — #128/#130)
+### Security health + failed-unlock alerts (Stage 12-S3 - #128/#130)
 
 - **Failed-unlock tracking:** unlock attempts happen while the DB is *locked*
-  (encrypted, not yet opened), so the app DB is unavailable — failures are logged
+  (encrypted, not yet opened), so the app DB is unavailable - failures are logged
   to a small JSON file next to the DB (`security_events.json`, last 50) via
   `security_service.record_failed_unlock()`. `record_successful_unlock()` clears
   the streak. `failed_unlock_summary()` (rolling 60-min window) is included in
   `/security/status`, so the unlock screen shows "N failed attempts in the last
   hour" and the structured log warns on each failure.
 - **Security-health panel** (`security_health_service.evaluate`): owner-only
-  checks — at-rest encryption (off → warn / unavailable → info / stored-key →
+  checks - at-rest encryption (off → warn / unavailable → info / stored-key →
   info), MFA on the owner's account, ≥3 recent failed unlocks, users awaiting
   approval, and `cloud_auto` AI. Each is `{severity, recommendation, actionable,
   active}`. **Non-nagging:** every warning can be dismissed (forever) or snoozed
@@ -427,22 +427,22 @@ digits, 30s).
   linking to Settings, and the failed-attempt note on the unlock gate. No
   migration (uses the settings table + the JSON file).
 
-### Hardening pass (Stage 12-S4 — #74)
+### Hardening pass (Stage 12-S4 - #74)
 
 Adversarial test suite (`tests/test_security_hardening.py`) pinning the negative
 cases: a member can't manage users or self-promote; **forged identity headers**
-(`X-Remote-User-Role`, etc.) confer nothing — a new identity is only ever pending,
+(`X-Remote-User-Role`, etc.) confer nothing - a new identity is only ever pending,
 and the role is read from the stored row; MFA **session tokens are bound to their
 user and expiry** (a foreign/forged/expired token is rejected); invalid
 role/status values are 400; disabled accounts and the read-only `child` role are
 enforced. Documented the **trust boundary** in docs/security.md: identity is only
-as good as the ingress proxy, so the add-on stays ingress-only — don't expose the
+as good as the ingress proxy, so the add-on stays ingress-only - don't expose the
 raw port. Also refreshed the stale "unencrypted at rest" note (at-rest encryption
 now exists, optional).
 
 The security/multi-user cluster (S1–S4) is **complete**.
 
-## Child allowance view (Stage 12 — spec §6, §19; #82)
+## Child allowance view (Stage 12 - spec §6, §19; #82)
 
 A kid's pocket-money tracker. The `child` role is a narrow allowance view; parents
 attribute their own spend to a child **non-destructively** ("remain on parent's
@@ -450,7 +450,7 @@ expense, show on kid").
 
 - **Overlay, not a reassignment:** `ChildAllocation` rows (`child_allocations`
   table, migration `a1b2c3d4e5f6`; also adds `Budget.owner_user_id`) reference but
-  never mutate the parent's transaction, and **no normal aggregation reads them** —
+  never mutate the parent's transaction, and **no normal aggregation reads them** -
   dashboards/household budgets/analytics are untouched. Three shapes: **whole**
   (`transaction_id`, amount = txn base), **split** (`+ transaction_split_id`,
   amount = `split_service.split_base_amount`), **manual** (no txn refs). Amounts are
@@ -464,11 +464,11 @@ expense, show on kid").
 - **Child budgets** are `Budget` rows with `owner_user_id` set; `budget_service.summary`
   filters `owner_user_id IS NULL` so they never show on the household budgets page.
 - **API** `routes_allowance` (`/api/allowance`): `GET /summary` (current user; a
-  parent — `can_write` — may pass `?user_id=` to view a child, otherwise it's
+  parent - `can_write` - may pass `?user_id=` to view a child, otherwise it's
   ignored so a child only ever sees their own); `POST/GET/DELETE /allocations`.
   Child budgets are created via the budgets API with `owner_user_id` set.
 - **Child gate** (`main.py` `_auth_guard`): `_CHILD_ALLOWED_PREFIXES =
-  ("/api/allowance/summary",)` — a `child` is 403 everywhere else (after the
+  ("/api/allowance/summary",)` - a `child` is 403 everywhere else (after the
   read-only gate; `/users/me`,`/security`,`/auth/mfa` stay reachable via the
   existing exemptions). Mirrored by `childVisible` in `nav.ts`; `App.tsx` mounts
   only the Allowance route for a child.
@@ -478,11 +478,11 @@ expense, show on kid").
   ("→ child", whole or partial). `prefs`/queries keyed `["allowance", id]`.
 - **Stage B (designed, not built):** shared vs private accounts + per-user views.
 
-## Shared vs private accounts — enforcement (Stage 12-B1 — spec §6, §28; #66/#82)
+## Shared vs private accounts - enforcement (Stage 12-B1 - spec §6, §28; #66/#82)
 
 Accounts already had `owner_user_id` + `is_shared`; B1 makes them *mean* something
 without any UI yet (so it's behaviourally inert until B2 lets a user mark an
-account private — all existing accounts are unowned = shared).
+account private - all existing accounts are unowned = shared).
 
 - **One choke point:** `auth_service.visible_account_ids(db, user) -> set[int] | None`.
   Owner/admin → `None` (unrestricted, fast path). Else the set of accounts that are
@@ -492,7 +492,7 @@ account private — all existing accounts are unowned = shared).
   Mine/Shared/All toggle by *intersecting* with the base set (can only narrow).
 - **One filter helper:** `services/scope.py: account_scope_condition(account_ids)` →
   `[]` when `None`, else `[or_(Transaction.account_id.in_(ids), account_id IS NULL)]`.
-  **The guard is `is not None`** — an empty set means *nothing* (only orphans), never
+  **The guard is `is not None`** - an empty set means *nothing* (only orphans), never
   "all". Orphan transactions (deleted account) stay visible.
 - **Threaded through every aggregate** via an `account_ids=None` kwarg:
   `export_service.build_transaction_filters` (covers the transactions list + CSV),
@@ -510,7 +510,7 @@ account private — all existing accounts are unowned = shared).
 - **Subscriptions** have no account link: `detect` runs unscoped (maintenance), but
   reads (`list`, `dashboard_summary`, `alerts`, `monthly_total`) filter via
   `subscription_service.visible_subscription_ids` = subs backed by ≥1 visible txn.
-- **MQTT** stays full-household (owner controls the broker) — calls pass no scope.
+- **MQTT** stays full-household (owner controls the broker) - calls pass no scope.
 - Proven by `tests/test_account_visibility.py` (member can't see another's private
   account anywhere; owner sees all; legacy unowned visible to all; empty set ⇒
   nothing; Mine/Shared/All narrows).
@@ -524,9 +524,9 @@ account private — all existing accounts are unowned = shared).
   owner) maps to `auth_service.scoped_account_ids`. `tests/test_accounts.py`.
   **Multi-user UI depth (#66/#82) is complete.**
 
-## Trends & outliers (Stage 12 — spec §24.12, §37; #146, #150)
+## Trends & outliers (Stage 12 - spec §24.12, §37; #146, #150)
 
-`analytics_service` (read-only, base-currency, dashboard-consistent — transfers/
+`analytics_service` (read-only, base-currency, dashboard-consistent - transfers/
 duplicates excluded, split-aware category figures):
 
 - **`monthly_series(ref, months)`** → `GET /api/dashboard/monthly?months=N` (N
@@ -534,7 +534,7 @@ duplicates excluded, split-aware category figures):
   comparing the latest month to the previous one (`delta`, `pct`, `direction`
   up/down/flat). Drives the dashboard sparklines + arrows.
 - **`outliers(ref)`** → `GET /api/dashboard/outliers`: a "heads-up" list from four
-  detectors — **large charges** (≥3× the median charge over a 6-month lookback,
+  detectors - **large charges** (≥3× the median charge over a 6-month lookback,
   needs ≥8 charges to set a baseline), **category spikes** (this month >1.5× and
   ≥£30 over the prior-3-month average, needs ≥2 months of history), **new
   merchants** (not seen in the prior 3 months, ≥£20, skipped when there's no
@@ -544,40 +544,40 @@ duplicates excluded, split-aware category figures):
   positives (see `test_no_false_positives_without_history`).
 - **UI:** a "Trends" card (3 inline-SVG sparklines, no chart dep) and a non-nagging
   "Heads-up" card on the Dashboard that only renders when there's something to
-  flag. No new tables/migration — pure analytics over existing data.
+  flag. No new tables/migration - pure analytics over existing data.
 
-## Savings (Stage 12 — spec §12.4; #96, #91)
+## Savings (Stage 12 - spec §12.4; #96, #91)
 
 `savings_service` over two new tables (migration `f3a4b5c6d7e8`):
 
-- **Balance snapshots** (`SavingsBalance`) — manual "this account held £X on date
+- **Balance snapshots** (`SavingsBalance`) - manual "this account held £X on date
   Y" entries against a savings `Account` (`account_type == "savings"`). A series
   gives a balance history (charted as a sparkline). `latest_balance` is by date
   (not insertion order); `total_savings` sums each savings account's latest
-  snapshot (single-currency assumption — mixed-currency FX is out of scope, noted).
-- **Goals** (`SavingsGoal`) — a `target_amount` (optionally by `target_date`),
+  snapshot (single-currency assumption - mixed-currency FX is out of scope, noted).
+- **Goals** (`SavingsGoal`) - a `target_amount` (optionally by `target_date`),
   either **linked** to a savings account (progress = its latest balance) or
   **manual** (`current_amount`). `goal_to_dict` computes current/remaining/percent
   and flips status to `achieved` at ≥100%.
 - API `/api/savings`: `/summary`, `/accounts` (GET/POST), `/accounts/{id}/balances`
   (GET history / POST snapshot), `/goals` (GET/POST/PATCH/DELETE).
-- UI: a **Savings** page (nav 💰) — total saved, per-account cards (latest balance
+- UI: a **Savings** page (nav 💰) - total saved, per-account cards (latest balance
   + growth sparkline + record-balance form), and goals with progress bars (manual
   goals get an inline "update amount"). The sparkline is now a shared
   `components/Sparkline.tsx` (also used by the dashboard Trends card).
 - **Deferred:** auto-linking *transfer transactions* into a savings account (the
-  "point to the statement where savings goes" detection) — balances are manual
+  "point to the statement where savings goes" detection) - balances are manual
   for now.
 
-## Logs / activity viewer (Stage 12 — spec §28.5, §38; #92)
+## Logs / activity viewer (Stage 12 - spec §28.5, §38; #92)
 
 Surfaces the DB-backed logs to the owner; low-level runtime/debug logs still go
 to stdout (the HA add-on **Log** panel) at the configured `log_level` and are
-*not* stored in the DB, so they're not served here — the Logs page says so.
+*not* stored in the DB, so they're not served here - the Logs page says so.
 
 - **Activity log** = the `audit_logs` table via `audit_service`. Newly wired
   events (route layer, actor = `get_current_user().display_name`): `import_statement`,
-  `delete_import`, `delete_transaction`, `load_demo` — on top of the existing
+  `delete_import`, `delete_transaction`, `load_demo` - on top of the existing
   `update_user` / `delete_user` / `mfa_enabled` / `mfa_disabled`. `record()` is
   best-effort (never raises into the caller) and joins/commits with the action.
   Restore and encryption enable/disable are deliberately **not** audited (restore
@@ -588,19 +588,19 @@ to stdout (the HA add-on **Log** panel) at the configured `log_level` and are
 - API (`routes_logs`, prefix `/api/logs`, **owner-gated** `require_owner`):
   `GET /activity?limit=&action=<prefix>` → `AuditLogOut[]` (details JSON parsed),
   `GET /actions` → distinct action names (filter dropdown).
-- UI: an owner-only **Logs** page (nav 📜) — Activity table (When/Who/Action/Item/
+- UI: an owner-only **Logs** page (nav 📜) - Activity table (When/Who/Action/Item/
   Details) with an action filter + row-count selector + refresh, plus the AI-requests
   table. Non-owners who route directly to `/logs` get a friendly "owner only" note.
 - **Retention:** archive/purge of audit + AI logs is now built (see "Data retention"
-  below, #78) — both viewers hide archived rows unless `include_archived`.
+  below, #78) - both viewers hide archived rows unless `include_archived`.
 
-## CSV export (Stage 12 — spec §24.4, §25.1; #132)
+## CSV export (Stage 12 - spec §24.4, §25.1; #132)
 
 A CSV can't embed charts, so we export the *data* and keep the in-app charts for
 the visuals.
 
 - `export_service`: `build_transaction_filters(**params)` is the **single source
-  of truth** for the transaction filter list — both `GET /api/transactions` and
+  of truth** for the transaction filter list - both `GET /api/transactions` and
   the export call it, so "export" always matches "what you see" (a test asserts
   `rows == list total`). `transactions_csv` resolves category/project/account/
   vendor names via id→name maps built once (no N+1) and caps at `MAX_EXPORT_ROWS`
@@ -613,19 +613,19 @@ the visuals.
 - UI: an "⬇ Export CSV" button on Transactions (passes the active filters; the
   client drops limit/offset so it's the whole set) and small "⬇ CSV" links on the
   dashboard category + trends cards. Downloads go through `fetch` (client
-  `downloadCsv`) so the `X-HAFI-Session` MFA header travels with the request — a
+  `downloadCsv`) so the `X-HAFI-Session` MFA header travels with the request - a
   plain `<a download>` wouldn't carry it.
 - **Deferred:** image/PDF export of the charts themselves.
 
-## Per-device UI prefs & cloud-AI disclaimer (Stage 12 — #86, #42)
+## Per-device UI prefs & cloud-AI disclaimer (Stage 12 - #86, #42)
 
 `frontend/src/prefs.ts` holds small, non-sensitive, **per-browser** prefs in
 localStorage (kept separate from `api/client.ts`, all access defensive for
 private-mode):
 - **Dashboard show/hide + reorder (#86/#84):** the Dashboard's "⚙ Customise"
-  toggle hides/shows **and reorders** (▲/▼) every optional card — now the full set
+  toggle hides/shows **and reorders** (▲/▼) every optional card - now the full set
   (heads-up, trends, categories, vendors, geo, projects, members, savings,
-  investments, assets, budgets, business, travel, allowance, processing) — via
+  investments, assets, budgets, business, travel, allowance, processing) - via
   `get/setHiddenDashboardCards` + `get/setDashboardCardOrder`. Hidden cards aren't
   mounted (their queries don't run); the order is resilient to cards added/removed.
 - **Sidebar nav show/hide + reorder (#38/#126):** "✏️ Customise tabs" in the
@@ -641,10 +641,10 @@ private-mode):
 - **Cloud-AI disclaimer (#42):** the first time the user saves a cloud privacy
   mode, `CloudAiDisclaimerDialog` is shown and the save is gated until they
   confirm; `isCloudAiAcknowledged`/`setCloudAiAcknowledged` make it one-time.
-  Frontend-only — no backend/no migration; not synced across devices (view
+  Frontend-only - no backend/no migration; not synced across devices (view
   preferences / local acknowledgement, not household data).
 
-## Data retention & expiration (Stage 12 — spec §28; #78, #147)
+## Data retention & expiration (Stage 12 - spec §28; #78, #147)
 
 A two-stage **archive → purge** lifecycle per data type, **off by default**. The
 policy lives in one JSON setting (`retention_policy`); per type it carries
@@ -652,7 +652,7 @@ policy lives in one JSON setting (`retention_policy`); per type it carries
 
 - **Engine** `retention_service`: `validate_policy` (ints ≥ 0, `archive ≤ purge`,
   bool `auto_purge`, unknown type → `ValueError`), `preview` (the authoritative
-  **removal plan** — per-type `archive_due`/`purge_due` + top-level `pending_purge`
+  **removal plan** - per-type `archive_due`/`purge_due` + top-level `pending_purge`
   = purge-due where `auto_purge` is off, the "awaiting confirm" total; never
   writes), `run(purge_mode)` (`"all"` = owner-confirmed manual run purges every due
   type; `"auto"` = startup sweep purges only `auto_purge` types). Archive always
@@ -669,26 +669,26 @@ policy lives in one JSON setting (`retention_policy`); per type it carries
 - **Triggers:** the startup sweep (`main.py` lifespan, `run_safe`, `purge_mode="auto"`)
   archives + auto-purges; the manual `POST /api/retention/run` (`require_owner_step_up`)
   is `purge_mode="all"`. `GET/PUT /policy` + `GET /preview` are owner-only; **PUT and
-  run are owner + MFA step-up** (the user's call — owner-only always, fresh code when
+  run are owner + MFA step-up** (the user's call - owner-only always, fresh code when
   MFA is on, no lockout otherwise).
 - **Notification:** `security_health_service` adds a dismissible `retention_pending`
-  item when `preview().pending_purge > 0` — how the owner is told *before* a
+  item when `preview().pending_purge > 0` - how the owner is told *before* a
   confirm-required purge (the sweep only archived those).
 - **#147 receipt drop-after-processing:** `receipt_delete_after_processing` setting
-  (default **on**) — `confirm_match` / auto-confirm call `drop_original`, keeping the
+  (default **on**) - `confirm_match` / auto-confirm call `drop_original`, keeping the
   extracted fields.
 - **Transactions (PR #12):** `transactions.archived_at` + a `transactions` retention
   type. Archived txns are excluded from **every** aggregate and the default list via
   `scope.archived_condition()` splatted alongside `account_scope_condition` in
   dashboard/analytics/budget/project/subscription/ai/export; the list + CSV expose an
   `include_archived` toggle and a `POST /transactions/{id}/unarchive` restore. Purge is
-  a bulk `delete(Transaction)` — FK cascade (`PRAGMA foreign_keys=ON`) drops splits +
+  a bulk `delete(Transaction)` - FK cascade (`PRAGMA foreign_keys=ON`) drops splits +
   receipt matches and nulls child_allocations / ai_requests. Age basis = `transaction_date`.
 
 ## Travel / spend-abroad (backlog: holidays by country/currency)
 
 `services/travel_service.py` (read-only, no migration): currency is the proxy for
-"abroad" — any spend in a currency ≠ base. `by_currency` groups foreign spend
+"abroad" - any spend in a currency ≠ base. `by_currency` groups foreign spend
 (money-out, account-scoped + archived-excluded) by currency with a friendly
 `place_for()` label + original and base totals. `detect_trips(gap_days=14)` clusters
 foreign spend into trips by date gap (newest first). `create_project_from_trip`
@@ -713,7 +713,7 @@ tests mock the OCR hop (`tests/test_scanned_statement.py`). No migration.
 ## Business / VAT expenses (backlog: corporate receipts)
 
 `transactions.is_business` (bool) + `transactions.vat_amount` (Numeric, in the txn's
-own currency) — migration `d4e5f6a7b8c9`. No normal aggregate reads them, so they're
+own currency) - migration `d4e5f6a7b8c9`. No normal aggregate reads them, so they're
 inert until a txn is flagged. `business_service.summary` (read-only, account-scoped +
 archived-excluded) totals business money-out + reclaimable VAT (converted to base via
 each txn's `fx_rate`), by category and month. API `routes_business` `/api/business/summary`;
@@ -724,7 +724,7 @@ propagates a matched receipt's `vat_amount` onto the txn (without clobbering a m
 Frontend: `pages/Business.tsx` (💼) + a per-row business toggle, VAT prompt, and "Business
 only" filter on Transactions. `tests/test_business.py`.
 
-## Investments & pensions (post-beta — spec §12.4, §27)
+## Investments & pensions (post-beta - spec §12.4, §27)
 
 `investment_service` over new account types `investment` / `pension` and tables
 `account_values`, `holdings`, `holding_prices` (migrations `c4d5e6f7a8b9`,
@@ -734,7 +734,7 @@ for):
 - **Investment (shares/ISA) = holdings-first.** A `Holding` (ticker, units,
   avg-cost, last-price) yields market value + unrealised gain (±£/%); the account
   value is Σ(units × last price). The cash controls (set-value / contribution /
-  withdrawal) are **rejected with 400** for an investment account — it's valued by
+  withdrawal) are **rejected with 400** for an investment account - it's valued by
   holdings, not a typed-in figure.
 - **Pension = statement value.** `AccountValue` snapshots + ＋contribution／
   －withdrawal; no holdings section.
@@ -752,7 +752,7 @@ for):
 `asset_service` over `assets` + `asset_logs` (migration `d5e6f7a8b9c0`).
 An `Asset` is `car | home | other` with a timeline of `AssetLog` rows.
 
-- **Car:** one consistent **unit system** — imperial (miles · gallons · **MPG**)
+- **Car:** one consistent **unit system** - imperial (miles · gallons · **MPG**)
   or metric (km · litres · **L/100km**), driven by the distance unit; fuel stored
   canonically in litres. Refuel rows (odometer + fuel + cost, full-tank flag) give
   tank-to-tank economy + a per-fill history, plus servicing/running costs.
@@ -760,7 +760,7 @@ An `Asset` is `car | home | other` with a timeline of `AssetLog` rows.
   between readings (rollover skipped), plus maintenance.
 - Household-level (`routes_assets`); UI `pages/Cars.tsx` (🚗) + dashboard card.
 
-## Spending by location — geo + world map (post-beta — #74/#79/#108)
+## Spending by location - geo + world map (post-beta - #74/#79/#108)
 
 `geo.py` resolves a transaction's country by precedence **txn → vendor →
 default → currency** (`country_for`). `dashboard_service.country_breakdown` →
@@ -773,10 +773,10 @@ geocoding service) + a "Spending by location" list; inline country setters on
 Vendors + per-trip on Travel; a `country` filter on the transactions list/CSV.
 All local. `scripts/gen_worldmap.mjs` regenerates the map geometry.
 
-## Paperless-ngx import (post-beta — #72/#110)
+## Paperless-ngx import (post-beta - #72/#110)
 
 `paperless_service`: a one-directional, **outbound-only** pull from the user's own
-Paperless-ngx — we only ever *request* documents; Paperless never sees finance
+Paperless-ngx - we only ever *request* documents; Paperless never sees finance
 data. Off unless both a URL (Settings → Integrations or `HAFI_PAPERLESS_URL`) and
 the secret token (`HAFI_PAPERLESS_TOKEN`, **env-only**) are set. Documents →
 `receipt_service.store_upload` (content-hash dedup) → OCR-if-on. `routes_paperless`
@@ -784,7 +784,7 @@ the secret token (`HAFI_PAPERLESS_TOKEN`, **env-only**) are set. Documents →
 **only when configured**. `tests/test_paperless.py` (offline). See
 [configuration.md](configuration.md) for the setup walkthrough.
 
-## Period over-time charts (post-beta — #116–#118)
+## Period over-time charts (post-beta - #116–#118)
 
 A shared `RangeSelector` (6M/1Y/2Y/5Y) + `OverTimeChart` drive value-/spend-over-
 time on **Investments**, **Savings**, **Travel** and **Projects**; **Business**
@@ -795,7 +795,7 @@ beyond the investment price-history table.
 
 ## Open questions / to scope
 
-- **#29 FX coverage** — Frankfurter is ECB (~30 currencies); add a wider source
+- **#29 FX coverage** - Frankfurter is ECB (~30 currencies); add a wider source
   (e.g. fawazahmed0 API) if exotic currencies are needed.
 
 ## Working agreements
