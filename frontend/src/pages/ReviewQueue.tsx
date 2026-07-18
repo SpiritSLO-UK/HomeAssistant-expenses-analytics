@@ -20,6 +20,7 @@ import {
 import AiBatchPanel from "../components/AiBatchPanel";
 import CloudAiBatchPanel from "../components/CloudAiBatchPanel";
 import { suggestForTransaction } from "../lib/aiSuggest";
+import { useOptimisticSelect } from "../hooks/useOptimisticSelect";
 
 const PAGE = 25;
 
@@ -161,6 +162,10 @@ function ReviewRow({
   const isReceipt = item.item_type === "receipt" && item.item_id != null;
   const [err, setErr] = useState<string | null>(null);
   const fail = (e: unknown) => setErr(String(e instanceof Error ? e.message : e));
+  // Optimistic overlay for the "Categorise…" picker (FE-8): reflect the chosen
+  // category at once and, if the mutation fails, snap the picker back to its
+  // "Categorise…" placeholder. `categorise` keeps its own onError (fail).
+  const categorySelect = useOptimisticSelect<number, number | null>();
 
   const update = useMutation({
     mutationFn: (newStatus: string) => setReviewStatus(item.id, newStatus),
@@ -255,10 +260,14 @@ function ReviewRow({
         {isTxn && !showResolved && (
           <>
             <select
-              defaultValue=""
+              value={categorySelect.valueFor(item.id, null) ?? ""}
               disabled={pending}
               aria-label="Categorise this transaction"
-              onChange={(e) => { if (e.target.value) categorise.mutate(Number(e.target.value)); }}
+              onChange={(e) => {
+                if (!e.target.value) return;
+                const categoryId = Number(e.target.value);
+                categorySelect.choose(item.id, categoryId, () => categorise.mutateAsync(categoryId));
+              }}
             >
               <option value="">Categorise…</option>
               {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -372,6 +381,9 @@ function UncategorisedRow({
 }: Readonly<{ txn: Transaction; categories: { id: number; name: string }[]; aiEnabled: boolean; onDone: () => void }>) {
   const [err, setErr] = useState<string | null>(null);
   const fail = (e: unknown) => setErr(String(e instanceof Error ? e.message : e));
+  // Optimistic overlay for the "Categorise…" picker (FE-8): show the choice at
+  // once and revert to the placeholder on failure. `set` keeps its own onError.
+  const categorySelect = useOptimisticSelect<number, number | null>();
   const set = useMutation({
     mutationFn: (categoryId: number) => categoriseTransaction(txn.id, categoryId),
     onSuccess: () => {
@@ -406,9 +418,13 @@ function UncategorisedRow({
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
         <span style={{ whiteSpace: "nowrap" }}>{txn.amount} {txn.currency}</span>
         <select
-          defaultValue=""
+          value={categorySelect.valueFor(txn.id, null) ?? ""}
           disabled={set.isPending}
-          onChange={(e) => { if (e.target.value) set.mutate(Number(e.target.value)); }}
+          onChange={(e) => {
+            if (!e.target.value) return;
+            const categoryId = Number(e.target.value);
+            categorySelect.choose(txn.id, categoryId, () => set.mutateAsync(categoryId));
+          }}
         >
           <option value="">Categorise…</option>
           {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}

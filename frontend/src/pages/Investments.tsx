@@ -24,6 +24,7 @@ import {
 import { isAmount, parseAmount } from "../lib/num";
 import { useServerState } from "../lib/useServerState";
 import { useConfirm } from "../components/dialogs";
+import { useOptimisticSelect } from "../hooks/useOptimisticSelect";
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -222,6 +223,11 @@ function PricesCard({ onSynced, onError }: Readonly<{ onSynced: () => void; onEr
     onError,
   });
 
+  // Optimistic overlay for the price-source select (FE-8): show the chosen source
+  // at once and revert to the server value if the mutation fails. setSource keeps
+  // its own onError, so the overlay reverts silently. Singleton, keyed by a constant.
+  const sourceSelect = useOptimisticSelect<string, string>();
+
   const source = status.data?.source ?? "manual";
   const ready = status.data?.ready ?? false;
   const failedSuffix = result?.failed ? ` · ${result.failed} not found` : "";
@@ -237,9 +243,12 @@ function PricesCard({ onSynced, onError }: Readonly<{ onSynced: () => void; onEr
         <label className="muted" style={{ fontSize: "0.85rem" }}>
           Source{" "}
           <select
-            value={source}
-            disabled={!canManage || setSource.isPending}
-            onChange={(e) => setSource.mutate(e.target.value)}
+            value={sourceSelect.valueFor("source", source)}
+            disabled={!canManage}
+            onChange={(e) => {
+              const next = e.target.value;
+              sourceSelect.choose("source", next, () => setSource.mutateAsync(next));
+            }}
           >
             {PRICE_SOURCES.map((s) => (
               <option key={s.value} value={s.value}>{s.label}</option>

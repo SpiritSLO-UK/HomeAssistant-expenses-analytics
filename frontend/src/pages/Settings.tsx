@@ -63,6 +63,7 @@ import CloudAiDisclaimerDialog from "../components/CloudAiDisclaimerDialog";
 import { useConfirm } from "../components/dialogs";
 import CountrySelect from "../components/CountrySelect";
 import PaperlessSetupNote from "../components/PaperlessSetupNote";
+import { useOptimisticSelect } from "../hooks/useOptimisticSelect";
 
 const THEME_OPTIONS: { value: ThemePref; label: string }[] = [
   { value: "system", label: "🖥️ System" },
@@ -1423,6 +1424,10 @@ function LoggingCard({
     },
     onError,
   });
+  // Optimistic overlay for the log-level select (FE-8): show the chosen level at
+  // once and revert on failure. `save` keeps its own onError. Singleton, keyed by
+  // a constant.
+  const levelSelect = useOptimisticSelect<string, string>();
   if (me.data && !isAdmin) return null; // owner-only
   const level = settings.data?.log_level ?? "INFO";
   return (
@@ -1431,7 +1436,13 @@ function LoggingCard({
       <div className="form-row">
         <label>
           Log level{" "}
-          <select value={level} disabled={save.isPending} onChange={(e) => save.mutate(e.target.value)}>
+          <select
+            value={levelSelect.valueFor("level", level)}
+            onChange={(e) => {
+              const next = e.target.value;
+              levelSelect.choose("level", next, () => save.mutateAsync(next));
+            }}
+          >
             {["DEBUG", "INFO", "WARNING", "ERROR"].map((l) => (
               <option key={l} value={l}>{l}</option>
             ))}

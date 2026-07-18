@@ -15,6 +15,7 @@ import {
   type Member,
   type User,
 } from "../api/client";
+import { useOptimisticSelect } from "../hooks/useOptimisticSelect";
 
 const STEPS = ["People", "Shared accounts", "Kids' allowance", "Done"];
 const ROLES = ["owner", "member", "viewer", "child"];
@@ -54,6 +55,14 @@ export default function FamilySetup() {
     onSuccess: ok,
     onError: onErr,
   });
+
+  // Optimistic overlays for the select-on-change controls (FE-8): each reflects
+  // the chosen value immediately and, on a failed mutation, snaps back to the
+  // server value. The mutations keep their own onError (onErr) for the message,
+  // so the overlays revert silently. One instance per select-kind, keyed by row id.
+  const roleSelect = useOptimisticSelect<number, string>();
+  const shareSelect = useOptimisticSelect<number, string>();
+  const ownerSelect = useOptimisticSelect<number, number | null>();
 
   if (me.data && !me.data.is_admin) {
     return (
@@ -112,7 +121,14 @@ export default function FamilySetup() {
                   <tr key={u.id} style={{ opacity: u.status === "disabled" ? 0.55 : 1 }}>
                     <td>{u.display_name}{u.id === me.data?.id && <span className="muted"> (you)</span>}</td>
                     <td>
-                      <select value={u.role} disabled={u.id === me.data?.id || role.isPending} onChange={(e) => role.mutate({ id: u.id, role: e.target.value })}>
+                      <select
+                        value={roleSelect.valueFor(u.id, u.role)}
+                        disabled={u.id === me.data?.id}
+                        onChange={(e) => {
+                          const nextRole = e.target.value;
+                          roleSelect.choose(u.id, nextRole, () => role.mutateAsync({ id: u.id, role: nextRole }));
+                        }}
+                      >
                         {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
                       </select>
                     </td>
@@ -150,9 +166,13 @@ export default function FamilySetup() {
                     <td>{a.name}<span className="muted"> · {a.account_type.replace(/_/g, " ")}</span></td>
                     <td>
                       <select
-                        value={a.is_shared ? "shared" : "private"}
-                        disabled={account.isPending}
-                        onChange={(e) => account.mutate({ id: a.id, patch: { is_shared: e.target.value === "shared" } })}
+                        value={shareSelect.valueFor(a.id, a.is_shared ? "shared" : "private")}
+                        onChange={(e) => {
+                          const nextShared = e.target.value === "shared";
+                          shareSelect.choose(a.id, e.target.value, () =>
+                            account.mutateAsync({ id: a.id, patch: { is_shared: nextShared } }),
+                          );
+                        }}
                       >
                         <option value="shared">Shared</option>
                         <option value="private">Private</option>
@@ -160,9 +180,13 @@ export default function FamilySetup() {
                     </td>
                     <td>
                       <select
-                        value={a.owner_user_id ?? ""}
-                        disabled={account.isPending}
-                        onChange={(e) => account.mutate({ id: a.id, patch: { owner_user_id: e.target.value ? Number(e.target.value) : null } })}
+                        value={ownerSelect.valueFor(a.id, a.owner_user_id ?? null) ?? ""}
+                        onChange={(e) => {
+                          const nextOwner = e.target.value ? Number(e.target.value) : null;
+                          ownerSelect.choose(a.id, nextOwner, () =>
+                            account.mutateAsync({ id: a.id, patch: { owner_user_id: nextOwner } }),
+                          );
+                        }}
                       >
                         <option value="">— household —</option>
                         {(members.data ?? []).map((m: Member) => <option key={m.id} value={m.id}>{m.display_name}</option>)}

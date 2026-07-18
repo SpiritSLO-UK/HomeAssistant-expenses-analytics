@@ -16,6 +16,7 @@ import {
 import CountrySelect from "../components/CountrySelect";
 import { useConfirm } from "../components/dialogs";
 import { money } from "../lib/money";
+import { useOptimisticSelect } from "../hooks/useOptimisticSelect";
 
 // How the vendor table can be ordered. Name is the default; the two numeric
 // options sort high→low so the biggest vendors surface first.
@@ -77,6 +78,11 @@ export default function Vendors() {
     onError: fail,
   });
   const remove = useMutation({ mutationFn: (id: number) => deleteVendor(id), onSuccess: invalidate, onError: fail });
+
+  // Optimistic overlay for the per-row country picker (FE-8): show the chosen
+  // country at once and revert to the server value if the mutation fails.
+  // setCountry keeps its own onError (fail), so the overlay reverts silently.
+  const countrySelect = useOptimisticSelect<number, string | null>();
 
   // Merge re-points the source vendor's transactions + aliases onto the target
   // and deletes the source, so refresh the vendor list plus the caches that read
@@ -257,8 +263,12 @@ export default function Vendors() {
                     </td>
                     <td>
                       <CountrySelect
-                        value={v.country}
-                        onChange={(code) => setCountry.mutate({ id: v.id, country: code })}
+                        value={countrySelect.valueFor(v.id, v.country ?? null)}
+                        onChange={(code) =>
+                          countrySelect.choose(v.id, code, () =>
+                            setCountry.mutateAsync({ id: v.id, country: code }),
+                          )
+                        }
                         style={{ minWidth: 140 }}
                       />
                     </td>
