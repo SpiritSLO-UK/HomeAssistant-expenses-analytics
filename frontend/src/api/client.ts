@@ -946,6 +946,7 @@ export interface AIStatus {
   model: string | null;
   configured: boolean;
   has_api_key: boolean;
+  key_source: "env" | "stored" | "none";
 }
 
 export interface ClassifyResult {

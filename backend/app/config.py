@@ -95,9 +95,10 @@ class Settings(BaseSettings):
     mqtt_expire_after_seconds: int = 86400
 
     # --- AI gateway (spec §22). Off by default; opt-in via privacy_mode. ---
-    # The API key for a cloud (or auth'd local) LLM is a secret, so it comes from
-    # the environment (HAFI_AI_API_KEY), never stored in the DB. The endpoint and
-    # model are non-secret and live in DB settings (settings_service).
+    # The API key for a cloud (or auth'd local) LLM is a secret. This env var
+    # (HAFI_AI_API_KEY) always WINS when set. On a standalone instance the UI may
+    # instead persist the key in the DB, encrypted at rest (settings_service,
+    # backlog #9). The endpoint and model are non-secret DB settings.
     ai_api_key: str | None = None
     ai_timeout_seconds: float = 30.0
 

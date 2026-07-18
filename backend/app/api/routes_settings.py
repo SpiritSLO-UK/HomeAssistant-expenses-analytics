@@ -34,6 +34,10 @@ class SettingsUpdate(BaseModel):
     ai_provider: str | None = None  # none | openai_compatible
     ai_base_url: str | None = None
     ai_model: str | None = None
+    # AI provider API key (secret, write-only). Stored ENCRYPTED-AT-REST on a
+    # standalone instance; "" clears it. The env var HAFI_AI_API_KEY still wins.
+    # Never echoed back — GET exposes only has_api_key / key_source (backlog #9).
+    ai_api_key: str | None = None
     ocr_enabled: bool | None = None  # Settings → Services on/off for receipt OCR
     log_level: str | None = None  # DEBUG | INFO | WARNING | ERROR
     investment_price_source: str | None = None  # manual | stooq | alphavantage
@@ -168,6 +172,11 @@ def _apply_ai_settings(db: Session, payload: SettingsUpdate) -> None:
 
     if payload.ai_model is not None:
         settings_service.set_value(db, settings_service.AI_MODEL, payload.ai_model.strip())
+
+    # The API key is a secret: persisted encrypted-at-rest, "" clears it. It is
+    # never read back (no GET field), and the env HAFI_AI_API_KEY still wins.
+    if payload.ai_api_key is not None:
+        settings_service.set_ai_api_key(db, payload.ai_api_key)
 
 
 def _apply_ocr_and_price_source(db: Session, payload: SettingsUpdate) -> None:
