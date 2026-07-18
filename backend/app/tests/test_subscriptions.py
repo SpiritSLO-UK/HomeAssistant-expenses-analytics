@@ -2,6 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import date, timedelta
+from decimal import Decimal
+
+from sqlalchemy import select
+
+from app.models import Account, Subscription, Transaction, Vendor
+from app.services import subscription_service
+
 
 def _curve(rows: list[tuple[str, str, str]], desc: str) -> bytes:
     head = "Date,Description,Amount,Currency,Card,Category\n"
@@ -210,3 +218,107 @@ def test_subscriptions_total_mqtt_sensor(client):
     state = client.get("/api/mqtt/preview").json()["state"]
     assert "subscriptions_total" in state
     assert state["subscriptions_total"] == "9.99"
+
+
+# --- perf: bounded detection scan + narrowed visibility query (results unchanged) ---
+
+def _spend(
+    db,
+    *,
+    when: date,
+    amount: str,
+    account_id: int | None = None,
+    merchant_raw: str | None = None,
+    merchant_id: int | None = None,
+) -> Transaction:
+    """Insert one money-out transaction directly (base_amount = amount, in base
+    currency) for the detection/visibility service tests."""
+    txn = Transaction(
+        account_id=account_id,
+        transaction_date=when,
+        description_raw=merchant_raw or "charge",
+        merchant_raw=merchant_raw,
+        merchant_id=merchant_id,
+        amount=Decimal(amount),
+        currency="GBP",
+        direction="debit",
+        base_amount=Decimal(amount),
+    )
+    db.add(txn)
+    return txn
+
+
+def test_detect_window_keeps_long_history_recurrence(db):
+    # A monthly recurrence spanning ~34 charges (close to, but inside, the 3-year
+    # window anchored on the latest charge). Every occurrence is within the window,
+    # so bounding the scan yields exactly what an unbounded all-time scan would.
+    latest = date(2026, 6, 5)
+    charges = 34
+    for i in range(charges):
+        _spend(db, when=latest - timedelta(days=30 * i), amount="-9.99", merchant_raw="NETFLIX")
+    db.commit()
+
+    result = subscription_service.detect(db)
+    assert result["created"] == 1
+
+    subs = db.scalars(select(Subscription)).all()
+    assert len(subs) == 1
+    sub = subs[0]
+    assert sub.name.upper() == "NETFLIX"
+    assert sub.frequency == "monthly"
+    assert sub.occurrences == charges
+    assert sub.amount == Decimal("9.99")
+    assert sub.status == "active"
+
+
+def test_detect_ignores_spend_far_outside_window(db):
+    # A monthly recurrence that stopped ~5 years before the latest activity is well
+    # outside the 3-year window and must not be (re)detected, while a recent monthly
+    # recurrence that anchors the window still is.
+    latest = date(2026, 6, 1)
+    for i in range(4):
+        _spend(db, when=date(2021, 1, 3) + timedelta(days=30 * i), amount="-20.00", merchant_raw="OLD GYM")
+    for i in range(4):
+        _spend(db, when=latest - timedelta(days=30 * i), amount="-12.00", merchant_raw="NEW STREAM")
+    db.commit()
+
+    subscription_service.detect(db)
+    names = {s.name.upper() for s in db.scalars(select(Subscription)).all()}
+    assert "NEW STREAM" in names
+    assert "OLD GYM" not in names
+
+
+def test_detect_no_spend_returns_zero(db):
+    result = subscription_service.detect(db)
+    assert result == {"created": 0, "updated": 0, "total": 0}
+
+
+def test_visible_subscription_ids_scoped_to_account(db):
+    # Two accounts, three subscriptions: a name-keyed sub backed only by account A,
+    # a name-keyed sub backed only by account B, and a vendor-keyed sub backed by A.
+    acct_a = Account(name="A")
+    acct_b = Account(name="B")
+    db.add_all([acct_a, acct_b])
+    db.flush()
+    vendor = Vendor(canonical_name="acme")
+    db.add(vendor)
+    db.flush()
+
+    _spend(db, account_id=acct_a.id, when=date(2026, 1, 5), amount="-9.99", merchant_raw="NETFLIX")
+    _spend(db, account_id=acct_b.id, when=date(2026, 1, 5), amount="-9.99", merchant_raw="SPOTIFY")
+    _spend(db, account_id=acct_a.id, when=date(2026, 1, 5), amount="-5.00", merchant_raw="ACME", merchant_id=vendor.id)
+
+    sub_netflix = Subscription(name="Netflix", amount=Decimal("9.99"), frequency="monthly", interval_days=30, status="active")
+    sub_spotify = Subscription(name="Spotify", amount=Decimal("9.99"), frequency="monthly", interval_days=30, status="active")
+    sub_acme = Subscription(name="Acme", vendor_id=vendor.id, amount=Decimal("5.00"), frequency="monthly", interval_days=30, status="active")
+    db.add_all([sub_netflix, sub_spotify, sub_acme])
+    db.commit()
+
+    # None (owner/admin) is unrestricted.
+    assert subscription_service.visible_subscription_ids(db, None) is None
+    # Account A sees its name-keyed and vendor-keyed subs, not B's.
+    assert subscription_service.visible_subscription_ids(db, {acct_a.id}) == {sub_netflix.id, sub_acme.id}
+    # Account B sees only its own.
+    assert subscription_service.visible_subscription_ids(db, {acct_b.id}) == {sub_spotify.id}
+    # Empty scope matches nothing (never everything).
+    assert subscription_service.visible_subscription_ids(db, set()) == set()

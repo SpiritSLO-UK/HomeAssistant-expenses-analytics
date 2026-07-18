@@ -57,6 +57,13 @@ _PER_MONTH = {
     "yearly": Decimal("1") / Decimal("12"),
 }
 TWO_DP = Decimal("0.01")
+# Detection only needs enough *recent* history to establish the longest cadence it
+# recognises (yearly — up to ~430d between charges, band above) across at least
+# min_occurrences charges. Bounding the scan to a window anchored on the most
+# recent transaction avoids re-reading an unbounded all-time history every run,
+# while still detecting every recurrence a full scan would for realistic data:
+# ~3 years comfortably spans 3+ yearly charges (and dozens of monthly/weekly ones).
+_DETECT_WINDOW_DAYS = 366 * 3
 
 
 def _classify(median_gap: float) -> str | None:
@@ -203,21 +210,39 @@ def _upsert_subscription(db: Session, vendor_id: int | None, base_currency: str,
     return "updated"
 
 
-def detect(db: Session, min_occurrences: int = 3) -> dict:
-    """Scan transactions and upsert detected subscriptions. Returns counts."""
-    base_currency = settings_service.get_base_currency(db)
-    txns = list(
+def _money_out_conditions() -> list:
+    """Filters for the spend rows detection groups over (money out, not a transfer
+    or duplicate, with a known base-currency amount)."""
+    return [
+        Transaction.is_transfer.is_(False),
+        Transaction.is_duplicate.is_(False),
+        Transaction.base_amount.is_not(None),
+        Transaction.base_amount < 0,  # money out
+    ]
+
+
+def _recent_spend(db: Session) -> list[Transaction]:
+    """Money-out transactions within the detection window (§20.1), anchored on the
+    most recent spend so a large all-time history isn't re-read every run. Empty
+    when there is no spend at all."""
+    conds = _money_out_conditions()
+    latest = db.scalar(select(func.max(Transaction.transaction_date)).where(*conds))
+    if latest is None:
+        return []
+    cutoff = latest - timedelta(days=_DETECT_WINDOW_DAYS)
+    return list(
         db.scalars(
             select(Transaction)
-            .where(
-                Transaction.is_transfer.is_(False),
-                Transaction.is_duplicate.is_(False),
-                Transaction.base_amount.is_not(None),
-                Transaction.base_amount < 0,  # money out
-            )
+            .where(*conds, Transaction.transaction_date >= cutoff)
             .order_by(Transaction.transaction_date)
         ).all()
     )
+
+
+def detect(db: Session, min_occurrences: int = 3) -> dict:
+    """Scan transactions and upsert detected subscriptions. Returns counts."""
+    base_currency = settings_service.get_base_currency(db)
+    txns = _recent_spend(db)
 
     groups: dict[tuple, list[Transaction]] = defaultdict(list)
     for txn in txns:
@@ -247,26 +272,40 @@ def visible_subscription_ids(db: Session, account_ids: set[int] | None) -> set[i
     private account stays hidden."""
     if account_ids is None:
         return None
-    txns = db.scalars(
-        select(Transaction).where(
-            Transaction.is_transfer.is_(False),
-            Transaction.is_duplicate.is_(False),
-            *account_scope_condition(account_ids),
-            *archived_condition(),
-        )
-    ).all()
-    vendor_ids: set[int] = set()
-    name_keys: set[str] = set()
-    for t in txns:
-        kind, value = _group_key(t)
-        (vendor_ids if kind == "v" else name_keys).add(value)
+    # Only the grouping columns are needed, deduped in SQL, so we don't materialise
+    # every visible transaction as an ORM object each call. Vendor-matched rows
+    # contribute a vendor id; the rest contribute a normalised merchant/name key —
+    # the exact same partition ``_group_key`` produces.
+    scope = [
+        Transaction.is_transfer.is_(False),
+        Transaction.is_duplicate.is_(False),
+        *account_scope_condition(account_ids),
+        *archived_condition(),
+    ]
+    vendor_ids: set[int] = set(
+        db.scalars(
+            select(Transaction.merchant_id)
+            .where(*scope, Transaction.merchant_id.is_not(None))
+            .distinct()
+        ).all()
+    )
+    name_keys: set[str] = {
+        (merchant_raw or description_raw or "").strip().lower()
+        for merchant_raw, description_raw in db.execute(
+            select(Transaction.merchant_raw, Transaction.description_raw)
+            .where(*scope, Transaction.merchant_id.is_(None))
+            .distinct()
+        ).all()
+    }
     out: set[int] = set()
-    for sub in db.scalars(select(Subscription)).all():
-        if sub.vendor_id is not None:
-            if sub.vendor_id in vendor_ids:
-                out.add(sub.id)
-        elif (sub.name or "").strip().lower() in name_keys:
-            out.add(sub.id)
+    for sub_id, sub_vendor_id, sub_name in db.execute(
+        select(Subscription.id, Subscription.vendor_id, Subscription.name)
+    ).all():
+        if sub_vendor_id is not None:
+            if sub_vendor_id in vendor_ids:
+                out.add(sub_id)
+        elif (sub_name or "").strip().lower() in name_keys:
+            out.add(sub_id)
     return out
 
 
