@@ -22,6 +22,7 @@ from typing import Any, cast
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import CursorResult, Engine
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import QueuePool
 
 from app.config import settings
 
@@ -86,11 +87,22 @@ def _set_sqlite_pragma(dbapi_connection, _connection_record) -> None:
     cursor.close()
 
 
+# SQLite connections are cheap file handles and WAL mode allows many concurrent
+# readers, so keep a generous pool. The dashboard alone fans out ~10 parallel
+# card queries per load, and a few open tabs / a burst of navigation easily
+# exceed the SQLAlchemy default of 5 + 10 overflow = 15, which then surfaces as a
+# `QueuePool limit ... reached, connection timed out` error (HTTP 500) rather than
+# just being slower. 20 + 30 = 50 gives ample headroom at negligible cost. Write
+# contention is still serialised safely by WAL + `busy_timeout` (see the pragmas).
+_POOL_KW = {"pool_size": 20, "max_overflow": 30, "pool_timeout": 30}
+
+
 def _build_plaintext_engine() -> Engine:
     engine = create_engine(
         settings.database_url,
         connect_args={"check_same_thread": False},
         future=True,
+        **_POOL_KW,
     )
     event.listen(engine, "connect", _set_sqlite_pragma)
     return engine
@@ -115,7 +127,13 @@ def _build_encrypted_engine(passphrase: str) -> Engine:
         conn.execute("PRAGMA synchronous=NORMAL")
         return conn
 
-    return create_engine("sqlite://", creator=_creator, future=True)
+    # The "sqlite://" URL (no file) would default to SingletonThreadPool, which
+    # rejects pool_size/max_overflow; force QueuePool so the encrypted path gets
+    # the same generous pool as the plaintext engine. The creator opens the real
+    # SQLCipher file per connection (check_same_thread=False), so pooling is safe.
+    return create_engine(
+        "sqlite://", creator=_creator, future=True, poolclass=QueuePool, **_POOL_KW
+    )
 
 
 def configure(passphrase: str | None = None) -> None:
