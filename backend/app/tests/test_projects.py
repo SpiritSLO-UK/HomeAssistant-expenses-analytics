@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
@@ -164,6 +164,86 @@ def test_history_ref_is_deterministic(client):
         assert h3["months"][-1]["total"] == "100.00"
     finally:
         db.close()
+
+
+# --- burn-down / run-rate forecast (spec §18.2) ---
+
+def _summary_with_end(client, pid: int, end_date: date | None) -> dict:
+    """summary() for a project after optionally setting its end_date, via a fresh
+    session so first/last come from the imported transactions."""
+    from app.db.session import SessionLocal
+    from app.models import Project
+    from app.services import project_service
+
+    db = SessionLocal()
+    try:
+        proj = db.get(Project, pid)
+        proj.end_date = end_date
+        db.commit()
+        db.refresh(proj)
+        return project_service.summary(db, proj)
+    finally:
+        db.close()
+
+
+def test_forecast_on_track_under_budget(client):
+    """Modest run-rate against a large budget → on_track, with a burn-down remaining,
+    a projected total below budget and an exhaustion date."""
+    # 120 spent over a 10-day window (2026-05-01 → 2026-05-11) ⇒ 12.00/day.
+    _import(client, _curve([("2026-05-01", "TILES A", "-60.00"),
+                            ("2026-05-11", "TILES B", "-60.00")]))
+    pid = client.post("/api/projects", json={"name": "Kitchen", "budget_amount": "5000.00"}).json()["id"]
+    for desc in ("TILES A", "TILES B"):
+        t = _txn(client, desc)
+        assert client.patch(f"/api/transactions/{t['id']}", json={"project_id": pid}).status_code == 200
+
+    # Planned window first→end_date = 30 days ⇒ forecast_total = 12.00 * 30 = 360.00.
+    f = _summary_with_end(client, pid, date(2026, 5, 1) + timedelta(days=30))["forecast"]
+    assert f is not None
+    assert f["run_rate_per_day"] == "12.00"
+    assert f["remaining"] == "4880.00"          # 5000 − 120
+    assert f["forecast_total"] == "360.00"
+    assert f["on_track"] is True
+    assert f["exhaustion_date"] is not None      # rate > 0 and budget not yet spent
+
+
+def test_forecast_over_budget(client):
+    """Same run-rate but a small budget → projected total exceeds budget → not on track."""
+    _import(client, _curve([("2026-05-01", "TILES A", "-60.00"),
+                            ("2026-05-11", "TILES B", "-60.00")]))
+    pid = client.post("/api/projects", json={"name": "Kitchen", "budget_amount": "300.00"}).json()["id"]
+    for desc in ("TILES A", "TILES B"):
+        t = _txn(client, desc)
+        client.patch(f"/api/transactions/{t['id']}", json={"project_id": pid})
+
+    f = _summary_with_end(client, pid, date(2026, 5, 1) + timedelta(days=30))["forecast"]
+    assert f["forecast_total"] == "360.00"       # 12.00/day * 30 days > 300 budget
+    assert f["on_track"] is False
+    assert f["remaining"] == "180.00"            # 300 − 120, still positive (burn-down)
+
+
+def test_forecast_skipped_without_budget(client):
+    """No budget → no forecast (additive field is None, existing fields untouched)."""
+    _import(client, _curve([("2026-05-02", "SHELL FUEL", "-45.00")]))
+    pid = client.post("/api/projects", json={"name": "Car"}).json()["id"]
+    t = _txn(client, "SHELL FUEL")
+    client.patch(f"/api/transactions/{t['id']}", json={"project_id": pid})
+    s = _summary_with_end(client, pid, None)     # service dict (HTTP response_model omits it)
+    assert s["forecast"] is None
+    assert s["spent"] == "45.00"                 # existing shape unchanged
+
+
+def test_forecast_zero_history(client):
+    """Budget set but no spend yet → rate-less burn-down: remaining == budget, no
+    rate / forecast_total / exhaustion, and trivially on track."""
+    pid = client.post("/api/projects", json={"name": "Empty", "budget_amount": "500.00"}).json()["id"]
+    f = _summary_with_end(client, pid, None)["forecast"]
+    assert f is not None
+    assert f["remaining"] == "500.00"
+    assert f["run_rate_per_day"] is None
+    assert f["forecast_total"] is None
+    assert f["exhaustion_date"] is None
+    assert f["on_track"] is True
 
 
 def test_totals_matches_summary_and_is_split_aware(client):
