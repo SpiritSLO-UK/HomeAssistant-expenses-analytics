@@ -12,5 +12,6 @@ tests (spec §32.3). **No real bank data** - every value here is made up.
 | `lloyds-sample.csv` | `lloyds_csv` | Separate Debit/Credit columns |
 | `monzo-sample.csv` | `monzo_csv` | Wide export; signed Amount |
 | `generic-sample.csv` | `generic_csv` | Unknown bank; Money Out/Money In columns (heuristic mapping) |
+| `us-chase-sample.csv` | custom mapping | US bank export: **month-first `M/D/YYYY` dates** (e.g. `6/28/2026`) and a single signed `Amount` column. Import via **Map columns (custom CSV)** with the date order set to **Month-first MM/DD** to exercise US-format parsing. |
 
 Amount convention: negative = money out (debit), positive = money in (credit).

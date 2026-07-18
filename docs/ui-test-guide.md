@@ -53,7 +53,7 @@ the save fails.
 
 - [ ] The new value appears immediately, with no visible "loading" gap.
 - [ ] The change sticks after the list refreshes (it was saved).
-- [ ] (Optional, if you can force a failure such as going offline) a failed save
+- [ ] (Optional; hard to trigger manually - covered by unit tests) a failed save
       snaps the field back to its previous value rather than showing a wrong value.
 
 ## Transactions: export filtered set to CSV
@@ -201,8 +201,12 @@ show clickable category/vendor chips that deep-link into filtered transactions.
 **What changed:** with MFA enabled, Settings shows a backup-codes section to
 generate, copy and download one-time recovery codes.
 
-1. Go to **Settings**. (The backup-codes section only appears when MFA is enabled
-   for your user.)
+> To test this, first enable MFA for your user in **Settings -> Security**
+> (scan the TOTP QR with an authenticator app and confirm a code). The
+> backup-codes section only appears once MFA is enabled. If you are not testing
+> MFA this pass, skip this section.
+
+1. Go to **Settings**.
 2. Read the "N unused backup codes remaining" line.
 3. Generate a new set, then copy to clipboard and download the `.txt`.
 
@@ -216,11 +220,15 @@ generate, copy and download one-time recovery codes.
 **What changed:** a "Map columns (custom CSV)" panel imports any bank CSV, with a
 date-order selector that supports US month-first dates (for example 6/28/2026).
 
+> A ready-made US-format sample lives at
+> [examples/sample-csv/us-chase-sample.csv](../examples/sample-csv/us-chase-sample.csv)
+> (month-first `M/D/YYYY` dates, single signed Amount column).
+
 1. Go to **Import**.
-2. Choose a generic CSV file, then open **Map columns (custom CSV)**.
+2. Choose `us-chase-sample.csv`, then open **Map columns (custom CSV)**.
 3. Map the date, amount and description columns.
 4. Set the date order to **Month-first MM/DD**.
-5. Preview and confirm the import, using a CSV whose dates look like `6/28/2026`.
+5. Preview and confirm the import.
 
 - [ ] The column-mapping panel lets you map each column from the file's headers.
 - [ ] The date-order selector offers Auto, Day-first DD/MM and Month-first MM/DD.
@@ -239,4 +247,5 @@ build, and `docs/architecture.html` renders the architecture diagrams offline.
 ---
 
 When every box is ticked, the unreleased UI changes are verified and the release
-can be cut. Note any failures with the page name and what you saw.
+can be cut. Note any failures with the page name and what you saw; open issues go
+into the private backlog tracker.
