@@ -13,10 +13,11 @@ def test_demo_load_is_idempotent(client):
     total_after_first = client.get("/api/transactions").json()["total"]
     assert total_after_first == first["new"]
 
-    # Re-loading must not duplicate.
+    # Re-loading refreshes (remove-then-reload) rather than stacking a second copy:
+    # the same-day dataset is regenerated, so the transaction total is unchanged —
+    # not doubled — and the manifest never accumulates two datasets.
     second = client.post("/api/backup/demo").json()
-    assert second["new"] == 0
-    assert second["duplicates"] == first["new"]
+    assert second["new"] == first["new"]
     assert client.get("/api/transactions").json()["total"] == total_after_first
 
 
@@ -310,6 +311,98 @@ def test_demo_remove_preserves_user_data(db):
     assert surviving is not None and surviving.amount == Decimal("99.00")
     # Only the user's own budget remains; the demo's budgets are gone.
     assert len(db.scalars(select(Budget.id)).all()) == 1
+
+
+def test_demo_reload_on_a_later_day_does_not_duplicate(db, monkeypatch):
+    """Re-loading the demo on a LATER day refreshes it (remove-then-reload) instead
+    of importing a whole second dataset that stacks in the manifest. The dataset is
+    generated relative to today, so we fake ``date.today()`` to two different days."""
+    from datetime import date as _date
+
+    from sqlalchemy import func, select
+
+    from app.models import Transaction
+    from app.services import demo_service
+
+    class _Day1(_date):
+        @classmethod
+        def today(cls):
+            return _date(2026, 3, 1)
+
+    class _Day30(_date):
+        @classmethod
+        def today(cls):
+            return _date(2026, 3, 31)
+
+    monkeypatch.setattr(demo_service, "date", _Day1)
+    demo_service.load_demo(db)
+    first_total = db.scalar(select(func.count()).select_from(Transaction))
+    assert first_total > 0
+
+    # A later day → shifted dates would import an entirely new dataset before the fix.
+    monkeypatch.setattr(demo_service, "date", _Day30)
+    demo_service.load_demo(db)
+    second_total = db.scalar(select(func.count()).select_from(Transaction))
+    assert second_total == first_total  # refreshed in place, not doubled
+
+
+def test_demo_remove_reverts_account_claim_and_restores_log_level(db):
+    """On removal the demo undoes the owner it claimed on a KEPT account (a real
+    import also used it) and restores the log level the user had before loading —
+    neither should leak the demo's state into the user's real config."""
+    from app.models import Account, Statement, Transaction, User
+    from app.services import demo_service, settings_service
+    from app.services.household_service import get_or_create_default_household
+
+    household = get_or_create_default_household(db)
+    owner = User(
+        household_id=household.id,
+        external_id="owner-1",
+        display_name="Owner",
+        role="owner",
+        status="approved",
+        is_active=True,
+    )
+    db.add(owner)
+    # A log level the user chose *before* ever loading the demo.
+    settings_service.set_value(db, settings_service.LOG_LEVEL, "WARNING")
+    db.commit()
+    owner_id = owner.id
+
+    demo_service.load_demo(db)
+    # During the demo, logging is flipped to DEBUG (intended), and the main account
+    # is claimed for the owner.
+    assert settings_service.get(db, settings_service.LOG_LEVEL) == "DEBUG"
+    manifest = json.loads(settings_service.get(db, settings_service.DEMO_MANIFEST))
+    claimed_id = manifest["claimed_account"]
+    assert db.get(Account, claimed_id).owner_user_id == owner_id
+
+    # A real (non-demo) transaction on the claimed account so removal KEEPS the
+    # account (its owner claim must be reverted, not the account deleted).
+    real_stmt = Statement(account_id=claimed_id, source_filename="real.csv", status="imported")
+    db.add(real_stmt)
+    db.flush()
+    db.add(
+        Transaction(
+            household_id=household.id,
+            account_id=claimed_id,
+            statement_id=real_stmt.id,
+            transaction_date=date(2026, 3, 15),
+            description_raw="REAL SPEND",
+            amount=Decimal("-5.00"),
+            direction="debit",
+            currency="GBP",
+        )
+    )
+    db.commit()
+
+    demo_service.remove_demo(db)
+
+    kept = db.get(Account, claimed_id)
+    assert kept is not None  # survived (real txn still references it)
+    assert kept.owner_user_id is None  # the demo's owner claim was reverted
+    # The user's pre-demo log level is restored (not clobbered to the default).
+    assert settings_service.get(db, settings_service.LOG_LEVEL) == "WARNING"
 
 
 def test_database_backup_download(client):
