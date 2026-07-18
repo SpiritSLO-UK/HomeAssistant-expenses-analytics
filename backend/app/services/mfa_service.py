@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
 import secrets
 from datetime import UTC, datetime, timedelta
 
@@ -33,6 +34,10 @@ ISSUER = "HA Finance"
 SESSION_TTL = timedelta(hours=12)
 # How recently a TOTP must have been entered to perform an admin action.
 STEP_UP_TTL = timedelta(minutes=10)
+# Cap on stored sessions per user: re-verifying from many devices/browsers (or a
+# script) can't grow ``user_sessions`` without bound. On each new verification we
+# evict the oldest beyond this many (LRU by creation).
+MAX_SESSIONS_PER_USER = 10
 
 # Online brute-force throttle on MFA code checks (CR-SEC-6). Per-user, in memory:
 # an attacker can't restart the process, so a process-lifetime sliding window is
@@ -50,6 +55,25 @@ def _now() -> datetime:
 
 
 def _hash_token(token: str) -> str:
+    """Hash a raw session token for storage and lookup.
+
+    When an app key (``HAFI_DB_KEY``) is configured the digest is keyed with it
+    via HMAC-SHA256, so a stolen ``user_sessions`` table can't be turned into a
+    forged token without also knowing the server key (a bare unsalted hash of a
+    guessed/leaked token would otherwise match a row directly). With no app key
+    set we fall back to a plain SHA-256 — the same key-availability posture as
+    the TOTP-secret encryption above. Both digests are 64 hex chars, matching the
+    ``token_hash`` column.
+
+    NOTE: enabling a key (or rotating it) changes every token's hash, so existing
+    sessions stop matching and users re-verify once — acceptable given the
+    12-hour session TTL.
+    """
+    key = _app_key()
+    if key:
+        return hmac.new(
+            key.encode("utf-8"), token.encode("utf-8"), hashlib.sha256
+        ).hexdigest()
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
@@ -192,6 +216,11 @@ def enable(db: Session, user: User, code: str, scope: str | None = None) -> bool
     user.mfa_enabled = True
     user.mfa_scope = scope if scope in MFA_SCOPES else "app_admin"
     user.mfa_last_counter = None  # new secret → its own timeline (CR-SEC-5)
+    # A re-enrolment mints a brand-new secret; any sessions opened against the
+    # OLD secret must not outlive it (they were second-factor'd with a factor
+    # that no longer exists). Drop every session so only ones verified against
+    # the new secret are valid. On a first-time enable there are none to drop.
+    db.execute(delete(UserSession).where(UserSession.user_id == user.id))
     db.commit()
     return True
 
@@ -212,6 +241,22 @@ def disable(db: Session, user: User, code: str) -> bool:
 
 
 # --- Sessions ----------------------------------------------------------------
+
+
+def _evict_excess_sessions(db: Session, user_id: int) -> None:
+    """Keep at most ``MAX_SESSIONS_PER_USER`` newest sessions; drop the rest.
+
+    Ordered newest-first by creation (id breaks same-timestamp ties, so the row
+    just added — highest id — is always kept), then everything past the cap is
+    deleted. Bounds per-user session growth (backlog item)."""
+    excess = db.scalars(
+        select(UserSession.id)
+        .where(UserSession.user_id == user_id)
+        .order_by(UserSession.created_at.desc(), UserSession.id.desc())
+        .offset(MAX_SESSIONS_PER_USER)
+    ).all()
+    if excess:
+        db.execute(delete(UserSession).where(UserSession.id.in_(excess)))
 
 
 def verify_and_open(db: Session, user: User, code: str) -> str | None:
@@ -247,6 +292,8 @@ def verify_and_open(db: Session, user: User, code: str) -> str | None:
             last_step_up_at=now,
         )
     )
+    db.flush()  # assign the new row its id/created_at before we pick what to evict
+    _evict_excess_sessions(db, user.id)
     db.commit()
     return raw
 
