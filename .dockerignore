@@ -15,6 +15,9 @@
 .idea
 .mcp.json
 scripts
+# Agent scratch + git worktrees live here (full repo copies); dev-only, and
+# excluding it keeps the build context sent to the Docker daemon small.
+.claude
 
 # --- Docs, samples and spec (not needed at runtime) ---
 docs
