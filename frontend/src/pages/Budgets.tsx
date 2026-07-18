@@ -12,6 +12,8 @@ import {
   type BudgetSummaryItem,
 } from "../api/client";
 import { useConfirm } from "../components/dialogs";
+import ListRow from "../components/ListRow";
+import ProgressBar from "../components/ProgressBar";
 
 function thisMonth(): string {
   const d = new Date();
@@ -165,7 +167,7 @@ function BudgetRow({
     enabled: open,
   });
   return (
-    <div className="budget-row" style={{ padding: "10px 0", borderBottom: "1px solid var(--border, #2222)" }}>
+    <ListRow className="budget-row">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
         <div>
           <button className="link-btn" style={{ fontWeight: 700 }} onClick={() => setOpen((v) => !v)}>
@@ -180,15 +182,7 @@ function BudgetRow({
           <button className="link-btn" onClick={onDelete}>delete</button>
         </div>
       </div>
-      <div
-        style={{
-          marginTop: 6, height: 10, borderRadius: 5, background: "rgba(127,127,127,0.22)",
-          overflow: "hidden",
-        }}
-        title={`${b.percent}%`}
-      >
-        <div style={{ width: `${Math.min(b.percent, 100)}%`, height: "100%", background: colour }} />
-      </div>
+      <ProgressBar percent={b.percent} color={colour} title={`${b.percent}%`} />
       <div className="muted" style={{ marginTop: 4, fontSize: "0.85rem" }}>
         {b.spent} / {b.amount} {base} spent · {b.remaining} {base} {Number(b.remaining) < 0 ? "over" : "left"} · {b.percent}%
         {annual && <span> · annual cap</span>}
@@ -228,7 +222,7 @@ function BudgetRow({
           )}
         </div>
       )}
-    </div>
+    </ListRow>
   );
 }
 

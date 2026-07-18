@@ -20,6 +20,8 @@ import { isAmount, parseAmount } from "../lib/num";
 import { money } from "../lib/money";
 import { useServerState } from "../lib/useServerState";
 import { useConfirm, usePrompt } from "../components/dialogs";
+import ListRow from "../components/ListRow";
+import ProgressBar from "../components/ProgressBar";
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -187,7 +189,7 @@ function AccountCard({
     .reverse();
 
   return (
-    <div style={{ borderTop: "1px solid #2a2a2a", padding: "12px 0" }}>
+    <ListRow>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
         <div>
           <button className="link-btn" style={{ fontWeight: 700 }} onClick={() => setOpen((v) => !v)}>
@@ -290,7 +292,7 @@ function AccountCard({
           </div>
         </div>
       )}
-    </div>
+    </ListRow>
   );
 }
 
@@ -417,9 +419,7 @@ function GoalsCard({
                 </span>
                 <span className="muted">{g.current} / {g.target_amount} {base}</span>
               </div>
-              <div style={{ background: "#2a2a2a", borderRadius: 4, height: 8, marginTop: 4, overflow: "hidden" }}>
-                <div style={{ width: `${Math.min(100, g.percent)}%`, height: "100%", background: done ? "#3aa55a" : "#6aa9ff" }} />
-              </div>
+              <ProgressBar percent={g.percent} color={done ? "#3aa55a" : "#6aa9ff"} title={`${g.percent}%`} />
               <div style={{ marginTop: 4, fontSize: "0.85rem" }}>
                 <span className="muted">{g.percent}%</span>
                 {!g.account_id && (
