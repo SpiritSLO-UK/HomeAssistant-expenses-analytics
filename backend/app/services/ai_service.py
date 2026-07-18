@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session
 from app.config import settings as env_settings
 from app.logging import get_logger
 from app.models import AIRequest, Category, Transaction
-from app.services import redaction, review_service, settings_service
+from app.services import ai_guard, redaction, review_service, settings_service
 from app.services.ai_provider import AIError, AIProvider, NoAIProvider, OpenAICompatibleProvider
 from app.services.household_service import get_or_create_default_household
 from app.services.rule_service import MANUAL_CONFIDENCE
@@ -430,6 +430,12 @@ def _require_vision(db: Session, *, approved: bool = False) -> tuple[AIProvider,
     mode = settings_service.get_privacy_mode(db)
     if mode in OFF_MODES:
         raise AIDisabled("AI is off — enable a local or cloud mode to extract images.")
+    # The image-extract routes live outside routes_ai's abuse guard, so enforce
+    # the daily AI budget here too, before any provider dispatch (same style as
+    # the image-size cap below; see services/ai_guard.py).
+    budget = ai_guard.daily_cap_reached(db)
+    if budget is not None:
+        raise AIDisabled(ai_guard.daily_budget_message(*budget))
     # A raw statement/receipt image can't be redacted, so an automatic cloud mode
     # would leak the whole image on a frontend-bypassable call. Refuse cloud_auto
     # unless this specific request was explicitly approved (CR-SEC-10).

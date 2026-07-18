@@ -95,6 +95,18 @@ class Settings(BaseSettings):
     ai_api_key: str | None = None
     ai_timeout_seconds: float = 30.0
 
+    # --- AI abuse guards (see services/ai_guard.py). Each knob: 0 = disabled.
+    # Ceilings against a hostile-but-authenticated caller, not throttles -
+    # normal single-user use never reaches them.
+    # Per-user sliding-window limit on the AI-dispatching POST routes (429).
+    ai_rate_limit_per_minute: int = 30
+    # Max declared request-body size for those routes, in bytes (413). Raw
+    # image uploads have their own separate 15 MB cap in uploads.py.
+    ai_max_payload_bytes: int = 100 * 1024
+    # Max AI requests per UTC day, counted from AIRequest audit rows (429).
+    # A request-count budget: token counts are not stored per request.
+    ai_daily_request_cap: int = 500
+
     # --- Investment price feed (spec §27). Off by default (manual). A keyed
     # provider (e.g. Alpha Vantage) reads its API key here; keyless sources
     # (Stooq) and manual mode need nothing. Only ticker symbols are ever sent —

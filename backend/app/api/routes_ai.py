@@ -7,8 +7,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.db.session import get_db
-from app.models import AIRequest, Transaction
+from app.models import AIRequest, Transaction, User
 from app.schemas.ai import (
     AIRequestOut,
     AIStatus,
@@ -20,15 +21,55 @@ from app.schemas.ai import (
     CloudBatchSendRequest,
     CloudBatchSendResult,
 )
-from app.services import ai_service, auth_service
+from app.services import ai_guard, ai_service, auth_service
 from app.services.ai_provider import AIError
 from app.services.ai_service import AIDisabled
+from app.services.auth_service import get_current_user
 
-router = APIRouter(prefix="/ai", tags=["ai"])
+# 429/413 come from the shared abuse guard below, so document them router-wide
+# (same pattern as the MFA lockout in routes_auth).
+router = APIRouter(
+    prefix="/ai",
+    tags=["ai"],
+    responses={
+        413: {"description": "Request body exceeds the AI payload cap"},
+        429: {"description": "AI rate limit or daily AI budget reached"},
+    },
+)
 
 
 def _scope(request: Request, db: Session) -> set[int] | None:
     return auth_service.visible_account_scope(request, db)
+
+
+def _ai_guard(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> None:
+    """Abuse guard on the AI-dispatching POST routes (services/ai_guard.py):
+    payload-size cap (413), per-user rate limit (429), daily budget (429).
+    Cheap local routes (/apply, /requests/{id}/reject) dispatch no AI call and
+    are deliberately not guarded."""
+    cap = ai_guard.oversize_payload_cap(request.headers.get("content-length"))
+    if cap is not None:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Request body exceeds the AI payload cap ({cap} bytes).",
+        )
+    wait = ai_guard.rate_limit_wait_seconds(user.id)
+    if wait > 0:
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"AI rate limit reached ({settings.ai_rate_limit_per_minute} requests/minute). "
+                f"Try again in about {wait} second(s)."
+            ),
+            headers={"Retry-After": str(wait)},
+        )
+    budget = ai_guard.daily_cap_reached(db)
+    if budget is not None:
+        raise HTTPException(status_code=429, detail=ai_guard.daily_budget_message(*budget))
 
 
 @router.get("/status", response_model=AIStatus)
@@ -36,7 +77,7 @@ def ai_status(db: Annotated[Session, Depends(get_db)]) -> dict:
     return ai_service.status(db)
 
 
-@router.post("/test")
+@router.post("/test", dependencies=[Depends(_ai_guard)])
 def ai_test(db: Annotated[Session, Depends(get_db)]) -> dict:
     """Probe the configured AI endpoint/key/model with a tiny request and report
     ``{ok, message, ...}``. Always 200 — a provider error is reported, not raised."""
@@ -55,6 +96,7 @@ def ai_requests(
 @router.post(
     "/classify/{transaction_id}",
     response_model=ClassifyResult,
+    dependencies=[Depends(_ai_guard)],
     responses={
         400: {"description": "Bad request"},
         404: {"description": "Not found"},
@@ -87,6 +129,7 @@ def _get_request(db: Session, request_id: int) -> AIRequest:
 @router.post(
     "/requests/{request_id}/approve",
     response_model=ClassifyResult,
+    dependencies=[Depends(_ai_guard)],
     responses={
         400: {"description": "Bad request"},
         404: {"description": "Not found"},
@@ -117,6 +160,7 @@ def reject_request(request_id: int, db: Annotated[Session, Depends(get_db)]) -> 
 @router.post(
     "/classify-batch",
     response_model=BatchResult,
+    dependencies=[Depends(_ai_guard)],
     responses={400: {"description": "Bad request"}, 502: {"description": "Upstream error"}},
 )
 def classify_batch(
@@ -146,6 +190,7 @@ def apply(payload: ApplyRequest, db: Annotated[Session, Depends(get_db)]) -> dic
 @router.post(
     "/cloud-batch/prepare",
     response_model=CloudBatchPreview,
+    dependencies=[Depends(_ai_guard)],
     responses={400: {"description": "Bad request"}, 502: {"description": "Upstream error"}},
 )
 def cloud_batch_prepare(
@@ -168,6 +213,7 @@ def cloud_batch_prepare(
 @router.post(
     "/cloud-batch/send",
     response_model=CloudBatchSendResult,
+    dependencies=[Depends(_ai_guard)],
     responses={400: {"description": "Bad request"}, 502: {"description": "Upstream error"}},
 )
 def cloud_batch_send(payload: CloudBatchSendRequest, db: Annotated[Session, Depends(get_db)]) -> dict:
