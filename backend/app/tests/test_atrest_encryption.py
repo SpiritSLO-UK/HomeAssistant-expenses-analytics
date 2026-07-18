@@ -78,6 +78,43 @@ def test_disable_wrong_passphrase(client, restore_plaintext):
     assert res.status_code == 400
 
 
+def test_verify_passphrase_distinguishes_wrong_from_missing_driver(client, restore_plaintext, monkeypatch):
+    """A wrong passphrase is a definite answer (False); an unavailable SQLCipher
+    driver must NOT be flattened to the same False — it surfaces distinctly so the
+    UI can tell "incorrect" from "can't check" (was: any exception → False)."""
+    client.post("/api/security/enable", json={"passphrase": "hunter2", "unlock_mode": "prompt"})
+
+    assert security_service.verify_passphrase("hunter2") is True
+    assert security_service.verify_passphrase("wrong") is False  # genuine wrong pass
+
+    # Simulate the driver being unavailable → distinct error, not a silent False.
+    monkeypatch.setattr(security_service, "sqlcipher_available", lambda: False)
+    with pytest.raises(security_service.EncryptionUnavailableError):
+        security_service.verify_passphrase("hunter2")
+
+
+def test_enable_encryption_failure_leaves_original_intact(client, restore_plaintext, monkeypatch):
+    """Verify-before-replace: if the freshly-encrypted copy fails verification, the
+    plaintext original survives untouched (no os.replace ran). Earlier the move
+    happened first, so a bad export destroyed the only copy (data loss)."""
+    client.post("/api/backup/demo")
+    total = client.get("/api/transactions").json()["total"]
+    assert total > 0
+    assert _header()[: len(SQLITE_MAGIC)] == SQLITE_MAGIC  # starts as plaintext
+
+    # A real sqlcipher_export runs, then verification of the temp is forced to fail.
+    monkeypatch.setattr(security_service, "_passphrase_opens", lambda *a, **k: False)
+    with pytest.raises(RuntimeError, match="left intact"):
+        security_service.enable_encryption("hunter2", "prompt")
+
+    # Original DB is still plaintext, encryption was NOT recorded, the temp is cleaned.
+    assert _header()[: len(SQLITE_MAGIC)] == SQLITE_MAGIC
+    assert security_service.read_marker() is None
+    assert not Path(settings.database_path + ".enctmp").exists()
+    # …and the data is still present and served from the untouched original.
+    assert client.get("/api/transactions").json()["total"] == total
+
+
 def test_stored_key_unlocks_on_restart(client, restore_plaintext, monkeypatch):
     """Stored unlock mode: a matching HAFI_DB_KEY auto-unlocks on restart, a wrong
     one locks (rather than building a broken engine), and status reflects whether
