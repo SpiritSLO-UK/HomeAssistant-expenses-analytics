@@ -131,7 +131,6 @@ def test_list_items_filters_by_type_and_severity(db):
 
 
 def test_bulk_resolve_updates_many_and_skips_out_of_scope(db):
-    from app.models import ReviewItem
     from app.services import review_service
 
     a = review_service.add(db, item_type="vendor", item_id=10, reason="unknown_vendor")
@@ -164,15 +163,13 @@ def test_bulk_resolve_rejects_bad_status(db):
 
 
 def _file_two_review_items(client):
-    # Upload two receipts that can't match -> two open review items.
-    ids = []
-    for _ in range(2):
-        rid = _upload(client).json()["id"]
+    # Upload two DISTINCT receipts (distinct content so they don't dedupe on the
+    # file hash) that can't match -> two open review items.
+    for n in range(2):
+        rid = _upload(client, content=f"unmatched-{n}".encode(), name=f"r{n}.png").json()["id"]
         client.patch(f"/api/receipts/{rid}", json={"total_amount": "5.00"})
         client.post(f"/api/receipts/{rid}/match")
-    for item in client.get("/api/review?status=open").json():
-        ids.append(item["id"])
-    return ids
+    return [item["id"] for item in client.get("/api/review?status=open").json()]
 
 
 def test_bulk_resolve_route_returns_count(client):

@@ -18,9 +18,8 @@ never write.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-
 from collections.abc import Sequence
+from datetime import UTC, datetime
 
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
