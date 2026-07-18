@@ -191,6 +191,71 @@ jobs:
           docker rm -f hafi-enc || true
           docker volume rm hafi-enc-data || true
 
+  root-owned-data:
+    name: Root-owned /data (non-root container)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Build image
+        run: docker build -f addon/Dockerfile -t ha-finance-intelligence:ci .
+
+      # Home Assistant's Supervisor mounts /data root-owned, but the `docker` smoke
+      # test runs with no volume so that path stays untested. Reproduce it here: a
+      # named volume forced to root ownership. run.sh (backlog #372) must chown /data
+      # to 10001 while it is still root, then re-exec itself unprivileged via gosu,
+      # so the app can write a mount the Supervisor handed it as root.
+      - name: Create a root-owned /data volume
+        run: |
+          set -e
+          docker volume create hafi_rootvol
+          docker run --rm -v hafi_rootvol:/data alpine chown -R 0:0 /data
+
+      - name: Start the app on the root-owned volume
+        run: docker run -d --name hafi-rootvol -p 8099:8099 -v hafi_rootvol:/data ha-finance-intelligence:ci
+
+      - name: Wait for health
+        run: |
+          set -e
+          ok=0
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8099/api/health | grep -q '"status":"ok"'; then
+              echo "health ok"; ok=1; break
+            fi
+            sleep 2
+          done
+          if [ "$ok" != "1" ]; then echo "::error::health check failed on root-owned /data"; docker logs hafi-rootvol; exit 1; fi
+
+      # Prove the APP process itself runs unprivileged. `docker top` reads the uid
+      # from the host, so it reports the real uid of the running app process.
+      # (`docker exec ... id` would only report the container's default user, not
+      # this process, so it cannot catch a failed privilege drop.)
+      - name: Assert the app runs as uid 10001 (not root)
+        run: |
+          set -e
+          docker top hafi-rootvol -o uid,cmd
+          uid=$(docker top hafi-rootvol -o uid,cmd | grep 'app.main' | awk '{print $1}' | head -n1)
+          echo "app.main uid: ${uid:-<none>}"
+          if [ -z "$uid" ]; then echo "::error::could not find the app.main process"; docker logs hafi-rootvol; exit 1; fi
+          if [ "$uid" != "10001" ]; then echo "::error::app runs as uid $uid, expected 10001 (non-root)"; docker logs hafi-rootvol; exit 1; fi
+          echo "app runs unprivileged (uid 10001)"
+
+      # Prove /data self-healed: run.sh chowned the root-owned mount to 10001 so the
+      # unprivileged app can actually write the DB there.
+      - name: Assert /data self-healed to uid 10001
+        run: |
+          set -e
+          owner=$(docker run --rm -v hafi_rootvol:/data alpine stat -c '%u' /data)
+          echo "/data owner uid: $owner"
+          if [ "$owner" != "10001" ]; then echo "::error::/data still owned by uid $owner, expected 10001"; exit 1; fi
+          echo "/data self-healed to uid 10001"
+
+      - name: Teardown
+        if: always()
+        run: |
+          docker rm -f hafi-rootvol || true
+          docker volume rm hafi_rootvol || true
+
   e2e:
     name: E2E (Playwright)
     runs-on: ubuntu-latest
