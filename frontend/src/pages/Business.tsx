@@ -8,6 +8,7 @@ import {
   type BusinessPeriodRow,
   type Transaction,
 } from "../api/client";
+import { money } from "../lib/money";
 
 const PERIODS: { key: string; label: string }[] = [
   { key: "day", label: "Day" },
@@ -218,9 +219,9 @@ function PeriodTxns({ row, cur }: Readonly<{ row: BusinessPeriodRow; cur: string
             </span>
             <span style={{ whiteSpace: "nowrap" }}>
               {t.base_amount != null
-                ? `${t.base_amount} ${cur}`
-                : `${t.amount} ${t.currency}`}
-              {t.vat_amount ? <span className="muted"> · VAT {t.vat_amount}</span> : null}
+                ? money(t.base_amount, cur)
+                : money(t.amount, t.currency)}
+              {t.vat_amount ? <span className="muted"> · VAT {money(t.vat_amount, t.currency)}</span> : null}
             </span>
           </li>
         ))}
