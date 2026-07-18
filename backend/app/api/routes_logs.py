@@ -35,8 +35,21 @@ def activity(
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
     action: Annotated[str | None, Query(description="Filter by action-name prefix")] = None,
     include_archived: Annotated[bool, Query(description="Include archived (aged-out) entries")] = False,
+    q: Annotated[str | None, Query(description="Case-insensitive free-text match on action + details")] = None,
+    actor: Annotated[str | None, Query(description="Case-insensitive substring match on the actor name")] = None,
+    date_from: Annotated[date | None, Query(description="Only entries on or after this date (ISO)")] = None,
+    date_to: Annotated[date | None, Query(description="Only entries on or before this date (ISO)")] = None,
 ) -> list[dict]:
-    entries = audit_service.recent(db, limit=limit, action_prefix=action, include_archived=include_archived)
+    entries = audit_service.recent(
+        db,
+        limit=limit,
+        action_prefix=action,
+        include_archived=include_archived,
+        q=q,
+        actor=actor,
+        date_from=date_from,
+        date_to=date_to,
+    )
     return [audit_service.to_dict(e) for e in entries]
 
 
@@ -52,11 +65,24 @@ def export_audit(
     _owner: Annotated[User, Depends(require_owner)],
     action: Annotated[str | None, Query(description="Filter by action-name prefix")] = None,
     include_archived: Annotated[bool, Query(description="Include archived (aged-out) entries")] = False,
+    q: Annotated[str | None, Query(description="Case-insensitive free-text match on action + details")] = None,
+    actor: Annotated[str | None, Query(description="Case-insensitive substring match on the actor name")] = None,
+    date_from: Annotated[date | None, Query(description="Only entries on or after this date (ISO)")] = None,
+    date_to: Annotated[date | None, Query(description="Only entries on or before this date (ISO)")] = None,
 ) -> Response:
     """Download the activity log as CSV. Owner-only, like the rest of this router —
     the audit log can reveal sensitive user-management actions. Honours the same
-    action-prefix / archived filters as the ``/activity`` listing."""
-    rows = audit_service.export_audit(db, action_prefix=action, include_archived=include_archived)
+    action-prefix / free-text / actor / date-range / archived filters as the
+    ``/activity`` listing, so a filtered view exports what you see."""
+    rows = audit_service.export_audit(
+        db,
+        action_prefix=action,
+        include_archived=include_archived,
+        q=q,
+        actor=actor,
+        date_from=date_from,
+        date_to=date_to,
+    )
     filename = f"audit-log-{date.today().isoformat()}.csv"
     # utf-8-sig writes a BOM so Excel detects UTF-8 correctly (matches routes_export).
     return Response(
