@@ -224,6 +224,77 @@ def test_small_details_are_stored_verbatim(db):
     assert audit_service.to_dict(entry)["details"] == payload
 
 
+def test_export_audit_returns_rows_for_the_household(db):
+    # export_audit reuses the recent() path and returns CSV-ready rows carrying the
+    # household name and the already-capped details cell.
+    from app.models import Household
+    from app.services import audit_service
+
+    household = Household(name="Home", currency="GBP", mode="single")
+    db.add(household)
+    db.flush()
+    audit_service.record(
+        db, action="update_user", actor="Al", details={"role": "owner"},
+        household_id=household.id,
+    )
+    db.commit()
+
+    rows = audit_service.export_audit(db)
+    row = next(r for r in rows if r["action"] == "update_user")
+    assert row["actor"] == "Al"
+    assert row["household"] == "Home"
+    assert "owner" in row["details"]  # the serialised details blob
+    assert set(audit_service.AUDIT_EXPORT_HEADERS) <= set(row)
+
+
+def test_export_audit_action_prefix_filters(db):
+    from app.services import audit_service
+
+    audit_service.record(db, action="update_user")
+    audit_service.record(db, action="load_demo")
+    db.commit()
+
+    actions = {r["action"] for r in audit_service.export_audit(db, action_prefix="update")}
+    assert actions == {"update_user"}
+
+
+def test_audit_csv_escapes_cells(db):
+    # A details cell with a comma/quote must be quoted by csv.writer, never injected
+    # raw into the CSV structure.
+    from app.services import audit_service
+
+    rows = [
+        {
+            "id": 1, "timestamp": "2026-01-01T00:00:00", "actor": 'A,"B',
+            "action": "x", "household": "Home", "details": '{"k": "a,b"}',
+        }
+    ]
+    text = audit_service.audit_csv(rows)
+    lines = text.splitlines()
+    assert lines[0] == ",".join(audit_service.AUDIT_EXPORT_HEADERS)
+    assert '"A,""B"' in text  # the comma/quote cell is quoted + doubled
+
+
+def test_audit_export_endpoint_is_owner_only(client):
+    _make_user(client, "ha-ex", "Ex", role="viewer")
+    r = client.get("/api/logs/audit/export.csv", headers=_hdr("ha-ex", "Ex"))
+    assert r.status_code == 403
+    _make_user(client, "ha-em", "Em", role="member")
+    assert client.get("/api/logs/audit/export.csv", headers=_hdr("ha-em", "Em")).status_code == 403
+
+
+def test_audit_export_endpoint_returns_csv_download(client):
+    _make_user(client, "ha-ow", "Ow")  # PATCH records an update_user entry
+    r = client.get("/api/logs/audit/export.csv")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/csv")
+    assert "attachment; filename=" in r.headers["content-disposition"]
+    assert ".csv" in r.headers["content-disposition"]
+    body = r.content.decode("utf-8-sig")
+    assert body.splitlines()[0] == "id,timestamp,actor,action,household,details"
+    assert "update_user" in body
+
+
 def test_oversized_details_are_truncated_and_bounded(db):
     # A large details payload is capped to a compact marker so the audit row
     # stays bounded, and recording still succeeds (SR-E8).
