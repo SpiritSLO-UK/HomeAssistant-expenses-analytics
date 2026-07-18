@@ -140,7 +140,10 @@ test.describe("task flows: settings, users, error paths", () => {
 
     await gotoPage(page, { route: "/settings", heading: "Settings" });
     const card = page.locator(".card").filter({ hasText: "Merge duplicate tags" });
-    await expect(card.getByText(name)).toBeVisible();
+    // The tag name renders in the usage-list span AND in both merge <select>
+    // options, so scope to the list span (not options) to avoid a strict-mode
+    // hit; the exact count depends on a render race otherwise.
+    await expect(card.locator("span").filter({ hasText: name }).first()).toBeVisible();
 
     await card.getByRole("button", { name: /Remove unused/i }).click();
     await confirmDialog(page, /Remove unused/i);
