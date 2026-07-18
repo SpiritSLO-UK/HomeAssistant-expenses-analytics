@@ -57,6 +57,9 @@ def snapshot_database() -> Path:
     src_con = sqlite3.connect(str(src))
     dst_con = sqlite3.connect(str(tmp))
     try:
+        # Wait for a concurrent writer to release its lock instead of failing
+        # immediately with "database is locked" mid-backup.
+        src_con.execute("PRAGMA busy_timeout=5000")
         src_con.backup(dst_con)
     finally:
         dst_con.close()
@@ -64,10 +67,69 @@ def snapshot_database() -> Path:
     return tmp
 
 
+def _validate_restore_candidate(path: Path) -> None:
+    """Raise ``RestoreError`` unless ``path`` is a sound HA Finance database."""
+    con = sqlite3.connect(str(path))
+    try:
+        integrity = con.execute("PRAGMA integrity_check").fetchone()[0]
+        tables = {
+            row[0]
+            for row in con.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        }
+    finally:
+        con.close()
+    if integrity != "ok":
+        raise RestoreError(f"Database failed integrity check: {integrity}")
+    missing = _REQUIRED_TABLES - tables
+    if missing:
+        raise RestoreError(
+            "This does not look like a HA Finance database "
+            f"(missing tables: {', '.join(sorted(missing))})."
+        )
+
+
+def _quiesce_database(dest: Path) -> None:
+    """Best-effort quiesce of the live DB before we overwrite it: wait (honouring
+    a busy_timeout) for any in-flight writer, then checkpoint the WAL into the
+    main file so the copy we're about to replace is self-contained."""
+    if not dest.exists():
+        return
+    try:
+        con = sqlite3.connect(str(dest), timeout=10)
+    except sqlite3.Error as exc:  # pragma: no cover - defensive
+        logger.warning("Could not open database to quiesce before restore: %s", exc)
+        return
+    try:
+        con.execute("PRAGMA busy_timeout=10000")
+        con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    except sqlite3.Error as exc:  # pragma: no cover - defensive
+        logger.warning("Could not checkpoint WAL before restore: %s", exc)
+    finally:
+        con.close()
+
+
+def _swap_in_restored_db(src: Path, dest: Path, backup_path: Path | None) -> None:
+    """Replace ``dest`` with ``src`` atomically. The restored file is staged
+    beside ``dest`` (same filesystem) and moved in with ``os.replace``, so a
+    failed copy can never leave a half-written live DB. If the move itself fails
+    after clobbering ``dest``, the safety backup is copied back."""
+    staged = dest.with_name(dest.name + ".restore-tmp")
+    try:
+        shutil.copyfile(src, staged)
+        os.replace(staged, dest)
+    except OSError:
+        Path(staged).unlink(missing_ok=True)
+        if backup_path is not None and backup_path.exists() and not dest.exists():
+            shutil.copyfile(backup_path, dest)
+        raise
+
+
 def restore_database(content: bytes) -> None:
     """Validate an uploaded SQLite file and swap it in as the live database.
 
-    The current database is copied to ``<db>.bak`` first. Destructive — the UI
+    The current database is copied to ``<db>.bak`` first, the live DB is quiesced
+    (writers drained + WAL checkpointed), and the swap itself is atomic so a
+    failed restore leaves the original database intact. Destructive — the UI
     confirms before calling this.
     """
     if not content.startswith(SQLITE_MAGIC):
@@ -78,33 +140,24 @@ def restore_database(content: bytes) -> None:
     tmp = Path(tmp_name)
     try:
         tmp.write_bytes(content)
-        con = sqlite3.connect(str(tmp))
-        try:
-            integrity = con.execute("PRAGMA integrity_check").fetchone()[0]
-            tables = {
-                row[0]
-                for row in con.execute("SELECT name FROM sqlite_master WHERE type='table'")
-            }
-        finally:
-            con.close()
-        if integrity != "ok":
-            raise RestoreError(f"Database failed integrity check: {integrity}")
-        missing = _REQUIRED_TABLES - tables
-        if missing:
-            raise RestoreError(
-                "This does not look like a HA Finance database "
-                f"(missing tables: {', '.join(sorted(missing))})."
-            )
+        _validate_restore_candidate(tmp)
 
-        # Release SQLAlchemy's pooled connections before replacing the file.
+        # Release SQLAlchemy's pooled connections, then quiesce the file itself
+        # before we touch it.
         engine = dbsession.get_engine()
         if engine is not None:
             engine.dispose()
         dest = settings.database_file
         dest.parent.mkdir(parents=True, exist_ok=True)
+        _quiesce_database(dest)
+
+        backup_path: Path | None = None
         if dest.exists():
-            shutil.copy2(dest, dest.with_name(dest.name + ".bak"))
-        shutil.copyfile(tmp, dest)
+            backup_path = dest.with_name(dest.name + ".bak")
+            shutil.copy2(dest, backup_path)
+
+        _swap_in_restored_db(tmp, dest, backup_path)
+
         # Drop stale WAL/SHM so the restored file is authoritative.
         for suffix in ("-wal", "-shm"):
             Path(str(dest) + suffix).unlink(missing_ok=True)

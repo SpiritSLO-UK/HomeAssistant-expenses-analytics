@@ -342,6 +342,74 @@ def test_restore_rejects_non_sqlite(client):
     assert "SQLite" in res.json()["detail"]
 
 
+def test_restore_leaves_original_db_intact_on_validation_failure(tmp_path, monkeypatch):
+    """A restore that fails validation must not touch the live database, and must
+    not leave a stray ``.bak``/staging file behind."""
+    import sqlite3
+
+    import pytest
+
+    from app.config import settings as app_settings
+    from app.services import backup_service
+
+    live = tmp_path / "live.db"
+    monkeypatch.setattr(app_settings, "database_path", str(live))
+    con = sqlite3.connect(str(live))
+    con.execute("CREATE TABLE keep_me (id INTEGER PRIMARY KEY, note TEXT)")
+    con.execute("INSERT INTO keep_me (note) VALUES ('original')")
+    con.commit()
+    con.close()
+    original = live.read_bytes()
+
+    # A valid SQLite file that is NOT a HA Finance DB (missing required tables).
+    candidate = tmp_path / "candidate.db"
+    c2 = sqlite3.connect(str(candidate))
+    c2.execute("CREATE TABLE something_else (x INTEGER)")
+    c2.commit()
+    c2.close()
+
+    with pytest.raises(backup_service.RestoreError):
+        backup_service.restore_database(candidate.read_bytes())
+
+    # Live DB is byte-for-byte unchanged; nothing was staged or backed up.
+    assert live.read_bytes() == original
+    assert not live.with_name(live.name + ".bak").exists()
+    assert not live.with_name(live.name + ".restore-tmp").exists()
+
+
+def test_restore_atomic_swap_replaces_db(tmp_path, monkeypatch):
+    """A valid restore swaps the file in atomically and keeps a ``.bak`` safety
+    copy of the previous database."""
+    import sqlite3
+
+    from app.config import settings as app_settings
+    from app.services import backup_service
+
+    def _make_hafi_db(path, marker):
+        con = sqlite3.connect(str(path))
+        for name in ("transactions", "categories", "statements", "accounts"):
+            con.execute(f"CREATE TABLE {name} (id INTEGER PRIMARY KEY, note TEXT)")
+        con.execute("INSERT INTO transactions (note) VALUES (?)", (marker,))
+        con.commit()
+        con.close()
+
+    live = tmp_path / "live.db"
+    monkeypatch.setattr(app_settings, "database_path", str(live))
+    _make_hafi_db(live, "old")
+
+    incoming = tmp_path / "incoming.db"
+    _make_hafi_db(incoming, "new")
+
+    backup_service.restore_database(incoming.read_bytes())
+
+    con = sqlite3.connect(str(live))
+    note = con.execute("SELECT note FROM transactions").fetchone()[0]
+    con.close()
+    assert note == "new"
+    assert live.with_name(live.name + ".bak").exists()  # previous DB preserved
+    assert not live.with_name(live.name + ".restore-tmp").exists()
+
+
 def test_config_export_and_import(client):
     export = client.get("/api/backup/config").json()
     assert len(export["categories"]) == 23  # seeded library
