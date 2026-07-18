@@ -28,3 +28,13 @@ class SetupOut(BaseModel):
 class VerifyOut(BaseModel):
     token: str
     expires_in_seconds: int
+
+
+class BackupCodesOut(BaseModel):
+    # The freshly generated plaintext codes — returned ONCE, never stored/retrievable.
+    codes: list[str]
+    remaining: int
+
+
+class BackupCodesStatusOut(BaseModel):
+    remaining: int

@@ -20,11 +20,11 @@ import hmac
 import secrets
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models import User, UserSession
+from app.models import MfaBackupCode, User, UserSession
 from app.models.user import MFA_SCOPES
 from app.services import crypto_service, totp
 
@@ -179,6 +179,83 @@ def reset_throttle() -> None:
     _failed_mfa_attempts.clear()
 
 
+# --- Backup / recovery codes (CR-FEAT-1) -------------------------------------
+#
+# Single-use codes that let a user who has lost their authenticator get back in
+# (critical when ``mfa_policy="required"``, which otherwise means a permanent
+# lockout). We generate N plaintext codes ONCE — shown to the user immediately —
+# and persist only their hashes, reusing the session-token hashing (HMAC-SHA256
+# keyed on the app key, plain SHA-256 without one). A code is accepted on the
+# entry path or in ``disable``; the matching row is stamped ``used_at`` so it can
+# never be replayed. Regenerating replaces the whole set.
+
+BACKUP_CODE_COUNT = 10
+# Length of each generated code. Drawn from an unambiguous alphabet (no 0/O/1/I)
+# so a user can transcribe it reliably from a printout.
+_BACKUP_CODE_LEN = 10
+_BACKUP_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+
+def _new_backup_code() -> str:
+    return "".join(secrets.choice(_BACKUP_ALPHABET) for _ in range(_BACKUP_CODE_LEN))
+
+
+def _normalize_backup_code(code: str) -> str:
+    """Fold whitespace/dashes and case so entry is forgiving (``ab-cd 12`` == ``ABCD12``)."""
+    return "".join(code.split()).replace("-", "").upper()
+
+
+def _hash_backup_code(code: str) -> str:
+    """Storage hash for a backup code — same keyed digest as session tokens."""
+    return _hash_token(_normalize_backup_code(code))
+
+
+def generate_backup_codes(db: Session, user: User) -> list[str]:
+    """Issue a fresh set of ``BACKUP_CODE_COUNT`` plaintext codes, returned ONCE.
+
+    Any previous (used or unused) codes for the user are discarded first, so the
+    caller can safely treat the returned list as the complete new set. Only the
+    hashes are persisted — the plaintext is never stored and cannot be recovered.
+    """
+    db.execute(delete(MfaBackupCode).where(MfaBackupCode.user_id == user.id))
+    codes = [_new_backup_code() for _ in range(BACKUP_CODE_COUNT)]
+    for code in codes:
+        db.add(MfaBackupCode(user_id=user.id, code_hash=_hash_backup_code(code)))
+    db.commit()
+    return codes
+
+
+def backup_codes_remaining(db: Session, user: User) -> int:
+    """How many unused backup codes the user has left (for the UI)."""
+    return (
+        db.scalar(
+            select(func.count())
+            .select_from(MfaBackupCode)
+            .where(MfaBackupCode.user_id == user.id, MfaBackupCode.used_at.is_(None))
+        )
+        or 0
+    )
+
+
+def _consume_backup_code(db: Session, user: User, code: str) -> bool:
+    """Spend an UNUSED backup code matching ``code``; stamp it used and return True.
+
+    Compares in constant time against every unused hash (never short-circuits on
+    the first differing byte). The caller is responsible for committing.
+    """
+    target = _hash_backup_code(code)
+    rows = db.scalars(
+        select(MfaBackupCode).where(
+            MfaBackupCode.user_id == user.id, MfaBackupCode.used_at.is_(None)
+        )
+    ).all()
+    for row in rows:
+        if hmac.compare_digest(row.code_hash, target):
+            row.used_at = _now()
+            return True
+    return False
+
+
 # --- Enrolment ---------------------------------------------------------------
 
 
@@ -226,15 +303,20 @@ def enable(db: Session, user: User, code: str, scope: str | None = None) -> bool
 
 
 def disable(db: Session, user: User, code: str) -> bool:
-    """Turn MFA off (current code required) and drop every session for the user."""
+    """Turn MFA off and drop every session + backup code for the user.
+
+    Accepts either a current TOTP code or an unused backup code (single-use), so a
+    user who has lost their authenticator can still recover out of a ``required``
+    lockout instead of being stuck forever."""
     live = decrypt_secret(user.mfa_secret)
     if not user.mfa_enabled or not live:
         return False
-    if not totp.verify(live, code):
+    if not (totp.verify(live, code) or _consume_backup_code(db, user, code)):
         return False
     user.mfa_enabled = False
     user.mfa_secret = None
     user.mfa_pending_secret = None
+    db.execute(delete(MfaBackupCode).where(MfaBackupCode.user_id == user.id))
     db.execute(delete(UserSession).where(UserSession.user_id == user.id))
     db.commit()
     return True
@@ -259,23 +341,35 @@ def _evict_excess_sessions(db: Session, user_id: int) -> None:
         db.execute(delete(UserSession).where(UserSession.id.in_(excess)))
 
 
+def _accept_entry_code(db: Session, user: User, live: str, code: str) -> bool:
+    """Whether ``code`` opens the entry gate — a fresh (non-replayed) TOTP or an
+    unused backup code. Advances the anti-replay counter / spends the backup code
+    as a side effect; the caller commits."""
+    counter = totp.matched_counter(live, code)
+    if counter is not None:
+        if user.mfa_last_counter is not None and counter <= user.mfa_last_counter:
+            return False  # replay — this timestep already opened a session
+        user.mfa_last_counter = counter
+        return True
+    # Not a TOTP match: fall back to a single-use backup / recovery code.
+    return _consume_backup_code(db, user, code)
+
+
 def verify_and_open(db: Session, user: User, code: str) -> str | None:
     """Verify a code and mint a per-device session token (returns the raw token).
 
-    Enforces one-time use on this entry path (CR-SEC-5): a code whose timestep was
-    already consumed is refused, so a sniffed code can't be replayed to mint a
-    second session. (Step-up/disable operate on an already-valid session and may
+    Accepts a current TOTP code or a single-use backup code (lost-authenticator
+    recovery). Enforces one-time use on this entry path (CR-SEC-5): a TOTP whose
+    timestep was already consumed is refused, so a sniffed code can't be replayed
+    to mint a second session; a backup code is stamped used the first time it
+    opens the gate. (Step-up/disable operate on an already-valid session and may
     reuse the current in-period code, which the user legitimately does in one go.)
     """
     live = decrypt_secret(user.mfa_secret)
     if not user.mfa_enabled or not live:
         return None
-    counter = totp.matched_counter(live, code)
-    if counter is None:
+    if not _accept_entry_code(db, user, live, code):
         return None
-    if user.mfa_last_counter is not None and counter <= user.mfa_last_counter:
-        return None  # replay — this timestep was already used to open a session
-    user.mfa_last_counter = counter
     # Tidy expired sessions for this user while we're here.
     db.execute(
         delete(UserSession).where(

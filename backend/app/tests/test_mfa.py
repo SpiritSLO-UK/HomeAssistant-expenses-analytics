@@ -332,6 +332,127 @@ def _mk_user(db, name: str, **kw) -> User:
     return user
 
 
+# --- Backup / recovery codes (CR-FEAT-1) -------------------------------------
+
+
+def test_backup_code_opens_gate_and_is_single_use(db, monkeypatch):
+    """A generated backup code opens a session on the entry path exactly once —
+    it's spent on use, so a lost-authenticator recovery code can't be replayed."""
+    monkeypatch.setattr(settings, "db_key", None)
+    secret = totp.generate_secret()
+    user = _mk_user(db, "Recov", mfa_enabled=True, mfa_secret=secret)
+
+    codes = mfa_service.generate_backup_codes(db, user)
+    assert len(codes) == mfa_service.BACKUP_CODE_COUNT
+    assert len(set(codes)) == mfa_service.BACKUP_CODE_COUNT  # all distinct
+    assert mfa_service.backup_codes_remaining(db, user) == mfa_service.BACKUP_CODE_COUNT
+
+    assert mfa_service.verify_and_open(db, user, codes[0]) is not None
+    assert mfa_service.backup_codes_remaining(db, user) == mfa_service.BACKUP_CODE_COUNT - 1
+    # Reusing the same code is refused.
+    assert mfa_service.verify_and_open(db, user, codes[0]) is None
+
+
+def test_backup_code_entry_is_forgiving(db, monkeypatch):
+    """Codes are matched case-insensitively and ignoring dashes/whitespace, so a
+    user transcribing from a printout isn't tripped up by formatting."""
+    monkeypatch.setattr(settings, "db_key", None)
+    secret = totp.generate_secret()
+    user = _mk_user(db, "Norm", mfa_enabled=True, mfa_secret=secret)
+    codes = mfa_service.generate_backup_codes(db, user)
+    messy = f" {codes[0][:5].lower()}-{codes[0][5:].lower()} "
+    assert mfa_service.verify_and_open(db, user, messy) is not None
+
+
+def test_totp_still_works_and_does_not_spend_backup_codes(db, monkeypatch):
+    """Enabling backup codes doesn't disturb normal TOTP — a valid TOTP opens the
+    gate and leaves every backup code intact."""
+    monkeypatch.setattr(settings, "db_key", None)
+    secret = totp.generate_secret()
+    user = _mk_user(db, "Both", mfa_enabled=True, mfa_secret=secret)
+    mfa_service.generate_backup_codes(db, user)
+    assert mfa_service.verify_and_open(db, user, totp.current_code(secret)) is not None
+    assert mfa_service.backup_codes_remaining(db, user) == mfa_service.BACKUP_CODE_COUNT
+
+
+def test_regenerate_replaces_backup_codes(db, monkeypatch):
+    """Regenerating issues a fresh, disjoint set and invalidates the old one."""
+    monkeypatch.setattr(settings, "db_key", None)
+    secret = totp.generate_secret()
+    user = _mk_user(db, "Regen", mfa_enabled=True, mfa_secret=secret)
+    old = mfa_service.generate_backup_codes(db, user)
+    mfa_service.verify_and_open(db, user, old[0])  # spend one from the old set
+    new = mfa_service.generate_backup_codes(db, user)
+
+    assert set(old).isdisjoint(new)
+    assert mfa_service.backup_codes_remaining(db, user) == mfa_service.BACKUP_CODE_COUNT
+    assert mfa_service.verify_and_open(db, user, old[1]) is None  # old set is gone
+    assert mfa_service.verify_and_open(db, user, new[0]) is not None
+
+
+def test_backup_code_recovers_via_disable(db, monkeypatch):
+    """A backup code satisfies ``disable`` too, so a user who has lost their
+    authenticator can turn MFA off (recover) instead of being locked out forever.
+    Disabling clears any remaining codes."""
+    monkeypatch.setattr(settings, "db_key", None)
+    secret = totp.generate_secret()
+    user = _mk_user(db, "Lost", mfa_enabled=True, mfa_secret=secret)
+    codes = mfa_service.generate_backup_codes(db, user)
+
+    assert mfa_service.disable(db, user, codes[0]) is True
+    assert user.mfa_enabled is False
+    assert mfa_service.backup_codes_remaining(db, user) == 0
+
+
+def test_backup_codes_endpoint_generate_and_status(client):
+    """The generate endpoint returns the plaintext codes once + a remaining count,
+    and the status endpoint reports the same count."""
+    secret = _enable_mfa(client)
+    token = client.post("/api/auth/mfa/verify", json={"code": totp.current_code(secret)}).json()["token"]
+    sess = {"X-HAFI-Session": token}
+
+    r = client.post("/api/auth/mfa/backup-codes", headers=sess)
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body["codes"]) == mfa_service.BACKUP_CODE_COUNT
+    assert body["remaining"] == mfa_service.BACKUP_CODE_COUNT
+    assert client.get("/api/auth/mfa/backup-codes", headers=sess).json()["remaining"] == (
+        mfa_service.BACKUP_CODE_COUNT
+    )
+
+
+def test_backup_codes_generate_requires_step_up(client):
+    """Generation is step-up gated: a stale session is challenged, not served."""
+    secret = _enable_mfa(client)
+    token = client.post("/api/auth/mfa/verify", json={"code": totp.current_code(secret)}).json()["token"]
+    sess = {"X-HAFI-Session": token}
+
+    with SessionLocal() as db:
+        row = db.query(UserSession).one()
+        row.last_step_up_at = datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=1)
+        db.commit()
+
+    r = client.post("/api/auth/mfa/backup-codes", headers=sess)
+    assert r.status_code == 403
+    assert r.json()["detail"] == "step_up_required"
+
+
+def test_backup_code_verifies_through_entry_api(client):
+    """A backup code opens a fresh session through the normal /verify endpoint and
+    decrements the remaining count."""
+    secret = _enable_mfa(client)
+    token = client.post("/api/auth/mfa/verify", json={"code": totp.current_code(secret)}).json()["token"]
+    codes = client.post("/api/auth/mfa/backup-codes", headers={"X-HAFI-Session": token}).json()["codes"]
+
+    r = client.post("/api/auth/mfa/verify", json={"code": codes[0]})
+    assert r.status_code == 200
+    new_sess = {"X-HAFI-Session": r.json()["token"]}
+    assert client.get("/api/transactions", headers=new_sess).status_code == 200
+    assert client.get("/api/auth/mfa/backup-codes", headers=new_sess).json()["remaining"] == (
+        mfa_service.BACKUP_CODE_COUNT - 1
+    )
+
+
 def test_secret_encrypted_at_rest_when_key_set(db, monkeypatch):
     """With an app key configured, the enrolled seed is stored as app-layer
     ciphertext (marker-prefixed, not the raw base32) and still round-trips

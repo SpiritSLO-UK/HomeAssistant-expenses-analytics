@@ -15,7 +15,15 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models import User
-from app.schemas.auth import CodeIn, EnableIn, SetupIn, SetupOut, VerifyOut
+from app.schemas.auth import (
+    BackupCodesOut,
+    BackupCodesStatusOut,
+    CodeIn,
+    EnableIn,
+    SetupIn,
+    SetupOut,
+    VerifyOut,
+)
 from app.services import audit_service, auth_service, mfa_service
 from app.services.auth_service import get_current_user
 
@@ -108,6 +116,46 @@ def verify(
         _bad_code(db, user, _BAD_CODE)
     mfa_service.clear_mfa_failures(user.id)
     return VerifyOut(token=token, expires_in_seconds=int(mfa_service.SESSION_TTL.total_seconds()))
+
+
+def _require_stepped_up_session(request: Request, db: Session, user: User) -> None:
+    """Gate a sensitive self-service MFA op behind a valid, recently-stepped-up
+    session (step-up-gated like other admin MFA ops). A fresh ``/verify`` counts
+    as a step-up, so a user who just entered can act immediately; a stale session
+    gets ``step_up_required`` so the UI prompts for a code first."""
+    if not user.mfa_enabled:
+        raise HTTPException(status_code=400, detail="MFA is not enabled.")
+    token = request.headers.get(auth_service.SESSION_HEADER)
+    session = mfa_service.get_valid_session(db, user.id, token)
+    if not mfa_service.has_recent_step_up(session):
+        raise HTTPException(status_code=403, detail="step_up_required")
+
+
+@router.post("/backup-codes", responses={403: {"description": "Step-up required"}})
+def generate_backup_codes(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> BackupCodesOut:
+    """Issue a fresh set of single-use recovery codes, shown to the user once.
+    Replaces any prior set. Step-up gated; owner/self only (acts on the caller)."""
+    _require_stepped_up_session(request, db, user)
+    codes = mfa_service.generate_backup_codes(db, user)
+    audit_service.record(
+        db, actor=user.display_name, action="mfa_backup_codes_generated",
+        entity_type="user", entity_id=user.id, details={"count": len(codes)},
+    )
+    db.commit()
+    return BackupCodesOut(codes=codes, remaining=len(codes))
+
+
+@router.get("/backup-codes")
+def backup_codes_status(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> BackupCodesStatusOut:
+    """How many unused recovery codes remain (drives the 'N left' UI hint)."""
+    return BackupCodesStatusOut(remaining=mfa_service.backup_codes_remaining(db, user))
 
 
 @router.post("/step-up", responses={400: {"description": "Bad request"}})
