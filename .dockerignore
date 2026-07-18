@@ -29,6 +29,12 @@ ha_finance_intelligence_spec.md
 things-to-add-change-consider.md
 things-done-and-answered.md
 
+# --- Testing (dev-only, must NOT ship in the release image) ---
+# The Playwright e2e suite + its report are dev/CI material. Test results (the
+# e2e HTML report) are attached to the GitHub Release by the release workflow;
+# the tests/docs themselves never enter an image layer.
+e2e
+
 # --- Python caches, venvs and tests (tests are dev-only, see pyproject) ---
 **/__pycache__
 **/*.pyc
