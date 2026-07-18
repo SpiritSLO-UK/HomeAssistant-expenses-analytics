@@ -147,7 +147,7 @@ def split_by_percentages(
             description=part.description,
             notes=part.notes,
         )
-        for amount, part in zip(amounts, parts)
+        for amount, part in zip(amounts, parts, strict=True)
     ]
 
 
