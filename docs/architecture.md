@@ -93,7 +93,39 @@ sequenceDiagram
   IS-->>U: imported (N new / M duplicates)
 ```
 
-## 4. Data model (core entities)
+## 4. AI gateway & privacy gate
+
+AI is off by default and opt-in. One gateway (`ai_service`) decides whether AI may
+run, redacts every cloud-bound payload at a single choke point
+(`redact_for_cloud` in `services/redaction.py`), audits the call (`AIRequest`) and
+returns a **suggestion** the user must apply. AI never writes a category itself.
+
+```mermaid
+flowchart TD
+  req["AI classify request (txn / batch)"] --> gate{"privacy mode?"}
+  gate -- "strict_local / no_ai" --> off["AI refused (AIDisabled)"]
+  gate -- local_llm --> lmin["minimal payload, stays on device"]
+  lmin --> lep["local endpoint (localhost / LAN)"]
+  gate -- "cloud_manual / cloud_auto" --> block{"never-cloud category?<br/>cloud_auto + still-sensitive text?"}
+  block -- yes --> blk["BLOCKED (route via cloud_manual)"]
+  block -- no --> redact["REDACTION CHOKE-POINT<br/>redact_for_cloud(): allow-list + mask PII"]
+  redact -- cloud_manual --> approve["stage pending AIRequest + review, user approves"]
+  redact -- cloud_auto --> autosend["send automatically"]
+  approve --> cep["public cloud endpoint (SSRF guard)"]
+  autosend --> cep
+  lep --> sug["provider reply -> suggestion"]
+  cep --> sug
+  sug --> apply["AI never writes; user applies -> confidence 1.0 (audited)"]
+
+  classDef stop stroke-dasharray:5 5,fill:#fdecea,color:#c0392b;
+  class off,blk stop;
+```
+
+> Batch AI runs in `local_llm` only; a cloud batch stages every redacted payload
+> for one-shot approval first. Vision image-extract can not be redacted, so it
+> refuses to auto-send under `cloud_auto` without explicit approval.
+
+## 5. Data model (core entities)
 
 The full model has ~30 tables (spec §12); this shows the core relationships. Other
 groups hang off the same `ACCOUNT`/`TRANSACTION`/`USER` spine: **savings**
@@ -128,7 +160,7 @@ erDiagram
   FX_RATE }o--o| TRANSACTION : "converts (by date/currency)"
 ```
 
-## 5. Deployment (add-on image)
+## 6. Deployment (add-on image)
 
 ```mermaid
 flowchart LR
