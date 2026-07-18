@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { getMe, getSettings, getSupportedCurrencies, updateSettings } from "../api/client";
+import { useOptimisticSelect } from "../hooks/useOptimisticSelect";
 
 // A single "Welcome, let's set up" entry that branches by household shape: Solo is
 // a short inline flow (base currency + import); Household/Family hand off to the
@@ -81,6 +82,10 @@ function SoloSetup({ onBack }: Readonly<{ onBack: () => void }>) {
     },
     onError: (e) => setErr(String(e)),
   });
+  // Optimistic overlay for the base-currency select (FE-8): show the chosen code
+  // immediately and revert to the server value on failure. `save` keeps its own
+  // onError, so the overlay reverts silently. Singleton, keyed by a constant.
+  const baseSelect = useOptimisticSelect<string, string>();
   // Guarantee the configured base is always a selectable option, even when it
   // isn't in the curated list — otherwise the control renders blank and a save
   // could silently overwrite the real base currency.
@@ -95,7 +100,13 @@ function SoloSetup({ onBack }: Readonly<{ onBack: () => void }>) {
         <li>
           <strong>Base currency</strong> — everything is shown in this currency.
           <div style={{ marginTop: 6 }}>
-            <select value={base} disabled={save.isPending} onChange={(e) => save.mutate(e.target.value)}>
+            <select
+              value={baseSelect.valueFor("base", base)}
+              onChange={(e) => {
+                const code = e.target.value;
+                baseSelect.choose("base", code, () => save.mutateAsync(code));
+              }}
+            >
               {currencyOptions.map((c) => (
                 <option key={c.code} value={c.code}>{c.symbol} {c.code} — {c.name}</option>
               ))}
