@@ -40,6 +40,37 @@ class RejectingClient(FakeClient):
         return _PublishInfo(self._rc)
 
 
+class _WaitInfo(_PublishInfo):
+    """Accepted publish (rc 0) that records ``wait_for_publish`` like paho's info."""
+
+    def __init__(self, client: LoopClient) -> None:
+        super().__init__(0)
+        self._client = client
+
+    def wait_for_publish(self, timeout: float | None = None) -> None:
+        self._client.waited += 1
+
+
+class LoopClient(FakeClient):
+    """FakeClient that also records paho's network-loop + wait-for-publish lifecycle."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.loop_started = False
+        self.loop_stopped = False
+        self.waited = 0
+
+    def publish(self, topic: str, payload: str, retain: bool = False) -> _WaitInfo:
+        super().publish(topic, payload, retain)
+        return _WaitInfo(self)
+
+    def loop_start(self) -> None:
+        self.loop_started = True
+
+    def loop_stop(self) -> None:
+        self.loop_stopped = True
+
+
 class ReadClient:
     """Fake broker client for ``read_topics``; records its lifecycle calls."""
 
@@ -150,6 +181,23 @@ def test_publish_counts_broker_rejections(db, monkeypatch):
     assert fake.disconnected
 
 
+def test_publish_all_runs_and_stops_network_loop(db, monkeypatch):
+    from app.services import mqtt_service
+
+    monkeypatch.setattr(mqtt_service.settings, "mqtt_enabled", True)
+    fake = LoopClient()
+    report = mqtt_service.publish_all(db, connect=lambda: fake)
+
+    # The network loop must run so publishes are actually sent, and must always be
+    # stopped afterwards (default connect path used to drop messages silently).
+    assert fake.loop_started
+    assert fake.loop_stopped
+    assert fake.disconnected
+    # Every accepted publish is waited on so it isn't lost when we disconnect.
+    assert report["cleared"] == 0  # nothing disabled by default
+    assert fake.waited == report["published"]
+
+
 def test_read_topics_stops_loop_even_on_error(monkeypatch):
     from app.services import mqtt_service
 
@@ -182,6 +230,26 @@ def test_mqtt_status_endpoint(client):
     assert "available" in st
     assert st["base_topic"] == "homeassistant/finance"
     assert st["sensor_count"] >= 5
+
+
+def test_status_sensor_count_matches_full_build(db):
+    from app.services import mqtt_service
+
+    # The cheap count (ids + selection) must equal the full sensor build exactly.
+    assert mqtt_service.status(db)["sensor_count"] == len(mqtt_service._sensors(db))
+
+
+def test_status_sensor_count_tracks_budgets_and_selection(client):
+    base = client.get("/api/mqtt/status").json()["sensor_count"]
+    groceries = _cat(client, "Groceries")
+    client.post("/api/budgets", json={"name": "Groceries", "amount": "300", "category_id": groceries})
+    after = client.get("/api/mqtt/status").json()["sensor_count"]
+    assert after == base + 2  # a household budget adds percent + spent sensors
+
+    client.get("/api/users/me")  # local owner = settings-manager
+    client.put("/api/mqtt/sensors", json={"disabled_groups": ["counts"], "disabled_sensors": []})
+    reduced = client.get("/api/mqtt/status").json()["sensor_count"]
+    assert reduced == after - 2  # the 2 "counts" sensors drop out
 
 
 def test_mqtt_publish_disabled_returns_400(client):

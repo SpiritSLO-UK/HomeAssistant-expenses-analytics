@@ -25,10 +25,12 @@ import json
 import time
 from datetime import date
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.logging import get_logger
+from app.models import Budget, Project
 from app.services import (
     budget_service,
     dashboard_service,
@@ -136,6 +138,37 @@ def _all_sensors(db: Session, ref: date | None = None) -> list[dict]:
         _add("energy", _money("energy_offset_this_month", "Energy Offset This Month",
                               str(energy_service.last_saving(db)), currency, "mdi:solar-power"))
     return sensors
+
+
+# The fixed sensors that always exist, regardless of the data. Kept in lock-step
+# with :func:`_all_sensors` so :func:`_sensor_index` can enumerate keys/groups
+# without computing any value.
+_STATIC_SENSORS: list[tuple[str, str]] = [
+    ("core", "spend_this_month"),
+    ("core", "income_this_month"),
+    ("core", "net_this_month"),
+    ("counts", "review_items"),
+    ("counts", "uncategorised"),
+    ("subscriptions", "subscriptions_total"),
+]
+
+
+def _sensor_index(db: Session) -> list[tuple[str, str]]:
+    """``(group, key)`` for every publishable sensor — the same set as
+    :func:`_all_sensors`, but WITHOUT computing any value. Cheap enough to just
+    count sensors (e.g. for :func:`status`) without rebuilding the whole
+    aggregation: it only reads budget/project ids and the energy source."""
+    index = list(_STATIC_SENSORS)
+    for bid in db.scalars(select(Budget.id).where(Budget.owner_user_id.is_(None))):
+        index.append(("budgets", f"budget_{bid}_percent"))
+        index.append(("budgets", f"budget_{bid}_spent"))
+    for pid in db.scalars(select(Project.id)):
+        index.append(("projects", f"project_{pid}_total"))
+    from app.services import energy_service  # lazy import: avoids an import cycle
+
+    if energy_service.get_config(db)["source"] != "off":
+        index.append(("energy", "energy_offset_this_month"))
+    return index
 
 
 def _selection(db: Session) -> tuple[set[str], set[str]]:
@@ -247,9 +280,25 @@ def _default_connect():
     return client
 
 
+# Upper bound (seconds) on how long a single publish waits for the network loop
+# to actually flush it. In the happy path (QoS 0) each wait returns near-instantly
+# once the message hits the socket; this cap only guards a pathological broker.
+_PUBLISH_TIMEOUT = 5.0
+
+
 def _safe_disconnect(client) -> None:
     try:
         client.disconnect()
+    except Exception:  # pragma: no cover - best effort
+        pass
+
+
+def _safe_loop_start(client) -> None:
+    """Start paho's network loop so queued publishes are actually written to the
+    socket before the connection is torn down. A fake test client without
+    ``loop_start`` is a no-op."""
+    try:
+        client.loop_start()
     except Exception:  # pragma: no cover - best effort
         pass
 
@@ -261,15 +310,36 @@ def _safe_loop_stop(client) -> None:
         pass
 
 
-def _publish(client, topic: str, payload: str) -> bool:
+def _safe_wait_for_publish(info, timeout: float) -> None:
+    """Block until ``info`` is actually published (bounded by ``timeout``). Paho's
+    ``MQTTMessageInfo`` exposes ``wait_for_publish``; a fake/``None`` result (tests)
+    has none and is a no-op."""
+    wait = getattr(info, "wait_for_publish", None)
+    if wait is None:
+        return
+    try:
+        wait(timeout)
+    except Exception:  # pragma: no cover - best effort
+        pass
+
+
+def _publish(client, topic: str, payload: str, *, wait: float = 0.0) -> bool:
     """Publish one retained message; return ``True`` only if the broker accepted it.
 
     paho's ``publish()`` returns an ``MQTTMessageInfo`` whose ``rc`` is non-zero
     when the message was dropped (e.g. the client isn't connected). Checking it
     stops a dropped message being reported as a success. A fake/``None`` result
     (used by tests) has no ``rc`` and counts as success.
+
+    When ``wait`` is set and the message was accepted, block up to ``wait`` seconds
+    for the network loop to flush it, so a publish isn't lost when the connection
+    is torn down immediately afterwards.
     """
-    return getattr(client.publish(topic, payload, retain=True), "rc", 0) == 0
+    info = client.publish(topic, payload, retain=True)
+    ok = getattr(info, "rc", 0) == 0
+    if ok and wait:
+        _safe_wait_for_publish(info, wait)
+    return ok
 
 
 def publish_all(db: Session, ref: date | None = None, connect=None) -> dict:
@@ -287,26 +357,31 @@ def publish_all(db: Session, ref: date | None = None, connect=None) -> dict:
     sensors = [s for s in all_sensors if _is_enabled(s, dg, dk)]
     disabled = [s for s in all_sensors if not _is_enabled(s, dg, dk)]
     client = (connect or _default_connect)()
+    # Run the network loop so publishes are actually sent, and wait for each to be
+    # flushed before disconnecting — otherwise the default connect path can drop
+    # messages silently. The loop is always stopped in the finally (#361 pattern).
+    _safe_loop_start(client)
     published = 0
     failed = 0
     try:
         for sensor in sensors:
             if _publish(client, _discovery_topic(sensor["object_id"]),
-                        json.dumps(_discovery_config(sensor))):
+                        json.dumps(_discovery_config(sensor)), wait=_PUBLISH_TIMEOUT):
                 published += 1
             else:
                 failed += 1
         for sensor in sensors:
-            if _publish(client, _state_topic(sensor["key"]), str(sensor["value"])):
+            if _publish(client, _state_topic(sensor["key"]), str(sensor["value"]), wait=_PUBLISH_TIMEOUT):
                 published += 1
             else:
                 failed += 1
         # Clear the retained discovery config for any sensor the user has disabled,
         # so Home Assistant drops the entity instead of leaving it stale.
         for sensor in disabled:
-            if not _publish(client, _discovery_topic(sensor["object_id"]), ""):
+            if not _publish(client, _discovery_topic(sensor["object_id"]), "", wait=_PUBLISH_TIMEOUT):
                 failed += 1
     finally:
+        _safe_loop_stop(client)
         _safe_disconnect(client)
     if failed:
         logger.warning("MQTT publish: broker rejected %s message(s)", failed)
@@ -385,5 +460,10 @@ def status(db: Session | None = None) -> dict:
         "base_topic": settings.mqtt_base_topic,
     }
     if db is not None:
-        info["sensor_count"] = len(_sensors(db))
+        # Count sensors cheaply (ids + selection only) instead of rebuilding every
+        # sensor's payload via the full aggregation.
+        dg, dk = _selection(db)
+        info["sensor_count"] = sum(
+            1 for group, key in _sensor_index(db) if group not in dg and key not in dk
+        )
     return info
