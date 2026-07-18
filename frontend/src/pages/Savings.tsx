@@ -115,12 +115,9 @@ function AccountCard({
   onError: (e: unknown) => void;
 }>) {
   const [open, setOpen] = useState(false);
-  // Only fetch the per-account snapshot history once its panel is expanded — avoids
-  // an N-query burst on mount (one per account); refetch() after edits still forces it.
   const history = useQuery({
     queryKey: ["savings-history", account.id],
     queryFn: () => getBalanceHistory(account.id),
-    enabled: open,
   });
   const [date, setDate] = useState(today());
   const [amount, setAmount] = useState("");   // absolute "set balance" (from statement)
