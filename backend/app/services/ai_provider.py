@@ -16,10 +16,27 @@ from __future__ import annotations
 import json
 import re
 import time
+from urllib.parse import urlsplit
 
 from app.logging import get_logger
 
 logger = get_logger("app.ai")
+
+# The endpoint must be a real ``http(s)://`` URL. A scheme-less ("x/v1"),
+# empty, or unsupported-scheme ("ftp://...") value would otherwise sail past
+# ``available()`` and fail confusingly only at call time.
+_VALID_SCHEMES = frozenset({"http", "https"})
+
+
+def _is_valid_http_url(url: str) -> bool:
+    """True only for a well-formed ``http``/``https`` URL with a host."""
+    if not url:
+        return False
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return False
+    return parts.scheme in _VALID_SCHEMES and bool(parts.netloc)
 
 # Retry policy for transient upstream failures (429/5xx, cold-start, connect
 # drops). Small and bounded so a flaky moment recovers without hammering the
@@ -152,7 +169,15 @@ class OpenAICompatibleProvider(AIProvider):
         self.require_public_host = require_public_host
 
     def available(self) -> bool:
-        return bool(self.base_url and self.model)
+        if not self.model:
+            return False
+        if not _is_valid_http_url(self.base_url):
+            logger.warning(
+                "AI provider unavailable: endpoint %r is not a valid http(s):// URL",
+                self.base_url,
+            )
+            return False
+        return True
 
     def _complete(self, messages: list[dict]) -> str:
         """POST a chat-completions request and return the message content.
