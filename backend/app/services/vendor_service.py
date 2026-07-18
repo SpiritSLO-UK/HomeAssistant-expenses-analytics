@@ -319,6 +319,34 @@ def derive_vendor_signature(text: str) -> str:
     return " ".join(sig).strip() or text.strip()
 
 
+def _normalise_token(token: str) -> str:
+    """Display-normalise one canonical-name token, mirroring the FE rule in
+    ``frontend/src/lib/vendorSignature.ts`` (parity with #393).
+
+    All-caps bank descriptions ("TESCO STORES") read better title-cased, but a
+    naive ``str.title()`` mangles short acronyms and brand codes. So we only
+    title-case genuinely word-like all-caps tokens and preserve the rest:
+      - not wholly upper-case, or no cased letter → left untouched;
+      - a short all-caps token (≤ 4 chars, e.g. BP, HSBC, EE) → kept as-is;
+      - a token carrying a digit or ampersand (O2, M&S) → kept as-is;
+      - otherwise (TESCO, STORES) → title-cased.
+    """
+    if token != token.upper() or not any(ch.isalpha() for ch in token):
+        return token
+    if len(token) <= 4 or any(ch.isdigit() or ch == "&" for ch in token):
+        return token
+    return token[:1].upper() + token[1:].lower()
+
+
+def _normalise_canonical_name(name: str) -> str:
+    """Per-token display normalisation of a canonical vendor name.
+
+    Replaces the previous naive ``if name.isupper(): name.title()`` which mangled
+    acronyms/brands (BP → "Bp", HSBC → "Hsbc", M&S → "M&s"). Mixed-case tokens are
+    left untouched, so this is a no-op for names the caller already chose."""
+    return " ".join(_normalise_token(token) for token in name.split())
+
+
 def create_from_transaction(db: Session, txn: Transaction, *, name: str | None = None) -> Vendor:
     """Create (or reuse) a vendor for a transaction that has none, and link it.
 
@@ -331,9 +359,7 @@ def create_from_transaction(db: Session, txn: Transaction, *, name: str | None =
     never fires on its own.
     """
     signature = derive_vendor_signature(txn.merchant_raw or txn.description_raw or "")
-    canonical = (name or signature).strip()
-    if canonical.isupper():
-        canonical = canonical.title()
+    canonical = _normalise_canonical_name((name or signature).strip())
     if not canonical:
         canonical = (txn.description_raw or "Vendor")[:60]
 
@@ -380,7 +406,7 @@ def learn_vendor_category(
     vendor, _ = match_vendor(db, description)
     if vendor is None:
         signature = (merchant_raw or derive_vendor_signature(description)).strip()
-        canonical = (signature.title() if signature.isupper() else signature) or description[:60]
+        canonical = _normalise_canonical_name(signature) or description[:60]
         # Reuse an existing vendor with this canonical name before creating a new one,
         # so a manual correction can't spawn a duplicate when the alias just didn't match
         # (mirrors create_from_transaction; previously this always created a new vendor).
