@@ -8,6 +8,7 @@ simple key/value strings.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -174,6 +175,24 @@ def get(db: Session, key: str) -> str | None:
     if row is not None and row.value is not None:
         return row.value
     return _defaults().get(key)
+
+
+def get_values(db: Session, keys: Iterable[str]) -> dict[str, str | None]:
+    """Batch-read several settings in ONE query (``WHERE key IN (...)``) instead of a
+    SELECT per key, for callers that need many at once. Returns ``{key: value}`` for
+    every requested key, resolved exactly like :func:`get` — a stored non-null value
+    wins, else the built-in default (or ``None`` if there is none). Duplicate keys and
+    ordering don't matter."""
+    wanted = list(dict.fromkeys(keys))  # de-duplicate, preserve first-seen order
+    if not wanted:
+        return {}
+    stored = {
+        row.key: row.value
+        for row in db.scalars(select(Setting).where(Setting.key.in_(wanted))).all()
+        if row.value is not None
+    }
+    defaults = _defaults()
+    return {key: stored.get(key, defaults.get(key)) for key in wanted}
 
 
 def _validate_entry(key: str, value: str | None) -> None:

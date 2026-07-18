@@ -133,6 +133,50 @@ def test_set_value_delegates_to_set_many(client):
         assert len(rows) == 1
 
 
+def test_get_values_batch_reads_stored_and_defaults(client):
+    """``get_values`` resolves each key exactly like ``get`` — stored value wins, else
+    the built-in default — in a single query, and tolerates duplicate keys."""
+    from app.db.session import SessionLocal
+    from app.services import settings_service
+
+    with SessionLocal() as db:
+        settings_service.set_value(db, "gv_stored", "kept")
+
+    with SessionLocal() as db:
+        result = settings_service.get_values(
+            db,
+            [
+                "gv_stored",
+                settings_service.FX_MODE,  # unset → static default
+                "gv_missing",  # unknown key, no default → None
+                "gv_stored",  # duplicate is harmless
+            ],
+        )
+
+    assert result == {
+        "gv_stored": "kept",
+        settings_service.FX_MODE: "manual",
+        "gv_missing": None,
+    }
+
+
+def test_get_values_matches_get_per_key(client):
+    """Batch read agrees with the per-key getter for every requested key, and an empty
+    request is a no-op."""
+    from app.db.session import SessionLocal
+    from app.services import settings_service
+
+    with SessionLocal() as db:
+        settings_service.set_value(db, "gv_a", "1")
+        settings_service.set_value(db, "gv_b", "2")
+
+    keys = ["gv_a", "gv_b", settings_service.LOG_LEVEL, "gv_absent"]
+    with SessionLocal() as db:
+        batch = settings_service.get_values(db, keys)
+        assert batch == {k: settings_service.get(db, k) for k in keys}
+        assert settings_service.get_values(db, []) == {}
+
+
 def test_base_currency_must_be_supported(client):
     # A curated code is accepted and recomputes conversions for display.
     ok = client.put("/api/settings", json={"base_currency": "USD"})
