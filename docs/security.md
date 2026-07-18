@@ -53,6 +53,43 @@ serve the app over **HTTPS** — a reverse proxy terminates TLS (see
 (passphrase, AES-256-GCM) let you keep an off-device copy safely; optional at-rest
 encryption protects the live DB file.
 
+### Standalone trust model — direct port exposure (CR-DOC-1)
+
+**The shipped `docker-compose.yml` is `localhost`-only.** It publishes the app on
+`8099:8099`, which binds the container port to **every** host interface with no
+reverse proxy in front. This is fine on a single machine you reach over
+`localhost`, but it is **not safe to expose to a wider network as-is**. The app
+derives identity from the `X-Remote-User-*` headers and **bootstraps the first
+user it sees as the household owner** — with the port reachable directly, anyone
+who can hit it can send those headers, become owner, and read/write everything.
+
+- **Behind Home Assistant ingress this is a non-issue** — HA authenticates the
+  user and **strips any inbound `X-Remote-User-*`** a client tries to forge, then
+  injects the real identity. The add-on maps no port and runs ingress-only
+  (`host_network: false`). The caveat below applies **only** to direct/standalone
+  exposure that bypasses ingress.
+- **Standalone, before exposing beyond the host, do one of:**
+  1. **Keep it `localhost`-only.** Bind the published port to the loopback
+     interface (e.g. `ports: ["127.0.0.1:8099:8099"]`) so only the host can reach
+     it. This is the default posture and needs no extra components.
+  2. **Front it with an authenticating, header-stripping reverse proxy.** Put
+     Caddy/nginx in front, have it terminate TLS, authenticate the user, and
+     **strip every inbound `X-Remote-User-*` header** before proxying — injecting
+     its own trusted identity. See [reverse-proxy.md](reverse-proxy.md) and the
+     bundled `Caddyfile`. A proxy that forwards client-supplied identity headers
+     unfiltered is **not** a mitigation.
+  3. **Turn off header trust entirely.** Set `HAFI_TRUST_PROXY_HEADERS=false`
+     (default `true`; CR-SEC-4 / #370). The app then **ignores** all
+     `X-Remote-User-*` headers and resolves every request to the single `local`
+     owner, so a direct peer can't forge an identity by sending them. This is the
+     right switch for a single-user standalone box that has no proxy supplying
+     identity — defence-in-depth on top of, not a replacement for, not exposing
+     the raw port.
+
+The default (`HAFI_TRUST_PROXY_HEADERS=true`) exists to preserve the HA-ingress
+model, where a **trusted** proxy supplies identity. Leave it on only when such a
+proxy is actually in front; otherwise prefer option 1 or 3 above.
+
 ## Access control, MFA & multi-user (Stage 12)
 
 Identity is supplied by **Home Assistant ingress**, which sets
