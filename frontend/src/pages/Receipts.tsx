@@ -182,7 +182,7 @@ function matchedByLabel(by: string): string {
 
 function ReceiptCard({ r, onError, focused = false }: Readonly<{ r: Receipt; onError: (e: string) => void; focused?: boolean }>) {
   const qc = useQueryClient();
-  const confirm = useConfirm();
+  const confirmDialog = useConfirm();
   // Re-sync from the server value when the receipts query refetches (e.g. after OCR
   // finishes, merchant/date/total arrive) — without clobbering an in-progress edit.
   const [merchant, setMerchant] = useServerState(r.merchant_raw ?? "");
@@ -316,7 +316,7 @@ function ReceiptCard({ r, onError, focused = false }: Readonly<{ r: Receipt; onE
             {aiExtract.isPending ? "Asking AI…" : "✨ Extract with AI"}
           </button>
         )}
-        <button className="link-btn" onClick={async () => { if (await confirm({ message: "Delete this receipt?", confirmLabel: "Delete", danger: true })) remove.mutate(); }}>delete</button>
+        <button className="link-btn" onClick={async () => { if (await confirmDialog({ message: "Delete this receipt?", confirmLabel: "Delete", danger: true })) remove.mutate(); }}>delete</button>
       </div>
 
       {showAiWarn && (
