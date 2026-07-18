@@ -9,6 +9,7 @@ transaction's ``needs_rate``); single-currency households are unaffected.
 
 from __future__ import annotations
 
+import math
 from datetime import date, timedelta
 from decimal import ROUND_CEILING, Decimal
 
@@ -327,15 +328,62 @@ def _forecast_result(state: str, *, monthly_rate: Decimal | None = None,
 _ON_TRACK_STATE = {True: "on_track", False: "behind", None: "projected"}
 
 
+def _interest_months_to_target(
+    current: Decimal, target: Decimal, annual_rate: Decimal | None
+) -> Decimal | None:
+    """Months for ``current`` to grow to ``target`` by interest alone, compounding
+    monthly at ``annual_rate`` percent. ``None`` when it can never get there — no
+    rate, a non-positive rate, or nothing saved yet. This is the fallback when a
+    goal has too little balance history to infer a deposit rate (e.g. a brand-new
+    linked goal), so an interest-bearing pot still projects a completion date."""
+    if annual_rate is None or annual_rate <= 0 or current <= 0:
+        return None
+    growth = 1 + (annual_rate / 100) / 12
+    # target > current at the call site → the log ratio is > 1, so months is finite.
+    months = math.log(float(target / current)) / math.log(float(growth))
+    return Decimal(str(months))
+
+
+def _months_to_target(
+    remaining: Decimal, current: Decimal, target: Decimal,
+    monthly_deposit: Decimal | None, annual_rate: Decimal | None,
+) -> tuple[Decimal | None, Decimal | None]:
+    """Months until the target is met, plus the deposit rate to report. Prefers an
+    inferred deposit rate; falls back to interest-only growth when there isn't
+    enough history for one. Returns ``(None, None)`` when neither can project."""
+    if monthly_deposit is not None and monthly_deposit > 0:
+        return remaining / monthly_deposit, monthly_deposit
+    return _interest_months_to_target(current, target, annual_rate), None
+
+
+def _dated_forecast(months_remaining: Decimal, monthly_rate: Decimal | None,
+                    target_date: date | None, today: date) -> dict:
+    """Turn a months-to-target horizon into the dated forecast payload: a projected
+    completion date and the on/behind/projected state (on/behind only when the goal
+    has a ``target_date``)."""
+    days = int((months_remaining * FORECAST_PERIOD_DAYS).to_integral_value(ROUND_CEILING))
+    projected = today + timedelta(days=days)
+    on_track = None if target_date is None else projected <= target_date
+    return _forecast_result(
+        _ON_TRACK_STATE[on_track], monthly_rate=monthly_rate, projected_date=projected,
+        months_remaining=months_remaining, on_track=on_track,
+    )
+
+
 def forecast_goal(*, current: Decimal, target: Decimal,
                   snapshots: list[tuple[date, Decimal]],
-                  target_date: date | None, today: date) -> dict:
-    """Project when ``target`` is reached at the recent average deposit rate.
+                  target_date: date | None, today: date,
+                  annual_rate: Decimal | None = None) -> dict:
+    """Project when ``target`` is reached, preferring the recent average deposit
+    rate and falling back to interest-only growth (``annual_rate`` percent) when a
+    goal has too little history for one — so a brand-new interest-bearing goal
+    still forecasts instead of showing nothing.
 
-    Pure and DB-free. States: ``no_forecast`` (no target or no usable deposit
-    history), ``achieved`` (already at/over target), ``not_progressing`` (net
-    withdrawals — target recedes), and ``on_track`` / ``behind`` / ``projected``
-    (has a date; on/behind is set only when the goal has a ``target_date``).
+    Pure and DB-free. States: ``no_forecast`` (no target, or nothing to project
+    from — no usable history and no rate), ``achieved`` (already at/over target),
+    ``not_progressing`` (observed net withdrawals — target recedes), and
+    ``on_track`` / ``behind`` / ``projected`` (has a date; on/behind is set only
+    when the goal has a ``target_date``).
     """
     remaining = target - current
     if target <= 0:
@@ -343,18 +391,16 @@ def forecast_goal(*, current: Decimal, target: Decimal,
     if remaining <= 0:
         return _forecast_result("achieved")
     monthly = _monthly_deposit_rate(snapshots)
-    if monthly is None:
-        return _forecast_result("no_forecast")
-    if monthly <= 0:
+    if monthly is not None and monthly <= 0:
+        # Real, observed withdrawals — the target is receding. Interest doesn't
+        # override a user actively drawing the pot down.
         return _forecast_result("not_progressing", monthly_rate=monthly)
-    months_remaining = remaining / monthly
-    days = int((months_remaining * FORECAST_PERIOD_DAYS).to_integral_value(ROUND_CEILING))
-    projected = today + timedelta(days=days)
-    on_track = None if target_date is None else projected <= target_date
-    return _forecast_result(
-        _ON_TRACK_STATE[on_track], monthly_rate=monthly, projected_date=projected,
-        months_remaining=months_remaining, on_track=on_track,
+    months_remaining, monthly_rate = _months_to_target(
+        remaining, current, target, monthly, annual_rate
     )
+    if months_remaining is None:
+        return _forecast_result("no_forecast")
+    return _dated_forecast(months_remaining, monthly_rate, target_date, today)
 
 
 def _goal_snapshots(db: Session, goal: SavingsGoal) -> list[tuple[date, Decimal]]:
@@ -363,6 +409,18 @@ def _goal_snapshots(db: Session, goal: SavingsGoal) -> list[tuple[date, Decimal]
     if goal.account_id is None:
         return []
     return [(b.as_of_date, Decimal(b.balance)) for b in balance_history(db, goal.account_id)]
+
+
+def _goal_annual_rate(db: Session, goal: SavingsGoal) -> Decimal | None:
+    """The linked account's annual interest rate, if any — powers the interest-only
+    forecast fallback for a goal with too little balance history for a deposit rate.
+    A manual (unlinked) goal has no account, hence no rate."""
+    if goal.account_id is None:
+        return None
+    account = db.get(Account, goal.account_id)
+    if account is None or account.interest_rate is None:
+        return None
+    return Decimal(account.interest_rate)
 
 
 def goal_to_dict(db: Session, goal: SavingsGoal) -> dict:
@@ -385,6 +443,7 @@ def goal_to_dict(db: Session, goal: SavingsGoal) -> dict:
         "forecast": forecast_goal(
             current=current, target=target, snapshots=_goal_snapshots(db, goal),
             target_date=goal.target_date, today=date.today(),
+            annual_rate=_goal_annual_rate(db, goal),
         ),
     }
 
