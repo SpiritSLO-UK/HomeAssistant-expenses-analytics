@@ -1,0 +1,14 @@
+{
+  "name": "hafi-e2e",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Playwright end-to-end UI tests for HA Finance Intelligence (open-source, produces an HTML report).",
+  "scripts": {
+    "test": "playwright test",
+    "report": "playwright show-report",
+    "codegen": "playwright codegen http://127.0.0.1:8099"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.1"
+  }
+}

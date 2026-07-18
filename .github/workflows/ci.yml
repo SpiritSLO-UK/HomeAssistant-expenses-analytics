@@ -120,3 +120,72 @@ jobs:
       - name: Teardown
         if: always()
         run: docker rm -f hafi-ci || true
+
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      # Build + boot the real shipped image (same artifact the docker job smoke
+      # tests), so the e2e suite drives the standalone build end to end.
+      - name: Build image
+        run: docker build -f addon/Dockerfile -t ha-finance-intelligence:ci .
+
+      - name: Start the app
+        run: docker run -d --name hafi-e2e -p 8099:8099 ha-finance-intelligence:ci
+
+      - name: Wait for health
+        run: |
+          set -e
+          ok=0
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8099/api/health | grep -q '"status":"ok"'; then
+              echo "health ok"; ok=1; break
+            fi
+            sleep 2
+          done
+          if [ "$ok" != "1" ]; then echo "::error::health check failed"; docker logs hafi-e2e; exit 1; fi
+
+      # The image boots with an empty database; load the demo dataset so the
+      # data-dependent specs (budgets, savings, transactions) have something to
+      # assert against. Standalone runs as a local owner, so no auth is needed.
+      - name: Seed demo data
+        run: |
+          set -e
+          curl -fsS -X GET  http://127.0.0.1:8099/ >/dev/null   # bootstrap the local owner
+          code=$(curl -s -o /tmp/seed.json -w '%{http_code}' -X POST http://127.0.0.1:8099/api/backup/demo)
+          echo "seed HTTP $code"; cat /tmp/seed.json || true
+          if [ "$code" != "200" ]; then echo "::error::demo seed failed"; docker logs hafi-e2e; exit 1; fi
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+
+      - name: Install e2e deps
+        working-directory: e2e
+        run: npm ci
+
+      - name: Install Playwright browser
+        working-directory: e2e
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright
+        working-directory: e2e
+        env:
+          E2E_BASE_URL: http://127.0.0.1:8099
+        run: npx playwright test
+
+      - name: Upload HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: e2e/playwright-report
+          retention-days: 14
+
+      - name: Teardown
+        if: always()
+        run: docker rm -f hafi-e2e || true
