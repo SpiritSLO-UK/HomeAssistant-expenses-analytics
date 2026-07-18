@@ -87,6 +87,12 @@ class Settings(BaseSettings):
     mqtt_password: str | None = None
     mqtt_discovery_prefix: str = "homeassistant"
     mqtt_base_topic: str = "homeassistant/finance"
+    # Seconds after which Home Assistant marks a sensor "unavailable" if no fresh
+    # state has arrived (HA's ``expire_after``). Publishing is event-driven (startup
+    # plus data mutations), not on a fixed cadence, so this is a generous backstop
+    # that flags a long-stopped add-on; the shared availability topic + LWT give the
+    # fast "add-on dropped" signal. 0 disables expire_after. Default: 24 hours.
+    mqtt_expire_after_seconds: int = 86400
 
     # --- AI gateway (spec §22). Off by default; opt-in via privacy_mode. ---
     # The API key for a cloud (or auth'd local) LLM is a secret, so it comes from

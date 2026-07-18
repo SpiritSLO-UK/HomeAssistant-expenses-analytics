@@ -71,6 +71,17 @@ class LoopClient(FakeClient):
         self.loop_stopped = True
 
 
+class WillClient(FakeClient):
+    """FakeClient that records the LWT (last will) registered before connect."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.will: tuple[str, str, bool] | None = None
+
+    def will_set(self, topic: str, payload: str, retain: bool = False) -> None:
+        self.will = (topic, payload, retain)
+
+
 class ReadClient:
     """Fake broker client for ``read_topics``; records its lifecycle calls."""
 
@@ -128,6 +139,55 @@ def test_discovery_config_shape(db):
     assert cfg["state_topic"] == "homeassistant/finance/state/spend_this_month"
     assert cfg["device_class"] == "monetary"
     assert cfg["device"]["identifiers"] == ["ha_finance_intelligence"]
+
+
+def test_discovery_config_carries_availability(db):
+    from app.services import mqtt_service
+
+    disc = mqtt_service.build_discovery(db)
+    assert disc  # at least the core sensors
+    avail_topic = "homeassistant/sensor/finance/availability"
+    for d in disc:
+        cfg = d["config"]
+        assert cfg["availability_topic"] == avail_topic
+        assert cfg["payload_available"] == "online"
+        assert cfg["payload_not_available"] == "offline"
+        # expire_after is the freshness backstop; positive when configured (default).
+        assert cfg["expire_after"] == mqtt_service.settings.mqtt_expire_after_seconds
+        assert cfg["expire_after"] > 0
+
+
+def test_discovery_omits_expire_after_when_disabled(db, monkeypatch):
+    from app.services import mqtt_service
+
+    monkeypatch.setattr(mqtt_service.settings, "mqtt_expire_after_seconds", 0)
+    disc = mqtt_service.build_discovery(db)
+    assert disc
+    assert all("expire_after" not in d["config"] for d in disc)
+    # Availability topic + LWT payloads remain even without expire_after.
+    assert all(d["config"]["availability_topic"].endswith("/finance/availability") for d in disc)
+
+
+def test_arm_availability_registers_lwt(db):
+    from app.services import mqtt_service
+
+    fake = WillClient()
+    mqtt_service._arm_availability(fake)
+    assert fake.will == ("homeassistant/sensor/finance/availability", "offline", True)
+
+
+def test_publish_announces_online_retained(db, monkeypatch):
+    from app.services import mqtt_service
+
+    monkeypatch.setattr(mqtt_service.settings, "mqtt_enabled", True)
+    fake = FakeClient()
+    report = mqtt_service.publish_all(db, connect=lambda: fake)
+
+    assert report["online"] is True
+    online = [(t, p, r) for (t, p, r) in fake.published
+              if t == "homeassistant/sensor/finance/availability"]
+    # A single retained "online" is published; "offline" is only ever the LWT.
+    assert online == [("homeassistant/sensor/finance/availability", "online", True)]
 
 
 def test_budget_adds_sensors(client):
@@ -193,9 +253,10 @@ def test_publish_all_runs_and_stops_network_loop(db, monkeypatch):
     assert fake.loop_started
     assert fake.loop_stopped
     assert fake.disconnected
-    # Every accepted publish is waited on so it isn't lost when we disconnect.
+    # Every accepted publish is waited on so it isn't lost when we disconnect. The
+    # extra +1 is the retained "online" announced on the shared availability topic.
     assert report["cleared"] == 0  # nothing disabled by default
-    assert fake.waited == report["published"]
+    assert fake.waited == report["published"] + 1
 
 
 def test_read_topics_stops_loop_even_on_error(monkeypatch):
