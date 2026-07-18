@@ -30,6 +30,20 @@ const STATUS_COLOUR: Record<string, string> = {
   over: "#c0392b",
 };
 
+// Prorated "pace" signal surfaced by the summary API (additive to over/warn/ok).
+const PACE_LABEL: Record<string, string> = {
+  ahead: "ahead of pace",
+  behind: "behind pace",
+  on_track: "on pace",
+};
+
+// The summary response also carries these prorated-pace fields; they aren't yet
+// on the shared BudgetSummaryItem type, so read them via this local view.
+type WithPace = BudgetSummaryItem & {
+  pace_status?: "ahead" | "behind" | "on_track";
+  pace_remaining?: string;
+};
+
 export default function Budgets() {
   const qc = useQueryClient();
   const [month, setMonth] = useState(thisMonth());
@@ -139,6 +153,9 @@ function BudgetRow({
   const scope = b.category_id == null ? noCategoryScope : (categoryName ?? "Category");
   const warnOrOnTrack = b.status === "warn" ? "near limit" : "on track";
   const statusLabel = b.status === "over" ? "over budget" : warnOrOnTrack;
+  const pace = b as WithPace;
+  const paceLabel = pace.pace_status ? (PACE_LABEL[pace.pace_status] ?? pace.pace_status) : null;
+  const paceOverPace = pace.pace_remaining != null && Number(pace.pace_remaining) < 0;
   const txns = useQuery({
     queryKey: ["budget-txns", b.budget_id, month, annual],
     queryFn: () => getBudgetTransactions(b.budget_id, { month, annual }),
@@ -173,6 +190,14 @@ function BudgetRow({
         {b.spent} / {b.amount} {base} spent · {b.remaining} {base} {Number(b.remaining) < 0 ? "over" : "left"} · {b.percent}%
         {annual && <span> · annual cap</span>}
       </div>
+      {paceLabel && (
+        <div className="muted" style={{ marginTop: 2, fontSize: "0.8rem" }}>
+          {paceLabel}
+          {pace.pace_remaining != null && (
+            <span> · {pace.pace_remaining} {base} {paceOverPace ? "over pace" : "under pace"}</span>
+          )}
+        </div>
+      )}
       {open && (
         <div style={{ marginTop: 8, paddingLeft: 12 }}>
           {txns.isError && (
