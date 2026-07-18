@@ -191,6 +191,14 @@ def _shared_or_own(user_id: int):
     )
 
 
+# Per-request memo for the resolved visible-account set, stashed on the session's
+# ``info`` dict (SR-E1 perf). ``get_db`` hands each request its own ``Session``
+# (closed when the request ends), and ``Session.info`` is a fresh per-instance
+# dict, so the memo can never outlive or leak across a request. The inner map is
+# keyed by ``user.id`` so two users resolved on one session never share a scope.
+_VISIBLE_IDS_MEMO = "hafi_visible_account_ids"
+
+
 def visible_account_ids(db: Session, user: User) -> set[int] | None:
     """Account ids this user may see, or ``None`` meaning **unrestricted**.
 
@@ -198,10 +206,21 @@ def visible_account_ids(db: Session, user: User) -> set[int] | None:
     Everyone else sees shared/unowned accounts plus their own private ones.
     Returning ``None`` (not the full set) for owners keeps every aggregate on a
     real fast path with no ``account_id IN (...)`` clause.
+
+    The non-admin lookup is memoized for the life of the request (keyed by user
+    on the session's ``info`` dict) so the many scope helpers that call this
+    within one request don't each re-issue the identical query (SR-E1). A fresh
+    ``set`` is returned every call — identical to the un-memoized behaviour — so
+    callers may safely mutate it without corrupting the cached value.
     """
     if is_admin(user.role):
         return None
-    return set(db.scalars(select(Account.id).where(_shared_or_own(user.id))).all())
+    memo: dict[int, frozenset[int]] = db.info.setdefault(_VISIBLE_IDS_MEMO, {})
+    cached = memo.get(user.id)
+    if cached is None:
+        cached = frozenset(db.scalars(select(Account.id).where(_shared_or_own(user.id))).all())
+        memo[user.id] = cached
+    return set(cached)
 
 
 def visible_account_scope(request: Request, db: Session) -> set[int] | None:
