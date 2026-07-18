@@ -3,6 +3,137 @@
 All notable changes to HA Finance Intelligence. This project uses date-stamped,
 human-readable entries; versions follow semantic versioning.
 
+## v1.1.0 - Unreleased
+
+> Provided "as is", no warranty, not financial advice - keep your own backups.
+
+### Highlights
+
+A wide-ranging hardening, insight and polish release on top of v1.0.2 - roughly
+170 pull requests. Two-factor gains single-use **backup/recovery codes**; the
+container now runs as a **non-root user**; budgets, projects and savings goals
+get **forecasts** (pace, burn-down, time-to-goal); US bank statements import
+correctly; native browser popups are replaced by an **in-app modal system**; and
+a systematic correctness-and-performance review swept roughly 30 backend
+services. Data and config carry over; database migrations run automatically on
+start.
+
+### Security & hardening
+- **MFA backup/recovery codes** - generate single-use codes from a new Settings
+  card (remaining count, copy/download), so a lost authenticator doesn't lock
+  you out.
+- **Non-root container** - the image runs as an unprivileged user (uid 10001)
+  with digest-pinned base images and SHA-pinned CI actions; on start it fixes
+  `/data` ownership once as root, then drops privileges, so existing installs
+  keep working.
+- **Two-factor internals** - the TOTP secret is encrypted at the application
+  layer at rest, re-enrolment invalidates existing sessions, sessions per user
+  are capped, and session tokens are HMAC-hashed.
+- **AI endpoint guards** - the AI gateway gets a rate limit, a payload-size cap
+  and a daily cloud-spend budget; provider endpoint URLs are scheme-validated;
+  the never-cloud category gate now also covers uncategorised rows, and vision
+  requests refuse a silent auto-fallback to cloud.
+- **Proxy-header trust is opt-in** - reverse-proxy identity headers are only
+  honoured behind an explicit flag, so a directly exposed port can't be
+  identity-spoofed.
+- **Middleware gating fixes** - gate-exempt path prefixes match on segment
+  boundaries only, and the member roster is role-gated at the route.
+- **Headers & responses** - a backend-served Content-Security-Policy, a full
+  security-header block (incl. HSTS) in the bundled Caddy profile, and unknown
+  `/api/*` paths return 404 instead of the app page.
+- **Encrypted-DB safety** - the SQLCipher key is applied without passphrase
+  interpolation, an encrypted copy is verified before it replaces the plaintext
+  database, wrong-passphrase and missing-driver errors are distinguished, and
+  encrypted backups enforce a passphrase strength floor.
+- **Security-health card** - new checks: stored key without MFA, stale backups,
+  and settings managers without MFA.
+- Broader PII redaction, OCR decompression-bomb and page-budget guards, capped
+  audit-row size, and household-scoped audit queries.
+
+### Money pipeline & import
+- **US statements import correctly** - month-first dates and US/EU decimal
+  money formats are parsed across receipts and generic CSVs, detected per file,
+  with an explicit override when every date in a file is ambiguous (plus
+  regression tests pinning the behaviour).
+- **Import profiles remember a date format** (auto / day-first / month-first)
+  with a selector in the import flow; saved CSV profiles are selectable again
+  and the column-mapping UI is clearer.
+- **Faster imports** - dedup hashes batched, rules and vendor aliases preloaded,
+  and the "already imported" report corrected.
+- **Receipts** - refund receipts match credit transactions, match candidates are
+  properly scoped (and the sole original is never dropped on auto-match), and
+  card fields re-sync when OCR results arrive.
+- **Paperless-ngx** - HTTP calls retry with bounds, and re-import back-fills OCR
+  for documents that missed it.
+
+### Insights & forecasting
+- **Budget pace** - budget summaries show a prorated pace signal: are you ahead
+  of or behind where you should be at this point in the period?
+- **Project burn-down** - projects get a run-rate forecast against budget.
+- **Savings goals** - a deposit-rate forecast with an estimated time-to-goal,
+  plus a compound-interest projection on savings history.
+- **Subscriptions** - fortnightly and bi-monthly cadences are detected, price
+  rises no longer break detection, and the page gains sort/filter and an
+  annualised total.
+- **Storage & statistics** - per-table row counts with a largest-table
+  indicator.
+
+### UI & UX
+- **In-app modal system** - proper in-app dialogs replace native browser
+  confirm/prompt/alert popups everywhere.
+- **Optimistic selects** - dropdown/select controls apply instantly and roll
+  back with an error if the save fails.
+- **Search** - `category:` and date filter tokens (advertised on the Search
+  page), tag-name matches, deep-linked result chips, and keyboard navigation of
+  grouped results with Enter-to-open.
+- **Tag management** - merge tags, see usage counts and clean up unused tags
+  from a new Settings card.
+- **Activity log** - server-side search with actor and date-range filters, and
+  an owner-only audit-log CSV export.
+- **Quality-of-life** - a vendor merge UI, clone + drag-to-reorder for rules, a
+  penny-exact percentage split helper, bulk recolour of categories, AI-batch
+  select-all + CSV export, and heads-up dashboard alerts you can enable, disable
+  or clear.
+- **Accessibility** - remaining unlabeled form controls, AI/receipt dialogs and
+  map points received accessible names; charts scale responsively.
+- **Faster first load** - the frontend vendor bundle is code-split.
+
+### Reliability & performance
+- **Bigger database connection pool** so request bursts (a dashboard opening
+  many cards at once) don't error, and the frontend retries transient
+  cold-start failures after the app has sat idle.
+- Blocking OCR / AI / statement-parse work moved off the API event loop.
+- Dashboard, analytics, business and project aggregates pushed down into SQL
+  `GROUP BY`; N+1 queries fixed in savings and projects; per-account savings
+  history batched into one call.
+- A systematic **correctness-and-performance review pass across roughly 30
+  backend services** (accounts, allowance, audit, backups, energy, FX,
+  household, MQTT, Paperless, prices, retention, review queue, scope, settings,
+  subscriptions, travel, vendors and more), fixing edge cases and tightening
+  queries.
+- Backup/restore is quiesced and atomic; price feeds get bounded retries and
+  rate-limit detection; the energy offset falls back to the last snapshot when
+  MQTT isn't live.
+
+### Testing & docs
+- **993 backend tests**, plus a new **Playwright browser suite** (50+ tests: a
+  render smoke of every page and end-to-end task flows) with an HTML report
+  attached to CI runs and releases, and a step-by-step UI test walkthrough.
+- Distinct per-package READMEs for the add-on vs standalone, an AI-gateway and
+  privacy-gate data-flow diagram, refreshed architecture docs, and a documented
+  standalone trust model (including the proxy header-spoof caveat).
+- Docs now state plainly that the database is plaintext unless `HAFI_DB_KEY`
+  at-rest encryption is enabled.
+
+### Upgrade notes
+- One new database migration (`mfa_backup_codes`) runs automatically on start.
+- If at-rest encryption is enabled (`HAFI_DB_KEY` set), you may be asked to
+  **verify two-factor once** after upgrading: the TOTP secret is re-wrapped
+  with application-layer encryption.
+- Upgrading from **v1.0.1 or older** also brings everything in v1.0.2 below,
+  including the fix for the "unrecognised date" error when importing US-format
+  CSV statements.
+
 ## v1.0.2 - 2026-06-29
 
 A correctness, security-hardening and quality release on top of v1.0.1, with
