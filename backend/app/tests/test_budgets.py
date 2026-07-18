@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import date
+from decimal import Decimal
+
 import pytest
+
+from app.models import Budget, Transaction
+from app.services import budget_service
 
 
 def _curve(rows: list[tuple[str, str, str]]) -> bytes:
@@ -240,3 +246,80 @@ def test_weekly_period_window(client):
     assert s["spent"] == "40.00"
     assert s["period_start"] == "2026-05-11"
     assert s["period_end"] == "2026-05-18"
+
+
+# --- pace / prorated status (additive; does not change over/warn/ok) ---
+
+def test_elapsed_fraction_edges():
+    start, end = date(2026, 5, 1), date(2026, 5, 31)  # 30-day span
+    # Period not started.
+    assert budget_service.elapsed_fraction(start, end, date(2026, 4, 20)) == Decimal("0")
+    # Period ended -> full period.
+    assert budget_service.elapsed_fraction(start, end, date(2026, 6, 10)) == Decimal("1")
+    # Day 15 of 30 -> exactly half (Decimal, not float ==).
+    assert budget_service.elapsed_fraction(start, end, date(2026, 5, 15)) == Decimal("15") / Decimal("30")
+    # Zero-length window is treated as fully elapsed (divide-by-zero guard).
+    assert budget_service.elapsed_fraction(start, start, date(2026, 5, 1)) == Decimal("1")
+
+
+def _spend(db, day: str, amount: str) -> None:
+    db.add(
+        Transaction(
+            transaction_date=date.fromisoformat(day),
+            description_raw="SPEND",
+            amount=Decimal(amount),
+            base_amount=Decimal(amount),
+            currency="GBP",
+            direction="debit",
+        )
+    )
+
+
+def _total_budget(db, amount: str) -> Budget:
+    b = Budget(name="All", period="monthly", amount=Decimal(amount), currency="GBP")
+    db.add(b)
+    db.commit()
+    db.refresh(b)
+    return b
+
+
+def test_pace_ahead_mid_period(db):
+    # Cap 300, May (31 days), ref = 15th -> expected ~= 145.16; 250 spent is
+    # well over the elapsed pace -> "ahead" (but only 83% of cap, so status warn).
+    b = _total_budget(db, "300.00")
+    _spend(db, "2026-05-05", "-250.00")
+    db.commit()
+    s = budget_service.status_for(db, b, date(2026, 5, 15))
+    assert s["pace_status"] == "ahead"
+    assert Decimal(s["pace_remaining"]) < Decimal("0")  # over the prorated pace
+    assert s["status"] == "warn"  # existing total-vs-cap semantics unchanged
+
+
+def test_pace_behind_mid_period(db):
+    # Same window, only 50 spent by the 15th -> well under the pace -> "behind".
+    b = _total_budget(db, "300.00")
+    _spend(db, "2026-05-05", "-50.00")
+    db.commit()
+    s = budget_service.status_for(db, b, date(2026, 5, 15))
+    assert s["pace_status"] == "behind"
+    assert Decimal(s["pace_remaining"]) > Decimal("0")  # under the prorated pace
+    assert s["status"] == "ok"
+
+
+def test_pace_period_not_started():
+    # ref before the window -> expected 0, so any spend reads as ahead; with no
+    # spend it is on_track, and elapsed_fraction is 0.
+    start, end = date(2026, 6, 1), date(2026, 7, 1)
+    fields = budget_service._pace_fields(Decimal("0.00"), Decimal("300.00"), start, end, date(2026, 5, 1))
+    assert fields["elapsed_fraction"] == 0.0
+    assert fields["pace_expected"] == "0.00"
+    assert fields["pace_status"] == "on_track"
+
+
+def test_pace_period_ended():
+    # ref on/after the window end -> pace uses the full period (expected == cap).
+    start, end = date(2026, 5, 1), date(2026, 6, 1)
+    fields = budget_service._pace_fields(Decimal("300.00"), Decimal("300.00"), start, end, date(2026, 7, 1))
+    assert fields["elapsed_fraction"] == 1.0
+    assert fields["pace_expected"] == "300.00"
+    assert fields["pace_status"] == "on_track"  # spent == full-period expectation
