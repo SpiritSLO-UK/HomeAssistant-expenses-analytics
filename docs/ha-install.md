@@ -98,7 +98,8 @@ the app (database snapshot, CSV, category/rule/vendor libraries). See
 
 When a new version is published, the add-on shows an **Update** button (Supervisor
 pulls the new image). Your data in `/data` is preserved across updates; database
-migrations run automatically on start.
+migrations run automatically on start. Moving to **v1.1.0**? See the
+[v1.0.2 to v1.1.0 upgrade guide](upgrade-v1.1.0.md).
 
 ## Uninstalling
 
