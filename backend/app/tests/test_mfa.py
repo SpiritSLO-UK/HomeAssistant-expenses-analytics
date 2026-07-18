@@ -145,6 +145,66 @@ def test_reenrolment_requires_current_code_and_keeps_factor_live(client):
     assert client.post("/api/auth/mfa/verify", json={"code": totp.current_code(new_secret)}).status_code == 200
 
 
+def test_reenrolment_invalidates_old_sessions(client):
+    """Re-enrolling mints a new TOTP secret; sessions opened against the OLD
+    secret must not survive the swap. Once /enable promotes the new secret, a
+    token minted against the old secret is rejected by the entry gate."""
+    secret = _enable_mfa(client)
+    token = client.post("/api/auth/mfa/verify", json={"code": totp.current_code(secret)}).json()["token"]
+    sess = {"X-HAFI-Session": token}
+    assert client.get("/api/transactions", headers=sess).status_code == 200
+
+    # Re-enrol with the current code, then confirm the new secret.
+    new_secret = client.post(
+        "/api/auth/mfa/setup", json={"code": totp.current_code(secret)}
+    ).json()["secret"]
+    assert new_secret != secret
+    assert client.post(
+        "/api/auth/mfa/enable", json={"code": totp.current_code(new_secret)}
+    ).status_code == 200
+
+    # The old-secret session is gone — its token no longer opens the gate.
+    reblocked = client.get("/api/transactions", headers=sess)
+    assert reblocked.status_code == 403
+    assert reblocked.json()["mfa_required"] is True
+    # A session verified against the NEW secret works.
+    new_token = client.post(
+        "/api/auth/mfa/verify", json={"code": totp.current_code(new_secret)}
+    ).json()["token"]
+    assert client.get("/api/transactions", headers={"X-HAFI-Session": new_token}).status_code == 200
+
+
+def test_session_cap_evicts_oldest(db, monkeypatch):
+    """A verification that would exceed MAX_SESSIONS_PER_USER evicts the oldest
+    session, so a user can't accumulate unbounded session rows."""
+    monkeypatch.setattr(settings, "db_key", None)
+    secret = totp.generate_secret()
+    user = _mk_user(db, "Capped", mfa_enabled=True, mfa_secret=secret)
+
+    cap = mfa_service.MAX_SESSIONS_PER_USER
+    base = datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=1)
+    # Seed exactly `cap` still-valid sessions, oldest first (distinct created_at).
+    for i in range(cap):
+        db.add(
+            UserSession(
+                user_id=user.id,
+                token_hash=f"{i:064d}",
+                created_at=base + timedelta(minutes=i),
+                expires_at=base + timedelta(hours=12),
+                last_step_up_at=base,
+            )
+        )
+    db.commit()
+
+    # Minting one more would be cap+1 → the single oldest is evicted back to cap.
+    assert mfa_service.verify_and_open(db, user, totp.current_code(secret)) is not None
+    rows = db.query(UserSession).filter(UserSession.user_id == user.id).all()
+    assert len(rows) == cap
+    hashes = {r.token_hash for r in rows}
+    assert f"{0:064d}" not in hashes  # the oldest seeded session was dropped
+    assert f"{cap - 1:064d}" in hashes  # a newer seeded one survived
+
+
 def test_disable_clears_mfa_and_sessions(client):
     secret = _enable_mfa(client)
     token = client.post("/api/auth/mfa/verify", json={"code": totp.current_code(secret)}).json()["token"]
