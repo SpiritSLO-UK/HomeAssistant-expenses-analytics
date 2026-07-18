@@ -221,6 +221,40 @@ def test_demo_remove_clears_receipts_splits_and_prices(client, db):
     assert _counts() == (0, 0)
 
 
+def test_demo_status_reports_loaded_at_and_age_then_clears(client):
+    """GET /api/backup/demo returns a loaded_at timestamp + a non-negative integer
+    age_days after a load, and both go back to null once the demo is removed."""
+    client.post("/api/backup/demo")
+    status = client.get("/api/backup/demo").json()
+    assert status["has_demo_data"] is True
+    assert status["loaded_at"] is not None
+    assert isinstance(status["age_days"], int)
+    assert status["age_days"] >= 0
+
+    client.delete("/api/backup/demo")
+    cleared = client.get("/api/backup/demo").json()
+    assert cleared["has_demo_data"] is False
+    assert cleared["loaded_at"] is None
+    assert cleared["age_days"] is None
+
+
+def test_demo_status_age_days_reflects_elapsed_time(client, db):
+    """age_days is derived from the stored loaded_at, so back-dating the manifest's
+    timestamp by ten days reads back as an age of ten whole days."""
+    from datetime import UTC, datetime, timedelta
+
+    from app.services import settings_service
+
+    client.post("/api/backup/demo")
+    db.rollback()  # see the client's committed manifest (separate WAL snapshot)
+    manifest = json.loads(settings_service.get(db, settings_service.DEMO_MANIFEST))
+    manifest["loaded_at"] = (datetime.now(UTC) - timedelta(days=10)).isoformat()
+    settings_service.set_value(db, settings_service.DEMO_MANIFEST, json.dumps(manifest))
+
+    status = client.get("/api/backup/demo").json()
+    assert status["age_days"] == 10
+
+
 def test_demo_defaults_to_debug_log_level(client):
     """Loading the demo flips logging to DEBUG so there's something to see."""
     client.post("/api/backup/demo")

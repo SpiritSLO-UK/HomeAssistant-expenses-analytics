@@ -142,8 +142,10 @@ def load_demo(db: Annotated[Session, Depends(get_db)], user: Annotated[User, Dep
 
 @router.get("/demo")
 def demo_status(db: Annotated[Session, Depends(get_db)]) -> dict:
-    """Whether removable demo data is present (from a previous load)."""
-    return {"has_demo_data": demo_service.has_demo_data(db)}
+    """Whether removable demo data is present (from a previous load), plus when it
+    was loaded (``loaded_at``, nullable UTC ISO) and its age in whole days
+    (``age_days``, nullable) so the UI can flag a stale, date-relative demo."""
+    return demo_service.demo_status(db)
 
 
 @router.delete("/demo")

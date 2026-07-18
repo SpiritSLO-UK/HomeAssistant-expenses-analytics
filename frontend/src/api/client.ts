@@ -1792,7 +1792,11 @@ export function loadDemoData(): Promise<{ rows_detected: number; new: number; du
   return fetchJson("api/backup/demo", { method: "POST" });
 }
 
-export function getDemoStatus(): Promise<{ has_demo_data: boolean }> {
+export function getDemoStatus(): Promise<{
+  has_demo_data: boolean;
+  loaded_at: string | null;
+  age_days: number | null;
+}> {
   return fetchJson("api/backup/demo");
 }
 

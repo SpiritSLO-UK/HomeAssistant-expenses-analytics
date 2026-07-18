@@ -28,7 +28,7 @@ import csv
 import io
 import json
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import delete, func, select
@@ -901,9 +901,10 @@ def load_demo(db: Session) -> dict:
         for key in ("rows_detected", "new", "duplicates", "errors"):
             report[key] = report.get(key, 0) + member_report.get(key, 0)
 
-    # Record exactly what this load created so "Remove demo data" can undo it —
-    # plus the claimed account + pre-demo log level so removal can revert both.
-    extra: dict = {}
+    # Record exactly what this load created so "Remove demo data" can undo it -
+    # plus the claimed account + pre-demo log level so removal can revert both, and
+    # a UTC "loaded_at" so the UI can warn when the (date-relative) demo has aged.
+    extra: dict = {"loaded_at": datetime.now(UTC).isoformat()}
     if claimed_account_id is not None:
         extra["claimed_account"] = claimed_account_id
     if prior_log_level is not None:
@@ -922,6 +923,36 @@ def load_demo(db: Session) -> dict:
 def has_demo_data(db: Session) -> bool:
     """True when a manifest from a previous load is present (something to remove)."""
     return bool(settings_service.get(db, settings_service.DEMO_MANIFEST))
+
+
+def _age_days(loaded_at: str | None) -> int | None:
+    """Whole days between the stored (UTC) ``loaded_at`` and now, or None if it is
+    missing/unparseable. Never negative (a future timestamp reads as 0)."""
+    if not loaded_at:
+        return None
+    try:
+        loaded = datetime.fromisoformat(loaded_at)
+    except ValueError:
+        return None
+    if loaded.tzinfo is None:  # tolerate a naive stored value (treat as UTC)
+        loaded = loaded.replace(tzinfo=UTC)
+    return max((datetime.now(UTC) - loaded).days, 0)
+
+
+def demo_status(db: Session) -> dict:
+    """Status of any removable demo data: whether it is present, when it was loaded
+    (UTC ISO ``loaded_at``, nullable) and how many whole days ago (``age_days``,
+    nullable). The demo's dates are seeded relative to the load day, so the age lets
+    the UI hint that a long-loaded demo may look out of date."""
+    raw = settings_service.get(db, settings_service.DEMO_MANIFEST)
+    if not raw:
+        return {"has_demo_data": False, "loaded_at": None, "age_days": None}
+    loaded_at = json.loads(raw).get("loaded_at")
+    return {
+        "has_demo_data": True,
+        "loaded_at": loaded_at,
+        "age_days": _age_days(loaded_at),
+    }
 
 
 def _bulk_delete(db: Session, model: type, ids: list[int]) -> int:
