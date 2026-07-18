@@ -38,11 +38,10 @@ const PACE_LABEL: Record<string, string> = {
   on_track: "on pace",
 };
 
-// The summary response also carries these prorated-pace fields; they aren't yet
-// on the shared BudgetSummaryItem type, so read them via this local view.
+// The summary response also carries a prorated-pace status; it isn't yet on the
+// shared BudgetSummaryItem type, so read it via this local view.
 type WithPace = BudgetSummaryItem & {
   pace_status?: "ahead" | "behind" | "on_track";
-  pace_remaining?: string;
 };
 
 export default function Budgets() {
@@ -157,7 +156,9 @@ function BudgetRow({
   const statusLabel = b.status === "over" ? "over budget" : warnOrOnTrack;
   const pace = b as WithPace;
   const paceLabel = pace.pace_status ? (PACE_LABEL[pace.pace_status] ?? pace.pace_status) : null;
-  const paceOverPace = pace.pace_remaining != null && Number(pace.pace_remaining) < 0;
+  // Keep the status tag as the primary signal; only add a single concise pace
+  // hint when it isn't already redundant with an over-budget status.
+  const showPace = paceLabel != null && b.status !== "over";
   const txns = useQuery({
     queryKey: ["budget-txns", b.budget_id, month, annual],
     queryFn: () => getBudgetTransactions(b.budget_id, { month, annual }),
@@ -192,12 +193,9 @@ function BudgetRow({
         {b.spent} / {b.amount} {base} spent · {b.remaining} {base} {Number(b.remaining) < 0 ? "over" : "left"} · {b.percent}%
         {annual && <span> · annual cap</span>}
       </div>
-      {paceLabel && (
+      {showPace && (
         <div className="muted" style={{ marginTop: 2, fontSize: "0.8rem" }}>
           {paceLabel}
-          {pace.pace_remaining != null && (
-            <span> · {pace.pace_remaining} {base} {paceOverPace ? "over pace" : "under pace"}</span>
-          )}
         </div>
       )}
       {open && (
