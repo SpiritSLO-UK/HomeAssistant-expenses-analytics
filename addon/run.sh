@@ -7,7 +7,11 @@
 #    honour whatever HAFI_* environment variables you pass to the container
 #    (app.config supplies sensible defaults for anything unset).
 #
-# Either way we then run database migrations and start the server.
+# Either way we then start the server. Database migrations are NOT run here: the
+# app runs them in-process (app.db.migrations_runner, called from the lifespan)
+# against the ACTIVE engine, so they work against an UNLOCKED encrypted database.
+# Running `alembic upgrade head` here built a plain engine with no key and could
+# not open an encrypted DB, crash-looping the container on every restart.
 set -euo pipefail
 
 # --- Privilege drop (backlog #372) -----------------------------------------
@@ -17,7 +21,8 @@ set -euo pipefail
 # mount must not crash startup), then re-exec ourselves dropped to that
 # unprivileged user via gosu. The `id -u` guard makes this idempotent: the
 # second pass runs as 10001 and skips the whole block, so everything below
-# (options parsing, MQTT lookup, migrations, the app) runs unprivileged.
+# (options parsing, MQTT lookup, the app and its in-process migrations) runs
+# unprivileged.
 if [[ "$(id -u)" == "0" ]]; then
   chown -R 10001:10001 /data || true
   exec gosu 10001:10001 "$0" "$@"
@@ -113,22 +118,11 @@ mkdir -p "$DATA_DIR"
 chmod 700 "$DATA_DIR" || true
 [[ -f "$HAFI_DATABASE_PATH" ]] && chmod 600 "$HAFI_DATABASE_PATH" || true
 
-echo "[run.sh] Applying database migrations..."
-cd /app/backend
-if ! alembic upgrade head; then
-  # A failed migration means the finance database may be in an inconsistent
-  # state. Starting the app anyway risks corrupting data or serving wrong
-  # figures, so we FAIL HARD by default and refuse to start the server.
-  echo "[run.sh] ERROR: 'alembic upgrade head' failed." >&2
-  echo "[run.sh] The finance database may be in an inconsistent state; refusing to start the app." >&2
-  if [[ "${HAFI_ALLOW_MIGRATION_FAILURE:-0}" == "1" ]]; then
-    echo "[run.sh] HAFI_ALLOW_MIGRATION_FAILURE=1 set — continuing despite the migration failure (recovery mode). The database may be inconsistent." >&2
-  else
-    echo "[run.sh] To override for recovery (at your own risk), restart with HAFI_ALLOW_MIGRATION_FAILURE=1." >&2
-    exit 1
-  fi
-fi
-
+# Migrations run in-process at app startup (app.db.migrations_runner), against the
+# active engine, so they cover the encrypted-DB case that a blind `alembic upgrade
+# head` here could not open. The app FAILS HARD on a genuine migration failure
+# (aborts startup, non-zero exit) unless HAFI_ALLOW_MIGRATION_FAILURE=1 is set:
+# the same recovery override, now enforced inside the app.
 echo "[run.sh] Starting HA Finance Intelligence on port ${HAFI_PORT}..."
 # Run from the source tree, NOT site-packages: app.main resolves the bundled
 # frontend (../../../frontend/dist) and the category library (../category_library)

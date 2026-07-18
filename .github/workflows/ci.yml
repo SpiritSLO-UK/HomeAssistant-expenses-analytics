@@ -121,6 +121,76 @@ jobs:
         if: always()
         run: docker rm -f hafi-ci || true
 
+  encryption-restart:
+    name: Encryption restart (no crash-loop)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      # Reproduces the release-blocking bug that a plaintext migration step in
+      # run.sh caused: once at-rest encryption was enabled, the pre-app
+      # `alembic upgrade head` built a keyless engine that could not open the
+      # encrypted DB, so the container crash-looped on the NEXT restart. Migrations
+      # now run in-process against the unlocked engine; this job proves an encrypted
+      # container survives a restart and auto-unlocks from the saved .db_key file.
+      - name: Build image
+        run: docker build -f addon/Dockerfile -t ha-finance-intelligence:ci .
+
+      # Named volume so /data (the DB + the .db_key auto-unlock file) survives the
+      # restart. amd64 CI runners ship the `encryption` extra (sqlcipher3-binary).
+      - name: Start the app
+        run: docker run -d --name hafi-enc -v hafi-enc-data:/data -p 8099:8099 ha-finance-intelligence:ci
+
+      - name: Wait for health
+        run: |
+          set -e
+          ok=0
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8099/api/health | grep -q '"status":"ok"'; then
+              echo "health ok"; ok=1; break
+            fi
+            sleep 2
+          done
+          if [ "$ok" != "1" ]; then echo "::error::health check failed"; docker logs hafi-enc; exit 1; fi
+
+      # Bootstrap the local owner (GET /) then enable at-rest encryption in "stored"
+      # mode, which saves the .db_key file so the app auto-unlocks unattended.
+      - name: Enable at-rest encryption (stored mode)
+        run: |
+          set -e
+          curl -fsS -X GET http://127.0.0.1:8099/ >/dev/null
+          code=$(curl -s -o /tmp/enc.json -w '%{http_code}' -X POST http://127.0.0.1:8099/api/security/enable \
+            -H 'Content-Type: application/json' -d '{"passphrase":"ci-pass","unlock_mode":"stored"}')
+          echo "enable HTTP $code"; cat /tmp/enc.json || true
+          if [ "$code" != "200" ]; then echo "::error::enable encryption failed"; docker logs hafi-enc; exit 1; fi
+
+      # The moment that used to crash-loop: restart with NO env change. The app must
+      # auto-unlock from the saved .db_key file and run migrations against the
+      # UNLOCKED encrypted engine (previously the keyless engine could not open it).
+      - name: Restart the container
+        run: docker restart hafi-enc
+
+      - name: Assert it comes back unlocked (not crash-looping)
+        run: |
+          set -e
+          ok=0
+          for i in $(seq 1 30); do
+            status=$(curl -fsS http://127.0.0.1:8099/api/health || true)
+            echo "health: $status"
+            if echo "$status" | grep -q '"status":"ok"'; then ok=1; break; fi
+            sleep 2
+          done
+          if [ "$ok" != "1" ]; then echo "::error::encrypted container did not come back unlocked"; docker logs hafi-enc; exit 1; fi
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8099/api/transactions)
+          if [ "$code" != "200" ]; then echo "::error::data endpoint blocked after restart (HTTP $code)"; docker logs hafi-enc; exit 1; fi
+          echo "encrypted restart OK: health unlocked + data served"
+
+      - name: Teardown
+        if: always()
+        run: |
+          docker rm -f hafi-enc || true
+          docker volume rm hafi-enc-data || true
+
   e2e:
     name: E2E (Playwright)
     runs-on: ubuntu-latest
