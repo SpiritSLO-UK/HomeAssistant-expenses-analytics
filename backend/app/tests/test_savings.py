@@ -34,6 +34,37 @@ def test_account_balances_and_latest(client):
     assert Decimal(summary["accounts"][0]["latest_balance"]) == Decimal("1500")
 
 
+def test_summary_carries_compact_balance_series(client):
+    """The summary batches a date-ordered per-account balance series so the
+    collapsed-row sparkline renders without a per-account fetch."""
+    aid = _account(client, "ISA")
+    # Insert out of date order - the series must come out ordered by date.
+    _add_balance(client, aid, "2026-03-31", "1500")
+    _add_balance(client, aid, "2026-01-31", "1000")
+    _add_balance(client, aid, "2026-02-28", "1200")
+
+    acct = next(a for a in client.get("/api/savings/summary").json()["accounts"] if a["id"] == aid)
+    series = [Decimal(str(v)) for v in acct["balance_series"]]
+    assert series == [Decimal("1000"), Decimal("1200"), Decimal("1500")]
+
+
+def test_summary_balance_series_trailing_capped(db):
+    """A long history is capped to the most recent points (trailing window) so the
+    summary payload stays small."""
+    from app.services import savings_service
+
+    acct = savings_service.create_account(db, name="Big")
+    for i in range(savings_service.SPARKLINE_MAX_POINTS + 20):
+        # Same date - ordering falls back to insertion (id) order.
+        savings_service.record_balance(db, acct.id, as_of=date(2026, 1, 1), balance=Decimal(i))
+
+    series = savings_service.account_to_dict(db, acct)["balance_series"]
+    assert len(series) == savings_service.SPARKLINE_MAX_POINTS
+    # Keeps the newest value at the end of the window.
+    last_value = savings_service.SPARKLINE_MAX_POINTS + 20 - 1
+    assert Decimal(series[-1]) == Decimal(last_value)
+
+
 def test_balance_on_missing_account_404(client):
     assert _add_balance(client, 9999, "2026-01-01", "10").status_code == 404
 

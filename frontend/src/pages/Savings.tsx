@@ -104,6 +104,15 @@ export default function Savings() {
   );
 }
 
+// The compact per-account balance series the savings summary now carries, used
+// to draw the collapsed-row sparkline without a per-account fetch. The shared
+// SavingsAccount type in client.ts doesn't model it yet (out of scope here), so
+// we read it through a local widening view.
+function accountBalanceSeries(account: SavingsAccount): number[] {
+  const series = (account as SavingsAccount & { balance_series?: (string | number)[] }).balance_series ?? [];
+  return series.map((v) => Number(v));
+}
+
 function AccountCard({
   account,
   base,
@@ -117,9 +126,13 @@ function AccountCard({
 }>) {
   const confirm = useConfirm();
   const [open, setOpen] = useState(false);
+  // Full snapshot history drives only the expanded panel (change log), so it's
+  // fetched lazily on open. The collapsed sparkline reads the summary-provided
+  // series instead, so no per-account request fires on mount.
   const history = useQuery({
     queryKey: ["savings-history", account.id],
     queryFn: () => getBalanceHistory(account.id),
+    enabled: open,
   });
   const [date, setDate] = useState(today());
   const [amount, setAmount] = useState("");   // absolute "set balance" (from statement)
@@ -166,7 +179,8 @@ function AccountCard({
   const canAdjust = deltaNum != null && deltaNum !== 0;
 
   const hist = history.data ?? [];
-  const points = hist.map((b) => Number(b.balance));
+  // Collapsed-row sparkline reads the summary-batched series (no per-account fetch).
+  const sparkPoints = accountBalanceSeries(account);
   // Balance-change log (newest first) with the delta vs the previous snapshot.
   const log = hist
     .map((b, i) => ({ ...b, delta: i > 0 ? Number(b.balance) - Number(hist[i - 1].balance) : null }))
@@ -185,7 +199,7 @@ function AccountCard({
             {account.latest_balance ? `${account.latest_balance} ${account.currency}` : <span className="muted">no balance yet</span>}
           </div>
         </div>
-        {points.length >= 2 && <Sparkline values={points} color="#3aa55a" />}
+        {sparkPoints.length >= 2 && <Sparkline values={sparkPoints} color="#3aa55a" />}
       </div>
 
       {open && (
