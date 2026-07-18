@@ -6,6 +6,46 @@
 All notable changes to HA Finance Intelligence. This project uses date-stamped,
 human-readable entries; versions follow semantic versioning.
 
+## v1.1.0 - Unreleased
+
+A wide-ranging hardening, insight and polish release on top of v1.0.2. Data and
+config carry over; database migrations run automatically on start.
+
+> Provided "as is", no warranty, not financial advice - keep your own backups.
+
+### What's new
+- **Two-factor backup codes** - generate single-use recovery codes from
+  Settings, so a lost authenticator doesn't lock you out.
+- **Forecasts** - budgets show whether you're on pace for the period, projects
+  show a burn-down against budget, and savings goals estimate time-to-goal from
+  your deposit rate.
+- **US bank statements import correctly** - month-first dates and US decimal
+  formats are recognised, and each import profile can remember its date format.
+- **Smarter search** - category and date filter tokens, tag-name matches, and
+  keyboard navigation of results.
+- **Tag housekeeping** - merge tags, see usage counts and clean up unused tags
+  from Settings; vendors get a merge tool too.
+- **Activity log** - search with actor and date filters, plus an owner-only
+  CSV download.
+- **Nicer dialogs** - in-app modals replace browser confirm/prompt popups, and
+  dropdowns apply instantly (rolling back if a save fails).
+- **Faster and steadier** - quicker dashboard and analytics queries, a bigger
+  database connection pool, and fewer transient errors after the app has sat
+  idle.
+- **More secure** - the container runs as a non-root user, AI calls are
+  rate-limited and budget-capped, stronger security headers, and a broad
+  hardening pass across the backend.
+- **Better tested** - 993 backend tests plus a browser test suite that clicks
+  through every page.
+
+### Upgrade notes
+- One new database migration (`mfa_backup_codes`) runs automatically on start.
+- If at-rest encryption is enabled (`HAFI_DB_KEY` set), you may be asked to
+  verify two-factor once after upgrading.
+- Upgrading from v1.0.1 or older also brings everything in v1.0.2 below,
+  including the fix for the "unrecognised date" error when importing US-format
+  CSV statements.
+
 ## v1.0.2 - 2026-06-29
 
 A correctness, security-hardening and quality release on top of v1.0.1, with
