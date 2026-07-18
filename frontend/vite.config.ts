@@ -13,6 +13,29 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        // Split large, rarely-changing vendor code out of the app chunk so the
+        // initial download shrinks and browsers can reuse the vendor bundles
+        // across app releases (they only change when the deps do). This clears
+        // Vite's ">500 kB chunk after minification" build warning. Regex matches
+        // both POSIX and Windows path separators inside node_modules.
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return undefined;
+          // React core + router share the same release cadence: keep them together.
+          if (
+            /[\\/]node_modules[\\/](react|react-dom|react-router|react-router-dom|@remix-run[\\/]router|scheduler)[\\/]/.test(
+              id,
+            )
+          ) {
+            return "react-vendor";
+          }
+          // TanStack Query is a sizeable, independent vendor: give it its own chunk.
+          if (id.includes("@tanstack")) return "query-vendor";
+          return "vendor";
+        },
+      },
+    },
   },
   server: {
     port: 5173,
