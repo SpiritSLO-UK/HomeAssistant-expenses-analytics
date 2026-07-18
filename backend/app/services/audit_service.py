@@ -8,6 +8,8 @@ audit write must never break the action it records.
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 
 from sqlalchemy import distinct, select
@@ -193,6 +195,66 @@ def distinct_actions(db: Session) -> list[str]:
     """The set of action names that appear in the log (for a filter dropdown)."""
     stmt = select(distinct(AuditLog.action)).order_by(AuditLog.action)
     return list(db.scalars(stmt).all())
+
+
+# Columns for the audit-log CSV export. Kept small and stable (matches the
+# export_service CSV style): identity + a single already-capped details cell.
+AUDIT_EXPORT_HEADERS = ["id", "timestamp", "actor", "action", "household", "details"]
+
+# Upper bound on rows in a single export so a pathological log can't exhaust
+# memory (mirrors export_service.MAX_EXPORT_ROWS).
+MAX_EXPORT_ROWS = 100_000
+
+
+def _household_names(db: Session) -> dict[int, str]:
+    """id → name map for the households referenced by audit rows (built once so
+    the export has no N+1). Best-effort: an unresolved id maps to an empty cell."""
+    from app.models import Household  # local: keep the module import surface small
+
+    return {h.id: h.name for h in db.scalars(select(Household)).all()}
+
+
+def export_audit(
+    db: Session,
+    *,
+    action_prefix: str | None = None,
+    include_archived: bool = False,
+    limit: int = MAX_EXPORT_ROWS,
+) -> list[dict]:
+    """Audit rows in CSV-ready form for the given filters, reusing the same
+    ``recent()`` query path (household scope + action-prefix filter, archived
+    exclusion) as the activity-log listing so "export" matches "what you see".
+
+    The ``details`` cell is the row's already-serialised ``details_json`` — capped
+    to ``MAX_DETAILS_BYTES`` on write (#319) — so a single cell can never grow
+    without bound. ``csv.writer`` handles quoting/escaping of every cell."""
+    entries = recent(
+        db, limit=limit, action_prefix=action_prefix, include_archived=include_archived
+    )
+    households = _household_names(db)
+    return [
+        {
+            "id": e.id,
+            "timestamp": e.created_at.isoformat() if e.created_at else "",
+            "actor": e.actor or "",
+            "action": e.action,
+            "household": households.get(e.household_id, ""),
+            "details": e.details_json or "",
+        }
+        for e in entries
+    ]
+
+
+def audit_csv(rows: list[dict]) -> str:
+    """Render export rows (from :func:`export_audit`) as a CSV document. Cells are
+    escaped by ``csv.writer``; a details cell containing commas/quotes/newlines is
+    quoted, not injected raw."""
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(AUDIT_EXPORT_HEADERS)
+    for row in rows:
+        writer.writerow([row[h] for h in AUDIT_EXPORT_HEADERS])
+    return buf.getvalue()
 
 
 def to_dict(entry: AuditLog) -> dict:

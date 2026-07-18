@@ -12,9 +12,11 @@ log panel), not the database, so they are not served here.
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -42,3 +44,23 @@ def activity(
 def actions(db: Annotated[Session, Depends(get_db)], _owner: Annotated[User, Depends(require_owner)]) -> list[str]:
     """Distinct action names present in the log (drives the filter dropdown)."""
     return audit_service.distinct_actions(db)
+
+
+@router.get("/audit/export.csv")
+def export_audit(
+    db: Annotated[Session, Depends(get_db)],
+    _owner: Annotated[User, Depends(require_owner)],
+    action: Annotated[str | None, Query(description="Filter by action-name prefix")] = None,
+    include_archived: Annotated[bool, Query(description="Include archived (aged-out) entries")] = False,
+) -> Response:
+    """Download the activity log as CSV. Owner-only, like the rest of this router —
+    the audit log can reveal sensitive user-management actions. Honours the same
+    action-prefix / archived filters as the ``/activity`` listing."""
+    rows = audit_service.export_audit(db, action_prefix=action, include_archived=include_archived)
+    filename = f"audit-log-{date.today().isoformat()}.csv"
+    # utf-8-sig writes a BOM so Excel detects UTF-8 correctly (matches routes_export).
+    return Response(
+        content=audit_service.audit_csv(rows).encode("utf-8-sig"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
