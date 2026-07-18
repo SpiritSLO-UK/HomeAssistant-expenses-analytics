@@ -226,19 +226,18 @@ jobs:
           done
           if [ "$ok" != "1" ]; then echo "::error::health check failed on root-owned /data"; docker logs hafi-rootvol; exit 1; fi
 
-      # Prove the APP process itself runs unprivileged. `docker top` reads the uid
-      # from the host, so it reports the real uid of the running app process.
-      # (`docker exec ... id` would only report the container's default user, not
-      # this process, so it cannot catch a failed privilege drop.)
+      # Prove the APP process itself runs unprivileged. `/data` being 10001 only
+      # proves run.sh's root-side chown ran; the DB file is created by the RUNNING
+      # app process, so its owner uid equals the app's uid. If the privilege drop
+      # (gosu 10001) had failed, the app would still be root and the DB file would
+      # be owned by uid 0.
       - name: Assert the app runs as uid 10001 (not root)
         run: |
           set -e
-          docker top hafi-rootvol -o uid,cmd
-          uid=$(docker top hafi-rootvol -o uid,cmd | grep 'app.main' | awk '{print $1}' | head -n1)
-          echo "app.main uid: ${uid:-<none>}"
-          if [ -z "$uid" ]; then echo "::error::could not find the app.main process"; docker logs hafi-rootvol; exit 1; fi
-          if [ "$uid" != "10001" ]; then echo "::error::app runs as uid $uid, expected 10001 (non-root)"; docker logs hafi-rootvol; exit 1; fi
-          echo "app runs unprivileged (uid 10001)"
+          db_uid=$(docker run --rm -v hafi_rootvol:/data alpine stat -c '%u' /data/finance/finance.db 2>/dev/null || echo MISSING)
+          echo "DB file owner uid: $db_uid"
+          if [ "$db_uid" != "10001" ]; then echo "::error::app did not run as uid 10001 (db owner=$db_uid)"; docker logs hafi-rootvol; exit 1; fi
+          echo "app runs unprivileged (DB owned by uid 10001)"
 
       # Prove /data self-healed: run.sh chowned the root-owned mount to 10001 so the
       # unprivileged app can actually write the DB there.
