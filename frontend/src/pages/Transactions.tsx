@@ -211,6 +211,7 @@ export default function Transactions() {
   }, [
     search, dateFrom, dateTo, needsReview, uncategorisedOnly, showArchived, businessOnly,
     categoryFilter, vendorFilter, countryFilter, projectFilter, memberFilter, page, focusId,
+    setSearchParams,
   ]);
 
   // Selection is scoped to the *visible page*: reset it whenever the user pages
@@ -907,20 +908,11 @@ export default function Transactions() {
                             </div>
                             <div className="txn-detail__field">
                               <span>Business</span>
-                              <span className="txn-detail__row">
-                                <button
-                                  className="link-btn"
-                                  title={t.is_business ? "Unmark as business" : "Mark as a business expense"}
-                                  onClick={() => setBusiness.mutate({ id: t.id, value: !t.is_business })}
-                                >
-                                  {t.is_business ? "✓ business" : "mark business"}
-                                </button>
-                                {t.is_business && (
-                                  <button className="link-btn" onClick={() => editVat(t)}>
-                                    {t.vat_amount ? `VAT ${t.vat_amount}` : "set VAT"}
-                                  </button>
-                                )}
-                              </span>
+                              <BusinessField
+                                t={t}
+                                onToggle={() => setBusiness.mutate({ id: t.id, value: !t.is_business })}
+                                onEditVat={() => editVat(t)}
+                              />
                             </div>
                             <div className="txn-detail__field">
                               <span>Actions</span>
@@ -1034,6 +1026,36 @@ function ResizableTh({
       {children}
       <span className="col-resize" title="Drag to resize" onMouseDown={(e) => cols.startResize(col, e)} onTouchStart={(e) => cols.startResize(col, e)} />
     </th>
+  );
+}
+
+// The expanded-row "Business" control: toggle the business flag and, once set,
+// edit the VAT amount. Extracted into its own component so the transaction-row
+// render callback stays under the cognitive-complexity budget.
+function BusinessField({
+  t,
+  onToggle,
+  onEditVat,
+}: Readonly<{
+  t: Transaction;
+  onToggle: () => void;
+  onEditVat: () => void;
+}>) {
+  return (
+    <span className="txn-detail__row">
+      <button
+        className="link-btn"
+        title={t.is_business ? "Unmark as business" : "Mark as a business expense"}
+        onClick={onToggle}
+      >
+        {t.is_business ? "✓ business" : "mark business"}
+      </button>
+      {t.is_business && (
+        <button className="link-btn" onClick={onEditVat}>
+          {t.vat_amount ? `VAT ${t.vat_amount}` : "set VAT"}
+        </button>
+      )}
+    </span>
   );
 }
 
