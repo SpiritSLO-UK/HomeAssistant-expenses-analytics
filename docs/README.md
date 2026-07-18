@@ -20,6 +20,7 @@ and how to run it; the guides below go deeper.
 | [Rules](rules.md) | How auto-categorisation rules work: precedence, every condition and action, and worked examples. |
 | [Privacy](privacy.md) | Local-first model, what happens when AI is enabled, and the honest limits of third-party AI guarantees. |
 | [Security & isolation](security.md) | Threat model, the private `/data` volume, file permissions, AppArmor, encryption at rest, and access control. |
+| [AI security & threat model](ai-security.md) | "Can an external, or any, AI do anything on our system?" - why AI output is advisory-only (never executed), the redaction choke-point, the gateway guards, and the named residual risks. |
 | [HTTPS / reverse proxy](reverse-proxy.md) | Serve the standalone app over TLS - terminate HTTPS in a Caddy/nginx/Traefik proxy in front of port 8099 (bundled Caddy compose profile). |
 | [Architecture](architecture.md) ([HTML](architecture.html)) | How the pieces fit together (diagrams): system, request flow, import/categorise, the AI gateway & privacy gate (redaction choke-point), data model, and deployment. The HTML version is self-contained (inline SVG, renders offline). |
 | [Context](context.md) | The living design/context notes for the project. |
