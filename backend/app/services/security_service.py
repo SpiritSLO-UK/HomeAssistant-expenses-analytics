@@ -268,6 +268,11 @@ def disable_encryption(passphrase: str) -> None:
     """Decrypt the database back to plaintext."""
     if not read_marker():
         raise RuntimeError("Encryption is not enabled.")
+    if not passphrase:
+        # Mirror enable_encryption's guard: an empty passphrase is a bad request, not a
+        # "wrong passphrase". Reject it explicitly instead of letting the blank value fall
+        # through to the verifier and surface as a generic decryption failure.
+        raise ValueError("A passphrase is required.")
     if not verify_passphrase(passphrase):
         raise ValueError("Wrong passphrase.")
 
