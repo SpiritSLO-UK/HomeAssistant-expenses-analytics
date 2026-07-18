@@ -60,6 +60,7 @@ import { useServerState } from "../lib/useServerState";
 import { clearAllPrefs, getThemePref, isCloudAiAcknowledged, setCloudAiAcknowledged } from "../prefs";
 import { setTheme, type ThemePref } from "../theme";
 import CloudAiDisclaimerDialog from "../components/CloudAiDisclaimerDialog";
+import { useConfirm } from "../components/dialogs";
 import CountrySelect from "../components/CountrySelect";
 import PaperlessSetupNote from "../components/PaperlessSetupNote";
 
@@ -159,6 +160,7 @@ function StatsCard() {
 
 export default function Settings() {
   const qc = useQueryClient();
+  const confirm = useConfirm();
   const health = useQuery({ queryKey: ["health"], queryFn: getHealth });
   const restoreInput = useRef<HTMLInputElement>(null);
   const configInput = useRef<HTMLInputElement>(null);
@@ -185,13 +187,13 @@ export default function Settings() {
   // Encrypted-restore submit: an empty passphrase must surface a clear validation
   // error and keep the chosen file, not silently wipe the input (kept in a helper
   // so the file-input onChange stays trivial and low-complexity).
-  function submitEncryptedRestore(f: File | undefined, input: HTMLInputElement) {
+  async function submitEncryptedRestore(f: File | undefined, input: HTMLInputElement) {
     if (!f) return;
     if (!passphrase) {
       fail("Enter the passphrase used to encrypt this backup before restoring.");
       return; // keep the selected file; don't reset the input
     }
-    if (!confirm("Restore will REPLACE your current database (backed up to <db>.bak first). Continue?")) {
+    if (!(await confirm({ message: "Restore will REPLACE your current database (backed up to <db>.bak first). Continue?", confirmLabel: "Restore", danger: true }))) {
       input.value = "";
       return;
     }
@@ -306,13 +308,16 @@ export default function Settings() {
             <button
               className="btn btn--danger"
               disabled={removeDemo.isPending}
-              onClick={() => {
+              onClick={async () => {
                 if (
-                  globalThis.confirm(
-                    "Remove all demo data? This deletes only the demo's own rows (its " +
+                  await confirm({
+                    message:
+                      "Remove all demo data? This deletes only the demo's own rows (its " +
                       "transactions, example projects/budgets/savings, demo members, vendors and " +
                       "review items). Real imports and anything you added are kept.",
-                  )
+                    confirmLabel: "Remove demo data",
+                    danger: true,
+                  })
                 ) {
                   removeDemo.mutate();
                 }
@@ -340,9 +345,9 @@ export default function Settings() {
             type="file"
             accept=".db,.sqlite,application/octet-stream"
             style={{ display: "none" }}
-            onChange={(e) => {
+            onChange={async (e) => {
               const f = e.target.files?.[0];
-              if (f && confirm("Restore will REPLACE your current database. The current one is backed up to <db>.bak first. Continue?")) {
+              if (f && await confirm({ message: "Restore will REPLACE your current database. The current one is backed up to <db>.bak first. Continue?", confirmLabel: "Restore", danger: true })) {
                 restore.mutate(f);
               }
               if (restoreInput.current) restoreInput.current.value = "";
@@ -691,6 +696,7 @@ function CurrencyFx({
   onError: (e: unknown) => void;
 }>) {
   const qc = useQueryClient();
+  const confirm = useConfirm();
   const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
   const currencies = useQuery({ queryKey: ["currencies"], queryFn: getSupportedCurrencies });
   const rates = useQuery({ queryKey: ["fx-rates"], queryFn: listFxRates });
@@ -748,16 +754,18 @@ function CurrencyFx({
   const options = currencies.data ?? [];
   const knownBase = options.some((c) => c.code === base);
 
-  const chooseBase = (code: string) => {
+  const chooseBase = async (code: string) => {
     if (!code || code === base) return;
     const c = options.find((o) => o.code === code);
     const label = c ? `${c.name} (${c.symbol})` : code;
-    const ok = globalThis.confirm(
-      `Change your base currency to ${code} — ${label}?\n\n` +
+    const ok = await confirm({
+      message:
+        `Change your base currency to ${code} — ${label}?\n\n` +
         "Every transaction's converted amount is recomputed for display using your " +
         "current FX rates / source. Your stored exchange rates are never rewritten — only " +
         "the currency shown changes.",
-    );
+      confirmLabel: "Change",
+    });
     if (ok) save.mutate({ base_currency: code });
   };
 
@@ -1650,6 +1658,7 @@ function RetentionCard({
   onError: (e: unknown) => void;
 }>) {
   const qc = useQueryClient();
+  const confirm = useConfirm();
   const me = useQuery({ queryKey: ["me"], queryFn: getMe });
   const isAdmin = me.data?.is_admin === true;
   const policy = useQuery({
@@ -1726,11 +1735,14 @@ function RetentionCard({
     lastAction.current = () => save.mutate();
     save.mutate();
   };
-  const doRun = () => {
-    if (!confirm(
-      "Run data cleanup now? Archiving is reversible, but PURGING permanently deletes aged-out " +
-      "data. A timestamped safety backup is taken before any purge. Continue?"
-    )) return;
+  const doRun = async () => {
+    if (!(await confirm({
+      message:
+        "Run data cleanup now? Archiving is reversible, but PURGING permanently deletes aged-out " +
+        "data. A timestamped safety backup is taken before any purge. Continue?",
+      confirmLabel: "Run cleanup",
+      danger: true,
+    }))) return;
     lastAction.current = () => run.mutate();
     run.mutate();
   };

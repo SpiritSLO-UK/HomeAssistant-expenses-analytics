@@ -14,6 +14,7 @@ import {
   type Vendor,
 } from "../api/client";
 import CountrySelect from "../components/CountrySelect";
+import { useConfirm } from "../components/dialogs";
 import { money } from "../lib/money";
 
 // How the vendor table can be ordered. Name is the default; the two numeric
@@ -27,6 +28,7 @@ const SORT_OPTIONS: { value: SortKey; label: string }[] = [
 
 export default function Vendors() {
   const qc = useQueryClient();
+  const confirm = useConfirm();
   const vendors = useQuery({ queryKey: ["vendors"], queryFn: listVendors });
   const categories = useQuery({ queryKey: ["categories"], queryFn: listCategories });
 
@@ -106,13 +108,15 @@ export default function Vendors() {
     return a.canonical_name.localeCompare(b.canonical_name);
   });
 
-  function confirmMerge() {
+  async function confirmMerge() {
     if (!mergeSource || !mergeTarget || mergeSource === mergeTarget) return;
     if (
-      globalThis.confirm(
-        `Merge "${nameOf(mergeSource)}" into "${nameOf(mergeTarget)}"? ` +
+      await confirm({
+        message:
+          `Merge "${nameOf(mergeSource)}" into "${nameOf(mergeTarget)}"? ` +
           `Its transactions and aliases move to the second vendor, then the first is deleted.`,
-      )
+        confirmLabel: "Merge",
+      })
     ) {
       merge.mutate({ source: Number(mergeSource), target: Number(mergeTarget) });
     }
@@ -120,11 +124,11 @@ export default function Vendors() {
 
   // Deleting a vendor drops its aliases + unlinks its transactions, so confirm
   // first (the action is otherwise immediate and irreversible).
-  const confirmDelete = (v: Vendor) => {
+  const confirmDelete = async (v: Vendor) => {
     const linked = v.transaction_count
       ? ` ${v.transaction_count} linked transaction(s) keep their data but lose the vendor link.`
       : "";
-    if (globalThis.confirm(`Delete the vendor "${v.canonical_name}"? Its aliases are removed too.${linked}`))
+    if (await confirm({ message: `Delete the vendor "${v.canonical_name}"? Its aliases are removed too.${linked}`, confirmLabel: "Delete", danger: true }))
       remove.mutate(v.id);
   };
 

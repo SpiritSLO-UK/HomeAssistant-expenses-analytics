@@ -31,8 +31,19 @@ import Logs from "./pages/Logs";
 import { getMe, getSecurityStatus, getSettings, mfaEnable, mfaSetup, mfaVerify, unlockDatabase, type Me, type SecurityStatus } from "./api/client";
 import { setDisplayCurrency } from "./lib/money";
 import { NAV_ITEMS } from "./nav";
+import { DialogProvider } from "./components/dialogs";
 
+// Mount the in-app dialog system once, above everything — every gate, shell and
+// page (and the non-React AI-approval gate) shares this single modal (FE-10).
 export default function App() {
+  return (
+    <DialogProvider>
+      <AppRoutes />
+    </DialogProvider>
+  );
+}
+
+function AppRoutes() {
   // If the database is encrypted and locked, gate the whole app behind unlock.
   const status = useQuery({ queryKey: ["security-status"], queryFn: getSecurityStatus });
   // Who is using the app (resolved from HA ingress identity). Drives the

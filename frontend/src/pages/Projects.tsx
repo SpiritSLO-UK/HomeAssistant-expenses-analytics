@@ -13,10 +13,12 @@ import {
   type ProjectTotal,
   type TransactionListResponse,
 } from "../api/client";
+import { useConfirm } from "../components/dialogs";
 import OverTimeChart from "../components/OverTimeChart";
 
 export default function Projects() {
   const qc = useQueryClient();
+  const confirm = useConfirm();
   const [err, setErr] = useState<string | null>(null);
   const [openId, setOpenId] = useState<number | null>(null);
   const [months, setMonths] = useState(12);
@@ -76,8 +78,8 @@ export default function Projects() {
                 base={base}
                 open={openId === p.project_id}
                 onToggle={() => setOpenId(openId === p.project_id ? null : p.project_id)}
-                onDelete={() => {
-                  if (confirm(`Delete project "${p.name}"? (transactions are kept, just unlinked)`)) {
+                onDelete={async () => {
+                  if (await confirm({ message: `Delete project "${p.name}"? (transactions are kept, just unlinked)`, confirmLabel: "Delete", danger: true })) {
                     remove.mutate(p.project_id);
                   }
                 }}

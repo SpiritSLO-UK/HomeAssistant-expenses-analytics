@@ -5,6 +5,7 @@ import Sparkline from "../components/Sparkline";
 import WorldMap, { colorForIndex, type MapPlot } from "../components/WorldMap";
 import CameraCaptureButton from "../components/CameraCaptureButton";
 import { money } from "../lib/money";
+import { alertAsync } from "../components/dialogs";
 import {
   type CountryBreakdownItem,
   exportCategoriesCsv,
@@ -87,7 +88,7 @@ function mergeCardOrder(saved: string[]): string[] {
 }
 
 function downloadOrAlert(p: Promise<void>): void {
-  p.catch((e) => globalThis.alert(String(e instanceof Error ? e.message : e)));
+  p.catch((e) => alertAsync({ message: String(e instanceof Error ? e.message : e) }));
 }
 
 function thisMonth(): string {

@@ -11,6 +11,7 @@ import {
   updateSubscription,
   type Subscription,
 } from "../api/client";
+import { useConfirm } from "../components/dialogs";
 
 // "due in null day(s)" guard: days_until can be null when the next date is
 // unknown — show a soft label instead.
@@ -44,6 +45,7 @@ function compareSubs(a: Subscription, b: Subscription, key: SortKey): number {
 
 export default function Subscriptions() {
   const qc = useQueryClient();
+  const confirm = useConfirm();
   const [err, setErr] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("monthly");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -218,7 +220,7 @@ export default function Subscriptions() {
                         </select>
                       </td>
                       <td>
-                        <button className="link-btn" onClick={() => { if (confirm(`Delete "${s.name}"?`)) remove.mutate(s.id); }}>
+                        <button className="link-btn" onClick={async () => { if (await confirm({ message: `Delete "${s.name}"?`, confirmLabel: "Delete", danger: true })) remove.mutate(s.id); }}>
                           delete
                         </button>
                       </td>

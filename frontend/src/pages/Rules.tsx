@@ -14,6 +14,7 @@ import {
   type RuleTestResult,
 } from "../api/client";
 import { useServerState } from "../lib/useServerState";
+import { useConfirm } from "../components/dialogs";
 
 const NO_VALUE_ACTIONS = new Set([
   "mark_transfer",
@@ -281,6 +282,7 @@ interface RuleRowProps {
 
 function RuleRow(props: RuleRowProps) {
   const { rule, dragging, describeAction } = props;
+  const confirm = useConfirm();
   let opacity = 1;
   if (!rule.enabled) opacity = 0.5;
   if (dragging) opacity = 0.4;
@@ -315,8 +317,8 @@ function RuleRow(props: RuleRowProps) {
         <button className="btn btn--ghost" onClick={props.onClone}>Clone</button>
         <button
           className="btn btn--ghost"
-          onClick={() => {
-            if (globalThis.confirm(`Delete the rule “${rule.name}”? This can't be undone (existing transactions keep their current categories).`))
+          onClick={async () => {
+            if (await confirm({ message: `Delete the rule “${rule.name}”? This can't be undone (existing transactions keep their current categories).`, confirmLabel: "Delete", danger: true }))
               props.onDelete();
           }}
         >

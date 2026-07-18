@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createAllocation, listCategories, listUsers, type Transaction } from "../api/client";
 import { isAmount } from "../lib/num";
+import { useAlert } from "./dialogs";
 
 /**
  * Parent action on a transaction: attribute it (whole, or a part) to a child's
@@ -10,6 +11,7 @@ import { isAmount } from "../lib/num";
  */
 export default function AssignToChildButton({ txn, base }: Readonly<{ txn: Transaction; base: string }>) {
   const qc = useQueryClient();
+  const alert = useAlert();
   // Reference data rendered per transaction row — a staleTime keeps these from
   // refetching on every row mount / window focus (see main.tsx global default).
   const users = useQuery({ queryKey: ["users"], queryFn: listUsers, staleTime: 60_000 });
@@ -48,7 +50,7 @@ export default function AssignToChildButton({ txn, base }: Readonly<{ txn: Trans
       qc.invalidateQueries({ queryKey: ["dashboard"] });
       qc.invalidateQueries({ queryKey: ["transactions"] });
     },
-    onError: (e) => globalThis.alert(String(e instanceof Error ? e.message : e)),
+    onError: (e) => { alert({ message: String(e instanceof Error ? e.message : e) }); },
   });
 
   if (children.length === 0) return null;
