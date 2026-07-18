@@ -9,6 +9,7 @@ and how to run it; the guides below go deeper.
 | Guide | What's inside |
 |-------|---------------|
 | [Screenshots](screenshots.md) | A visual tour of the app on demo data - dashboard, transactions, receipts, search, budgets/investments, settings and the audit log. |
+| [UI test walkthrough](ui-test-guide.md) | A click-by-click release-QA pass (~20-30 min) to verify the recent UI changes: in-app modals, optimistic selects, budget/project/savings forecasts, MFA backup codes, search, AI batch panel, Rules, Categories, Review Queue, CSV export and a US-format import. |
 | [Standalone (docker-compose)](standalone.md) | Run it **without** Home Assistant on Docker - quick start, env-var config, the exposure/trust caveat, HTTPS and upgrades. |
 | [Install on Home Assistant](ha-install.md) | Add the add-on repository, install the prebuilt image, configure options, ingress SSO, MQTT sensors and the energy-cost offset. |
 | [Testing on Home Assistant](ha-testing.md) | End-to-end checklist for validating the add-on on a real HA (publish an RC image, make packages public, install, SSO, MQTT, energy, backups) before a release. |
