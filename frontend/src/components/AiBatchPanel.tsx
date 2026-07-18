@@ -1,7 +1,58 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { applyAiCategories, classifyBatch, type BatchSuggestion } from "../api/client";
 import { money } from "../lib/money";
+
+// Escape one CSV cell: quote if it holds a comma/quote/newline and double any
+// internal quotes (RFC-4180). Kept module-level so the panel stays simple.
+function csvCell(value: string): string {
+  return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+}
+
+// Serialise the suggestions to CSV (description, suggested category, confidence).
+function suggestionsToCsv(rows: BatchSuggestion[]): string {
+  const header = ["Description", "Suggested category", "Confidence"].join(",");
+  const lines = rows.map((s) =>
+    [csvCell(s.description), csvCell(s.category_name), s.confidence == null ? "" : String(s.confidence)].join(","),
+  );
+  return [header, ...lines].join("\r\n");
+}
+
+// Client-side blob download — no lib CSV helper exists (the api/client one fetches
+// a server endpoint), so a small inline anchor click does the job.
+function downloadCsvFile(filename: string, csv: string): void {
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+// Header "select all" checkbox. React has no `indeterminate` prop, so the DOM
+// property is set imperatively via a ref: unchecked when none are selected,
+// checked when all are, indeterminate when only some are.
+function SelectAllCheckbox({
+  allSelected,
+  someSelected,
+  onToggle,
+}: Readonly<{ allSelected: boolean; someSelected: boolean; onToggle: (checked: boolean) => void }>) {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = someSelected;
+  }, [someSelected]);
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      title="Select all suggestions"
+      checked={allSelected}
+      onChange={(e) => onToggle(e.target.checked)}
+    />
+  );
+}
 
 /**
  * Batch "AI categorise uncategorised" (local LLM only). Scans, shows each
@@ -56,6 +107,20 @@ export default function AiBatchPanel({ base, onClose }: Readonly<{ base: string;
       return next;
     });
 
+  const rows = suggestions ?? [];
+  const selectedCount = rows.filter((s) => picked.has(s.transaction_id)).length;
+  const allSelected = rows.length > 0 && selectedCount === rows.length;
+  const someSelected = selectedCount > 0 && selectedCount < rows.length;
+
+  // Select/clear every suggestion at once (indeterminate/none → select-all).
+  const toggleAll = (checked: boolean) =>
+    setPicked(checked ? new Set(rows.map((s) => s.transaction_id)) : new Set<number>());
+
+  const exportCsv = () => {
+    if (rows.length === 0) return;
+    downloadCsvFile("ai-suggestions.csv", suggestionsToCsv(rows));
+  };
+
   function applyThreshold(raw: number) {
     // Clamp to [0,1] (and guard NaN from a cleared field) — the min/max attrs
     // don't constrain manually typed values in every browser.
@@ -105,7 +170,10 @@ export default function AiBatchPanel({ base, onClose }: Readonly<{ base: string;
           <div className="table-wrap" style={{ marginTop: 8 }}>
             <table className="table">
               <thead>
-                <tr><th></th><th>Description</th><th className="num">Amount</th><th>Suggested category</th><th className="num">Conf.</th></tr>
+                <tr>
+                  <th><SelectAllCheckbox allSelected={allSelected} someSelected={someSelected} onToggle={toggleAll} /></th>
+                  <th>Description</th><th className="num">Amount</th><th>Suggested category</th><th className="num">Conf.</th>
+                </tr>
               </thead>
               <tbody>
                 {suggestions.map((s) => (
@@ -125,9 +193,14 @@ export default function AiBatchPanel({ base, onClose }: Readonly<{ base: string;
               </tbody>
             </table>
           </div>
-          <button className="btn" style={{ marginTop: 8 }} disabled={picked.size === 0 || apply.isPending} onClick={() => apply.mutate()}>
-            {apply.isPending ? "Applying…" : `Apply ${picked.size} selected`}
-          </button>
+          <div className="form-row" style={{ gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+            <button className="btn" disabled={picked.size === 0 || apply.isPending} onClick={() => apply.mutate()}>
+              {apply.isPending ? "Applying…" : `Apply ${picked.size} selected`}
+            </button>
+            <button className="btn btn--ghost" type="button" onClick={exportCsv}>
+              Export CSV
+            </button>
+          </div>
         </>
       )}
       {suggestions?.length === 0 && <p className="muted">No new suggestions — nothing to categorise, or the model proposed no changes.</p>}
