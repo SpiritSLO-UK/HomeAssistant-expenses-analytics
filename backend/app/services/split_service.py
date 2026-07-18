@@ -24,6 +24,11 @@ from sqlalchemy.orm import Session
 from app.models import Category, Project, Transaction, TransactionSplit
 
 TWO_DP = Decimal("0.01")
+HUNDRED = Decimal("100")
+# A set of percentages may miss 100 by a rounding hair (e.g. 33.3 * 3 = 99.9).
+# Accept anything within this band of 100; the penny-exact distribution below
+# still makes the parts sum to the parent to the cent regardless.
+PERCENT_TOLERANCE = Decimal("0.5")
 
 
 class SplitError(ValueError):
@@ -35,6 +40,17 @@ class SplitInput:
     """One proposed split part, as received from the API."""
 
     amount: Decimal
+    category_id: int | None = None
+    project_id: int | None = None
+    description: str | None = None
+    notes: str | None = None
+
+
+@dataclass
+class PercentInput:
+    """One proposed percentage split part (its share of the transaction, 0–100)."""
+
+    percent: Decimal
     category_id: int | None = None
     project_id: int | None = None
     description: str | None = None
@@ -71,6 +87,68 @@ def split_evenly(total: Decimal | str | float | int, n: int) -> list[Decimal]:
     # The first ``remainder`` parts get one extra penny.
     cents = [base + 1 if i < remainder else base for i in range(n)]
     return [Decimal(sign * c) / 100 for c in cents]
+
+
+def _percent_amounts(total: Decimal, percents: list[Decimal]) -> list[Decimal]:
+    """Split ``total`` across the given ``percents`` (each a share of 100),
+    penny-exact so the parts sum back to ``total`` to the cent.
+
+    Works in signed integer cents. Each part's ideal cents is its share of the
+    magnitude, normalised by the percentages' actual sum (so a set that misses
+    100 by a rounding hair still spends the whole total). We floor those and hand
+    the leftover pennies to the parts with the largest fractional remainder (the
+    same largest-remainder rule ``_distributed_base_amounts`` uses), so no cent
+    drifts. Parts keep the sign of ``total``.
+    """
+    total_cents = int((total * 100).to_integral_value())
+    sign = -1 if total_cents < 0 else 1
+    magnitude = abs(total_cents)
+    denom = sum(percents)  # normalise by the real sum, not a bare 100
+    ideals = [Decimal(magnitude) * p / denom for p in percents]
+    floors = [int(x) for x in ideals]  # non-negative, so int() floors
+    leftover = magnitude - sum(floors)
+    # Largest fractional remainder first; break ties by earliest part.
+    order = sorted(range(len(percents)), key=lambda i: (ideals[i] - floors[i], -i), reverse=True)
+    cents = floors[:]
+    for i in order[:leftover]:
+        cents[i] += 1
+    return [Decimal(sign * c) / 100 for c in cents]
+
+
+def split_by_percentages(
+    total: Decimal | str | float | int, parts: list[PercentInput]
+) -> list[SplitInput]:
+    """Split ``total`` across ``parts`` by percentage, returning ready-to-store
+    :class:`SplitInput` rows (category/project/description/notes carried through).
+
+    The percentages must sum to 100 (within :data:`PERCENT_TOLERANCE`); the
+    resulting ``amount``\\ s are penny-exact against ``total`` via
+    :func:`_percent_amounts`, so callers can hand the rows straight to
+    :func:`set_splits` without introducing cent drift. Mirrors
+    :func:`split_evenly`'s style (pure computation; validation happens there).
+
+    Raises :class:`SplitError` for fewer than two parts, a non-positive
+    percentage, or a percentage sum that misses 100 by more than the tolerance.
+    """
+    if len(parts) < 2:
+        raise SplitError("A split needs at least two parts.")
+    percents = [Decimal(str(p.percent)) for p in parts]
+    if any(p <= 0 for p in percents):
+        raise SplitError("Each percentage must be greater than zero.")
+    pct_sum = sum(percents)
+    if abs(pct_sum - HUNDRED) > PERCENT_TOLERANCE:
+        raise SplitError(f"Percentages sum to {pct_sum}, not 100.")
+    amounts = _percent_amounts(_q(total), percents)
+    return [
+        SplitInput(
+            amount=amount,
+            category_id=part.category_id,
+            project_id=part.project_id,
+            description=part.description,
+            notes=part.notes,
+        )
+        for amount, part in zip(amounts, parts, strict=True)
+    ]
 
 
 def _validate_part(db: Session, i: int, part: SplitInput, *, txn_negative: bool) -> SplitInput:

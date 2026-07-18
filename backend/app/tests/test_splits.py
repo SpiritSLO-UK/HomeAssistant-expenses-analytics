@@ -93,6 +93,97 @@ def test_split_evenly_rejects_fewer_than_two_parts():
         split_service.split_evenly(Decimal("10.00"), 1)
 
 
+# --- pure helper: split_by_percentages penny-exactness (SR-A5) ---
+
+def _pct(percent: str, category_id: int = 1) -> split_service.PercentInput:
+    return split_service.PercentInput(percent=Decimal(percent), category_id=category_id)
+
+
+def test_split_by_percentages_carries_category_and_amounts():
+    parts = split_service.split_by_percentages(
+        Decimal("-120.00"),
+        [_pct("40", 10), _pct("50", 20), _pct("10", 30)],
+    )
+    assert [p.amount for p in parts] == [Decimal("-48.00"), Decimal("-60.00"), Decimal("-12.00")]
+    assert [p.category_id for p in parts] == [10, 20, 30]
+    assert sum(p.amount for p in parts) == Decimal("-120.00")
+
+
+def test_split_by_percentages_uneven_33_33_34_is_exact():
+    # 33/33/34 sums to 100 exactly; parts must sum EXACTLY to the parent (Decimal, no float).
+    parts = split_service.split_by_percentages(
+        Decimal("-120.00"), [_pct("33"), _pct("33"), _pct("34")]
+    )
+    assert [p.amount for p in parts] == [Decimal("-39.60"), Decimal("-39.60"), Decimal("-40.80")]
+    assert sum(p.amount for p in parts) == Decimal("-120.00")
+
+
+def test_split_by_percentages_rounding_tricky_spreads_odd_penny():
+    # 10 cents into thirds: ideal 3.333/3.333/3.334c -> 3/3/4c, odd penny to the largest remainder.
+    parts = split_service.split_by_percentages(
+        Decimal("0.10"), [_pct("33.33"), _pct("33.33"), _pct("33.34")]
+    )
+    assert [p.amount for p in parts] == [Decimal("0.03"), Decimal("0.03"), Decimal("0.04")]
+    assert sum(p.amount for p in parts) == Decimal("0.10")
+
+
+def test_split_by_percentages_thirds_penny_exact():
+    # 100.00 into 33.333/33.333/33.334 must still sum to exactly 100.00.
+    parts = split_service.split_by_percentages(
+        Decimal("100.00"), [_pct("33.333"), _pct("33.333"), _pct("33.334")]
+    )
+    assert sum(p.amount for p in parts) == Decimal("100.00")
+    assert all(isinstance(p.amount, Decimal) for p in parts)
+
+
+def test_split_by_percentages_base_amount_also_penny_exact():
+    # Feed the percentage parts through a real txn and assert the distributed
+    # base amounts sum EXACTLY to the parent's base_amount too (both legs exact).
+    parts = split_service.split_by_percentages(
+        Decimal("-10.00"), [_pct("33.34"), _pct("33.33"), _pct("33.33")]
+    )
+    txn = Transaction(
+        amount=Decimal("-10.00"), fx_rate=Decimal("0.855"), base_amount=Decimal("-8.55")
+    )
+    txn.splits = [TransactionSplit(amount=p.amount) for p in parts]
+    assert sum(p.amount for p in parts) == Decimal("-10.00")
+    bases = [split_service.split_base_amount(txn, s) for s in txn.splits]
+    assert all(b is not None for b in bases)
+    assert sum(bases) == txn.base_amount
+
+
+def test_split_by_percentages_accepts_string_and_float_total():
+    assert sum(p.amount for p in split_service.split_by_percentages(
+        "50.00", [_pct("50"), _pct("50")]
+    )) == Decimal("50.00")
+    assert sum(p.amount for p in split_service.split_by_percentages(
+        50.0, [_pct("50"), _pct("50")]
+    )) == Decimal("50.00")
+
+
+def test_split_by_percentages_within_rounding_tolerance():
+    # 33.3 * 3 = 99.9, within tolerance of 100; still penny-exact to the parent.
+    parts = split_service.split_by_percentages(
+        Decimal("-90.00"), [_pct("33.3"), _pct("33.3"), _pct("33.3")]
+    )
+    assert sum(p.amount for p in parts) == Decimal("-90.00")
+
+
+def test_split_by_percentages_rejects_bad_sum():
+    with pytest.raises(split_service.SplitError, match="not 100"):
+        split_service.split_by_percentages(Decimal("100.00"), [_pct("50"), _pct("30")])
+
+
+def test_split_by_percentages_rejects_non_positive_percent():
+    with pytest.raises(split_service.SplitError, match="greater than zero"):
+        split_service.split_by_percentages(Decimal("100.00"), [_pct("120"), _pct("-20")])
+
+
+def test_split_by_percentages_rejects_fewer_than_two_parts():
+    with pytest.raises(split_service.SplitError):
+        split_service.split_by_percentages(Decimal("100.00"), [_pct("100")])
+
+
 def _curve(rows: list[tuple[str, str, str]]) -> bytes:
     head = "Date,Description,Amount,Currency,Card,Category\n"
     body = "".join(f"{d},{desc},{amt},GBP,Visa,\n" for d, desc, amt in rows)
