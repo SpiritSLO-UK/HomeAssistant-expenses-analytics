@@ -95,16 +95,44 @@ def _remove_wal_shm() -> None:
         Path(db + suffix).unlink(missing_ok=True)
 
 
+class EncryptionUnavailableError(RuntimeError):
+    """At-rest encryption can't be exercised because the SQLCipher driver/runtime
+    is unavailable — kept deliberately distinct from a *wrong passphrase* so callers
+    and the UI don't conflate "can't check" with "incorrect" (a bare ``return False``
+    made them indistinguishable)."""
+
+
 def verify_passphrase(passphrase: str) -> bool:
-    """True if the passphrase opens the encrypted database."""
+    """True if ``passphrase`` opens the encrypted database, False if it's wrong.
+
+    Raises :class:`EncryptionUnavailableError` when the check can't run at all
+    (SQLCipher driver missing / environment broken) so a genuine wrong passphrase
+    (``False``) is distinguishable from "encryption unavailable".
+    """
+    return _passphrase_opens(str(settings.database_file), passphrase)
+
+
+def _passphrase_opens(path: str, passphrase: str) -> bool:
+    """Open the encrypted database at ``path`` and confirm ``passphrase`` decrypts it.
+
+    Shared by :func:`verify_passphrase` (the live DB) and :func:`enable_encryption`
+    (a freshly-encrypted temp file, verified before it is promoted into place).
+    Only a genuine wrong passphrase returns ``False``; an unavailable driver raises
+    :class:`EncryptionUnavailableError`.
+    """
+    if not sqlcipher_available():
+        raise EncryptionUnavailableError("SQLCipher driver not available on this platform.")
+
     import sqlcipher3  # pyright: ignore[reportMissingImports]  -- optional 'encryption' extra
 
-    con = sqlcipher3.connect(str(settings.database_file))
+    con = sqlcipher3.connect(path)
     try:
         con.execute(_key_pragma(passphrase))
         con.execute("SELECT count(*) FROM sqlite_master").fetchone()
         return True
-    except Exception:
+    except sqlcipher3.DatabaseError:
+        # A wrong passphrase surfaces here: SQLCipher fails to decrypt the header on
+        # the first read ("file is not a database"). That — and only that — is False.
         return False
     finally:
         con.close()
@@ -140,10 +168,21 @@ def enable_encryption(passphrase: str, unlock_mode: str = "prompt") -> None:
     finally:
         con.close()
 
+    # Verify the freshly-encrypted copy opens on its TEMP path *before* moving it into
+    # place. Previously os.replace ran first and verification second, so a bad export
+    # destroyed the plaintext original before it was ever checked (data loss). Now a
+    # failed verification leaves the original database untouched.
+    if not _passphrase_opens(enc_tmp, passphrase):
+        Path(enc_tmp).unlink(missing_ok=True)
+        raise RuntimeError("Encryption verification failed; original database left intact.")
+
+    # Drop any WAL/SHM sidecars the verification open may have created for the temp
+    # file so only the single encrypted database file is promoted.
+    for suffix in ("-wal", "-shm"):
+        Path(enc_tmp + suffix).unlink(missing_ok=True)
+
     os.replace(enc_tmp, db_path)
     _remove_wal_shm()
-    if not verify_passphrase(passphrase):  # pragma: no cover - sanity
-        raise RuntimeError("Encryption verification failed; aborting.")
     _write_marker(unlock_mode)
     dbsession.configure(passphrase)
     logger.info("Database encryption enabled (unlock_mode=%s).", unlock_mode)
