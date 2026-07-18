@@ -34,6 +34,7 @@ import { useAlert, useConfirm, usePrompt } from "../components/dialogs";
 import { useResizableColumns, type ColumnDef } from "../useResizableColumns";
 import { suggestForTransaction } from "../lib/aiSuggest";
 import { recommendedVendorName } from "../lib/vendorSignature";
+import { useOptimisticSelect } from "../hooks/useOptimisticSelect";
 
 const PAGE_SIZE = 50;
 
@@ -363,6 +364,17 @@ export default function Transactions() {
       qc.invalidateQueries({ queryKey: ["dash-geo"] });
     },
   });
+
+  // Optimistic overlays for the per-row select-on-change controls (#247): each
+  // reflects the chosen value immediately and, if the mutation rejects, snaps the
+  // control back to the server value and surfaces the error. One instance per
+  // select-kind, keyed by row id (a shared instance would let one field's pending
+  // choice mask another's on the same row).
+  const surfaceError = (e: unknown) => { alert({ message: String(e instanceof Error ? e.message : e) }); };
+  const categorySelect = useOptimisticSelect<number, number | null>(surfaceError);
+  const vendorSelect = useOptimisticSelect<number, number | null>(surfaceError);
+  const projectSelect = useOptimisticSelect<number, number | null>(surfaceError);
+  const countrySelect = useOptimisticSelect<number, string | null>(surfaceError);
 
   // Multi-edit: apply one change to every selected transaction at once.
   const bulk = useMutation({
@@ -800,13 +812,13 @@ export default function Transactions() {
                                 <span className="txn-detail__row">
                                   <select
                                     className={t.category_id ? "" : "select--empty"}
-                                    value={t.category_id ?? ""}
-                                    onChange={(e) =>
-                                      setCategory.mutate({
-                                        id: t.id,
-                                        categoryId: e.target.value ? Number(e.target.value) : null,
-                                      })
-                                    }
+                                    value={categorySelect.valueFor(t.id, t.category_id ?? null) ?? ""}
+                                    onChange={(e) => {
+                                      const categoryId = e.target.value ? Number(e.target.value) : null;
+                                      categorySelect.choose(t.id, categoryId, () =>
+                                        setCategory.mutateAsync({ id: t.id, categoryId }),
+                                      );
+                                    }}
                                   >
                                     <option value="">— uncategorised —</option>
                                     {categories.data?.map((c) => (
@@ -838,13 +850,13 @@ export default function Transactions() {
                               <span>Vendor</span>
                               <select
                                 className={t.merchant_id ? "" : "select--empty"}
-                                value={t.merchant_id ?? ""}
-                                onChange={(e) =>
-                                  setVendor.mutate({
-                                    id: t.id,
-                                    vendorId: e.target.value ? Number(e.target.value) : null,
-                                  })
-                                }
+                                value={vendorSelect.valueFor(t.id, t.merchant_id ?? null) ?? ""}
+                                onChange={(e) => {
+                                  const vendorId = e.target.value ? Number(e.target.value) : null;
+                                  vendorSelect.choose(t.id, vendorId, () =>
+                                    setVendor.mutateAsync({ id: t.id, vendorId }),
+                                  );
+                                }}
                               >
                                 <option value="">— none —</option>
                                 {vendors.data?.map((v) => (
@@ -869,8 +881,12 @@ export default function Transactions() {
                             <div className="txn-detail__field">
                               <span>Country</span>
                               <CountrySelect
-                                value={t.country ?? null}
-                                onChange={(code) => setCountry.mutate({ id: t.id, country: code ?? "" })}
+                                value={countrySelect.valueFor(t.id, t.country ?? null)}
+                                onChange={(code) =>
+                                  countrySelect.choose(t.id, code, () =>
+                                    setCountry.mutateAsync({ id: t.id, country: code ?? "" }),
+                                  )
+                                }
                                 title="This transaction's country for the spend-by-location map (overrides the vendor's)"
                               />
                             </div>
@@ -878,13 +894,13 @@ export default function Transactions() {
                               <span>Project</span>
                               <select
                                 className={t.project_id ? "" : "select--empty"}
-                                value={t.project_id ?? ""}
-                                onChange={(e) =>
-                                  setProject.mutate({
-                                    id: t.id,
-                                    projectId: e.target.value ? Number(e.target.value) : null,
-                                  })
-                                }
+                                value={projectSelect.valueFor(t.id, t.project_id ?? null) ?? ""}
+                                onChange={(e) => {
+                                  const projectId = e.target.value ? Number(e.target.value) : null;
+                                  projectSelect.choose(t.id, projectId, () =>
+                                    setProject.mutateAsync({ id: t.id, projectId }),
+                                  );
+                                }}
                               >
                                 <option value="">— none —</option>
                                 {projects.data?.map((p) => (

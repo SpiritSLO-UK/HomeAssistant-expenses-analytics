@@ -12,6 +12,7 @@ import {
   type Category,
 } from "../api/client";
 import { useConfirm } from "../components/dialogs";
+import { useOptimisticSelect } from "../hooks/useOptimisticSelect";
 
 // Cloud-AI privacy levels a category can be set to (spec §22.4, §28). Each level
 // has its own icon so the three read at a glance in the chip selector + legend.
@@ -124,6 +125,11 @@ export default function Categories() {
     onError: fail,
   });
 
+  // Optimistic overlay for the per-category privacy select (#247): show the chosen
+  // level at once and revert to the server value if the update rejects. The
+  // mutation's own onError surfaces the failure, so no overlay onError is needed.
+  const privacySelect = useOptimisticSelect<number, string>();
+
   // Apply one colour to every selected category, reusing the same per-category
   // update call — recolouring shifts the dashboard's category swatches too, so
   // refresh that breakdown alongside the list.
@@ -220,9 +226,12 @@ export default function Categories() {
                 <select
                   className="chip__priv"
                   aria-label={`Cloud-AI privacy for ${c.name}`}
-                  value={c.privacy_sensitivity}
+                  value={privacySelect.valueFor(c.id, c.privacy_sensitivity)}
                   title="What this category may send to cloud AI — pick 🔒 never cloud to keep it fully on-device"
-                  onChange={(e) => setPrivacy.mutate({ id: c.id, level: e.target.value })}
+                  onChange={(e) => {
+                    const level = e.target.value;
+                    privacySelect.choose(c.id, level, () => setPrivacy.mutateAsync({ id: c.id, level }));
+                  }}
                 >
                   {PRIVACY_OPTIONS.map((o) => (
                     <option key={o.value} value={o.value}>{o.label}</option>
