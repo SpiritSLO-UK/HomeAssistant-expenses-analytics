@@ -93,6 +93,18 @@ def test_match_is_deterministic_with_duplicates(db):
     assert account.id == min(dup_a.id, dup_b.id)
 
 
+def test_auto_created_account_is_unowned_and_household_shared(db):
+    """An auto-created import account is left OWNERLESS (owner_user_id = NULL) on
+    purpose: in the visibility model an unowned account is included in every
+    member's visible set, i.e. household-shared rather than private to the
+    importer. This locks the documented single-household default (see the
+    multi-user caveat in household_service.get_or_create_account)."""
+    household = get_or_create_default_household(db)
+    account = get_or_create_account(db, household, "Curve")
+    assert account.owner_user_id is None
+    assert account.is_shared is False
+
+
 def test_account_id_lookup_returns_that_account(db):
     household = get_or_create_default_household(db)
     existing = get_or_create_account(db, household, "Curve")

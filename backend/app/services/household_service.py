@@ -61,6 +61,23 @@ def get_or_create_account(
         .order_by(Account.id)
     ).first()
     if account is None:
+        # Auto-created accounts are left OWNERLESS (owner_user_id = NULL) on
+        # purpose. In the visibility model (see scope.py / auth_service.py) an
+        # unowned account has a real id and is included in *every* member's
+        # visible set — i.e. it is household-shared, not private. Setting an
+        # owner here would instead make the account private to one member and
+        # hide freshly-imported transactions from the rest of the household.
+        #
+        # MULTI-USER CAVEAT: when this app grows to real multi-user households,
+        # an import triggered by member A will still surface A's imported
+        # account to everyone. The safer per-user behaviour (attribute the
+        # account to the importer) is deliberately NOT done here because the
+        # import call chain carries no importing-user id: the /upload route has
+        # no get_current_user dependency and create_import()/receipts/demo all
+        # call this without a user. Threading an importer id through would be a
+        # cross-file change; unowned-is-shared remains the intended single-
+        # household default, and ownership is assigned as a separate explicit
+        # step (e.g. account edit, or demo_service post-import) when needed.
         account = Account(
             household_id=household.id,
             name=institution,
