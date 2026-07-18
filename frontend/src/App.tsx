@@ -292,6 +292,8 @@ function MfaSetupGate() {
             <p className="muted" style={{ fontSize: "0.78rem", wordBreak: "break-all" }}>Secret: <code>{setup.secret}</code></p>
             <form onSubmit={(e) => { e.preventDefault(); if (code) enable.mutate(); }}>
               <input
+                name="mfa-setup-code"
+                autoComplete="one-time-code"
                 inputMode="numeric"
                 autoFocus
                 placeholder="123456"
@@ -334,6 +336,8 @@ function MfaGate() {
           }}
         >
           <input
+            name="mfa-verify-code"
+            autoComplete="one-time-code"
             inputMode="numeric"
             autoFocus
             placeholder="123456"
@@ -415,6 +419,8 @@ function UnlockGate({ failedRecent = 0 }: Readonly<{ failedRecent?: number }>) {
         >
           <input
             type="password"
+            name="unlock-passphrase"
+            autoComplete="current-password"
             autoFocus
             placeholder="Passphrase"
             value={passphrase}

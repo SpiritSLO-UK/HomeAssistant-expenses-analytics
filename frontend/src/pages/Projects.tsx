@@ -284,7 +284,7 @@ function NewProject({
       <h2 className="card__title">New project</h2>
       <p className="muted">A project collects spend toward a goal (renovation, holiday, car…). Optionally set a budget; assign transactions on the Transactions page.</p>
       <div className="form-row" style={{ flexWrap: "wrap", gap: 8 }}>
-        <input placeholder="Name (e.g. Bathroom renovation)" value={name} onChange={(e) => setName(e.target.value)} style={{ minWidth: 200 }} />
+        <input name="new-project-name" autoComplete="off" placeholder="Name (e.g. Bathroom renovation)" value={name} onChange={(e) => setName(e.target.value)} style={{ minWidth: 200 }} />
         <select value={status} onChange={(e) => setStatus(e.target.value)}>
           {PROJECT_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
