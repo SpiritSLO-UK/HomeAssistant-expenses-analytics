@@ -350,7 +350,10 @@ async def _audit_actions(request: Request, call_next):
 #
 # NOTE: the script-src hash is the sha256 of the exact inline theme script in
 # frontend/index.html. If that inline script is ever edited, this hash must be
-# recomputed or the app will fail to set its theme on load.
+# recomputed or the app will fail to set its theme on load. Two tests guard this
+# so a drift can't ship silently: backend/app/tests/test_security_headers.py
+# recomputes it from the source file, and e2e/tests/csp.spec.ts hashes the
+# actually-served document and asserts the hash is present in the served CSP.
 _CSP_DIRECTIVES = (
     # Fallback for any resource type without its own rule: same-origin only.
     "default-src 'self'",
