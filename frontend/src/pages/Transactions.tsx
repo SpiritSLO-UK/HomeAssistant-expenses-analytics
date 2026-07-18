@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   attachTransactionReceipt,
@@ -512,6 +512,13 @@ export default function Transactions() {
           >
             {exportCsv.isPending ? "Exporting…" : "⬇ Export CSV"}
           </button>
+          <Link
+            className="btn btn--ghost"
+            to="/settings"
+            title="Merge or remove tags (tag housekeeping) in Settings"
+          >
+            🏷 Manage tags
+          </Link>
         </div>
       </div>
       {recat.isSuccess && (

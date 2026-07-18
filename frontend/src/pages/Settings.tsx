@@ -561,8 +561,8 @@ function TagsCard({
     <div className="card">
       <h2 className="card__title">Tags</h2>
       <p className="muted" style={{ marginTop: 0, fontSize: "0.85rem" }}>
-        Merge duplicate tags or clear out ones no transaction uses. Tagging itself happens on the
-        Transactions page.
+        Tag housekeeping. Merge duplicate tags or remove ones no transaction uses. To add or remove
+        a tag on a transaction, use the “+ tag” button on the Transactions page.
       </p>
       {list.length === 0 && <p className="muted">No tags yet.</p>}
       {list.length > 0 && (
