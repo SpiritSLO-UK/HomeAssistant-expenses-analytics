@@ -74,3 +74,9 @@ class BudgetSummaryItem(BaseModel):
     alert_threshold_percent: int | None
     period_start: date
     period_end: date
+    # Prorated "pace" signal (additive; never changes the over/warn/ok status):
+    # spend measured against the expectation for the elapsed fraction of the period.
+    elapsed_fraction: float
+    pace_expected: Decimal
+    pace_remaining: Decimal  # prorated headroom: positive = under pace, negative = over
+    pace_status: str  # ahead | behind | on_track

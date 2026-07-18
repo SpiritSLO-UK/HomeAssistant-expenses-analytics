@@ -283,6 +283,23 @@ def _total_budget(db, amount: str) -> Budget:
     return b
 
 
+def test_pace_fields_surface_over_api(client):
+    # The prorated pace signal must be visible on the summary endpoint, not just
+    # computed internally (the response schema used to strip these fields).
+    groceries = _cat(client, "Groceries")
+    _import(client, _curve([("2026-05-02", "TESCO STORES", "-250.00")]))
+    bid = client.post(
+        "/api/budgets",
+        json={"name": "Groceries", "amount": "300.00", "period": "monthly", "category_id": groceries},
+    ).json()["id"]
+    s = _summary(client, "2026-05-15")[bid]
+    # By mid-May, 250 of a 300 cap is well over the elapsed pace -> "ahead".
+    assert s["pace_status"] == "ahead"
+    assert Decimal(str(s["pace_remaining"])) < Decimal("0")  # over the prorated pace
+    assert 0.0 < s["elapsed_fraction"] <= 1.0
+    assert Decimal(str(s["pace_expected"])) > Decimal("0")
+
+
 def test_pace_ahead_mid_period(db):
     # Cap 300, May (31 days), ref = 15th -> expected ~= 145.16; 250 spent is
     # well over the elapsed pace -> "ahead" (but only 83% of cap, so status warn).
