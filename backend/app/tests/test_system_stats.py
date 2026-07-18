@@ -112,3 +112,57 @@ def test_system_stats_matches_processing_stats_subset(db):
     assert s["ai_completed"] == proc["ai_completed"]
     assert s["ai_failed"] == proc["ai_failed"]
     assert s["ai_avg_seconds"] == proc["ai_avg_seconds"]
+
+
+def test_table_row_counts_empty_db(db):
+    """A clean database returns a zero count for every counted table and no
+    largest table."""
+    from app.services import stats_service
+
+    result = stats_service.table_row_counts(db)
+
+    assert "transactions" in result["counts"]
+    assert "audit_logs" in result["counts"]
+    assert all(n == 0 for n in result["counts"].values())
+    assert result["largest_table"] is None
+
+
+def test_table_row_counts_matches_seeded_rows_and_identifies_largest(db):
+    """Per-table counts equal the seeded rows and the largest table is the one
+    with the most rows."""
+    from app.models import Account, Category, Vendor
+    from app.services import stats_service
+
+    # 3 transactions, 2 categories, 1 account, 0 vendors → categories is 2nd,
+    # transactions is the clear largest.
+    db.add_all([_txn(1), _txn(2), _txn(3)])
+    db.add_all([Category(name="Groceries"), Category(name="Fuel")])
+    db.add(Account(name="Checking"))
+    db.commit()
+
+    result = stats_service.table_row_counts(db)
+
+    assert result["counts"]["transactions"] == 3
+    assert result["counts"]["categories"] == 2
+    assert result["counts"]["accounts"] == 1
+    assert result["counts"]["vendors"] == 0
+    assert result["largest_table"] == "transactions"
+
+    # Adding more vendors flips the largest-table indicator.
+    db.add_all([Vendor(canonical_name=f"V{i}") for i in range(5)])
+    db.commit()
+    assert stats_service.table_row_counts(db)["largest_table"] == "vendors"
+
+
+def test_system_stats_surfaces_table_counts(db):
+    """system_stats embeds the compact table_counts + largest_table so the
+    Settings card can render the largest-table indicator."""
+    from app.services import stats_service
+
+    db.add_all([_txn(1), _txn(2)])
+    db.commit()
+
+    s = stats_service.system_stats(db)
+
+    assert s["table_counts"]["transactions"] == 2
+    assert s["largest_table"] == "transactions"
