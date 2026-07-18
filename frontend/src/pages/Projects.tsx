@@ -15,6 +15,8 @@ import {
 } from "../api/client";
 import { useConfirm } from "../components/dialogs";
 import OverTimeChart from "../components/OverTimeChart";
+import ListRow from "../components/ListRow";
+import ProgressBar from "../components/ProgressBar";
 
 export default function Projects() {
   const qc = useQueryClient();
@@ -111,7 +113,7 @@ function ProjectRow({
   const warnColour = pct != null && pct >= 80 ? "#d8930a" : "#3a9b5c";
   const colour = over ? "#c0392b" : warnColour;
   return (
-    <div style={{ padding: "10px 0", borderBottom: "1px solid rgba(127,127,127,0.2)" }}>
+    <ListRow>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
         <div>
           <button className="link-btn" onClick={onToggle} style={{ fontWeight: 600 }}>
@@ -125,11 +127,9 @@ function ProjectRow({
         </div>
       </div>
       {p.budget && pct != null && (
-        <div style={{ marginTop: 6, height: 8, borderRadius: 4, background: "rgba(127,127,127,0.22)", overflow: "hidden" }} title={`${pct}%`}>
-          <div style={{ width: `${Math.min(pct, 100)}%`, height: "100%", background: colour }} />
-        </div>
+        <ProgressBar percent={pct} color={colour} title={`${pct}%`} />
       )}
-    </div>
+    </ListRow>
   );
 }
 
