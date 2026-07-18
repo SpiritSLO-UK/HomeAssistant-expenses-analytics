@@ -11,6 +11,7 @@
     --line: #c7ced8; --accent: #2f6fed; --accent-soft: #e8f0ff;
     --opt: #8a93a3; --opt-fill: #f1f3f6; --db: #fff6e6; --db-line: #e0a800;
     --ext: #eafaf1; --ext-line: #2f9e6b; --shadow: 0 1px 3px rgba(20,30,50,.10);
+    --stop: #c0392b; --stop-fill: #fdecea; --stop-line: #e07b70;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -18,6 +19,7 @@
       --line: #3a434f; --accent: #6aa9ff; --accent-soft: #243043;
       --opt: #7f8a99; --opt-fill: #232a34; --db: #2b2718; --db-line: #c9a227;
       --ext: #16271f; --ext-line: #3aa974; --shadow: 0 1px 3px rgba(0,0,0,.4);
+      --stop: #ff8f84; --stop-fill: #2b1a18; --stop-line: #a5493f;
     }
   }
   * { box-sizing: border-box; }
@@ -50,6 +52,11 @@
   .box-accent { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
   .box-db { fill: var(--db); stroke: var(--db-line); stroke-width: 1.5; }
   .box-ext { fill: var(--ext); stroke: var(--ext-line); stroke-width: 1.5; stroke-dasharray: 5 4; }
+  .box-stop { fill: var(--stop-fill); stroke: var(--stop-line); stroke-width: 1.5; }
+  .box-gate { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2.6; }
+  .lbl-stop { fill: var(--stop); font-size: 13px; font-weight: 600; }
+  .edge-stop { stroke: var(--stop-line); stroke-width: 1.5; fill: none; stroke-dasharray: 5 4; }
+  .mk-stop { fill: var(--stop-line); }
   .grp { fill: none; stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 2 3; }
   .lbl { fill: var(--ink); font-size: 13px; }
   .lbl-sm { fill: var(--muted); font-size: 11px; }
@@ -76,8 +83,9 @@
       <a href="#sys">1 · System</a>
       <a href="#req">2 · Request flow</a>
       <a href="#imp">3 · Import &amp; categorise</a>
-      <a href="#data">4 · Data model</a>
-      <a href="#dep">5 · Deployment</a>
+      <a href="#ai">4 · AI gateway &amp; privacy gate</a>
+      <a href="#data">5 · Data model</a>
+      <a href="#dep">6 · Deployment</a>
     </nav>
   </header>
 
@@ -236,9 +244,123 @@
     </div>
   </section>
 
-  <!-- 4. DATA MODEL -------------------------------------------------------->
+  <!-- 4. AI GATEWAY & PRIVACY GATE ---------------------------------------->
+  <section id="ai">
+    <h2>4 · AI gateway &amp; privacy gate</h2>
+    <p class="sub">AI is off by default and opt-in. One gateway (<code>ai_service</code>) decides whether AI may run, redacts every cloud-bound payload at a single choke point, audits the call, and returns a <b>suggestion</b> the user must apply. AI never writes a category itself.</p>
+    <div class="figure">
+    <svg viewBox="0 0 960 700" role="img" aria-label="AI gateway flow: a classify request hits the privacy gate; strict_local and no_ai are refused; local_llm sends a minimal on-device payload to a localhost or LAN endpoint; cloud modes first block never-cloud categories and still-sensitive text, then pass through the redact_for_cloud choke point (allow-list plus PII masking), then either stage for manual approval or auto-send to a public cloud endpoint behind an SSRF guard; the provider reply becomes a suggestion that is audited and only applied by the user at confidence 1.0.">
+      <defs>
+        <marker id="ai-ah" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" class="mk-accent"/></marker>
+        <marker id="ai-as" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" class="mk-stop"/></marker>
+      </defs>
+
+      <!-- entry + gate -->
+      <rect class="box-accent" x="360" y="14" width="240" height="48" rx="9"/>
+      <text class="lbl" x="480" y="36" text-anchor="middle">AI classify request</text>
+      <text class="lbl-sm" x="480" y="52" text-anchor="middle">single txn / batch · rules, vendor, keyword first</text>
+
+      <rect class="box" x="360" y="86" width="240" height="48" rx="9"/>
+      <text class="lbl" x="480" y="108" text-anchor="middle">ai_service · privacy gate</text>
+      <text class="lbl-sm" x="480" y="124" text-anchor="middle">get_privacy_mode(db)</text>
+
+      <rect class="box-stop" x="648" y="86" width="290" height="48" rx="9"/>
+      <text class="lbl-stop" x="793" y="106" text-anchor="middle">strict_local / no_ai</text>
+      <text class="lbl-sm" x="793" y="122" text-anchor="middle">AI refused (AIDisabled)</text>
+
+      <path class="edge" marker-end="url(#ai-ah)" d="M480 62 L480 84"/>
+      <path class="edge-stop" marker-end="url(#ai-as)" d="M600 110 L646 110"/>
+      <text class="elbl" x="623" y="103" text-anchor="middle">off</text>
+
+      <!-- lane groups -->
+      <rect class="grp" x="24" y="168" width="430" height="252" rx="12"/>
+      <text class="ttl" x="40" y="188">LOCAL · local_llm (on device)</text>
+      <rect class="grp" x="506" y="168" width="430" height="352" rx="12"/>
+      <text class="ttl" x="522" y="188">CLOUD · cloud_manual / cloud_auto</text>
+
+      <!-- branch from gate to lanes -->
+      <path class="edge" marker-end="url(#ai-ah)" d="M460 134 C 340 150, 239 166, 239 204"/>
+      <text class="elbl" x="330" y="162" text-anchor="middle">local_llm</text>
+      <path class="edge" marker-end="url(#ai-ah)" d="M520 134 C 640 150, 721 166, 721 202"/>
+      <text class="elbl" x="628" y="162" text-anchor="middle">cloud_manual / auto</text>
+
+      <!-- LOCAL lane -->
+      <rect class="box-accent" x="64" y="206" width="350" height="50" rx="9"/>
+      <text class="lbl" x="239" y="228" text-anchor="middle">minimal payload (stays on device)</text>
+      <text class="lbl-sm" x="239" y="244" text-anchor="middle">{description, amount, currency, candidate_categories}</text>
+      <rect class="box-ext" x="94" y="294" width="290" height="50" rx="9"/>
+      <text class="lbl" x="239" y="316" text-anchor="middle">local endpoint · localhost / LAN</text>
+      <text class="lbl-sm" x="239" y="332" text-anchor="middle">no public-host (SSRF) requirement</text>
+      <text class="lbl-sm" x="239" y="380" text-anchor="middle">payload is not redacted: it never leaves the device</text>
+      <path class="edge" marker-end="url(#ai-ah)" d="M239 256 L239 292"/>
+
+      <!-- CLOUD lane -->
+      <rect class="box-stop" x="526" y="204" width="390" height="60" rx="9"/>
+      <text class="lbl-stop" x="721" y="224" text-anchor="middle">BLOCKED before any send</text>
+      <text class="lbl-sm" x="721" y="240" text-anchor="middle">never-cloud category · cloud_auto + still-sensitive text</text>
+      <text class="lbl-sm" x="721" y="255" text-anchor="middle">(send those via cloud_manual approval instead)</text>
+
+      <rect class="box-gate" x="526" y="290" width="390" height="66" rx="9"/>
+      <text class="lbl" x="721" y="312" text-anchor="middle" style="font-weight:700">REDACTION CHOKE-POINT · redact_for_cloud()</text>
+      <text class="lbl-sm" x="721" y="329" text-anchor="middle">allow-list only, then mask card · IBAN · sort · account · postcode · email · phone</text>
+      <text class="lbl-sm" x="721" y="345" text-anchor="middle">the single audited place cloud-bound bytes are built</text>
+
+      <rect class="box" x="526" y="384" width="190" height="62" rx="9"/>
+      <text class="lbl" x="621" y="405" text-anchor="middle">cloud_manual</text>
+      <text class="lbl-sm" x="621" y="421" text-anchor="middle">stage pending AIRequest</text>
+      <text class="lbl-sm" x="621" y="435" text-anchor="middle">+ review, user approves</text>
+      <rect class="box" x="726" y="384" width="190" height="62" rx="9"/>
+      <text class="lbl" x="821" y="410" text-anchor="middle">cloud_auto</text>
+      <text class="lbl-sm" x="821" y="426" text-anchor="middle">sends automatically</text>
+
+      <rect class="box-ext" x="526" y="474" width="390" height="52" rx="9"/>
+      <text class="lbl" x="721" y="496" text-anchor="middle">public cloud endpoint</text>
+      <text class="lbl-sm" x="721" y="512" text-anchor="middle">SSRF guard: public host only · no redirects · Bearer key</text>
+
+      <path class="edge" marker-end="url(#ai-ah)" d="M721 264 L721 288"/>
+      <path class="edge" marker-end="url(#ai-ah)" d="M621 356 L621 382"/>
+      <path class="edge" marker-end="url(#ai-ah)" d="M821 356 L821 382"/>
+      <path class="edge" marker-end="url(#ai-ah)" d="M621 446 L640 472"/>
+      <path class="edge" marker-end="url(#ai-ah)" d="M821 446 L800 472"/>
+
+      <!-- merge -->
+      <rect class="box" x="300" y="558" width="360" height="50" rx="9"/>
+      <text class="lbl" x="480" y="580" text-anchor="middle">provider reply → suggestion</text>
+      <text class="lbl-sm" x="480" y="596" text-anchor="middle">{category · confidence · rationale · country · vendor}</text>
+      <rect class="box-accent" x="210" y="634" width="540" height="52" rx="9"/>
+      <text class="lbl" x="480" y="656" text-anchor="middle">AI suggests, never writes a category</text>
+      <text class="lbl-sm" x="480" y="672" text-anchor="middle">every call audited as AIRequest (redacted payload) · user applies → confidence 1.0</text>
+
+      <path class="edge" marker-end="url(#ai-ah)" d="M239 344 C 239 500, 250 583, 296 583"/>
+      <path class="edge" marker-end="url(#ai-ah)" d="M721 526 C 721 550, 700 583, 662 583"/>
+      <path class="edge" marker-end="url(#ai-ah)" d="M480 608 L480 632"/>
+    </svg>
+    </div>
+    <p class="note"><b>Why it is safe by default:</b> the default mode is strict-local (no external calls at all). Cloud modes are opt-in and only ever send the redacted allow-list payload built at one choke point (<code>redact_for_cloud</code> in <code>services/redaction.py</code>). Batch AI runs in <code>local_llm</code> only; a cloud batch stages every redacted payload for one-shot approval first. Vision image-extract can not be redacted, so it refuses to auto-send under <code>cloud_auto</code> without explicit approval.</p>
+    <details>
+      <summary>diagram source (Mermaid)</summary>
+<pre>flowchart TD
+  req["AI classify request (txn / batch)"] --&gt; gate{"privacy mode?"}
+  gate -- "strict_local / no_ai" --&gt; off["AI refused (AIDisabled)"]
+  gate -- local_llm --&gt; lmin["minimal payload, on device"]
+  lmin --&gt; lep["local endpoint (localhost / LAN)"]
+  gate -- "cloud_manual / cloud_auto" --&gt; block{"never-cloud category?\ncloud_auto + sensitive text?"}
+  block -- yes --&gt; blk["BLOCKED (use cloud_manual)"]
+  block -- no --&gt; redact["REDACTION CHOKE-POINT\nredact_for_cloud(): allow-list + mask PII"]
+  redact -- cloud_manual --&gt; approve["stage pending AIRequest + review, user approves"]
+  redact -- cloud_auto --&gt; autosend["send automatically"]
+  approve --&gt; cep["public cloud endpoint (SSRF guard)"]
+  autosend --&gt; cep
+  lep --&gt; sug["provider reply -&gt; suggestion"]
+  cep --&gt; sug
+  sug --&gt; apply["AI never writes; user applies -&gt; confidence 1.0 (audited)"]
+</pre>
+    </details>
+  </section>
+
+  <!-- 5. DATA MODEL -------------------------------------------------------->
   <section id="data">
-    <h2>4 · Data model — core spine</h2>
+    <h2>5 · Data model — core spine</h2>
     <p class="sub">The full model has ~30 tables (spec §12); this shows the core relationships.</p>
     <div class="figure">
     <svg viewBox="0 0 900 420" role="img" aria-label="Entity spine: Household has Users and Accounts; Account produces Statements which contain Transactions; Transactions split, and link to Category, Vendor, Project and Receipt matches.">
@@ -272,9 +394,9 @@
     <p class="note">Other groups hang off the same <code>ACCOUNT</code> / <code>TRANSACTION</code> / <code>USER</code> spine: <b>savings</b> (SavingsBalance, SavingsGoal) · <b>investments</b> (AccountValue, Holding, HoldingPrice) · <b>assets</b> (Asset, AssetLog) · <b>AI</b> (AIRequest) · <b>review</b> (ReviewItem) · <b>energy</b> (EnergySnapshot) · <b>import profiles</b> (ImportProfile) · <b>Curve funding links</b> (CurveFundingLink) · <b>subscriptions</b> · <b>rules</b> · <b>budgets</b> · <b>tags</b> · <b>child allowance</b> (ChildAllocation) · <b>MFA</b> (UserSession) · <b>audit</b> (AuditLog). Retention adds an <code>archived_at</code> column to transactions / receipts / AI-requests / audit-logs.</p>
   </section>
 
-  <!-- 5. DEPLOYMENT -------------------------------------------------------->
+  <!-- 6. DEPLOYMENT -------------------------------------------------------->
   <section id="dep">
-    <h2>5 · Deployment — add-on image</h2>
+    <h2>6 · Deployment — add-on image</h2>
     <p class="sub">Multi-stage build: the frontend is built with Node, then served by the Python runtime alongside the backend; data lives on a private volume.</p>
     <div class="figure">
     <svg viewBox="0 0 900 280" role="img" aria-label="Build stage compiles the frontend with node into dist; the python runtime serves dist plus the backend at root; run.sh maps options to env, migrates and starts; a private /data volume holds the database and uploads.">
