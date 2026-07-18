@@ -72,6 +72,19 @@ class GoalUpdate(BaseModel):
     status: str | None = None
 
 
+class SavingsForecast(BaseModel):
+    """Deposit-rate / time-to-goal forecast (savings_service.forecast_goal). Every
+    goal returns one; unfilled parts stay ``None`` so the shape is stable across
+    states (no_forecast/achieved/not_progressing/on_track/behind/projected). Money
+    fields are ``Decimal`` like their siblings."""
+
+    state: str
+    monthly_deposit_rate: Decimal | None
+    projected_date: date | None
+    months_remaining: float | None
+    on_track: bool | None
+
+
 class GoalOut(BaseModel):
     id: int
     name: str
@@ -84,6 +97,7 @@ class GoalOut(BaseModel):
     percent: float
     currency: str
     status: str
+    forecast: SavingsForecast | None = None
 
 
 class SavingsSummary(BaseModel):

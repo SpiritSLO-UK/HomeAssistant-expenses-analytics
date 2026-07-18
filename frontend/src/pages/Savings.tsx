@@ -115,9 +115,12 @@ function AccountCard({
   onError: (e: unknown) => void;
 }>) {
   const [open, setOpen] = useState(false);
+  // Only fetch the per-account snapshot history once its panel is expanded — avoids
+  // an N-query burst on mount (one per account); refetch() after edits still forces it.
   const history = useQuery({
     queryKey: ["savings-history", account.id],
     queryFn: () => getBalanceHistory(account.id),
+    enabled: open,
   });
   const [date, setDate] = useState(today());
   const [amount, setAmount] = useState("");   // absolute "set balance" (from statement)
@@ -301,6 +304,45 @@ function NewAccountForm({ onCreated, onError }: Readonly<{ onCreated: () => void
   );
 }
 
+// The deposit-rate/time-to-goal forecast the API now surfaces on each goal. The
+// shared SavingsGoal type in client.ts doesn't model it yet (out of scope here),
+// so we read it through a local widening view.
+type GoalForecast = {
+  state: string;
+  monthly_deposit_rate: string | null;
+  projected_date: string | null;
+  months_remaining: number | null;
+  on_track: boolean | null;
+};
+
+// Only the states worth a line get a label; no_forecast/achieved stay silent
+// (the "achieved" badge already covers the latter).
+const FORECAST_LABEL: Record<string, string> = {
+  on_track: "on track",
+  behind: "behind schedule",
+  projected: "projected",
+  not_progressing: "not progressing",
+};
+
+function goalForecast(goal: SavingsGoal): GoalForecast | undefined {
+  return (goal as SavingsGoal & { forecast?: GoalForecast }).forecast;
+}
+
+function GoalForecastLine({ forecast, base }: Readonly<{ forecast?: GoalForecast; base: string }>) {
+  const label = forecast ? FORECAST_LABEL[forecast.state] : undefined;
+  if (!forecast || !label) return null;
+  const behind = forecast.state === "behind" || forecast.state === "not_progressing";
+  const months = forecast.months_remaining;
+  return (
+    <div className="muted" style={{ fontSize: "0.82rem", marginTop: 2 }}>
+      {forecast.monthly_deposit_rate && <>≈ {forecast.monthly_deposit_rate} {base}/mo · </>}
+      <span className={behind ? "amt--neg" : "amt--pos"}>{label}</span>
+      {forecast.projected_date && <> · reaches target {forecast.projected_date}</>}
+      {months != null && <> (~{months} mo)</>}
+    </div>
+  );
+}
+
 function GoalsCard({
   goals,
   accounts,
@@ -385,6 +427,7 @@ function GoalsCard({
                   delete
                 </button>
               </div>
+              <GoalForecastLine forecast={goalForecast(g)} base={base} />
             </li>
           );
         })}

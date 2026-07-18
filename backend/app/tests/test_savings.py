@@ -389,3 +389,36 @@ def test_goal_summary_exposes_forecast_field(db):
     # A manual goal has no balance history → no forecast.
     manual = savings_service.create_goal(db, name="Trip", target_amount=Decimal("500"))
     assert savings_service.goal_to_dict(db, manual)["forecast"]["state"] == "no_forecast"
+
+
+def test_goal_forecast_surfaces_via_api(client):
+    """The deposit-rate/time-to-goal forecast is now exposed on the HTTP goals +
+    summary responses (was computed but stripped by the strict GoalOut schema)."""
+    aid = _account(client)
+    _add_balance(client, aid, "2026-01-01", "0")
+    _add_balance(client, aid, "2026-01-31", "300")
+    gid = client.post(
+        "/api/savings/goals", json={"name": "House", "target_amount": "900", "account_id": aid}
+    ).json()["id"]
+
+    goal = next(g for g in client.get("/api/savings/goals").json() if g["id"] == gid)
+    fc = goal["forecast"]
+    assert fc is not None
+    # 300 saved over 30 days → 300/month net deposit rate, surfaced as a string.
+    assert Decimal(fc["monthly_deposit_rate"]) == Decimal("300.00")
+    assert fc["state"] in {"on_track", "behind", "projected"}
+    assert fc["projected_date"] is not None
+
+    # Same forecast object rides along on the summary payload.
+    summary_goal = next(
+        g for g in client.get("/api/savings/summary").json()["goals"] if g["id"] == gid
+    )
+    assert summary_goal["forecast"]["state"] == fc["state"]
+
+    # A manual (unlinked) goal has no history → forecast surfaces as no_forecast.
+    manual_id = client.post(
+        "/api/savings/goals", json={"name": "Trip", "target_amount": "500"}
+    ).json()["id"]
+    manual = next(g for g in client.get("/api/savings/goals").json() if g["id"] == manual_id)
+    assert manual["forecast"]["state"] == "no_forecast"
+    assert manual["forecast"]["monthly_deposit_rate"] is None
