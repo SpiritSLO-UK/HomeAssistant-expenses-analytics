@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { test, expect } from "@playwright/test";
 import { PAGES, gotoPage, type PageDef } from "./helpers";
 
@@ -21,6 +22,24 @@ function sampledPages(): PageDef[] {
     if (!def) throw new Error(`No PAGES entry for route ${route}`);
     return def;
   });
+}
+
+// The CSP hash a browser computes for an inline <script>: the sha256, base64, of
+// the element's text content with CRLF/CR newlines normalised to LF (per the HTML
+// spec). We hash the FIRST attribute-less <script> — the pre-paint theme setter —
+// which is the only inline script the app serves.
+function inlineThemeScriptHash(servedHtml: string): string {
+  const match = /<script>([\s\S]*?)<\/script>/.exec(servedHtml);
+  if (!match) throw new Error("no inline <script> found in the served document");
+  const body = match[1].replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const digest = createHash("sha256").update(body, "utf8").digest("base64");
+  return `sha256-${digest}`;
+}
+
+// The `script-src` directive body (everything up to the next `;`), or "".
+function scriptSrcOf(csp: string): string {
+  const match = /script-src([^;]*)/.exec(csp);
+  return match ? match[1] : "";
 }
 
 test.describe("content-security-policy", () => {
@@ -48,5 +67,33 @@ test.describe("content-security-policy", () => {
     }
 
     expect(violations, "browser reported CSP violations").toEqual([]);
+  });
+
+  // Regression guard for the inline-script hash/script DRIFT that a
+  // "no console violation" check misses: fetch the ACTUAL served document and the
+  // ACTUAL served CSP together, hash the inline theme script exactly as the browser
+  // would, and assert that hash is whitelisted in script-src. We hash what is served
+  // (Vite's built index.html), not the source file, so this also catches any
+  // build-time transform or a stale hash left behind after editing the script.
+  test("served CSP script-src whitelists the actual inline theme script", async ({
+    request,
+  }) => {
+    const response = await request.get("/");
+    expect(response.ok(), "root document did not load").toBeTruthy();
+
+    const html = await response.text();
+    const csp = response.headers()["content-security-policy"] ?? "";
+    const scriptSrc = scriptSrcOf(csp);
+    const hash = inlineThemeScriptHash(html);
+
+    // The hash must be the thing that permits the script: if script-src fell back
+    // to 'unsafe-inline' the hash would be moot and the drift guard meaningless.
+    expect(scriptSrc, "script-src must not allow 'unsafe-inline'").not.toContain(
+      "'unsafe-inline'",
+    );
+    expect(
+      scriptSrc,
+      `served script-src is missing the inline theme script hash ${hash} (hash/script drift)`,
+    ).toContain(hash);
   });
 });
