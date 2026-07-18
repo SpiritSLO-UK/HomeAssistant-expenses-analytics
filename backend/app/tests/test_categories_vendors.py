@@ -6,8 +6,11 @@ aliases work, and the dashboard groups by category.
 
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 
+from app.models import Transaction
 from app.services import category_service, vendor_service
 
 # A fixed month matching the sample CSV data, so dashboard tests are
@@ -101,6 +104,46 @@ def test_create_vendor_from_transaction_explicit_name(client, samples_dir):
 
 def test_create_vendor_from_transaction_404(client):
     assert client.post("/api/transactions/999999/create-vendor", json={}).status_code == 404
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("BP", "BP"),                     # short acronym preserved (not "Bp")
+        ("HSBC", "HSBC"),                 # 4-char acronym preserved (not "Hsbc")
+        ("EE", "EE"),                     # 2-char brand preserved (not "Ee")
+        ("O2", "O2"),                     # digit-bearing brand preserved
+        ("M&S", "M&S"),                   # ampersand brand preserved (not "M&s")
+        ("TESCO STORES", "Tesco Stores"), # genuine all-caps words still title-cased
+        ("BP CONNECT", "BP Connect"),     # acronym + word in one signature
+        ("Costa Coffee", "Costa Coffee"), # already mixed-case → left untouched
+    ],
+)
+def test_create_vendor_normalises_acronyms(db, raw, expected):
+    """Naming an all-caps merchant no longer mangles acronyms/brands via a naive
+    ``str.title()`` (mirrors the FE fix in #393)."""
+    txn = Transaction(
+        description_raw=raw,
+        merchant_raw=raw,
+        amount="1.00",
+        direction="debit",
+        transaction_date=date(2026, 5, 15),
+    )
+    db.add(txn)
+    db.flush()
+    vendor = vendor_service.create_from_transaction(db, txn)
+    assert vendor.canonical_name == expected
+
+
+@pytest.mark.parametrize(
+    ("merchant_raw", "expected"),
+    [("BP", "BP"), ("HSBC", "HSBC"), ("M&S", "M&S"), ("TESCO STORES", "Tesco Stores")],
+)
+def test_learn_vendor_category_normalises_acronyms(db, merchant_raw, expected):
+    """Manual-correction learning normalises the canonical name the same way."""
+    cat = category_service.create_category(db, {"name": "Groceries"})
+    vendor = vendor_service.learn_vendor_category(db, "SOME DESCRIPTION 42", merchant_raw, cat.id)
+    assert vendor.canonical_name == expected
 
 
 # --- category CRUD ---
