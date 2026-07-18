@@ -13,7 +13,7 @@ consistent with budgets (`budget_service`) and the dashboard.
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -204,9 +204,77 @@ def _budget_fields(project: Project, spent: Decimal) -> dict:
     }
 
 
+def _run_rate(spent: Decimal, first: date | None, last: date | None) -> Decimal | None:
+    """Average money-out per day over the elapsed spend history (``first``→``last``).
+
+    ``None`` when there is nothing to extrapolate from: no spend, no history, or a
+    single-day/zero-elapsed window (avoids divide-by-zero)."""
+    if first is None or last is None or spent <= 0:
+        return None
+    elapsed = (last - first).days
+    if elapsed <= 0:
+        return None
+    return spent / Decimal(elapsed)
+
+
+def _exhaustion_date(remaining: Decimal, rate: Decimal, last: date) -> str | None:
+    """Estimated point the budget is spent through, projecting ``rate`` forward from
+    the last spend. Already overspent → the last spend date; no rate → ``None``."""
+    if rate <= 0:
+        return None
+    if remaining <= 0:
+        return last.isoformat()
+    return (last + timedelta(days=int(remaining / rate))).isoformat()
+
+
+def _forecast_total(rate: Decimal, spent: Decimal, first: date, end_date: date | None) -> Decimal | None:
+    """Total spend forecast at ``rate`` across the planned window (``first``→
+    ``end_date``); never below what's already spent. ``None`` without a usable
+    ``end_date`` (no finish line to project a total to)."""
+    if end_date is None or end_date < first:
+        return None
+    return max(rate * Decimal((end_date - first).days), spent)
+
+
+def _forecast(
+    *,
+    budget: Decimal | None,
+    spent: Decimal,
+    first: date | None,
+    last: date | None,
+    end_date: date | None,
+) -> dict | None:
+    """Additive burn-down / run-rate forecast vs budget (spec §18.2). ``None`` when
+    the project has no positive budget (forecast is skipped). Handles zero history
+    and zero-elapsed time by degrading to a rate-less burn-down figure."""
+    if budget is None or budget <= 0:
+        return None
+    budget = Decimal(budget)
+    remaining = budget - spent  # burn-down: budget − spent (negative = overspent)
+    rate = _run_rate(spent, first, last)
+
+    forecast_total: Decimal | None = None
+    exhaustion: str | None = None
+    if rate is not None:
+        exhaustion = _exhaustion_date(remaining, rate, last)  # last set when rate set
+        forecast_total = _forecast_total(rate, spent, first, end_date)
+
+    projected = forecast_total if forecast_total is not None else spent
+    q = Decimal("0.01")
+    return {
+        "budget": str(budget.quantize(q)),
+        "remaining": str(remaining.quantize(q)),
+        "run_rate_per_day": None if rate is None else str(rate.quantize(q)),
+        "forecast_total": None if forecast_total is None else str(forecast_total.quantize(q)),
+        "on_track": projected <= budget,
+        "exhaustion_date": exhaustion,
+    }
+
+
 def summary(db: Session, project: Project, *, account_ids: set[int] | None = None) -> dict:
     """Full project report (spec §18.2): total, by-category, by-vendor, count,
-    timeline, and budget progress when the project has a budget."""
+    timeline, budget progress and a run-rate/burn-down ``forecast`` when the
+    project has a budget."""
     spent, by_cat, by_vendor, count, first, last = _accumulate(db, project.id, account_ids=account_ids)
 
     cats: dict[int | None, str] = {c.id: c.name for c in db.scalars(select(Category)).all()}
@@ -219,6 +287,13 @@ def summary(db: Session, project: Project, *, account_ids: set[int] | None = Non
         "currency": settings_service.get_base_currency(db),
         "spent": str(spent),
         **_budget_fields(project, spent),
+        "forecast": _forecast(
+            budget=project.budget_amount,
+            spent=spent,
+            first=first,
+            last=last,
+            end_date=project.end_date,
+        ),
         "transaction_count": count,
         "first_transaction": first.isoformat() if first else None,
         "last_transaction": last.isoformat() if last else None,
