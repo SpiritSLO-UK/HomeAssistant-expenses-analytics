@@ -2542,6 +2542,13 @@ export function exportMonthlyCsv(months?: number, month?: string): Promise<void>
   return downloadCsv(`api/export/monthly.csv${exportParams({ months, month })}`, "monthly.csv");
 }
 
+// Owner-only activity/audit log export. Honours the same action-prefix +
+// include_archived filters as the /activity listing (backend routes_logs).
+export function exportAuditLogCsv(filters: { action?: string; includeArchived?: boolean } = {}): Promise<void> {
+  const qs = exportParams({ action: filters.action, include_archived: filters.includeArchived });
+  return downloadCsv(`api/logs/audit/export.csv${qs}`, "audit-log.csv");
+}
+
 // --- Child allowance (backlog #82) ---
 
 export interface AllowanceItem {
