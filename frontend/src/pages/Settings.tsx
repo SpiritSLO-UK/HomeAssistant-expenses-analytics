@@ -48,6 +48,8 @@ import {
   runRetention,
   isStepUpError,
   mfaStepUp,
+  generateMfaBackupCodes,
+  getMfaBackupCodesRemaining,
   type RetentionPolicyResponse,
   type RetentionTypePolicy,
   type RetentionPlan,
@@ -1082,6 +1084,142 @@ function AiCard({
   );
 }
 
+// One-time backup/recovery codes for MFA (CR-FEAT-1). Rendered only when MFA is
+// enabled. Generating is step-up gated (mirrors the RetentionForm pattern): a
+// step_up_required error opens a code prompt whose success replays the request.
+function MfaBackupCodesSection({
+  onMessage,
+  onError,
+}: Readonly<{
+  onMessage: (m: string) => void;
+  onError: (e: unknown) => void;
+}>) {
+  const remaining = useQuery({
+    queryKey: ["mfa-backup-codes-remaining"],
+    queryFn: getMfaBackupCodesRemaining,
+  });
+  const [codes, setCodes] = useState<string[] | null>(null);
+  const [stepUpOpen, setStepUpOpen] = useState(false);
+  const [stepCode, setStepCode] = useState("");
+
+  const generate = useMutation({
+    mutationFn: generateMfaBackupCodes,
+    onSuccess: (res) => {
+      setCodes(res.codes);
+      remaining.refetch().catch(() => {});
+      onMessage("New backup codes generated — save them now, they won't be shown again.");
+    },
+    onError: (e: unknown) => {
+      if (isStepUpError(e)) {
+        setStepUpOpen(true);
+        return;
+      }
+      onError(e);
+    },
+  });
+
+  const stepUp = useMutation({
+    mutationFn: () => mfaStepUp(stepCode),
+    onSuccess: () => {
+      setStepUpOpen(false);
+      setStepCode("");
+      generate.mutate();
+    },
+    onError: () => onError("That code didn't match. Try again."),
+  });
+
+  const codesText = codes ? codes.join("\n") : "";
+  const copyCodes = () => {
+    navigator.clipboard
+      .writeText(codesText)
+      .then(() => onMessage("Backup codes copied to clipboard."))
+      .catch(() => onError("Couldn't copy — select the codes and copy them manually."));
+  };
+  const downloadCodes = () => {
+    const url = URL.createObjectURL(new Blob([`${codesText}\n`], { type: "text/plain" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "hafi-backup-codes.txt";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const remainingLabel = () => {
+    if (remaining.isLoading) return "Checking remaining codes…";
+    const n = remaining.data?.remaining ?? 0;
+    if (n === 0) return "No backup codes yet — generate a set to keep as a fallback.";
+    return `${n} unused backup code${n === 1 ? "" : "s"} remaining.`;
+  };
+
+  return (
+    <div style={{ marginTop: 16, borderTop: "1px solid #2a2a2a", paddingTop: 12 }}>
+      <h3 style={{ margin: "0 0 6px", fontSize: "0.95rem" }}>Backup codes</h3>
+      <p className="muted" style={{ fontSize: "0.85rem", marginTop: 0 }}>
+        One-time recovery codes to sign in if you lose your authenticator. Each works once.
+        {" "}{remainingLabel()}
+      </p>
+      <button className="btn btn--ghost" disabled={generate.isPending} onClick={() => generate.mutate()}>
+        {generate.isPending ? "Generating…" : "Generate backup codes"}
+      </button>
+
+      {codes && (
+        <div style={{ marginTop: 12, border: "1px solid #2d7", borderRadius: 8, padding: 12 }}>
+          <p className="status status--ok" style={{ marginTop: 0 }}>
+            🔑 Here are your {codes.length} backup codes.
+          </p>
+          <p className="muted" style={{ fontSize: "0.82rem" }}>
+            <strong>Save them now — they won't be shown again</strong>, and generating a new set
+            invalidates these. Store them somewhere safe (a password manager).
+          </p>
+          <textarea
+            readOnly
+            aria-label="Backup codes"
+            value={codesText}
+            rows={Math.min(codes.length, 10)}
+            onFocus={(e) => e.currentTarget.select()}
+            style={{ width: "100%", fontFamily: "monospace", resize: "vertical", boxSizing: "border-box" }}
+          />
+          <div className="form-row" style={{ gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+            <button className="btn btn--ghost" onClick={copyCodes}>📋 Copy</button>
+            <button className="btn btn--ghost" onClick={downloadCodes}>⬇ Download .txt</button>
+            <button className="btn btn--ghost" onClick={() => setCodes(null)}>Done</button>
+          </div>
+        </div>
+      )}
+
+      {stepUpOpen && (
+        <div className="card" style={{ borderLeft: "3px solid #2d7", marginTop: 12 }}>
+          <h2 className="card__title">🔐 Confirm it's you</h2>
+          <p className="muted">
+            Generating backup codes needs a fresh two-factor code. Enter the current code —
+            your codes will be generated automatically.
+          </p>
+          <form
+            className="form-row"
+            onSubmit={(e) => { e.preventDefault(); if (stepCode) stepUp.mutate(); }}
+          >
+            <input
+              inputMode="numeric"
+              autoFocus
+              placeholder="123456"
+              maxLength={8}
+              value={stepCode}
+              onChange={(e) => setStepCode(e.target.value.replace(/\D/g, ""))}
+              style={{ width: 120 }}
+            />
+            <button className="btn" type="submit" disabled={!stepCode || stepUp.isPending}>
+              {stepUp.isPending ? "Verifying…" : "Verify"}
+            </button>
+            <button className="btn btn--ghost" type="button" onClick={() => { setStepUpOpen(false); setStepCode(""); }}>
+              Cancel
+            </button>
+          </form>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MfaCard({
   onMessage,
   onError,
@@ -1251,6 +1389,7 @@ function MfaCard({
               </div>
             </>
           )}
+          <MfaBackupCodesSection onMessage={onMessage} onError={onError} />
         </>
       )}
     </div>
