@@ -136,8 +136,8 @@ export default function Vendors() {
       <div className="card">
         <h2 className="card__title">Add a vendor</h2>
         <div className="form-row">
-          <input placeholder="Canonical name (e.g. Tesco)" value={name} onChange={(e) => setName(e.target.value)} />
-          <input placeholder="Alias to match (e.g. TESCO)" value={alias} onChange={(e) => setAlias(e.target.value)} />
+          <input aria-label="Canonical vendor name" placeholder="Canonical name (e.g. Tesco)" value={name} onChange={(e) => setName(e.target.value)} />
+          <input aria-label="Alias to match" placeholder="Alias to match (e.g. TESCO)" value={alias} onChange={(e) => setAlias(e.target.value)} />
           <button className="btn" disabled={!name || create.isPending} onClick={() => create.mutate()}>
             Add vendor
           </button>
