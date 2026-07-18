@@ -31,6 +31,19 @@ export default function Categories() {
   const [err, setErr] = useState<string | null>(null);
   const fail = (e: unknown) => setErr(String(e));
 
+  // Bulk recolour: tick several categories, pick one colour, and apply it to all
+  // at once by looping the existing per-category update call over the selection.
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [bulkColour, setBulkColour] = useState("#4CAF50");
+  const toggleSelected = (id: number) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   // Who's looking? Cloud-AI privacy is a settings concern (owner / settings-manager);
   // merge + delete are structural (owner only). Hide those controls otherwise — the
   // backend enforces the same, this just keeps them out of sight (backlog #28).
@@ -109,6 +122,21 @@ export default function Categories() {
     onError: fail,
   });
 
+  // Apply one colour to every selected category, reusing the same per-category
+  // update call — recolouring shifts the dashboard's category swatches too, so
+  // refresh that breakdown alongside the list.
+  const bulkRecolour = useMutation({
+    mutationFn: (ids: number[]) =>
+      Promise.all(ids.map((id) => updateCategory(id, { colour: bulkColour }))),
+    onSuccess: () => {
+      setErr(null);
+      setSelected(new Set());
+      qc.invalidateQueries({ queryKey: ["categories"] });
+      qc.invalidateQueries({ queryKey: ["dash-categories"] });
+    },
+    onError: fail,
+  });
+
   const cats = data ?? [];
   const nameOf = (id: string) => cats.find((c) => String(c.id) === id)?.name ?? "";
 
@@ -154,8 +182,19 @@ export default function Categories() {
       <div className="card">
         <h2 className="card__title">Category library ({cats.length})</h2>
         <div className="form-row" style={{ marginBottom: 10 }}>
-          <input placeholder="New category name" value={name} onChange={(e) => setName(e.target.value)} />
-          <input type="color" value={colour} onChange={(e) => setColour(e.target.value)} title="Colour" />
+          <input
+            aria-label="New category name"
+            placeholder="New category name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+          <input
+            type="color"
+            aria-label="Colour for new category"
+            value={colour}
+            onChange={(e) => setColour(e.target.value)}
+            title="Colour"
+          />
           <button className="btn" disabled={!name || create.isPending} onClick={submitCreate}>
             Add
           </button>
@@ -164,11 +203,19 @@ export default function Categories() {
         <div className="chips">
           {cats.map((c: Category) => (
             <span key={c.id} className="chip">
+              <input
+                type="checkbox"
+                className="chip__sel"
+                aria-label={`Select ${c.name} for bulk recolour`}
+                checked={selected.has(c.id)}
+                onChange={() => toggleSelected(c.id)}
+              />
               <span className="chip__dot" style={{ background: c.colour ?? "#bbb" }} />
               {c.name}
               {advanced && (
                 <select
                   className="chip__priv"
+                  aria-label={`Cloud-AI privacy for ${c.name}`}
                   value={c.privacy_sensitivity}
                   title="What this category may send to cloud AI — pick 🔒 never cloud to keep it fully on-device"
                   onChange={(e) => setPrivacy.mutate({ id: c.id, level: e.target.value })}
@@ -181,6 +228,7 @@ export default function Categories() {
               {isAdmin && (
                 <button
                   className="chip__x"
+                  aria-label={c.is_system ? `Delete built-in category ${c.name}` : `Delete category ${c.name}`}
                   title={c.is_system ? "Delete (built-in)" : "Delete"}
                   onClick={() => confirmDelete(c)}
                 >
@@ -189,6 +237,29 @@ export default function Categories() {
               )}
             </span>
           ))}
+        </div>
+        {/* Bulk recolour — tick categories above, choose a colour, apply to all. */}
+        <div className="form-row" style={{ marginTop: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <span className="muted">Bulk recolour ({selected.size} selected):</span>
+          <input
+            type="color"
+            aria-label="Colour to apply to selected categories"
+            value={bulkColour}
+            onChange={(e) => setBulkColour(e.target.value)}
+            title="Colour to apply to selected categories"
+          />
+          <button
+            className="btn btn--sm"
+            disabled={selected.size === 0 || bulkRecolour.isPending}
+            onClick={() => bulkRecolour.mutate(Array.from(selected))}
+          >
+            {bulkRecolour.isPending ? "Applying…" : "Apply colour to selected"}
+          </button>
+          {selected.size > 0 && (
+            <button className="btn btn--sm btn--ghost" onClick={() => setSelected(new Set())}>
+              Clear selection
+            </button>
+          )}
         </div>
         <p className="muted" style={{ marginTop: 12 }}>
           <strong>Cloud-AI privacy</strong> (per category, your choice): <strong>☁️ cloud OK</strong> = may be
@@ -247,14 +318,14 @@ export default function Categories() {
           duplicates or a built-in you don't use into one you do.
         </p>
         <div className="form-row" style={{ alignItems: "center", flexWrap: "wrap" }}>
-          <select value={mergeSource} onChange={(e) => setMergeSource(e.target.value)}>
+          <select aria-label="Category to merge from" value={mergeSource} onChange={(e) => setMergeSource(e.target.value)}>
             <option value="">Merge…</option>
             {cats.map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </select>
           <span className="muted">into</span>
-          <select value={mergeTarget} onChange={(e) => setMergeTarget(e.target.value)}>
+          <select aria-label="Category to merge into" value={mergeTarget} onChange={(e) => setMergeTarget(e.target.value)}>
             <option value="">…another category</option>
             {cats.filter((c) => String(c.id) !== mergeSource).map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
