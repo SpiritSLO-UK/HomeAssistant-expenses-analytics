@@ -18,6 +18,7 @@ from app.models.fx_rate import FxRate
 from app.models.household import Household
 from app.models.import_profile import ImportProfile
 from app.models.investment import AccountValue, Holding, HoldingPrice
+from app.models.mfa_backup_code import MfaBackupCode
 from app.models.project import Project
 from app.models.receipt import Receipt, ReceiptItem, TransactionReceiptMatch
 from app.models.review_item import ReviewItem
@@ -50,6 +51,7 @@ __all__ = [
     "AccountValue",
     "Holding",
     "HoldingPrice",
+    "MfaBackupCode",
     "Project",
     "Receipt",
     "ReceiptItem",
