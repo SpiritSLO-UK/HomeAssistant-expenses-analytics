@@ -48,6 +48,14 @@ DEVICE = {
     "model": "Finance",
 }
 
+# A single shared availability topic for every sensor (spec §27). We publish a
+# retained "online" on a successful publish cycle, and register it as the client's
+# LWT with retained "offline" so a broker-detected drop flips every sensor to
+# "unavailable" in Home Assistant. Combined with ``expire_after`` on each sensor
+# this makes HA show the sensors unavailable when the add-on stops publishing.
+AVAILABILITY_ONLINE = "online"
+AVAILABILITY_OFFLINE = "offline"
+
 
 def _sensor(
     key: str,
@@ -215,13 +223,25 @@ def _discovery_topic(object_id: str) -> str:
     return f"{settings.mqtt_discovery_prefix}/sensor/finance/{object_id}/config"
 
 
+def _availability_topic() -> str:
+    return f"{settings.mqtt_discovery_prefix}/sensor/finance/availability"
+
+
 def _discovery_config(sensor: dict) -> dict:
     config: dict = {
         "name": sensor["name"],
         "unique_id": sensor["object_id"],
         "state_topic": _state_topic(sensor["key"]),
         "device": DEVICE,
+        # Availability wiring so HA marks the sensor "unavailable" when the add-on
+        # stops. The LWT drives a broker-detected drop; ``expire_after`` is the
+        # backstop for a graceful stop where no fresh state arrives in time.
+        "availability_topic": _availability_topic(),
+        "payload_available": AVAILABILITY_ONLINE,
+        "payload_not_available": AVAILABILITY_OFFLINE,
     }
+    if settings.mqtt_expire_after_seconds > 0:
+        config["expire_after"] = settings.mqtt_expire_after_seconds
     if sensor.get("unit"):
         config["unit_of_measurement"] = sensor["unit"]
     if sensor.get("device_class"):
@@ -263,6 +283,22 @@ def _paho_available() -> bool:
         return False
 
 
+def _arm_availability(client) -> None:
+    """Register the LWT (last will) so the broker publishes a retained "offline" to
+    the shared availability topic if this client drops without a clean disconnect.
+
+    Must run BEFORE ``connect()`` (paho only honours a will registered before the
+    connection). Best-effort: a fake test client without ``will_set`` is a no-op.
+    """
+    will_set = getattr(client, "will_set", None)
+    if will_set is None:
+        return
+    try:
+        will_set(_availability_topic(), AVAILABILITY_OFFLINE, retain=True)
+    except Exception:  # pragma: no cover - best effort
+        pass
+
+
 def _default_connect():
     """Connect to the broker with paho-mqtt (lazy import)."""
     try:
@@ -276,6 +312,8 @@ def _default_connect():
         client = mqtt.Client()
     if settings.mqtt_username:
         client.username_pw_set(settings.mqtt_username, settings.mqtt_password or None)
+    # Arrange the LWT before connecting so a broker-detected drop flips sensors offline.
+    _arm_availability(client)
     client.connect(settings.mqtt_host, settings.mqtt_port, keepalive=60)
     return client
 
@@ -342,6 +380,18 @@ def _publish(client, topic: str, payload: str, *, wait: float = 0.0) -> bool:
     return ok
 
 
+def _publish_online(client) -> bool:
+    """Announce the add-on is publishing: a retained "online" on the shared
+    availability topic. Paired with the LWT's retained "offline", this shows the
+    sensors available now and flips them unavailable if the client drops.
+
+    A graceful end of cycle deliberately does NOT publish "offline" (that would
+    flap the sensors between cycles); ``expire_after`` plus this retained "online"
+    cover the idle gaps, and only the LWT ever publishes "offline".
+    """
+    return _publish(client, _availability_topic(), AVAILABILITY_ONLINE, wait=_PUBLISH_TIMEOUT)
+
+
 def publish_all(db: Session, ref: date | None = None, connect=None) -> dict:
     """Publish discovery + state for every sensor. Returns a small report.
 
@@ -363,7 +413,10 @@ def publish_all(db: Session, ref: date | None = None, connect=None) -> dict:
     _safe_loop_start(client)
     published = 0
     failed = 0
+    online = False
     try:
+        # Announce presence first so HA sees the sensors available for this cycle.
+        online = _publish_online(client)
         for sensor in sensors:
             if _publish(client, _discovery_topic(sensor["object_id"]),
                         json.dumps(_discovery_config(sensor)), wait=_PUBLISH_TIMEOUT):
@@ -387,7 +440,7 @@ def publish_all(db: Session, ref: date | None = None, connect=None) -> dict:
         logger.warning("MQTT publish: broker rejected %s message(s)", failed)
     return {
         "enabled": True, "published": published, "failed": failed,
-        "sensors": len(sensors), "cleared": len(disabled),
+        "sensors": len(sensors), "cleared": len(disabled), "online": online,
     }
 
 
