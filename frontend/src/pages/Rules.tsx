@@ -36,6 +36,7 @@ export default function Rules() {
   const [priority, setPriority] = useState(150);
   const [test, setTest] = useState<RuleTestResult | null>(null);
   const [help, setHelp] = useState(false);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
 
   const [err, setErr] = useState<string | null>(null);
   const fail = (e: unknown) => setErr(String(e));
@@ -75,6 +76,22 @@ export default function Rules() {
     onError: fail,
   });
   const remove = useMutation({ mutationFn: (id: number) => deleteRule(id), onSuccess: invalidate, onError: fail });
+  // Clone reuses the create-rule API: same condition/action, name suffixed and
+  // priority nudged up by 1 so the copy lands just above its original.
+  const clone = useMutation({
+    mutationFn: (r: Rule) =>
+      createRule({
+        condition_type: r.condition_type,
+        condition_value: r.condition_value,
+        action_type: r.action_type,
+        action_value: r.action_value,
+        name: `${r.name} (copy)`,
+        priority: r.priority + 1,
+        enabled: r.enabled,
+      }),
+    onSuccess: invalidate,
+    onError: fail,
+  });
   const runTest = useMutation({
     mutationFn: () => testRule(conditionType, conditionValue),
     onSuccess: (r) => {
@@ -95,6 +112,16 @@ export default function Rules() {
     }
     if (r.action_type === "set_country") return `→ country: ${r.action_value}`;
     return `→ ${r.action_type.replace(/_/g, " ")}` + (r.action_value ? `: ${r.action_value}` : "");
+  }
+
+  // Drop the dragged row onto `targetIndex`, then persist only the rules whose
+  // priority actually changed through the existing priority-update mutation.
+  function handleDrop(targetIndex: number) {
+    const data = rules.data;
+    if (data == null || dragIndex == null) return;
+    const changes = priorityUpdates(data, dragIndex, targetIndex);
+    setDragIndex(null);
+    changes.forEach((c) => setPrio.mutate(c));
   }
 
   return (
@@ -190,20 +217,23 @@ export default function Rules() {
           <div className="table-wrap">
             <table className="table">
               <thead>
-                <tr><th>On</th><th>Name</th><th>Condition</th><th>Action</th><th className="num">Prio</th><th></th></tr>
+                <tr><th></th><th>On</th><th>Name</th><th>Condition</th><th>Action</th><th className="num">Prio</th><th></th></tr>
               </thead>
               <tbody>
-                {rules.data.map((r) => (
-                  <tr key={r.id} style={{ opacity: r.enabled ? 1 : 0.5 }}>
-                    <td>
-                      <input type="checkbox" checked={r.enabled} onChange={(e) => toggle.mutate({ id: r.id, enabled: e.target.checked })} />
-                    </td>
-                    <td>{r.name}{r.created_from === "manual_correction" && <span className="tag"> learned</span>}</td>
-                    <td className="muted">{r.condition_type.replace(/_/g, " ")}: “{r.condition_value}”</td>
-                    <td>{describeAction(r)}</td>
-                    <PriorityCell rule={r} onCommit={(priority) => setPrio.mutate({ id: r.id, priority })} />
-                    <td><button className="btn btn--ghost" onClick={() => { if (globalThis.confirm(`Delete the rule “${r.name}”? This can't be undone (existing transactions keep their current categories).`)) remove.mutate(r.id); }}>Delete</button></td>
-                  </tr>
+                {rules.data.map((r, i) => (
+                  <RuleRow
+                    key={r.id}
+                    rule={r}
+                    dragging={dragIndex === i}
+                    describeAction={describeAction}
+                    onDragStart={() => setDragIndex(i)}
+                    onDragEnd={() => setDragIndex(null)}
+                    onDropRow={() => handleDrop(i)}
+                    onToggle={(enabled) => toggle.mutate({ id: r.id, enabled })}
+                    onCommitPriority={(priority) => setPrio.mutate({ id: r.id, priority })}
+                    onClone={() => clone.mutate(r)}
+                    onDelete={() => remove.mutate(r.id)}
+                  />
                 ))}
               </tbody>
             </table>
@@ -211,6 +241,89 @@ export default function Rules() {
         )}
       </div>
     </div>
+  );
+}
+
+// Pure: move `from` to `to` in a copy of the list.
+function reorder<T>(list: readonly T[], from: number, to: number): T[] {
+  const next = list.slice();
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved);
+  return next;
+}
+
+// Pure: recompute priorities after a drag. The pool of existing priority values
+// (sorted high→low) is reassigned to the new visual order, so numbers stay in
+// the same range and only the rules that actually moved are returned to persist.
+function priorityUpdates(rules: readonly Rule[], from: number, to: number): { id: number; priority: number }[] {
+  if (from === to) return [];
+  const ordered = reorder(rules, from, to);
+  const pool = rules.map((r) => r.priority).sort((a, b) => b - a);
+  const changes: { id: number; priority: number }[] = [];
+  ordered.forEach((r, i) => {
+    if (r.priority !== pool[i]) changes.push({ id: r.id, priority: pool[i] });
+  });
+  return changes;
+}
+
+interface RuleRowProps {
+  rule: Rule;
+  dragging: boolean;
+  describeAction: (r: Rule) => string;
+  onDragStart: () => void;
+  onDragEnd: () => void;
+  onDropRow: () => void;
+  onToggle: (enabled: boolean) => void;
+  onCommitPriority: (priority: number) => void;
+  onClone: () => void;
+  onDelete: () => void;
+}
+
+function RuleRow(props: RuleRowProps) {
+  const { rule, dragging, describeAction } = props;
+  let opacity = 1;
+  if (!rule.enabled) opacity = 0.5;
+  if (dragging) opacity = 0.4;
+  return (
+    <tr
+      draggable
+      onDragStart={props.onDragStart}
+      onDragEnd={props.onDragEnd}
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={props.onDropRow}
+      style={{ opacity }}
+    >
+      <td
+        aria-hidden="true"
+        title="Drag to reorder priority"
+        style={{ cursor: "grab", color: "var(--muted, #888)", userSelect: "none" }}
+      >
+        ⠿
+      </td>
+      <td>
+        <input
+          type="checkbox"
+          checked={rule.enabled}
+          onChange={(e) => props.onToggle(e.target.checked)}
+        />
+      </td>
+      <td>{rule.name}{rule.created_from === "manual_correction" && <span className="tag"> learned</span>}</td>
+      <td className="muted">{rule.condition_type.replace(/_/g, " ")}: “{rule.condition_value}”</td>
+      <td>{describeAction(rule)}</td>
+      <PriorityCell rule={rule} onCommit={props.onCommitPriority} />
+      <td>
+        <button className="btn btn--ghost" onClick={props.onClone}>Clone</button>
+        <button
+          className="btn btn--ghost"
+          onClick={() => {
+            if (globalThis.confirm(`Delete the rule “${rule.name}”? This can't be undone (existing transactions keep their current categories).`))
+              props.onDelete();
+          }}
+        >
+          Delete
+        </button>
+      </td>
+    </tr>
   );
 }
 
