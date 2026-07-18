@@ -16,6 +16,9 @@ class AIStatus(BaseModel):
     model: str | None
     configured: bool
     has_api_key: bool
+    # Where the resolved key comes from: "env" (HAFI_AI_API_KEY override), "stored"
+    # (encrypted in the DB, set via the UI), or "none". The key value is never sent.
+    key_source: str
 
 
 class ClassifyResult(BaseModel):

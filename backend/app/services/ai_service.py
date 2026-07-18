@@ -47,6 +47,22 @@ class AIDisabled(RuntimeError):
     """AI is off or not configured for this privacy mode."""
 
 
+def _resolve_api_key(db: Session) -> str | None:
+    """The AI API key to use. The environment (``HAFI_AI_API_KEY``) WINS; else the
+    key stored (encrypted at rest) via the UI on a standalone instance (backlog
+    #9). Never logged or surfaced — only its presence is reported."""
+    return env_settings.ai_api_key or settings_service.get_ai_api_key(db)
+
+
+def _key_source(db: Session) -> str:
+    """Where the resolved AI key comes from: "env" | "stored" | "none"."""
+    if env_settings.ai_api_key:
+        return "env"
+    if settings_service.has_stored_ai_api_key(db):
+        return "stored"
+    return "none"
+
+
 def get_provider(db: Session) -> AIProvider:
     mode = settings_service.get_privacy_mode(db)
     if mode in OFF_MODES:
@@ -60,7 +76,7 @@ def get_provider(db: Session) -> AIProvider:
     return OpenAICompatibleProvider(
         base,
         model,
-        api_key=env_settings.ai_api_key,
+        api_key=_resolve_api_key(db),
         timeout=env_settings.ai_timeout_seconds,
         # Cloud modes must talk to a public endpoint (SSRF / key-leak guard,
         # CR-SEC-3); local_llm may legitimately be on localhost/LAN.
@@ -71,6 +87,7 @@ def get_provider(db: Session) -> AIProvider:
 def status(db: Session) -> dict:
     mode = settings_service.get_privacy_mode(db)
     provider = get_provider(db)
+    source = _key_source(db)
     return {
         "privacy_mode": mode,
         "enabled": provider.available() and mode not in OFF_MODES,
@@ -79,7 +96,10 @@ def status(db: Session) -> dict:
         "base_url": settings_service.get(db, settings_service.AI_BASE_URL),
         "model": settings_service.get(db, settings_service.AI_MODEL),
         "configured": provider.available(),
-        "has_api_key": bool(env_settings.ai_api_key),
+        # True if EITHER the env var or a stored (encrypted) key is present. The
+        # raw key is never included — only its presence + where it comes from.
+        "has_api_key": source != "none",
+        "key_source": source,
     }
 
 

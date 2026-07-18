@@ -7,6 +7,7 @@ simple key/value strings.
 
 from __future__ import annotations
 
+import base64
 import json
 from collections.abc import Iterable
 
@@ -15,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings as env_settings
 from app.models import Setting
+from app.services import crypto_service
 
 # Known keys and their defaults.
 BASE_CURRENCY = "base_currency"
@@ -25,6 +27,12 @@ PRIVACY_MODE = "privacy_mode"  # strict_local | local_llm | cloud_manual | cloud
 AI_PROVIDER = "ai_provider"  # none | openai_compatible
 AI_BASE_URL = "ai_base_url"  # e.g. http://localhost:11434/v1 (Ollama) or a cloud endpoint
 AI_MODEL = "ai_model"
+# AI provider API key (a secret). Historically env-only (HAFI_AI_API_KEY); a
+# standalone/local instance may now set it from the UI, where it is persisted
+# ENCRYPTED-AT-REST in this row (see the encrypt/decrypt helpers below). The env
+# var still WINS when present. The raw/stored value is NEVER returned by get_all
+# or exported — only ``has_api_key`` / ``key_source`` are surfaced (backlog #9).
+AI_API_KEY = "ai_api_key"
 # Data retention (spec §28; backlog #78, #147). The policy is a JSON blob owned by
 # retention_service; here we only hold the key + the related boolean/int knobs.
 RETENTION_POLICY = "retention_policy"
@@ -165,6 +173,10 @@ def get_all(db: Session) -> dict[str, str]:
     for row in db.scalars(select(Setting)).all():
         if row.value is not None:
             values[row.key] = row.value
+    # The AI API key is a secret — never expose its (possibly plaintext-fallback)
+    # value through the settings map that GET /api/settings returns. Callers read
+    # its presence via ai_service.status (has_api_key / key_source) instead.
+    values.pop(AI_API_KEY, None)
     return values
 
 
@@ -236,6 +248,91 @@ def set_value(db: Session, key: str, value: str) -> None:
     set_many(db, {key: value})
 
 
+# --- AI API key at-rest encryption (backlog #9) ------------------------------
+#
+# The AI provider key is a secret. When set from the UI on a standalone instance
+# it is stored in the ``ai_api_key`` settings row, encrypted with the SAME
+# app-layer AES-256-GCM + scrypt primitive used for the MFA TOTP secret and
+# encrypted backups (``crypto_service``), keyed on the configured app secret
+# (``HAFI_DB_KEY``). Behaviour mirrors the TOTP-secret handling exactly:
+#   - App key present  → ciphertext, tagged with ``_ENC_PREFIX`` so it can never
+#     be mistaken for a plaintext key. If the DB itself is SQLCipher-encrypted the
+#     value is then doubly protected; if not, this field-level crypto still applies.
+#   - No app key set    → plaintext fallback (encrypting with a key that isn't
+#     reliably present at read time would make the key unrecoverable). Same posture
+#     as the TOTP secret when no ``HAFI_DB_KEY`` is configured.
+# Either way the value is stripped from ``get_all`` and config export — only the
+# presence (``has_api_key`` / ``key_source``) is ever surfaced.
+_ENC_PREFIX = "aienc1:"
+
+
+def _app_key() -> str | None:
+    """The app secret used to encrypt stored secrets, or None. Read live so a
+    runtime change / test monkeypatch is honoured."""
+    return env_settings.db_key or None
+
+
+def _encrypt_ai_key(raw: str) -> str:
+    """Value to persist for the AI API key: app-layer ciphertext when an app key
+    is configured, otherwise the key unchanged (no key → plaintext fallback)."""
+    key = _app_key()
+    if not key:
+        return raw
+    blob = crypto_service.encrypt(raw.encode("utf-8"), key)
+    return _ENC_PREFIX + base64.b64encode(blob).decode("ascii")
+
+
+def _decrypt_ai_key(stored: str | None) -> str | None:
+    """Recover the usable AI API key from a stored value.
+
+    A legacy/plaintext-fallback value (no marker) is returned as-is. A marked
+    value is decrypted with the app key; if the key is missing or decryption
+    fails (e.g. a rotated key) None is returned so AI simply reports "no key"
+    rather than crashing."""
+    if not stored:
+        return None
+    if not stored.startswith(_ENC_PREFIX):
+        return stored  # legacy / plaintext-fallback value
+    key = _app_key()
+    if not key:
+        return None
+    try:
+        blob = base64.b64decode(stored[len(_ENC_PREFIX):].encode("ascii"), validate=True)
+        return crypto_service.decrypt(blob, key).decode("utf-8")
+    except (crypto_service.DecryptError, ValueError):
+        # binascii.Error and UnicodeDecodeError both subclass ValueError.
+        return None
+
+
+def set_ai_api_key(db: Session, raw: str | None) -> None:
+    """Store (encrypted) or clear the AI provider API key. An empty/whitespace
+    value REMOVES the stored key (falls back to the env var, if any). Commits."""
+    value = (raw or "").strip()
+    row = db.scalars(select(Setting).where(Setting.key == AI_API_KEY)).one_or_none()
+    if not value:
+        if row is not None:
+            db.delete(row)
+            db.commit()
+        return
+    encrypted = _encrypt_ai_key(value)
+    if row is None:
+        db.add(Setting(key=AI_API_KEY, value=encrypted))
+    else:
+        row.value = encrypted
+    db.commit()
+
+
+def has_stored_ai_api_key(db: Session) -> bool:
+    """Whether a usable AI API key is stored in the DB (decrypts successfully)."""
+    return get_ai_api_key(db) is not None
+
+
+def get_ai_api_key(db: Session) -> str | None:
+    """The stored AI API key (decrypted), or None if not set / unrecoverable.
+    Callers must NEVER log or return this value."""
+    return _decrypt_ai_key(get(db, AI_API_KEY))
+
+
 # --- Config-import allowlist (backlog CR-SEC-2) -----------------------------
 #
 # `backup_service.import_config` used to write ANY key/value from an uploaded JSON
@@ -244,10 +341,11 @@ def set_value(db: Session, key: str, value: str) -> None:
 # point `ai_base_url`/`paperless_url` at an internal host (SSRF), or pollute the
 # table with arbitrary keys. We now accept ONLY this allowlist of side-effect-free,
 # non-sensitive settings, each validated. Deliberately EXCLUDED:
-#   - privacy_mode, ai_provider/ai_base_url/ai_model, paperless_url — security /
-#     network / cloud vectors; must be set deliberately per instance, never bulk-
-#     imported (validating the value doesn't make a valid `cloud_auto` safe to
-#     silently apply, nor an internal URL safe — exclude them outright);
+#   - privacy_mode, ai_provider/ai_base_url/ai_model, ai_api_key, paperless_url —
+#     security / network / cloud vectors (ai_api_key is also a secret); must be set
+#     deliberately per instance, never bulk-imported (validating the value doesn't
+#     make a valid `cloud_auto` safe to silently apply, nor an internal URL safe —
+#     exclude them outright);
 #   - base_currency — its re-conversion side-effect isn't run here (set it in
 #     Settings, which recomputes);
 #   - all secrets / internal state / infra keys (retention, backups, demo manifest,

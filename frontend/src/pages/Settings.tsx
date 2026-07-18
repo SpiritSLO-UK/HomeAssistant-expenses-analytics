@@ -54,6 +54,7 @@ import {
   getTagUsage,
   mergeTags,
   deleteUnusedTags,
+  type AIStatus,
   type RetentionPolicyResponse,
   type RetentionTypePolicy,
   type RetentionPlan,
@@ -1070,6 +1071,14 @@ function IntegrationsCard({
   );
 }
 
+// How the AI API key's presence + origin reads in the status list. Kept flat (no
+// nested ternary, Sonar S3358) and never shows the key itself.
+function apiKeyLabel(source: AIStatus["key_source"]): string {
+  if (source === "env") return "Configured — environment override (HAFI_AI_API_KEY)";
+  if (source === "stored") return "Configured — stored (encrypted in your local DB)";
+  return "Not configured";
+}
+
 function AiCard({
   onMessage,
   onError,
@@ -1082,6 +1091,18 @@ function AiCard({
   const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [showDisclaimer, setShowDisclaimer] = useState(false);
+  // Write-only API-key field: never pre-filled (the value is never sent back).
+  const [keyInput, setKeyInput] = useState("");
+
+  const saveKey = useMutation({
+    mutationFn: (v: string) => updateSettings({ ai_api_key: v }),
+    onSuccess: (_r, v) => {
+      setKeyInput("");
+      onMessage(v ? "AI API key saved (stored encrypted)." : "Stored AI API key cleared.");
+      qc.invalidateQueries({ queryKey: ["ai-status"] });
+    },
+    onError,
+  });
 
   const s = settings.data;
   const value = (key: string) => draft[key] ?? (s?.[key] ?? "");
@@ -1206,15 +1227,39 @@ function AiCard({
         <ul className="kv" style={{ marginTop: 8 }}>
           <li><span>Status</span><span>{st.enabled ? "enabled" : "disabled"}</span></li>
           <li><span>Configured</span><span>{st.configured ? "yes" : "no (set provider + URL + model)"}</span></li>
-          {isCloud && <li><span>API key (HAFI_AI_API_KEY)</span><span>{st.has_api_key ? "set" : "not set"}</span></li>}
+          <li><span>API key</span><span>{apiKeyLabel(st.key_source)}</span></li>
         </ul>
       )}
-      {isCloud && (
-        <p className="muted" style={{ fontSize: "0.78rem" }}>
-          Cloud mode: set the API key as the add-on’s <code>HAFI_AI_API_KEY</code> option (never stored in the
-          database). <code>cloud_manual</code> asks you to approve each request; <code>cloud_auto</code> sends automatically.
-        </p>
-      )}
+
+      {/* API key management. Write-only: the value is stored encrypted at rest and
+          never read back. The HAFI_AI_API_KEY env var, when set, always wins. */}
+      <div className="form-row" style={{ flexWrap: "wrap", gap: 8, marginTop: 10, alignItems: "center" }}>
+        <input
+          type="password"
+          autoComplete="off"
+          placeholder="API key (stored encrypted)"
+          value={keyInput}
+          style={{ minWidth: 240 }}
+          onChange={(e) => setKeyInput(e.target.value)}
+        />
+        <button className="btn btn--sm" disabled={!keyInput || saveKey.isPending} onClick={() => saveKey.mutate(keyInput)}>
+          {saveKey.isPending ? "Saving…" : "Set API key"}
+        </button>
+        <button
+          className="btn btn--sm btn--ghost"
+          disabled={saveKey.isPending || !st?.has_api_key || st?.key_source === "env"}
+          title={st?.key_source === "env" ? "Set via the HAFI_AI_API_KEY environment variable" : "Remove the stored key"}
+          onClick={() => saveKey.mutate("")}
+        >
+          Clear stored key
+        </button>
+      </div>
+      <p className="muted" style={{ fontSize: "0.78rem" }}>
+        On a standalone/local instance the key is stored <strong>encrypted at rest</strong> in your local database
+        (and doubly protected when database encryption is on). The <code>HAFI_AI_API_KEY</code> environment variable
+        always takes precedence{st?.key_source === "env" ? " — it is set, so any stored key is ignored" : ""}.
+        {isCloud && <> <code>cloud_manual</code> asks you to approve each request; <code>cloud_auto</code> sends automatically.</>}
+      </p>
 
       <p className="muted" style={{ fontSize: "0.78rem", marginTop: 14 }}>
         Every AI call is recorded — see the <strong>Logs</strong> page (🔑 Decisions / AI calls) for the

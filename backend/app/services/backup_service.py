@@ -243,7 +243,14 @@ def export_config(db: Session) -> dict:
         )
     return {
         "version": "0.1",
-        "settings": [{"key": s.key, "value": s.value} for s in db.scalars(select(Setting)).all()],
+        # The AI API key is a secret stored (encrypted) in a settings row — never
+        # include it in a portable export (it wouldn't decrypt elsewhere anyway,
+        # and would leak the raw key on an instance with no HAFI_DB_KEY set).
+        "settings": [
+            {"key": s.key, "value": s.value}
+            for s in db.scalars(select(Setting)).all()
+            if s.key != settings_service.AI_API_KEY
+        ],
         "categories": [
             {
                 "library_id": c.library_id,
