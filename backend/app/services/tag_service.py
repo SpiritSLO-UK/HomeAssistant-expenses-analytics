@@ -7,11 +7,11 @@ so "Work" and "work" don't both get created.
 
 from __future__ import annotations
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models import Tag, Transaction
+from app.models import Tag, Transaction, transaction_tags
 from app.services.household_service import get_or_create_default_household
 
 
@@ -77,6 +77,65 @@ def update_tag(db: Session, tag: Tag, *, name: str | None = None, colour: str | 
 def delete_tag(db: Session, tag: Tag) -> None:
     db.delete(tag)
     db.commit()
+
+
+def merge_tags(db: Session, source_id: int, target_id: int) -> Tag:
+    """Move every transaction of ``source`` onto ``target`` then delete ``source``.
+
+    Associations are re-pointed at the association-table level (no per-row Python
+    loop) and de-duped so a transaction already tagged with both ends up with a
+    single association. Both tags must live in the same household to keep scoping
+    consistent with the rest of the service (SR-B8). Merging a tag into itself is a
+    no-op, so the operation is idempotent-safe.
+    """
+    target = db.get(Tag, target_id)
+    if target is None:
+        raise ValueError(f"Target tag {target_id} not found")
+    if source_id == target_id:
+        return target
+    source = db.get(Tag, source_id)
+    if source is None:
+        raise ValueError(f"Source tag {source_id} not found")
+    if source.household_id != target.household_id:
+        raise ValueError("Cannot merge tags from different households")
+
+    tt = transaction_tags
+    # Drop the source associations that would collide with an existing target one,
+    # then re-point whatever remains. Order matters: dedupe before the UPDATE so the
+    # composite (transaction_id, tag_id) primary key is never violated.
+    already_tagged = select(tt.c.transaction_id).where(tt.c.tag_id == target_id)
+    db.execute(
+        delete(tt).where(tt.c.tag_id == source_id, tt.c.transaction_id.in_(already_tagged))
+    )
+    db.execute(update(tt).where(tt.c.tag_id == source_id).values(tag_id=target_id))
+    db.delete(source)
+    db.commit()
+    db.refresh(target)
+    return target
+
+
+def usage_counts(db: Session) -> dict[int, int]:
+    """Return ``{tag_id: transaction_count}`` for every tag in one grouped query.
+
+    Tags with no associations report ``0`` (LEFT JOIN), so this doubles as the data
+    source for surfacing unused tags without an N+1 count-per-tag.
+    """
+    tt = transaction_tags
+    rows = db.execute(
+        select(Tag.id, func.count(tt.c.transaction_id))
+        .select_from(Tag)
+        .outerjoin(tt, tt.c.tag_id == Tag.id)
+        .group_by(Tag.id)
+    ).all()
+    return {tag_id: count for tag_id, count in rows}
+
+
+def delete_unused(db: Session) -> int:
+    """Delete every tag with zero transaction associations; return how many went."""
+    used = select(transaction_tags.c.tag_id).distinct()
+    result = db.execute(delete(Tag).where(Tag.id.not_in(used)))
+    db.commit()
+    return result.rowcount
 
 
 def set_transaction_tags(db: Session, txn: Transaction, names: list[str]) -> Transaction:

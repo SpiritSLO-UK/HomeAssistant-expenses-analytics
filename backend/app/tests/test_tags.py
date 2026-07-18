@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import date
+from decimal import Decimal
+
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
-from app.models import Tag
+from app.models import Tag, Transaction, transaction_tags
 from app.services import tag_service
 from app.services.household_service import get_or_create_default_household
 
@@ -127,6 +130,102 @@ def test_get_or_create_handles_duplicate_race(db):
     got = tag_service.get_or_create(db, "TRAVEL")
     assert got.id == winner.id
     assert db.scalar(select(func.count()).select_from(Tag)) == 1
+
+
+# --- merge / usage-counts / unused cleanup ---
+
+def _txn_row(db, desc: str, tags: list[Tag]) -> Transaction:
+    txn = Transaction(
+        household_id=get_or_create_default_household(db).id,
+        transaction_date=date(2026, 5, 2),
+        description_raw=desc,
+        amount=Decimal("-10.00"),
+        direction="debit",
+        tags=tags,
+    )
+    db.add(txn)
+    db.flush()
+    return txn
+
+
+def _assoc_tag_ids(db, txn_id: int) -> list[int]:
+    return list(
+        db.scalars(
+            select(transaction_tags.c.tag_id).where(
+                transaction_tags.c.transaction_id == txn_id
+            )
+        ).all()
+    )
+
+
+def test_merge_moves_and_dedupes_associations_and_deletes_source(db):
+    source = tag_service.get_or_create(db, "Groceries")
+    target = tag_service.get_or_create(db, "Food")
+    db.flush()
+    only_source = _txn_row(db, "ONLY SOURCE", [source])
+    both = _txn_row(db, "BOTH", [source, target])
+    db.commit()
+
+    merged = tag_service.merge_tags(db, source.id, target.id)
+    assert merged.id == target.id
+
+    # Source tag is gone; only the target remains.
+    assert db.get(Tag, source.id) is None
+    # The source-only transaction now points at the target.
+    assert _assoc_tag_ids(db, only_source.id) == [target.id]
+    # The doubly-tagged transaction keeps exactly one (deduped) target association.
+    assert _assoc_tag_ids(db, both.id) == [target.id]
+
+
+def test_merge_into_self_is_noop(db):
+    tag = tag_service.get_or_create(db, "Utilities")
+    db.commit()
+    same = tag_service.merge_tags(db, tag.id, tag.id)
+    assert same.id == tag.id
+    assert db.scalar(select(func.count()).select_from(Tag)) == 1
+
+
+def test_usage_counts_is_single_query_and_correct(db):
+    used = tag_service.get_or_create(db, "Work")
+    unused = tag_service.get_or_create(db, "Idle")
+    db.flush()
+    _txn_row(db, "A", [used])
+    _txn_row(db, "B", [used])
+    db.commit()
+
+    from sqlalchemy import event
+
+    statements: list[str] = []
+
+    def _capture(conn, cursor, statement, params, context, executemany):
+        statements.append(statement)
+
+    engine = db.get_bind()
+    event.listen(engine, "before_cursor_execute", _capture)
+    try:
+        counts = tag_service.usage_counts(db)
+    finally:
+        event.remove(engine, "before_cursor_execute", _capture)
+
+    assert counts[used.id] == 2
+    assert counts[unused.id] == 0
+    # One grouped query, not an N+1 count-per-tag.
+    selects = [s for s in statements if s.lstrip().upper().startswith("SELECT")]
+    assert len(selects) == 1
+
+
+def test_delete_unused_removes_only_zero_use_tags(db):
+    used = tag_service.get_or_create(db, "Keep")
+    tag_service.get_or_create(db, "Drop1")
+    tag_service.get_or_create(db, "Drop2")
+    db.flush()
+    _txn_row(db, "X", [used])
+    db.commit()
+
+    removed = tag_service.delete_unused(db)
+    assert removed == 2
+    remaining = [t.name for t in tag_service.list_tags(db)]
+    assert remaining == ["Keep"]
 
 
 def test_unique_index_rejects_direct_duplicate_insert(db):
