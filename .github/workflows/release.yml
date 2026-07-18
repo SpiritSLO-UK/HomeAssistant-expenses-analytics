@@ -75,3 +75,76 @@ jobs:
           tags: |
             ghcr.io/${{ steps.meta.outputs.owner }}/${{ matrix.ha_arch }}-ha-finance-intelligence:${{ steps.meta.outputs.version }}
             ghcr.io/${{ steps.meta.outputs.owner }}/${{ matrix.ha_arch }}-ha-finance-intelligence:latest
+
+  # Run the full Playwright UI suite against the release build and publish the
+  # HTML report: always as a workflow artifact, and attached to the GitHub
+  # Release for this tag when one exists (create the release, re-run this job or
+  # upload manually if it was cut later).
+  e2e-report:
+    name: E2E report (release)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # upload the report as a release asset
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -f addon/Dockerfile -t ha-finance-intelligence:release .
+
+      - name: Start + seed the app
+        run: |
+          set -e
+          docker run -d --name hafi-release -p 8099:8099 ha-finance-intelligence:release
+          ok=0
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8099/api/health | grep -q '"status":"ok"'; then ok=1; break; fi
+            sleep 2
+          done
+          if [ "$ok" != "1" ]; then echo "::error::health check failed"; docker logs hafi-release; exit 1; fi
+          curl -fsS http://127.0.0.1:8099/ >/dev/null
+          curl -fsS -X POST http://127.0.0.1:8099/api/backup/demo >/dev/null
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+
+      - name: Install + run Playwright
+        working-directory: e2e
+        env:
+          E2E_BASE_URL: http://127.0.0.1:8099
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npx playwright test
+
+      - name: Zip the report
+        if: always()
+        run: |
+          cd e2e && zip -qr ../playwright-report.zip playwright-report
+
+      - name: Upload report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-release
+          path: playwright-report.zip
+          retention-days: 90
+
+      - name: Attach report to the GitHub Release (if one exists for this tag)
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" playwright-report.zip --repo "$GITHUB_REPOSITORY" --clobber
+            echo "report attached to release $tag"
+          else
+            echo "no GitHub Release for $tag yet - report kept as the workflow artifact"
+          fi
+
+      - name: Teardown
+        if: always()
+        run: docker rm -f hafi-release || true

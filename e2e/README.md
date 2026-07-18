@@ -23,6 +23,8 @@ Point at a different instance with `E2E_BASE_URL`, e.g.
 
 ## What it covers
 
+Render checks:
+
 - `smoke.spec.ts` - every top-level page renders its heading with no JS error or server 5xx.
 - `new-features.spec.ts` - search filter-token hints, audit CSV export, the Settings Tags card.
 - `modals.spec.ts` - the in-app confirm dialog (open, Cancel, Escape).
@@ -30,12 +32,30 @@ Point at a different instance with `E2E_BASE_URL`, e.g.
 - `transactions.spec.ts` - filters, CSV export, range switching.
 - `import.spec.ts` - a US-format CSV previews with month-first dates parsed correctly.
 
+Task flows (really doing things; every mutating flow is **self-cleaning**, so the
+database ends each run exactly as it started):
+
+- `tasks.spec.ts` - create + delete a category, budget, rule (incl. clone),
+  vendor (with alias) and savings goal; flip the log-level select optimistically
+  and verify it persists; a **full CSV import** (preview, confirm, rows visible in
+  Transactions, then removed via `DELETE /api/imports/{id}`); a `category:` token
+  search returning results.
+- `tasks-extra.spec.ts` - theme dark/system switch; project create + delete;
+  account create (cleaned up via API); the Users admin surface; subscriptions
+  "Detect now"; a **garbage CSV fails gracefully** (error banner, no crash); the
+  bulk "+ tag" FE-10 prompt opens and cancels; an unused tag removed end-to-end
+  through the Settings Tags card. An `afterEach` sweeper deletes any stray
+  `E2E*` accounts/tags even when a test fails mid-flow.
+
 ## Notes
 
 - Runs **serially** (`workers: 1`): the app is one instance backed by a single
-  SQLite database with a bounded connection pool, so parallel workers would
-  exhaust it. This matches real single-user usage and keeps the report stable.
-- The suite is non-destructive: it previews imports without confirming and always
-  cancels delete dialogs, so it does not mutate the demo data.
+  SQLite database, and the task flows mutate shared state, so ordering stays
+  deterministic and the report stable.
 - CI (`.github/workflows/ci.yml`, `E2E` job) builds the image, boots it, seeds
-  demo data, runs the suite, and uploads the HTML report as an artifact.
+  demo data, runs the suite, and uploads the HTML report as an artifact on every
+  PR and push to main.
+- Releases (`.github/workflows/release.yml`, `E2E report (release)` job) run the
+  suite against the release build on every version tag and attach the zipped
+  HTML report to the GitHub Release (or keep it as a 90-day workflow artifact if
+  the release doesn't exist yet).
