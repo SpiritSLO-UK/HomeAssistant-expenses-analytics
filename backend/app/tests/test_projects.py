@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+from decimal import Decimal
 
 import pytest
 
@@ -244,6 +245,41 @@ def test_forecast_zero_history(client):
     assert f["forecast_total"] is None
     assert f["exhaustion_date"] is None
     assert f["on_track"] is True
+
+
+def test_forecast_surfaces_via_api(client):
+    """The run-rate/burn-down forecast is now exposed on the HTTP summary response
+    (previously computed by summary() but stripped by the response_model)."""
+    # 120 spent over a 10-day window (2026-05-01 → 2026-05-11) ⇒ 12.00/day.
+    _import(client, _curve([("2026-05-01", "TILES A", "-60.00"),
+                            ("2026-05-11", "TILES B", "-60.00")]))
+    pid = client.post(
+        "/api/projects",
+        json={"name": "Kitchen", "budget_amount": "5000.00", "end_date": "2026-05-31"},
+    ).json()["id"]
+    for desc in ("TILES A", "TILES B"):
+        t = _txn(client, desc)
+        assert client.patch(f"/api/transactions/{t['id']}", json={"project_id": pid}).status_code == 200
+
+    f = client.get(f"/api/projects/{pid}/summary").json()["forecast"]
+    assert f is not None                                       # surfaced, not stripped
+    assert Decimal(f["budget"]) == Decimal("5000.00")
+    assert Decimal(f["run_rate_per_day"]) == Decimal("12.00")
+    assert Decimal(f["remaining"]) == Decimal("4880.00")       # 5000 − 120
+    assert Decimal(f["forecast_total"]) == Decimal("360.00")   # 12.00/day * 30 days
+    assert f["on_track"] is True
+    assert f["exhaustion_date"] is not None                    # rate > 0, budget not yet spent
+
+
+def test_forecast_null_via_api_without_budget(client):
+    """No budget ⇒ forecast is exposed as an explicit null on the API response."""
+    _import(client, _curve([("2026-05-02", "SHELL FUEL", "-45.00")]))
+    pid = client.post("/api/projects", json={"name": "Car"}).json()["id"]
+    t = _txn(client, "SHELL FUEL")
+    client.patch(f"/api/transactions/{t['id']}", json={"project_id": pid})
+    s = client.get(f"/api/projects/{pid}/summary").json()
+    assert s["forecast"] is None
+    assert s["spent"] == "45.00"
 
 
 def test_totals_matches_summary_and_is_split_aware(client):

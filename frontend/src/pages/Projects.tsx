@@ -131,6 +131,30 @@ function ProjectRow({
   );
 }
 
+// Local widening view over the forecast the API now surfaces on the summary
+// (money fields arrive as strings). The shared ProjectSummary type in client.ts
+// doesn't declare it yet, so read it through this intersection rather than there.
+type ProjectForecastView = {
+  budget: string;
+  remaining: string;
+  run_rate_per_day: string | null;
+  forecast_total: string | null;
+  on_track: boolean;
+  exhaustion_date: string | null;
+};
+
+function Forecast({ forecast, base }: Readonly<{ forecast: ProjectForecastView | null; base: string }>) {
+  if (!forecast) return null;
+  return (
+    <p className="muted" style={{ margin: "4px 0", fontSize: "0.85rem" }}>
+      Forecast: <span style={{ color: forecast.on_track ? "#3a9b5c" : "#c0392b" }}>{forecast.on_track ? "on track" : "over budget"}</span>
+      {forecast.run_rate_per_day && ` · ${forecast.run_rate_per_day} ${base}/day`}
+      {forecast.forecast_total && ` · projected ${forecast.forecast_total} ${base}`}
+      {forecast.exhaustion_date && ` · budget spent by ${forecast.exhaustion_date}`}
+    </p>
+  );
+}
+
 function ProjectDetail({ id, base, onError, onLoaded }: Readonly<{ id: number; base: string; onError: (e: string) => void; onLoaded: () => void }>) {
   const summary = useQuery({ queryKey: ["project-summary", id], queryFn: () => getProjectSummary(id) });
   const txns = useQuery({
@@ -144,6 +168,7 @@ function ProjectDetail({ id, base, onError, onLoaded }: Readonly<{ id: number; b
   }, [summary.error, s, onError, onLoaded]);
   if (summary.isError) return <p className="status status--error" style={{ padding: "6px 0 12px 16px" }}>Couldn’t load project details. {String(summary.error)}</p>;
   if (summary.isLoading || !s) return <p className="muted" style={{ padding: "6px 0 12px 16px" }}>Loading…</p>;
+  const forecast = (s as typeof s & { forecast?: ProjectForecastView | null }).forecast ?? null;
   return (
     <div style={{ padding: "6px 0 14px 16px", background: "rgba(127,127,127,0.05)" }}>
       <p className="muted" style={{ margin: "4px 0" }}>
@@ -151,6 +176,7 @@ function ProjectDetail({ id, base, onError, onLoaded }: Readonly<{ id: number; b
         {s.first_transaction && ` · ${s.first_transaction} → ${s.last_transaction}`}
         {s.budget && ` · budget ${s.budget} ${base} (${s.percent}% used, ${s.remaining} left)`}
       </p>
+      <Forecast forecast={forecast} base={base} />
       <div style={{ display: "flex", gap: 32, flexWrap: "wrap" }}>
         <Breakdown title="By category" rows={s.by_category} base={base} />
         <Breakdown title="By vendor" rows={s.by_vendor} base={base} />
