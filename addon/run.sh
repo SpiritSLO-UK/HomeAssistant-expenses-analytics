@@ -10,6 +10,19 @@
 # Either way we then run database migrations and start the server.
 set -euo pipefail
 
+# --- Privilege drop (backlog #372) -----------------------------------------
+# The container starts as root so that /data — a runtime volume that Home
+# Assistant's Supervisor mounts root-owned — can be made writable by the app
+# user. We chown it to UID 10001 (best-effort: a read-only or already-correct
+# mount must not crash startup), then re-exec ourselves dropped to that
+# unprivileged user via gosu. The `id -u` guard makes this idempotent: the
+# second pass runs as 10001 and skips the whole block, so everything below
+# (options parsing, MQTT lookup, migrations, the app) runs unprivileged.
+if [[ "$(id -u)" == "0" ]]; then
+  chown -R 10001:10001 /data || true
+  exec gosu 10001:10001 "$0" "$@"
+fi
+
 OPTIONS_FILE="/data/options.json"
 
 if [[ -f "$OPTIONS_FILE" ]]; then

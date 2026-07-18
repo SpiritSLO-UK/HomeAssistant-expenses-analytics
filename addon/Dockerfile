@@ -43,8 +43,10 @@ ENV PYTHONUNBUFFERED=1 \
     HAFI_DATABASE_PATH=/data/finance/finance.db
 
 # Tesseract for local receipt OCR (spec §21; the "ocr" extra needs the binary).
+# gosu lets the entrypoint drop from root to UID 10001 after chowning /data (a
+# runtime volume HA's Supervisor mounts root-owned) — see the run-as-root note below.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends tesseract-ocr \
+    && apt-get install -y --no-install-recommends tesseract-ocr gosu \
     && rm -rf /var/lib/apt/lists/*
 
 # Install backend + optional extras: paho-mqtt (HA sensors, spec §27) and OCR
@@ -83,18 +85,22 @@ COPY --from=frontend /build/frontend/dist /app/frontend/dist
 COPY addon/run.sh /run.sh
 
 # Run unprivileged (CR-SEC-7): the app, Tesseract and the web server all run as a
-# non-root system user instead of UID 0. /data holds the SQLite finance DB and is
-# a runtime volume, so create + own it at build time — a fresh Docker volume (the
-# standalone `docker compose` / CI path) inherits this ownership and stays
-# writable by the app user. /app is chowned too so anything the app touches under
-# its tree is writable. The entrypoint is made executable in the same layer.
-# ⚠️ Needs on-Pi verification before release: Home Assistant's Supervisor mounts
-# /data itself, and its runtime ownership must let UID 10001 write (see PR notes).
+# non-root system user (UID 10001) instead of UID 0. /data holds the SQLite finance
+# DB and is a runtime volume, so create + own it at build time — a fresh Docker
+# volume (the standalone `docker compose` / CI path) inherits this ownership and
+# stays writable by the app user. /app is chowned too so anything the app touches
+# under its tree is writable. The entrypoint is made executable in the same layer.
+# NOTE: the container now STARTS as root (no `USER 10001` here) so run.sh can chown
+# /data before dropping privileges. Home Assistant's Supervisor mounts /data itself
+# and presents it root-owned, which an unprivileged process cannot chown — so
+# run.sh chowns /data to 10001 as root, then re-execs itself under `gosu 10001:10001`.
+# Everything after that preamble (options parsing, migrations, the app) runs as UID
+# 10001. On the CI smoke test (no volume mount) /data is this image's own 10001-owned
+# dir, so the startup chown is a no-op and the app still comes up unprivileged.
 RUN chmod +x /run.sh \
     && useradd --system --uid 10001 --create-home --home-dir /home/appuser appuser \
     && mkdir -p /data/finance \
     && chown -R 10001:10001 /data /app
-USER 10001
 
 EXPOSE 8099
 
