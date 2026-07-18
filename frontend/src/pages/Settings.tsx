@@ -1746,10 +1746,12 @@ function SecurityCard({
           </div>
           {unlockMode === "stored" && (
             <p className="muted" style={{ fontSize: "0.78rem" }}>
-              Stored mode also needs this same passphrase set as the add-on’s <code>db_key</code> option
-              (the add-on’s <strong>Configuration</strong> tab) so it can start unattended. Standalone
-              Docker: set the <code>HAFI_DB_KEY</code> environment variable. Without it the database still
-              locks on every restart. The key then lives on the device — a weaker posture than “Prompt me”.
+              Stored mode saves the passphrase on this device so the database unlocks automatically on
+              every restart, with nothing to type. On the Home Assistant add-on the key instead comes from
+              the <code>db_key</code> option (its <strong>Configuration</strong> tab), which always takes
+              precedence. This is a convenience, not protection against someone who has your disk: the key
+              sits next to the database. Choose <strong>Prompt me</strong> for the strongest at-rest
+              protection, where nothing is stored.
             </p>
           )}
         </>
@@ -1765,6 +1767,13 @@ function SecurityCard({
               ⚠️ Stored unlock mode is selected but no key is configured, so the database will lock
               again on the next restart. Set <code>db_key</code> in the add-on’s <strong>Configuration</strong>{" "}
               tab (or the <code>HAFI_DB_KEY</code> environment variable) to the passphrase you encrypted with.
+            </p>
+          )}
+          {s.unlock_mode === "stored" && s.stored_key_present && (
+            <p className="muted" style={{ fontSize: "0.78rem" }}>
+              {s.stored_key_source === "env"
+                ? "The auto-unlock key is provided by the HAFI_DB_KEY option, so the database unlocks on every restart."
+                : "The passphrase is saved on this device, so the database unlocks automatically on every restart. This is convenience, not protection against disk theft; disable encryption to remove the saved key."}
             </p>
           )}
           <div className="form-row">
