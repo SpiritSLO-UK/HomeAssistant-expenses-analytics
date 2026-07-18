@@ -36,6 +36,10 @@ def test_flag_and_name():
     assert geo.flag(None) == "\U0001F3F3️"      # 🏳️
     assert geo.name(None) == "Unknown"
     assert geo.name("ZZ") == "ZZ"                    # unknown code → echoed
+    # EUR has no single ISO country: it buckets to the "EU" pseudo-code, labelled
+    # "Eurozone" (not a bare "EU") — the coarse currency fallback for untagged rows.
+    assert geo.country_for("EUR", None) == "EU"
+    assert geo.name("EU") == "Eurozone"
 
 
 def test_more_single_country_currencies_resolve():

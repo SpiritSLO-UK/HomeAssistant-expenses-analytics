@@ -11,7 +11,11 @@ from __future__ import annotations
 from app.services._country_names import COUNTRY_NAMES as _ISO_COUNTRY_NAMES
 
 # Currency → ISO-3166 alpha-2 (best-effort default when a vendor has no country).
-# EUR maps to the EU flag/label since it spans many countries.
+# EUR has no single ISO country (it spans the Eurozone), so it deliberately
+# buckets to the "EU" pseudo-code rather than dropping to "Unknown" — this keeps
+# untagged EUR spend grouped. The FE WorldMap renders "EU" in the legend but
+# never plots a centroid for it (#355); a per-txn/vendor country (#79) always
+# wins over this coarse fallback. name("EU") → "Eurozone" (see COUNTRY_NAMES).
 CURRENCY_COUNTRY = {
     "GBP": "GB", "USD": "US", "EUR": "EU", "JPY": "JP", "CNY": "CN",
     "AUD": "AU", "CAD": "CA", "CHF": "CH", "HKD": "HK", "SGD": "SG",
@@ -25,7 +29,9 @@ CURRENCY_COUNTRY = {
 
 # Display names for every ISO-3166-1 alpha-2 code (generated — see
 # _country_names.py + scripts/gen_countries.mjs), plus the "EU" pseudo-code the
-# EUR currency fallback above maps to.
+# EUR currency fallback above maps to. It is labelled "Eurozone" (not a bare "EU"
+# code) so the dashboard/legend read cleanly; the settings country picker omits it
+# since it isn't a real country.
 COUNTRY_NAMES = {**_ISO_COUNTRY_NAMES, "EU": "Eurozone"}
 
 
