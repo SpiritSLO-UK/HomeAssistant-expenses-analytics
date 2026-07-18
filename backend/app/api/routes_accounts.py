@@ -165,13 +165,13 @@ def merge_account(
     account_id: int,
     payload: AccountMerge,
     db: Annotated[Session, Depends(get_db)],
-    _user: Annotated[User, Depends(auth_service.require_owner)],
+    user: Annotated[User, Depends(auth_service.require_owner)],
 ) -> dict:
     """Fold one account's transactions/statements/snapshots into another then delete
     the source (owner-only — structural/destructive). Use this for an account that
     can't be deleted because it still has data."""
     try:
-        target = account_service.merge_account(db, account_id, payload.target_id)
+        target = account_service.merge_account(db, account_id, payload.target_id, actor=user.display_name)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if target is None:

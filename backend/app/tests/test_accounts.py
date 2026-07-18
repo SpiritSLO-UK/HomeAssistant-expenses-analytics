@@ -191,6 +191,19 @@ def test_merge_account_repoints_transactions(client):
         assert txn.account_id == ids["shared"]
 
 
+def test_merge_route_audits_the_real_caller_not_system(client):
+    """The merge route must forward the authenticated owner as the audit actor,
+    not fall back to the service default of ``"system"`` (#388 follow-up)."""
+    ids = _setup(client)
+    caller = client.get("/api/users/me").json()  # the local owner performing the merge
+    r = client.post(f"/api/accounts/{ids['bobs']}/merge", json={"target_id": ids["shared"]})
+    assert r.status_code == 200
+    with SessionLocal() as db:
+        row = db.scalars(select(AuditLog).where(AuditLog.action == "account.merge")).one()
+    assert row.actor == caller["display_name"]
+    assert row.actor != "system"
+
+
 def test_merge_into_itself_400(client):
     ids = _setup(client)
     r = client.post(f"/api/accounts/{ids['shared']}/merge", json={"target_id": ids["shared"]})
