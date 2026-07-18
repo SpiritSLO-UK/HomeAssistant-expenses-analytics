@@ -693,6 +693,26 @@ export function listTags(): Promise<Tag[]> {
   return fetchJson<Tag[]>("api/tags");
 }
 
+export interface TagUsage {
+  id: number;
+  count: number;
+}
+
+export function getTagUsage(): Promise<TagUsage[]> {
+  return fetchJson<TagUsage[]>("api/tags/usage");
+}
+
+export function mergeTags(sourceId: number, targetId: number): Promise<Tag> {
+  return fetchJson<Tag>("api/tags/merge", {
+    method: "POST",
+    body: JSON.stringify({ source_id: sourceId, target_id: targetId }),
+  });
+}
+
+export function deleteUnusedTags(): Promise<{ deleted: number }> {
+  return fetchJson<{ deleted: number }>("api/tags/unused", { method: "DELETE" });
+}
+
 // --- Subscriptions / recurring payments (spec §20) ---
 
 export interface Subscription {
