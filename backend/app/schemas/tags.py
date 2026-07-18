@@ -27,3 +27,23 @@ class SetTagsRequest(BaseModel):
     """Replace a transaction's tags with these names (new ones are created)."""
 
     tags: list[str]
+
+
+class TagUsage(BaseModel):
+    """How many transactions carry a given tag (0 for unused tags)."""
+
+    id: int
+    count: int
+
+
+class MergeTagsRequest(BaseModel):
+    """Move every transaction of ``source_id`` onto ``target_id`` then delete the source."""
+
+    source_id: int
+    target_id: int
+
+
+class DeletedCount(BaseModel):
+    """Number of tags removed by a cleanup operation."""
+
+    deleted: int

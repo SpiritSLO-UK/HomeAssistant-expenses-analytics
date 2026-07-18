@@ -239,3 +239,62 @@ def test_unique_index_rejects_direct_duplicate_insert(db):
         db.commit()
     db.rollback()
     assert db.scalar(select(func.count()).select_from(Tag)) == 1
+
+
+# --- HTTP routes: usage / merge / unused ---
+
+def _tag_id(client, name: str) -> int:
+    return next(t["id"] for t in client.get("/api/tags").json() if t["name"] == name)
+
+
+def test_usage_route_reports_counts_including_zero(client):
+    _import(client, _curve([("2026-05-02", "TESCO STORES", "-10.00"),
+                            ("2026-05-03", "SHELL FUEL", "-20.00")]))
+    tesco = _txn(client, "TESCO STORES")
+    shell = _txn(client, "SHELL FUEL")
+    client.post(f"/api/transactions/{tesco['id']}/tags", json={"tags": ["work"]})
+    client.post(f"/api/transactions/{shell['id']}/tags", json={"tags": ["work"]})
+    client.post("/api/tags", json={"name": "idle"})
+
+    res = client.get("/api/tags/usage")
+    assert res.status_code == 200, res.text
+    counts = {row["id"]: row["count"] for row in res.json()}
+    assert counts[_tag_id(client, "work")] == 2
+    assert counts[_tag_id(client, "idle")] == 0
+
+
+def test_merge_route_moves_associations_and_removes_source(client):
+    _import(client, _curve([("2026-05-02", "TESCO STORES", "-10.00")]))
+    txn = _txn(client, "TESCO STORES")
+    client.post(f"/api/transactions/{txn['id']}/tags", json={"tags": ["groceries"]})
+    source = _tag_id(client, "groceries")
+    target = client.post("/api/tags", json={"name": "food"}).json()["id"]
+
+    res = client.post("/api/tags/merge", json={"source_id": source, "target_id": target})
+    assert res.status_code == 200, res.text
+    assert res.json()["id"] == target
+
+    # Source tag is gone and the transaction now carries the target tag.
+    assert all(t["id"] != source for t in client.get("/api/tags").json())
+    assert {t["name"] for t in _txn(client, "TESCO STORES")["tags"]} == {"food"}
+
+
+def test_merge_route_rejects_unknown_tag(client):
+    target = client.post("/api/tags", json={"name": "keep"}).json()["id"]
+    res = client.post("/api/tags/merge", json={"source_id": 999999, "target_id": target})
+    assert res.status_code == 400
+    assert "not found" in res.json()["detail"].lower()
+
+
+def test_unused_route_removes_only_zero_use_tags(client):
+    _import(client, _curve([("2026-05-02", "TESCO STORES", "-10.00")]))
+    txn = _txn(client, "TESCO STORES")
+    client.post(f"/api/transactions/{txn['id']}/tags", json={"tags": ["keep"]})
+    client.post("/api/tags", json={"name": "drop1"})
+    client.post("/api/tags", json={"name": "drop2"})
+
+    res = client.delete("/api/tags/unused")
+    assert res.status_code == 200, res.text
+    assert res.json()["deleted"] == 2
+    remaining = {t["name"] for t in client.get("/api/tags").json()}
+    assert remaining == {"keep"}
