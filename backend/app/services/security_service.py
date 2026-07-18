@@ -58,6 +58,75 @@ def _delete_marker() -> None:
     _marker_path().unlink(missing_ok=True)
 
 
+# --- Stored auto-unlock key file (standalone convenience) --------------------
+#
+# On the HA add-on the auto-unlock key comes from the add-on option db_key ->
+# HAFI_DB_KEY env var, so the container starts unattended. On a standalone
+# install there is no such option, so historically the user had to hand-edit
+# .env and restart. To make "stored" mode work from the UI we persist the
+# passphrase to a protected key file (0600) beside the DB and read it back at
+# startup.
+#
+# Security posture: on standalone the key already lives on the host disk (in
+# .env); writing it to a 0600 file on the SAME data volume is the same posture,
+# not weaker. True at-rest protection is "prompt" mode, where nothing is stored.
+# The env key (add-on / explicit HAFI_DB_KEY) always wins over the file.
+
+
+def _key_file_path() -> Path:
+    return settings.database_file.parent / ".db_key"
+
+
+def save_stored_key(passphrase: str) -> None:
+    """Persist the auto-unlock passphrase to a 0600 file beside the database.
+
+    Never logs the passphrase. Used by "stored" unlock mode on standalone
+    installs (no HAFI_DB_KEY env). The add-on path does not call this: the env
+    key is authoritative there.
+    """
+    path = _key_file_path()
+    # NOSONAR(python:S2083): the path is the FIXED ".db_key" filename joined to the
+    # app's own operator-configured data dir (settings.database_file.parent). It is
+    # not request/attacker-controlled, and mirrors the existing encryption.json marker
+    # write. Flagged as a path-injection false positive.
+    path.write_text(passphrase, encoding="utf-8")  # NOSONAR
+    os.chmod(path, 0o600)  # owner read/write only
+
+
+def clear_stored_key() -> None:
+    """Remove the stored key file, best-effort (no error if absent)."""
+    _key_file_path().unlink(missing_ok=True)
+
+
+def read_stored_key_file() -> str | None:
+    """The stripped contents of the key file, or None if absent/empty."""
+    path = _key_file_path()
+    if not path.is_file():
+        return None
+    value = path.read_text(encoding="utf-8").strip()
+    return value or None
+
+
+def resolve_stored_key() -> str | None:
+    """The auto-unlock key to try at startup: env wins, then the saved file.
+
+    settings.db_key (HAFI_DB_KEY / add-on option) is authoritative so the add-on
+    behaviour is unchanged; the key file only backs the standalone UI path.
+    """
+    if settings.db_key:
+        return settings.db_key
+    return read_stored_key_file()
+
+
+def stored_key_source() -> str | None:
+    """Where the resolved auto-unlock key comes from: "env", "file", or None."""
+    if settings.db_key:
+        return "env"
+    if read_stored_key_file():
+        return "file"
+    return None
+
+
 def sqlcipher_available() -> bool:
     import importlib.util
 
@@ -184,6 +253,13 @@ def enable_encryption(passphrase: str, unlock_mode: str = "prompt") -> None:
     os.replace(enc_tmp, db_path)
     _remove_wal_shm()
     _write_marker(unlock_mode)
+    if unlock_mode == "stored" and not settings.db_key:
+        # Standalone (no HAFI_DB_KEY env): persist the key so the app auto-unlocks
+        # on restart without hand-editing .env. When the env key IS set (add-on) it
+        # is authoritative, so we do not write a file. "prompt" mode stores nothing.
+        save_stored_key(passphrase)
+    else:
+        clear_stored_key()  # prompt mode, or add-on env key: no stale file left behind
     dbsession.configure(passphrase)
     logger.info("Database encryption enabled (unlock_mode=%s).", unlock_mode)
 
@@ -217,6 +293,7 @@ def disable_encryption(passphrase: str) -> None:
     os.replace(plain_tmp, db_path)
     _remove_wal_shm()
     _delete_marker()
+    clear_stored_key()  # decrypting removes the auto-unlock key
     dbsession.configure(None)
     logger.info("Database encryption disabled.")
 
@@ -247,10 +324,14 @@ def status() -> dict:
         "encryption_enabled": bool(marker and marker.get("enabled")),
         "unlock_mode": marker.get("unlock_mode") if marker else None,
         "locked": dbsession.is_locked(),
-        # True when HAFI_DB_KEY is configured (add-on option / env), i.e. the
-        # database can unlock unattended in "stored" mode. Lets the UI flag a
-        # "stored" setup whose key isn't actually wired (would lock on restart).
-        "stored_key_present": bool(settings.db_key),
+        # True when an auto-unlock key is available (either the HAFI_DB_KEY env /
+        # add-on option, or the saved key file written by "stored" mode on a
+        # standalone install), i.e. the database can unlock unattended. Lets the UI
+        # flag a "stored" setup whose key isn't wired (would lock on restart).
+        "stored_key_present": bool(resolve_stored_key()),
+        # Where that key comes from ("env" | "file" | None) so the UI can tailor
+        # its copy. Not security-sensitive: it never exposes the key itself.
+        "stored_key_source": stored_key_source(),
         "failed_unlocks": failed_unlock_summary(),
     }
 

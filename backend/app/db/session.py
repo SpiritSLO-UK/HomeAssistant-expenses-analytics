@@ -167,14 +167,16 @@ def init() -> None:
         logger.error("DB encryption is enabled but the SQLCipher driver is unavailable — locking.")
         lock()
         return
-    if settings.db_key:  # stored-key mode: unattended unlock
-        if security_service.verify_passphrase(settings.db_key):
-            configure(settings.db_key)
+    stored_key = security_service.resolve_stored_key()  # env (add-on) or saved key file
+    if stored_key:  # stored-key mode: unattended unlock
+        if security_service.verify_passphrase(stored_key):
+            configure(stored_key)
             logger.info("Database unlocked from stored key.")
             return
         logger.error(
-            "Stored DB key (HAFI_DB_KEY) did not open the database — locking. Check it "
-            "matches your encryption passphrase, or clear it and unlock via the UI."
+            "Stored DB key (HAFI_DB_KEY env or the saved key file) did not open the database; "
+            "locking. Check it matches your encryption passphrase, or clear it and unlock "
+            "via the UI."
         )
         lock()
         return

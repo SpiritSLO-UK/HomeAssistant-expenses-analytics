@@ -2067,6 +2067,7 @@ export interface SecurityStatus {
   unlock_mode: string | null;
   locked: boolean;
   stored_key_present?: boolean;
+  stored_key_source?: "env" | "file" | null;
   failed_unlocks?: FailedUnlockSummary;
 }
 
