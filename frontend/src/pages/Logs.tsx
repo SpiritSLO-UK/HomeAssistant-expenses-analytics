@@ -2,11 +2,19 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   getMe,
+  exportAuditLogCsv,
   listActivityLog,
   listAiRequests,
   listAuditActions,
   type AuditLogRow,
 } from "../api/client";
+import { alertAsync } from "../components/dialogs";
+
+// Kick off a file download and surface any failure in a modal rather than
+// swallowing it (mirrors the Dashboard CSV-export handler).
+function downloadOrAlert(p: Promise<void>): void {
+  p.catch((e) => alertAsync({ message: String(e instanceof Error ? e.message : e) }));
+}
 
 function when(iso: string): string {
   return iso.replace("T", " ").slice(0, 16);
@@ -181,6 +189,13 @@ function ActivityCard({ includeArchived, authorized }: Readonly<{ includeArchive
           </select>
           <button className="btn btn--sm" onClick={() => log.refetch()} disabled={log.isFetching}>
             {log.isFetching ? "…" : "Refresh"}
+          </button>
+          <button
+            className="btn btn--sm btn--ghost"
+            title="Download the activity log as CSV (honours the action + archived filters)"
+            onClick={() => downloadOrAlert(exportAuditLogCsv({ action: action || undefined, includeArchived }))}
+          >
+            ⬇ Download CSV
           </button>
         </div>
       </div>
