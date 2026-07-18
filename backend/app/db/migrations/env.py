@@ -41,7 +41,26 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
+def _run_with_connection(connection) -> None:
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        render_as_batch=True,
+    )
+    with context.begin_transaction():
+        context.run_migrations()
+
+
 def run_migrations_online() -> None:
+    # In-process runner (app.db.migrations_runner) injects a live connection built
+    # over the ACTIVE engine (plaintext or the unlocked SQLCipher engine), so
+    # migrations run against the unlocked database. Prefer it when present.
+    injected = config.attributes.get("connection")
+    if injected is not None:
+        _run_with_connection(injected)
+        return
+
+    # Standalone `alembic` CLI (local dev on a plaintext DB): build our own engine.
     section = config.get_section(config.config_ini_section, {})
     section["sqlalchemy.url"] = settings.database_url
     connectable = engine_from_config(
@@ -50,13 +69,7 @@ def run_migrations_online() -> None:
         poolclass=pool.NullPool,
     )
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=target_metadata,
-            render_as_batch=True,
-        )
-        with context.begin_transaction():
-            context.run_migrations()
+        _run_with_connection(connection)
 
 
 if context.is_offline_mode():

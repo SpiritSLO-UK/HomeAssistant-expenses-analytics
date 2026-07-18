@@ -299,13 +299,34 @@ def disable_encryption(passphrase: str) -> None:
 
 
 def unlock(passphrase: str) -> bool:
-    """Verify the passphrase and bring the database online."""
+    """Verify the passphrase and bring the database online.
+
+    This is the prompt-mode path: the DB was locked at startup (encrypted, no
+    stored key), so migrations were skipped then and run HERE now that the
+    unlocked SQLCipher engine exists."""
     if not verify_passphrase(passphrase):
         return False
     dbsession.configure(passphrase)
+    _migrate_after_unlock()
     _ensure_schema_and_seed()
     logger.info("Database unlocked.")
     return True
+
+
+def _migrate_after_unlock() -> None:
+    """Bring the just-unlocked encrypted DB to head. On failure re-lock rather
+    than serve a possibly-inconsistent schema, and surface the error."""
+    from app.db.migrations_runner import run_migrations
+
+    try:
+        run_migrations()
+    except Exception:
+        logger.error(
+            "Migration after unlock failed; re-locking to avoid serving inconsistent data.",
+            exc_info=True,
+        )
+        dbsession.lock()
+        raise
 
 
 def _ensure_schema_and_seed() -> None:

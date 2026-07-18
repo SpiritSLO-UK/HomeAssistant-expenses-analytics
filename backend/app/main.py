@@ -7,6 +7,7 @@ is built with a relative base, so it loads correctly under any ingress path.
 
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -31,6 +32,34 @@ logger = get_logger("app.main")
 FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 
 
+def _run_startup_migrations() -> None:
+    """Bring the schema to head against the active engine, or refuse to serve.
+
+    A failed migration means the finance database may be inconsistent; serving
+    the app anyway risks corrupting data or showing wrong figures. So we FAIL
+    HARD (re-raise, which aborts startup and the container exits) unless the
+    operator sets ``HAFI_ALLOW_MIGRATION_FAILURE=1`` for recovery: the same
+    contract the removed ``run.sh`` step enforced, now owned by the app."""
+    from app.db.migrations_runner import run_migrations
+
+    try:
+        run_migrations()
+    except Exception:
+        if os.environ.get("HAFI_ALLOW_MIGRATION_FAILURE") == "1":
+            logger.error(
+                "Database migration failed, but HAFI_ALLOW_MIGRATION_FAILURE=1 is set: "
+                "continuing in recovery mode. The database may be inconsistent.",
+                exc_info=True,
+            )
+            return
+        logger.error(
+            "Database migration failed; refusing to start to avoid serving inconsistent "
+            "data. Restart with HAFI_ALLOW_MIGRATION_FAILURE=1 to override for recovery.",
+            exc_info=True,
+        )
+        raise
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     logger.info(
@@ -44,8 +73,15 @@ async def lifespan(_app: FastAPI):
     # the encryption marker (backlog #15b).
     dbsession.init()
     if dbsession.is_locked():
+        # Prompt mode (encrypted, no key): stay locked and serve only health +
+        # the lock/unlock endpoints. Migrations run in security_service.unlock()
+        # once the user supplies the passphrase, never against a locked DB.
         logger.warning("Database is locked — waiting for unlock before serving data.")
     else:
+        # Run migrations against the ACTIVE engine (plaintext, or the unlocked
+        # SQLCipher engine). This replaces the old `alembic upgrade head` in
+        # run.sh, which could not open an encrypted DB and crash-looped on restart.
+        _run_startup_migrations()
         # Ensure tables exist. Alembic owns migrations in production; create_all
         # is an idempotent safety net so a fresh add-on starts.
         Base.metadata.create_all(bind=dbsession.require_engine())
