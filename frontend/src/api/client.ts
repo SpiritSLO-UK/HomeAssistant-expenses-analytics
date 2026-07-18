@@ -2322,13 +2322,28 @@ export interface AuditLogRow {
   details: Record<string, unknown> | null;
 }
 
-export function listActivityLog(
-  opts?: { limit?: number; action?: string; includeArchived?: boolean },
-): Promise<AuditLogRow[]> {
+// Filters shared by the activity listing and its CSV export (backend applies
+// them in SQL): action-name prefix, free-text q over action + details, actor
+// substring, and an inclusive ISO date range on the entry timestamp.
+export interface ActivityLogFilters {
+  limit?: number;
+  action?: string;
+  includeArchived?: boolean;
+  q?: string;
+  actor?: string;
+  dateFrom?: string;
+  dateTo?: string;
+}
+
+export function listActivityLog(opts?: ActivityLogFilters): Promise<AuditLogRow[]> {
   const params = new URLSearchParams();
   if (opts?.limit) params.set("limit", String(opts.limit));
   if (opts?.action) params.set("action", opts.action);
   if (opts?.includeArchived) params.set("include_archived", "true");
+  if (opts?.q) params.set("q", opts.q);
+  if (opts?.actor) params.set("actor", opts.actor);
+  if (opts?.dateFrom) params.set("date_from", opts.dateFrom);
+  if (opts?.dateTo) params.set("date_to", opts.dateTo);
   const qs = params.toString();
   return fetchJson<AuditLogRow[]>(qs ? `api/logs/activity?${qs}` : "api/logs/activity");
 }
@@ -2562,10 +2577,18 @@ export function exportMonthlyCsv(months?: number, month?: string): Promise<void>
   return downloadCsv(`api/export/monthly.csv${exportParams({ months, month })}`, "monthly.csv");
 }
 
-// Owner-only activity/audit log export. Honours the same action-prefix +
-// include_archived filters as the /activity listing (backend routes_logs).
-export function exportAuditLogCsv(filters: { action?: string; includeArchived?: boolean } = {}): Promise<void> {
-  const qs = exportParams({ action: filters.action, include_archived: filters.includeArchived });
+// Owner-only activity/audit log export. Honours the same action-prefix, q,
+// actor, date-range and include_archived filters as the /activity listing
+// (backend routes_logs), so a filtered view exports what you see.
+export function exportAuditLogCsv(filters: Omit<ActivityLogFilters, "limit"> = {}): Promise<void> {
+  const qs = exportParams({
+    action: filters.action,
+    include_archived: filters.includeArchived,
+    q: filters.q,
+    actor: filters.actor,
+    date_from: filters.dateFrom,
+    date_to: filters.dateTo,
+  });
   return downloadCsv(`api/logs/audit/export.csv${qs}`, "audit-log.csv");
 }
 

@@ -11,8 +11,9 @@ from __future__ import annotations
 import csv
 import io
 import json
+from datetime import date, datetime, time, timedelta
 
-from sqlalchemy import distinct, select
+from sqlalchemy import distinct, or_, select
 from sqlalchemy.orm import Session
 
 from app.logging import get_logger
@@ -169,23 +170,49 @@ def record_image_sent(db: Session, *, actor: str | None, kind: str, size: int) -
     )
 
 
+def _escape_like(value: str) -> str:
+    """Escape LIKE metacharacters so user input filters literally rather than as
+    a wildcard pattern (SR-E8). Pair with ``escape="\\"`` on the LIKE clause."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def recent(
     db: Session,
     *,
     limit: int = 100,
     action_prefix: str | None = None,
     include_archived: bool = False,
+    q: str | None = None,
+    actor: str | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
 ) -> list[AuditLog]:
-    """Most-recent audit entries, newest first. Optional action-prefix filter.
+    """Most-recent audit entries, newest first, with optional filters applied in
+    SQL: an action-name prefix, a case-insensitive free-text ``q`` over the
+    action + serialised details, a case-insensitive ``actor`` substring, and an
+    inclusive ``date_from``/``date_to`` range on the entry timestamp.
 
     Archived entries (aged out by the retention engine, backlog #78) are hidden
     unless ``include_archived`` is set."""
     stmt = select(AuditLog).order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
     if action_prefix:
-        # Escape LIKE metacharacters so an action prefix containing % or _ filters
-        # literally rather than as a wildcard (SR-E8).
-        escaped = action_prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        stmt = stmt.where(AuditLog.action.like(f"{escaped}%", escape="\\"))
+        stmt = stmt.where(AuditLog.action.like(f"{_escape_like(action_prefix)}%", escape="\\"))
+    if q:
+        # Free-text: match the action name or anywhere in the details blob.
+        needle = f"%{_escape_like(q)}%"
+        stmt = stmt.where(
+            or_(
+                AuditLog.action.ilike(needle, escape="\\"),
+                AuditLog.details_json.ilike(needle, escape="\\"),
+            )
+        )
+    if actor:
+        stmt = stmt.where(AuditLog.actor.ilike(f"%{_escape_like(actor)}%", escape="\\"))
+    if date_from:
+        stmt = stmt.where(AuditLog.created_at >= datetime.combine(date_from, time.min))
+    if date_to:
+        # Inclusive end date: everything strictly before the next day's midnight.
+        stmt = stmt.where(AuditLog.created_at < datetime.combine(date_to + timedelta(days=1), time.min))
     if not include_archived:
         stmt = stmt.where(AuditLog.archived_at.is_(None))
     return list(db.scalars(stmt.limit(limit)).all())
@@ -219,17 +246,29 @@ def export_audit(
     *,
     action_prefix: str | None = None,
     include_archived: bool = False,
+    q: str | None = None,
+    actor: str | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
     limit: int = MAX_EXPORT_ROWS,
 ) -> list[dict]:
     """Audit rows in CSV-ready form for the given filters, reusing the same
-    ``recent()`` query path (household scope + action-prefix filter, archived
-    exclusion) as the activity-log listing so "export" matches "what you see".
+    ``recent()`` query path (action prefix, free-text ``q``, actor substring,
+    date range, archived exclusion) as the activity-log listing so "export"
+    matches "what you see".
 
     The ``details`` cell is the row's already-serialised ``details_json`` — capped
     to ``MAX_DETAILS_BYTES`` on write (#319) — so a single cell can never grow
     without bound. ``csv.writer`` handles quoting/escaping of every cell."""
     entries = recent(
-        db, limit=limit, action_prefix=action_prefix, include_archived=include_archived
+        db,
+        limit=limit,
+        action_prefix=action_prefix,
+        include_archived=include_archived,
+        q=q,
+        actor=actor,
+        date_from=date_from,
+        date_to=date_to,
     )
     households = _household_names(db)
     return [

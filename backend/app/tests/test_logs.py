@@ -212,6 +212,136 @@ def test_recent_action_prefix_escapes_like_metacharacters(db):
     assert percent == {"user%update"}
 
 
+def _seed_search_entries(db):
+    """Three entries with distinct actions/actors/details for the filter tests."""
+    from app.services import audit_service
+
+    audit_service.record(
+        db, action="update_user", actor="Alice", details={"role": "owner", "note": "PROMOTED"}
+    )
+    audit_service.record(
+        db, action="load_demo", actor="Bob", details={"summary": "Demo data loaded"}
+    )
+    audit_service.record(db, action="api_call", actor="alfred", details={"path": "/api/x"})
+    db.commit()
+
+
+def test_recent_q_matches_action_and_details_case_insensitively(db):
+    from app.services import audit_service
+
+    _seed_search_entries(db)
+
+    # Matches the action name, case-insensitively.
+    by_action = {e.action for e in audit_service.recent(db, q="LOAD_demo")}
+    assert by_action == {"load_demo"}
+    # Matches inside the serialised details blob, case-insensitively.
+    by_details = {e.action for e in audit_service.recent(db, q="promoted")}
+    assert by_details == {"update_user"}
+    # No match returns an empty list.
+    assert audit_service.recent(db, q="zzz-nothing") == []
+
+
+def test_recent_q_escapes_like_metacharacters(db):
+    from app.services import audit_service
+
+    audit_service.record(db, action="pct", details={"note": "100% done"})
+    audit_service.record(db, action="plain", details={"note": "100 done"})
+    db.commit()
+
+    # "%" must match literally, not as a wildcard swallowing everything.
+    actions = {e.action for e in audit_service.recent(db, q="100%")}
+    assert actions == {"pct"}
+
+
+def test_recent_actor_substring_is_case_insensitive(db):
+    from app.services import audit_service
+
+    _seed_search_entries(db)
+
+    # "al" matches Alice and alfred (substring, any case) but not Bob.
+    actors = {e.actor for e in audit_service.recent(db, actor="AL")}
+    assert actors == {"Alice", "alfred"}
+    assert audit_service.recent(db, actor="nobody") == []
+
+
+def test_recent_date_range_is_inclusive(db):
+    from datetime import date, datetime
+
+    from app.services import audit_service
+
+    _seed_search_entries(db)
+    entries = audit_service.recent(db)
+    # Pin timestamps to three known days so the range bounds are testable.
+    days = [datetime(2026, 1, 1, 23, 59), datetime(2026, 1, 2, 0, 0), datetime(2026, 1, 3, 12, 0)]
+    for entry, when in zip(entries, days, strict=True):
+        entry.created_at = when
+    db.commit()
+
+    # Inclusive lower bound: the 23:59 entry on Jan 1 is in when from=Jan 1.
+    from_jan1 = audit_service.recent(db, date_from=date(2026, 1, 1))
+    assert len(from_jan1) == 3
+    # from=Jan 2 drops the Jan 1 entry.
+    from_jan2 = audit_service.recent(db, date_from=date(2026, 1, 2))
+    assert {e.created_at.day for e in from_jan2} == {2, 3}
+    # Inclusive upper bound: to=Jan 2 keeps the midnight Jan 2 entry.
+    to_jan2 = audit_service.recent(db, date_to=date(2026, 1, 2))
+    assert {e.created_at.day for e in to_jan2} == {1, 2}
+    # A from+to window narrows to exactly one day.
+    only_jan2 = audit_service.recent(db, date_from=date(2026, 1, 2), date_to=date(2026, 1, 2))
+    assert [e.created_at.day for e in only_jan2] == [2]
+
+
+def test_activity_endpoint_accepts_search_filters(client):
+    _make_user(client, "ha-se", "Sea")  # records update_user (actor = owner)
+    client.put("/api/settings", json={"privacy_mode": "cloud_manual"})  # a decision
+
+    # q matches the decision summary text, case-insensitively.
+    hits = client.get("/api/logs/activity", params={"q": "ai mode CHANGED"}).json()
+    assert hits and all("AI mode changed" in e["details"]["summary"] for e in hits)
+    assert client.get("/api/logs/activity", params={"q": "zzz-no-such"}).json() == []
+
+    # actor narrows to entries by that (substring of a) display name.
+    some_actor = hits[0]["actor"]
+    by_actor = client.get(
+        "/api/logs/activity", params={"actor": some_actor[:3].lower()}
+    ).json()
+    assert by_actor and all(some_actor[:3].lower() in (e["actor"] or "").lower() for e in by_actor)
+
+    # A date window around today includes entries; a past-only window excludes all.
+    assert client.get(
+        "/api/logs/activity", params={"date_from": "2000-01-01", "date_to": "2099-12-31"}
+    ).json()
+    assert client.get("/api/logs/activity", params={"date_to": "2000-01-01"}).json() == []
+    # Filters compose with the existing action prefix.
+    combined = client.get(
+        "/api/logs/activity", params={"action": "decision", "q": "cloud_manual"}
+    ).json()
+    assert combined and all(e["action"].startswith("decision") for e in combined)
+
+
+def test_activity_endpoint_rejects_bad_date(client):
+    client.get("/api/users/me")  # owner
+    assert client.get("/api/logs/activity", params={"date_from": "not-a-date"}).status_code == 422
+
+
+def test_audit_export_honours_search_filters(client):
+    _make_user(client, "ha-xf", "Xf")  # records update_user entries
+    client.post("/api/backup/demo")  # records load_demo + api_call
+
+    body = client.get("/api/logs/audit/export.csv", params={"q": "load_demo"}).content.decode(
+        "utf-8-sig"
+    )
+    lines = body.splitlines()
+    assert len(lines) >= 2  # header + at least one row
+    assert all("load_demo" in line for line in lines[1:])
+    assert "update_user" not in body
+
+    empty = client.get(
+        "/api/logs/audit/export.csv", params={"date_to": "2000-01-01"}
+    ).content.decode("utf-8-sig")
+    assert empty.splitlines() == ["id,timestamp,actor,action,household,details"]
+
+
 def test_small_details_are_stored_verbatim(db):
     # A small/normal details dict round-trips unchanged (no truncation marker).
     from app.services import audit_service

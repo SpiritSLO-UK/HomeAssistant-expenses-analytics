@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   getMe,
@@ -6,6 +6,7 @@ import {
   listActivityLog,
   listAiRequests,
   listAuditActions,
+  type ActivityLogFilters,
   type AuditLogRow,
 } from "../api/client";
 import { alertAsync } from "../components/dialogs";
@@ -18,6 +19,17 @@ function downloadOrAlert(p: Promise<void>): void {
 
 function when(iso: string): string {
   return iso.replace("T", " ").slice(0, 16);
+}
+
+// Wait ~300ms after the last keystroke before a text filter hits the API, so
+// typing fires one request instead of one per character (mirrors Transactions).
+function useDebounced(value: string, ms = 300): string {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const id = globalThis.setTimeout(() => setDebounced(value), ms);
+    return () => globalThis.clearTimeout(id);
+  }, [value, ms]);
+  return debounced;
 }
 
 // Important consent/privacy decisions are recorded as `decision:<kind>` so each
@@ -118,30 +130,29 @@ function ActivityCard({ includeArchived, authorized }: Readonly<{ includeArchive
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [text, setText] = useState("");
+  const [actor, setActor] = useState("");
   const actions = useQuery({ queryKey: ["audit-actions"], queryFn: listAuditActions, enabled: authorized });
+
+  // All filters are applied server-side (in SQL), so results and the CSV export
+  // always agree. The text inputs are debounced to avoid a request per keystroke.
+  const q = useDebounced(text.trim());
+  const actorQ = useDebounced(actor.trim());
+  const filters: ActivityLogFilters = {
+    action: action || undefined,
+    limit,
+    includeArchived,
+    q: q || undefined,
+    actor: actorQ || undefined,
+    dateFrom: dateFrom || undefined,
+    dateTo: dateTo || undefined,
+  };
   const log = useQuery({
-    queryKey: ["activity-log", action, limit, includeArchived],
-    queryFn: () => listActivityLog({ action: action || undefined, limit, includeArchived }),
+    queryKey: ["activity-log", filters],
+    queryFn: () => listActivityLog(filters),
     enabled: authorized,
   });
-
-  // Client-side date-range + free-text narrowing over the fetched page. `text`
-  // is matched against actor / action / item / rendered details; dates compare
-  // the ISO day (created_at starts `YYYY-MM-DD`).
-  const needle = text.trim().toLowerCase();
-  const rows = (log.data ?? []).filter((row) => {
-    const day = row.created_at.slice(0, 10);
-    if (dateFrom && day < dateFrom) return false;
-    if (dateTo && day > dateTo) return false;
-    if (needle) {
-      const entityRef = row.entity_id == null ? "" : ` #${row.entity_id}`;
-      const hay = [row.actor ?? "system", row.action, (row.entity_type ?? "") + entityRef, describe(row)]
-        .join(" ")
-        .toLowerCase();
-      if (!hay.includes(needle)) return false;
-    }
-    return true;
-  });
+  const rows = log.data ?? [];
+  const filtered = Boolean(action || dateFrom || dateTo || q || actorQ);
 
   return (
     <div className="card">
@@ -192,8 +203,8 @@ function ActivityCard({ includeArchived, authorized }: Readonly<{ includeArchive
           </button>
           <button
             className="btn btn--sm btn--ghost"
-            title="Download the activity log as CSV (honours the action + archived filters)"
-            onClick={() => downloadOrAlert(exportAuditLogCsv({ action: action || undefined, includeArchived }))}
+            title="Download the activity log as CSV (honours all the filters above)"
+            onClick={() => downloadOrAlert(exportAuditLogCsv(filters))}
           >
             ⬇ Download CSV
           </button>
@@ -203,18 +214,42 @@ function ActivityCard({ includeArchived, authorized }: Readonly<{ includeArchive
       <div className="form-row" style={{ gap: 8, marginTop: 8, flexWrap: "wrap" }}>
         <label className="muted" style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "0.82rem" }}>
           From{" "}
-          <input type="date" value={dateFrom} max={dateTo || undefined} onChange={(e) => setDateFrom(e.target.value)} title="Only show entries on or after this date" />
+          <input
+            type="date"
+            value={dateFrom}
+            max={dateTo || undefined}
+            onChange={(e) => setDateFrom(e.target.value)}
+            title="Only show entries on or after this date"
+            aria-label="Only show entries on or after this date"
+          />
         </label>
         <label className="muted" style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "0.82rem" }}>
           To{" "}
-          <input type="date" value={dateTo} min={dateFrom || undefined} onChange={(e) => setDateTo(e.target.value)} title="Only show entries on or before this date" />
+          <input
+            type="date"
+            value={dateTo}
+            min={dateFrom || undefined}
+            onChange={(e) => setDateTo(e.target.value)}
+            title="Only show entries on or before this date"
+            aria-label="Only show entries on or before this date"
+          />
         </label>
         <input
           type="search"
+          value={actor}
+          placeholder="Who (actor)…"
+          onChange={(e) => setActor(e.target.value)}
+          title="Filter by who did it (name substring, any case)"
+          aria-label="Filter by actor name"
+          style={{ flex: "0 1 9rem", minWidth: "7rem" }}
+        />
+        <input
+          type="search"
           value={text}
-          placeholder="Search who / action / item / details…"
+          placeholder="Search action / details…"
           onChange={(e) => setText(e.target.value)}
-          title="Free-text filter over the loaded entries"
+          title="Free-text search over the action name and details"
+          aria-label="Search the activity log"
           style={{ flex: "1 1 12rem", minWidth: "10rem" }}
         />
       </div>
@@ -224,7 +259,7 @@ function ActivityCard({ includeArchived, authorized }: Readonly<{ includeArchive
         <p className="status status--error">Couldn’t load the activity log. {String(log.error)}</p>
       )}
       {log.data && rows.length === 0 && (
-        <p className="muted">No matching activity{action || dateFrom || dateTo || needle ? " for these filters" : ""}.</p>
+        <p className="muted">No matching activity{filtered ? " for these filters" : ""}.</p>
       )}
       {rows.length > 0 && (
         <div className="table-wrap">
