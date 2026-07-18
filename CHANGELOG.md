@@ -10,7 +10,7 @@ human-readable entries; versions follow semantic versioning.
 ### Highlights
 
 A wide-ranging hardening, insight and polish release on top of v1.0.2 - roughly
-170 pull requests. Two-factor gains single-use **backup/recovery codes**; the
+190 pull requests. Two-factor gains single-use **backup/recovery codes**; the
 container now runs as a **non-root user**; budgets, projects and savings goals
 get **forecasts** (pace, burn-down, time-to-goal); US bank statements import
 correctly; native browser popups are replaced by an **in-app modal system**; and
@@ -33,6 +33,11 @@ start.
   and a daily cloud-spend budget; provider endpoint URLs are scheme-validated;
   the never-cloud category gate now also covers uncategorised rows, and vision
   requests refuse a silent auto-fallback to cloud.
+- **AI key on standalone** - the AI provider API key can now be set from
+  Settings on a standalone install and is stored **encrypted at rest** (the same
+  application-layer crypto as the two-factor secret); the `HAFI_AI_API_KEY`
+  environment variable still takes precedence, and the key is never returned by
+  the API or written to logs.
 - **Proxy-header trust is opt-in** - reverse-proxy identity headers are only
   honoured behind an explicit flag, so a directly exposed port can't be
   identity-spoofed.
@@ -44,7 +49,9 @@ start.
 - **Encrypted-DB safety** - the SQLCipher key is applied without passphrase
   interpolation, an encrypted copy is verified before it replaces the plaintext
   database, wrong-passphrase and missing-driver errors are distinguished, and
-  encrypted backups enforce a passphrase strength floor.
+  encrypted backups enforce a passphrase strength floor. The locked screen now
+  shows the server's actual error, and an empty passphrase is rejected with a
+  clear message instead of a generic failure.
 - **Security-health card** - new checks: stored key without MFA, stale backups,
   and settings managers without MFA.
 - Broader PII redaction, OCR decompression-bomb and page-budget guards, capped
@@ -94,8 +101,14 @@ start.
   penny-exact percentage split helper, bulk recolour of categories, AI-batch
   select-all + CSV export, and heads-up dashboard alerts you can enable, disable
   or clear.
+- **Consistent budgets/projects/savings** - the three pages now share one
+  progress-bar and list-row style, so budgets, projects and savings goals read
+  the same way; a budget row also shows one clear pace signal instead of several
+  overlapping labels.
 - **Accessibility** - remaining unlabeled form controls, AI/receipt dialogs and
-  map points received accessible names; charts scale responsively.
+  map points received accessible names; high-signal form fields also carry
+  stable `name` and `autocomplete` attributes so browser autofill and password
+  managers behave; charts scale responsively.
 - **Faster first load** - the frontend vendor bundle is code-split.
 
 ### Reliability & performance
@@ -116,9 +129,11 @@ start.
   MQTT isn't live.
 
 ### Testing & docs
-- **993 backend tests**, plus a new **Playwright browser suite** (50+ tests: a
-  render smoke of every page and end-to-end task flows) with an HTML report
-  attached to CI runs and releases, and a step-by-step UI test walkthrough.
+- **Over 1,000 backend tests**, plus a new **Playwright browser suite** (55+
+  tests: a render smoke of every page and end-to-end task flows) with an HTML
+  report attached to CI runs and releases, and a step-by-step UI test
+  walkthrough. CI additionally guards the non-root container, encryption
+  restart, and Content-Security-Policy hash drift.
 - Distinct per-package READMEs for the add-on vs standalone, an AI-gateway and
   privacy-gate data-flow diagram, refreshed architecture docs, and a documented
   standalone trust model (including the proxy header-spoof caveat).
