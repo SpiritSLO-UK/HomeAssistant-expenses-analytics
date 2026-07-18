@@ -99,6 +99,7 @@ A quick look (on demo data) - the full tour is in **[docs/screenshots.md](docs/s
 | 11 | PDF statement import: best-effort, rows flagged for review | ✅ |
 | 12 | Polish: CI, dashboard trends/outliers, savings, investments & pensions, cars & home, geo/world map, data retention, multi-user & roles, global search, performance indexes | ✅ |
 | - | **v1.0.0 → v1.0.2** - standalone **and** a one-click **Home Assistant add-on** (prebuilt multi-arch image, ingress SSO, MQTT sensors, energy-cost offset, at-rest encryption); v1.0.1–v1.0.2 added polish, security hardening, and broader bank/receipt import (Curve, Barclaycard, define-your-own CSV) | ✅ |
+| - | **Since v1.0.2** (on `main`, next release) - forecasts (budget pace, project burn-down, savings time-to-goal), MFA backup codes, tag merge/prune, search filter tokens + keyboard nav, audit-log search/filters + CSV export, in-app dialogs, optimistic selects, AI abuse guards, a hardened non-root container, and a Playwright e2e suite | ✅ |
 
 ## What it does today
 
@@ -121,12 +122,19 @@ A quick look (on demo data) - the full tour is in **[docs/screenshots.md](docs/s
 - **Split** a transaction across several categories/projects; the dashboard uses
   the split parts.
 - **Projects & tags** - collect spend toward a goal (renovation, holiday, car)
-  with per-project totals and breakdowns; flexible tags on transactions.
+  with per-project totals and breakdowns, plus a **burn-down / run-rate forecast**
+  against a project budget (what you'll have spent at the current rate, and
+  whether that lands over or under). Flexible tags on
+  transactions, with a **Settings → Tags** card to see each tag's usage, **merge**
+  duplicates and **prune** unused ones.
 - **Budgets** - per-category, per-project or total budgets over weekly →
-  yearly periods, with on-track / near-limit / over status.
+  yearly periods, with on-track / near-limit / over status and a **prorated pace
+  signal** (whether you're ahead of or behind where the period says you should be).
 - **Savings** - track savings-account balances over time (manual snapshots, with
   a growth sparkline) and set **goals** with progress bars; a goal can follow a
-  savings account's latest balance or be tracked by hand.
+  savings account's latest balance or be tracked by hand. Goals with a recent
+  deposit history also show a **deposit-rate forecast** with an estimated
+  **time-to-goal**.
 - **Investments & pensions** - track investment platforms and pensions: record a
   **value** from a statement (best for pensions, with a growth sparkline) or add
   **holdings** (units of a ticker with an average cost and a last price) to see
@@ -178,7 +186,9 @@ A quick look (on demo data) - the full tour is in **[docs/screenshots.md](docs/s
   this means. You can also **re-process** already-categorised transactions (a
   "re-check" toggle on the batch panels) to find better matches after plugging in
   or improving a model - suggestions only, and a manual category is never
-  overwritten.
+  overwritten. The AI gateway is also guarded against runaway use: a per-minute
+  **rate limit**, a **payload size cap** and a **daily request budget** (all
+  configurable), on top of the SSRF/endpoint-scheme validation.
 - **Services panel** - a **Settings → Services** card to see and switch each
   service from one place, **one panel per service** with a consistent header and
   status: the **AI assistant** (a status + "turn off" - it reads *On* only when a
@@ -211,14 +221,18 @@ A quick look (on demo data) - the full tour is in **[docs/screenshots.md](docs/s
   shows on the kid **without changing the parent's own expenses or budgets**.
 - **Two-factor (optional)** - each user can turn on TOTP MFA (Google
   Authenticator, Aegis, 1Password…): a 6-digit code to open the app, and a fresh
-  code to confirm admin actions. Time-based, on-device, off by default.
+  code to confirm admin actions. Time-based, on-device, off by default. Each
+  user can also generate **single-use backup/recovery codes** (copy or download
+  them from Settings) so a lost phone doesn't mean a lost account.
 - **Security health** - an owner-only panel flags protections that are off
   (no at-rest encryption, no MFA, repeated failed unlock attempts, …) with a
   one-line fix for each. It never nags: dismiss or snooze any item.
 - **Logs / activity** - an owner-only **Logs** page shows an activity log of
   important actions (statement import & delete, transaction delete, demo-data
-  load, user role/approval changes, MFA enable/disable - filterable by action)
-  plus the AI-call log. Low-level runtime/debug logs stream to the Home Assistant
+  load, user role/approval changes, MFA enable/disable) plus the AI-call log.
+  The activity log is **searchable server-side** and filterable by action,
+  **actor and date range**, with an owner-only **CSV export** for offline
+  analysis. Low-level runtime/debug logs stream to the Home Assistant
   add-on **Log** panel at your chosen `log_level`.
 - **Data retention** - owner-only, off by default. For each kind of data
   (transactions, AI request logs, activity/audit logs, receipt files,
@@ -240,7 +254,11 @@ A quick look (on demo data) - the full tour is in **[docs/screenshots.md](docs/s
   table to set its width; the widths are remembered on your device ("↔ Reset
   columns" restores the defaults).
 - **Global search** - a **Search** page finds any transaction (by description,
-  merchant or amount), vendor, category or project and links straight to it.
+  merchant or amount), vendor, category, project or tag and links straight to
+  it. **Filter tokens** narrow a query (`category:Food`, `after:2026-01-01`,
+  `before:`, or a `..` date range - a "Filter tips" panel on the page lists them
+  all), and the grouped results are fully **keyboard-navigable** (arrow through
+  them, Enter to open).
 - **Spending by location** - a dashboard card ranks the month's spend **by
   country**. A transaction's country comes from (in order) its **own country**
   (tag a whole trip on the **Travel** page - so a trip to Spain shows as Spain,
@@ -255,6 +273,12 @@ A quick look (on demo data) - the full tour is in **[docs/screenshots.md](docs/s
   **hide and reorder** nav tabs (▲/▼), remembered per device (Dashboard and
   Settings stay put). Plus **dark mode** (Appearance in Settings), persisted
   Transactions filters, and resizable table columns.
+- **In-app dialogs & optimistic controls** - confirmations, prompts and alerts
+  use an in-app modal system instead of native browser popups, so they work
+  everywhere - including inside the **Home Assistant ingress iframe**, where
+  native dialogs are blocked. Select-on-change controls (role, log level,
+  status…) apply **optimistically** and roll back automatically with an error
+  message if the server rejects the change.
 - **Spending by member** - for multi-person households, a card breaking the
   month's spend down per member (plus a "Shared" row for joint accounts). Each
   person's figure covers the accounts they own, scoped to what you're allowed to
@@ -283,7 +307,8 @@ A quick look (on demo data) - the full tour is in **[docs/screenshots.md](docs/s
   review count, per-budget progress, per-project totals and monthly subscriptions.
 - **Privacy & safety** - strict local by default, redaction, backup/restore,
   encrypted backups, optional at-rest encryption, and tests that never touch live
-  data.
+  data. The container is hardened too: the app runs as a **non-root user**
+  (uid 10001) on digest-pinned base images.
 
 ## Design principles
 
@@ -305,8 +330,8 @@ served at **`/docs`** when the backend is running.
 
 ```
 Home Assistant add-on (single container)
-  ├── FastAPI backend (Python 3.12)        — API under /api
-  ├── React + TypeScript frontend (Vite)    — served at /
+  ├── FastAPI backend (Python 3.12)        - API under /api
+  ├── React + TypeScript frontend (Vite)    - served at /
   ├── SQLite database (SQLAlchemy + Alembic)
   ├── CSV + PDF import + parser engine
   ├── category / vendor / rule engine
@@ -325,6 +350,7 @@ backend/    FastAPI app, models, services, parsers, migrations, tests
 frontend/   React + TypeScript + Vite UI
 addon/      Home Assistant add-on (config.yaml, Dockerfile, run.sh, apparmor)
 docs/       privacy.md, security.md, …
+e2e/        Playwright end-to-end UI tests (run against a live instance)
 examples/   Sample (fake) bank CSVs
 scripts/    test.sh / dev.sh (bash; Linux/macOS/WSL + Git Bash)
 ```
@@ -407,16 +433,25 @@ imported and anything you added yourself are left untouched.
 cd backend && .venv/bin/python -m pytest # backend only (runs in parallel)
 ```
 
-The backend suite runs across all CPU cores via `pytest-xdist` (`-n auto`, in
-`pyproject.toml`); pass `-n0` to run serially under a debugger. Tests run against
-a throwaway temporary database and **refuse to start against a real one** - they
-can never read or modify your finance data, and each parallel worker gets its own
-isolated temp DB ([docs/privacy.md](docs/privacy.md), backlog #30).
+The backend suite (**990+ tests**) runs across all CPU cores via `pytest-xdist`
+(`-n auto`, in `pyproject.toml`); pass `-n0` to run serially under a debugger.
+Tests run against a throwaway temporary database and **refuse to start against a
+real one** - they can never read or modify your finance data, and each parallel
+worker gets its own isolated temp DB ([docs/privacy.md](docs/privacy.md),
+backlog #30).
+
+**End-to-end UI tests:** a **51-test Playwright suite** ([`e2e/`](e2e/README.md))
+drives the real app in a browser - a render check on every page plus real task
+flows (imports, budgets, rules, tags, settings), each self-cleaning so the
+database ends a run exactly as it started. There's also a click-by-click manual
+QA pass in [docs/ui-test-guide.md](docs/ui-test-guide.md).
 
 **CI:** [GitHub Actions](.github/workflows/ci.yml) runs `ruff` + the backend
-tests and the frontend type-check/build on every push and pull request. On Linux
-CI installs all optional extras, so the at-rest encryption, MQTT, OCR and PDF
-paths are exercised for real.
+tests, the frontend type-check/build, and the Playwright e2e suite (against a
+fresh container build, with the HTML report uploaded as an artifact) on every
+push and pull request; releases attach the e2e report to the GitHub Release. On
+Linux CI installs all optional extras, so the at-rest encryption, MQTT, OCR and
+PDF paths are exercised for real.
 
 ## Importing your own statements
 
@@ -451,6 +486,9 @@ you can verify it. Duplicate rows (and re-uploaded files) are detected and skipp
 
 Full docs live in [`docs/`](docs/README.md) - start there for the index. Key guides:
 
+- **[Install on Home Assistant](docs/ha-install.md)** ·
+  **[Standalone (docker-compose)](docs/standalone.md)** - the two ways to run it,
+  including configuration, upgrades and (standalone) the exposure/trust caveat.
 - **[Configuration reference](docs/configuration.md)** - every setting: `HAFI_*`
   env vars, add-on options, the in-app Settings (with defaults), a **Paperless-ngx
   setup walkthrough**, and what each **log level** records.
@@ -459,7 +497,10 @@ Full docs live in [`docs/`](docs/README.md) - start there for the index. Key gui
 - **[Rules](docs/rules.md)** - auto-categorisation: precedence, every condition
   and action, worked examples.
 - **[Privacy](docs/privacy.md)** · **[Security & isolation](docs/security.md)** ·
-  **[Architecture](docs/architecture.md)**.
+  **[Architecture](docs/architecture.md)** (also as a self-contained
+  [HTML version](docs/architecture.html) with diagrams).
+- **[UI test walkthrough](docs/ui-test-guide.md)** - a click-by-click manual QA
+  pass over the app's UI (~20-30 min).
 - **[HTTPS / reverse proxy](docs/reverse-proxy.md)** - serve the standalone app
   over TLS (bundled Caddy `docker-compose.tls.yml`) when reaching it across your network.
 
