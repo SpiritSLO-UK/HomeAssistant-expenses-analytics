@@ -24,6 +24,11 @@ router = APIRouter(prefix="/security", tags=["security"])
 
 
 class Passphrase(BaseModel):
+    # The passphrase travels in the request body by design: the server can only verify
+    # it by receiving it. That is safe in transit (TLS) and hardened by the app's CSP,
+    # and the value is NEVER written to logs or an audit trail — handlers pass it only to
+    # the crypto verifier, and security_service logs unlock/enable/disable events without
+    # the passphrase (its logger calls carry none; save_stored_key never logs it either).
     passphrase: str
 
 
@@ -45,6 +50,11 @@ def status() -> dict:
 
 @router.post("/unlock", responses={400: {"description": "Bad request"}})
 def unlock(payload: Passphrase) -> dict:
+    if not payload.passphrase:
+        # An empty submission is a malformed request, not a failed *attempt*: reject it
+        # up front with a clear, distinct message so it never feeds the brute-force
+        # counter or gets conflated with "Wrong passphrase.".
+        raise HTTPException(status_code=400, detail="A passphrase is required.")
     if not security_service.unlock(payload.passphrase):
         failed = security_service.record_failed_unlock()
         raise HTTPException(

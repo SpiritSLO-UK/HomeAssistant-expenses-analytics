@@ -79,6 +79,39 @@ def test_disable_wrong_passphrase(client, restore_plaintext):
     assert res.status_code == 400
 
 
+def test_disable_empty_passphrase_is_distinct_from_wrong(client, restore_plaintext):
+    """An empty passphrase on /disable is a bad request, not a "wrong passphrase": it
+    surfaces its own clear message rather than being conflated with a decryption failure
+    (both still 400, so the frontend contract is unchanged)."""
+    client.post("/api/security/enable", json={"passphrase": "right", "unlock_mode": "prompt"})
+
+    empty = client.post("/api/security/disable", json={"passphrase": ""})
+    assert empty.status_code == 400
+    assert empty.json()["detail"] == "A passphrase is required."
+
+    wrong = client.post("/api/security/disable", json={"passphrase": "wrong"})
+    assert wrong.status_code == 400
+    assert wrong.json()["detail"] == "Wrong passphrase."
+
+
+def test_unlock_empty_passphrase_guard_not_counted_as_attempt(client, restore_plaintext):
+    """/unlock rejects an empty passphrase up front (clear 400) without recording it as a
+    failed brute-force attempt; a genuinely wrong one still returns 400 and IS counted."""
+    client.post("/api/security/enable", json={"passphrase": "hunter2", "unlock_mode": "prompt"})
+    dbsession.lock()
+
+    before = security_service.failed_unlock_summary()["total_stored"]
+
+    empty = client.post("/api/security/unlock", json={"passphrase": ""})
+    assert empty.status_code == 400
+    assert empty.json()["detail"] == "A passphrase is required."
+    assert security_service.failed_unlock_summary()["total_stored"] == before  # not counted
+
+    wrong = client.post("/api/security/unlock", json={"passphrase": "nope"})
+    assert wrong.status_code == 400
+    assert security_service.failed_unlock_summary()["total_stored"] == before + 1  # counted
+
+
 def test_verify_passphrase_distinguishes_wrong_from_missing_driver(client, restore_plaintext, monkeypatch):
     """A wrong passphrase is a definite answer (False); an unavailable SQLCipher
     driver must NOT be flattened to the same False — it surfaces distinctly so the
