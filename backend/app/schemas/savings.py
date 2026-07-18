@@ -23,6 +23,10 @@ class SavingsAccountOut(BaseModel):
     balance_count: int
     interest_rate: str | None = None
     projected_annual_interest: str | None = None
+    # Compact date-ordered balance points for the collapsed-row sparkline (money as
+    # Decimal, like the forecast's rate). Trailing-capped by the service so the
+    # summary payload stays small.
+    balance_series: list[Decimal] = Field(default_factory=list)
 
 
 class SavingsAccountUpdate(BaseModel):

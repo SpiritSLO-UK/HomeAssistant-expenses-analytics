@@ -20,6 +20,10 @@ from app.services import analytics_service, fx_service, settings_service
 from app.services.household_service import get_or_create_default_household
 
 SAVINGS_TYPE = "savings"
+# Most recent snapshots exposed per account for the collapsed-row sparkline. Caps
+# the summary payload so a long history stays small (the trailing window keeps the
+# newest points, which is what the sparkline should show).
+SPARKLINE_MAX_POINTS = 60
 GOAL_STATUSES = {"active", "achieved", "archived"}
 # Nullable goal fields an update may explicitly clear (set back to ``None``).
 CLEARABLE_GOAL_FIELDS = {"target_date", "account_id"}
@@ -222,6 +226,10 @@ def account_to_dict(db: Session, account: Account) -> dict:
     projected = (
         (latest * rate / 100).quantize(TWO_DP) if latest is not None and rate is not None else None
     )
+    # Compact date-ordered balance series for the collapsed-row sparkline, so the
+    # frontend needs no per-account fetch just to draw it. Trailing-capped to keep
+    # the summary payload small; reuses the history already loaded above.
+    series = [str(Decimal(b.balance)) for b in history[-SPARKLINE_MAX_POINTS:]]
     return {
         "id": account.id,
         "name": account.name,
@@ -231,6 +239,7 @@ def account_to_dict(db: Session, account: Account) -> dict:
         "balance_count": len(history),
         "interest_rate": str(rate) if rate is not None else None,
         "projected_annual_interest": str(projected) if projected is not None else None,
+        "balance_series": series,
     }
 
 
