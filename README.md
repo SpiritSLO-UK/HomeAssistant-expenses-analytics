@@ -61,8 +61,11 @@ Docker volume. To set your base currency and other options, copy
 [`.env.example`](.env.example) to `.env` (it lists every setting with its
 default) and edit it — or set the `HAFI_*` vars in
 [`docker-compose.yml`](docker-compose.yml) directly. Then
-**Settings → Demo data → Load demo data** to explore. See the [CHANGELOG](CHANGELOG.md)
-for what's in this release. _Provided "as is", no warranty, not financial advice — keep
+**Settings → Demo data → Load demo data** to explore.
+
+Full standalone guide — config, exposure/trust caveat, HTTPS and upgrades — is in
+**[docs/standalone.md](docs/standalone.md)**. See the [CHANGELOG](CHANGELOG.md) for
+what's in this release. _Provided "as is", no warranty, not financial advice — keep
 your own backups._
 
 ## 📸 Screenshots
