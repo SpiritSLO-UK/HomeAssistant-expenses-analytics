@@ -9,17 +9,27 @@ persist. Read-only/informational checks never block anything.
 from __future__ import annotations
 
 import json
+import time
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import User
-from app.services import retention_service, security_service, settings_service
+from app.services import (
+    backup_service,
+    retention_service,
+    security_service,
+    settings_service,
+)
 
 DISMISSALS_KEY = "security_dismissals"
 
 _ENCRYPTION_TITLE = "At-rest database encryption"
+
+# A safety backup older than this many days (or the absence of any backup) is
+# surfaced as a gap — a stale backup can't recover recent data.
+STALE_BACKUP_DAYS = 30
 
 
 def _now() -> datetime:
@@ -72,6 +82,35 @@ def _owners_without_mfa(db: Session, household_id: int | None) -> int:
     ) or 0
 
 
+def _settings_managers_without_mfa(db: Session, household_id: int | None) -> int:
+    """Count approved users granted the manage-settings permission who have no MFA.
+
+    A settings-manager can change security-relevant configuration, so one without a
+    second factor is a gap. Household-scoped so a multi-household deployment never
+    leaks across boundaries (#362).
+    """
+    return db.scalar(
+        select(func.count(User.id)).where(
+            User.household_id == household_id,
+            User.can_manage_settings.is_(True),
+            User.status == "approved",
+            User.mfa_enabled.is_(False),
+        )
+    ) or 0
+
+
+def _latest_backup_age_days() -> float | None:
+    """Age in days of the most recent safety backup, or ``None`` when none exist.
+
+    Reads the backup directory read-only (never mutates the backup set).
+    """
+    files = list(backup_service.backups_dir().glob("*.db"))
+    if not files:
+        return None
+    newest = max(f.stat().st_mtime for f in files)
+    return (time.time() - newest) / 86400
+
+
 def _add(checks: list, dismissals: dict, *, id: str, title: str, severity: str,
          recommendation: str, actionable: bool) -> None:
     dismissed, snoozed_until = _dismissal_state(dismissals, id)
@@ -88,33 +127,78 @@ def _add(checks: list, dismissals: dict, *, id: str, title: str, severity: str,
     })
 
 
-def evaluate(db: Session, user: User) -> dict:
-    dismissals = _load_dismissals(db)
-    sec = security_service.status()
-    checks: list[dict] = []
-
-    # At-rest encryption
+def _check_encryption(checks: list, dismissals: dict, sec: dict, owners_without_mfa: int) -> None:
+    """At-rest encryption posture, plus the stored-key-without-MFA gap."""
     if not sec["encryption_available"]:
         _add(checks, dismissals, id="encryption", title=_ENCRYPTION_TITLE,
              severity="info", actionable=False,
              recommendation="Not available on this platform (needs SQLCipher — e.g. the Home "
              "Assistant add-on). Encrypted backups still work everywhere.")
-    elif not sec["encryption_enabled"]:
+        return
+    if not sec["encryption_enabled"]:
         _add(checks, dismissals, id="encryption", title=_ENCRYPTION_TITLE,
              severity="warn", actionable=True,
              recommendation="Your database isn't encrypted on disk. Enable it in "
              "Settings → Database encryption so a stolen disk can't be read.")
-    else:
-        _add(checks, dismissals, id="encryption", title=_ENCRYPTION_TITLE,
-             severity="ok", actionable=False, recommendation="Database is encrypted at rest.")
-        if sec.get("unlock_mode") == "stored":
-            _add(checks, dismissals, id="stored_key", title="Encryption unlock mode",
-                 severity="info", actionable=False,
-                 recommendation="Using a stored key (unattended unlock). 'Prompt me' is stronger "
-                 "if you can enter the passphrase at each restart.")
+        return
+    _add(checks, dismissals, id="encryption", title=_ENCRYPTION_TITLE,
+         severity="ok", actionable=False, recommendation="Database is encrypted at rest.")
+    if sec.get("unlock_mode") != "stored":
+        return
+    _add(checks, dismissals, id="stored_key", title="Encryption unlock mode",
+         severity="info", actionable=False,
+         recommendation="Using a stored key (unattended unlock). 'Prompt me' is stronger "
+         "if you can enter the passphrase at each restart.")
+    # Stored key on disk with no second factor is weaker: anyone with the disk can
+    # unlock unattended, so the login is the only remaining gate.
+    if owners_without_mfa:
+        _add(checks, dismissals, id="stored_key_no_mfa", title="Stored key without MFA",
+             severity="warn", actionable=True,
+             recommendation="The encryption key is stored on disk for unattended unlock, but "
+             "an owner has no second factor. Turn on MFA so a stolen device can't be opened "
+             "with the on-disk key alone.")
+
+
+def _check_settings_managers_mfa(checks: list, dismissals: dict, db: Session,
+                                 household_id: int | None) -> None:
+    """Users granted the manage-settings permission who lack a second factor."""
+    n = _settings_managers_without_mfa(db, household_id)
+    if not n:
+        return
+    _add(checks, dismissals, id="settings_managers_mfa", title="Settings managers without MFA",
+         severity="warn", actionable=True,
+         recommendation=f"{n} user(s) who can manage settings have no second factor. Ask them "
+         "to turn on MFA in Settings → Two-factor authentication.")
+
+
+def _check_stale_backup(checks: list, dismissals: dict) -> None:
+    """Flag a missing or out-of-date safety backup."""
+    try:
+        age = _latest_backup_age_days()
+    except OSError:  # pragma: no cover - defensive: never let a health check break the page
+        return
+    if age is None:
+        _add(checks, dismissals, id="stale_backup", title="Database backups",
+             severity="warn", actionable=True,
+             recommendation="No database backups exist yet. Create one in "
+             "Settings → Backup & restore so you can recover from data loss.")
+    elif age > STALE_BACKUP_DAYS:
+        _add(checks, dismissals, id="stale_backup", title="Database backups",
+             severity="warn", actionable=True,
+             recommendation=f"Your most recent backup is {int(age)} days old. Take a fresh one "
+             "in Settings → Backup & restore so a recovery won't lose recent data.")
+
+
+def evaluate(db: Session, user: User) -> dict:
+    dismissals = _load_dismissals(db)
+    sec = security_service.status()
+    checks: list[dict] = []
 
     # MFA across all owner accounts in the household (not just the caller's own).
     owners_without_mfa = _owners_without_mfa(db, user.household_id)
+
+    _check_encryption(checks, dismissals, sec, owners_without_mfa)
+
     if owners_without_mfa:
         if owners_without_mfa == 1 and not user.mfa_enabled:
             rec = ("Your owner account has no second factor. Turn on MFA in "
@@ -168,6 +252,10 @@ def evaluate(db: Session, user: User) -> dict:
              severity="info", actionable=True,
              recommendation=f"{pending_purge} item(s) are past their purge age and waiting for you "
              "to confirm removal. Review the plan in Settings → Data retention.")
+
+    # Settings-managers without a second factor, and a missing/stale safety backup.
+    _check_settings_managers_mfa(checks, dismissals, db, user.household_id)
+    _check_stale_backup(checks, dismissals)
 
     return {
         "checks": checks,
