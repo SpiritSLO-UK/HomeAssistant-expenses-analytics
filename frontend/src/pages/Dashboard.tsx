@@ -363,7 +363,7 @@ export default function Dashboard() {
               ))}
             </div>
           )}
-          <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
+          <input type="month" aria-label="Month to view" value={month} onChange={(e) => setMonth(e.target.value)} />
           <button className="btn btn--ghost" onClick={() => setCustomise((v) => !v)}>
             {customise ? "Done" : "⚙ Customise"}
           </button>

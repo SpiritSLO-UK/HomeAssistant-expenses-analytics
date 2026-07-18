@@ -37,6 +37,7 @@ export default function CountrySelect({
       value={value ?? ""}
       disabled={disabled}
       style={style}
+      aria-label={title ?? "Country"}
       title={title ?? "Country (used by the spending-by-location map)"}
       onChange={(e) => onChange(e.target.value || null)}
     >
