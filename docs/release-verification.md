@@ -32,7 +32,7 @@ curl -s http://127.0.0.1:8099/api/health     # expect database":"ok"  (unlocked)
 #    set  HAFI_DB_KEY=wrong  in .env ; docker compose up -d ; reload UI -> locked screen.
 ```
 - [ ] Correct stored key -> comes up unlocked (`database":"ok"`).
-- [ ] Wrong / empty key -> locked screen, no data shown.
+- [ ] Wrong / empty key -> locked screen with a usable error message (not a bare 400).
 
 Result: ________________________________________________
 
@@ -45,10 +45,11 @@ docker run --rm -v $VOL:/data alpine chown -R 0:0 /data     # simulate a root-ow
 docker compose up -d
 sleep 8
 curl -s http://127.0.0.1:8099/api/health                    # expect database":"ok"
-docker top ha-finance -o uid,cmd | grep app.main            # app runs as uid 10001, not 0
+# app-created DB file is owned by uid 10001 (the app runs unprivileged):
+docker run --rm -v $VOL:/data alpine stat -c '%u' /data/finance/finance.db   # expect 10001
 ```
 - [ ] Boots healthy on a root-owned volume (self-heals via startup chown).
-- [ ] `python -m app.main` runs as uid 10001.
+- [ ] The app-created DB file is owned by uid 10001 (app runs unprivileged).
 
 Result: ________________________________________________
 
