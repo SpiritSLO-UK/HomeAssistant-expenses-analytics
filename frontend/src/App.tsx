@@ -1,33 +1,37 @@
-import { useState, type ReactNode } from "react";
+import { lazy, Suspense, useState, type ReactNode } from "react";
 import { Route, Routes } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { QRCodeSVG } from "qrcode.react";
 import Sidebar from "./components/Sidebar";
-import Dashboard from "./pages/Dashboard";
-import Search from "./pages/Search";
-import Import from "./pages/Import";
-import Transactions from "./pages/Transactions";
-import Categories from "./pages/Categories";
-import Vendors from "./pages/Vendors";
-import Rules from "./pages/Rules";
-import Projects from "./pages/Projects";
-import Travel from "./pages/Travel";
-import Business from "./pages/Business";
-import Budgets from "./pages/Budgets";
-import Savings from "./pages/Savings";
-import Investments from "./pages/Investments";
-import Accounts from "./pages/Accounts";
-import Assets from "./pages/Assets";
-import Energy from "./pages/Energy";
-import Allowance from "./pages/Allowance";
-import Subscriptions from "./pages/Subscriptions";
-import Receipts from "./pages/Receipts";
-import ReviewQueue from "./pages/ReviewQueue";
-import Settings from "./pages/Settings";
-import Users from "./pages/Users";
-import FamilySetup from "./pages/FamilySetup";
-import Setup from "./pages/Setup";
-import Logs from "./pages/Logs";
+// Route targets are code-split with React.lazy so each page ships as its own chunk,
+// fetched on navigation rather than baked into the initial bundle. This shrinks the
+// first download (helpful over HA ingress on a Pi) and complements the vendor split.
+// Only the shell (Sidebar, gates, dialog provider) stays eager, so it renders instantly.
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Search = lazy(() => import("./pages/Search"));
+const Import = lazy(() => import("./pages/Import"));
+const Transactions = lazy(() => import("./pages/Transactions"));
+const Categories = lazy(() => import("./pages/Categories"));
+const Vendors = lazy(() => import("./pages/Vendors"));
+const Rules = lazy(() => import("./pages/Rules"));
+const Projects = lazy(() => import("./pages/Projects"));
+const Travel = lazy(() => import("./pages/Travel"));
+const Business = lazy(() => import("./pages/Business"));
+const Budgets = lazy(() => import("./pages/Budgets"));
+const Savings = lazy(() => import("./pages/Savings"));
+const Investments = lazy(() => import("./pages/Investments"));
+const Accounts = lazy(() => import("./pages/Accounts"));
+const Assets = lazy(() => import("./pages/Assets"));
+const Energy = lazy(() => import("./pages/Energy"));
+const Allowance = lazy(() => import("./pages/Allowance"));
+const Subscriptions = lazy(() => import("./pages/Subscriptions"));
+const Receipts = lazy(() => import("./pages/Receipts"));
+const ReviewQueue = lazy(() => import("./pages/ReviewQueue"));
+const Settings = lazy(() => import("./pages/Settings"));
+const Users = lazy(() => import("./pages/Users"));
+const FamilySetup = lazy(() => import("./pages/FamilySetup"));
+const Setup = lazy(() => import("./pages/Setup"));
+const Logs = lazy(() => import("./pages/Logs"));
 import { getMe, getSecurityStatus, getSettings, mfaEnable, mfaSetup, mfaVerify, unlockDatabase, type Me, type SecurityStatus } from "./api/client";
 import { setDisplayCurrency } from "./lib/money";
 import { NAV_ITEMS } from "./nav";
@@ -83,10 +87,12 @@ function AppRoutes() {
     const childItems = NAV_ITEMS.filter((i) => i.childVisible && childPages[i.path]);
     return (
       <AppShell role="child">
-        <Routes>
-          {childItems.map((i) => <Route key={i.path} path={i.path} element={childPages[i.path]} />)}
-          <Route path="*" element={<Allowance />} />
-        </Routes>
+        <Suspense fallback={<RouteFallback />}>
+          <Routes>
+            {childItems.map((i) => <Route key={i.path} path={i.path} element={childPages[i.path]} />)}
+            <Route path="*" element={<Allowance />} />
+          </Routes>
+        </Suspense>
       </AppShell>
     );
   }
@@ -97,7 +103,8 @@ function AppRoutes() {
       canManageTabs={me.data?.can_manage_settings ?? false}
       blockedNavKeys={me.data?.blocked_nav_keys ?? []}
     >
-      <Routes>
+      <Suspense fallback={<RouteFallback />}>
+        <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/search" element={<Search />} />
           <Route path="/import" element={<Import />} />
@@ -124,7 +131,8 @@ function AppRoutes() {
           <Route path="/logs" element={<Logs />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Dashboard />} />
-      </Routes>
+        </Routes>
+      </Suspense>
     </AppShell>
   );
 }
@@ -164,6 +172,13 @@ function resolveGate(
     return <MfaGate />;
   }
   return null;
+}
+
+// Lightweight fallback shown inside the already-rendered shell while a lazy page
+// chunk is fetched. Kept plain (no focus trap, no spinner that lingers) so it
+// resolves instantly and never gets in the way of navigation or the e2e suite.
+function RouteFallback() {
+  return <div className="muted" style={{ padding: "1.5rem" }}>Loading…</div>;
 }
 
 // Neutral placeholder shown while the lock/identity state is still resolving, so
