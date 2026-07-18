@@ -22,6 +22,7 @@ fails just leaves the existing (manual) price untouched.
 from __future__ import annotations
 
 import csv
+import time
 from decimal import Decimal, InvalidOperation
 
 from app.logging import get_logger
@@ -31,6 +32,65 @@ logger = get_logger(__name__)
 STOOQ_URL = "https://stooq.com/q/l/"
 ALPHAVANTAGE_URL = "https://www.alphavantage.co/query"
 _TIMEOUT = 10.0
+
+# Bounded retry for transient upstream blips (connect/read timeouts, 429/5xx),
+# mirroring the AI-provider policy (#356): small and capped so a flaky moment
+# recovers without hammering the feed or stalling the sync. Non-transient errors
+# (4xx, parse) fail fast and the fetch just returns None (existing contract).
+_RETRY_STATUS = frozenset({408, 425, 429, 500, 502, 503, 504})
+_MAX_ATTEMPTS = 3
+_BACKOFF_BASE = 0.5
+
+# Alpha Vantage signals throttling with an HTTP-200 body carrying one of these
+# keys (a human-readable message) instead of a quote — must be treated as a
+# rate-limit / no-quote, never as a silent empty price.
+_AV_RATE_LIMIT_KEYS = ("Note", "Information")
+
+
+class _TransientPriceError(Exception):
+    """A retryable price-fetch failure (timeout/connect drop or 429/5xx).
+    Internal — the public fetchers only ever return None once retries run out."""
+
+
+def _get_once(url: str, params: dict):
+    """One HTTP GET. Returns the response; raises ``_TransientPriceError`` for
+    retryable failures and lets a permanent HTTP error surface via
+    ``raise_for_status`` (an ``httpx.HTTPError`` the retry loop turns into None)."""
+    import httpx
+
+    try:
+        resp = httpx.get(url, params=params, timeout=_TIMEOUT)
+    except httpx.TransportError as exc:  # timeouts, connect/read drops
+        raise _TransientPriceError(str(exc)) from exc
+    if resp.status_code in _RETRY_STATUS:
+        raise _TransientPriceError(f"HTTP {resp.status_code}")
+    resp.raise_for_status()
+    return resp
+
+
+def _fetch_with_retry(url: str, params: dict, label: str):
+    """GET ``url`` with a small bounded retry on transient errors. Returns the
+    response, or None once retries are exhausted / a permanent error occurs."""
+    import httpx
+
+    last: Exception | None = None
+    for attempt in range(_MAX_ATTEMPTS):
+        try:
+            return _get_once(url, params)
+        except _TransientPriceError as exc:
+            last = exc
+            if attempt + 1 < _MAX_ATTEMPTS:
+                time.sleep(_BACKOFF_BASE * (2**attempt))
+        except httpx.HTTPError as exc:  # permanent (4xx, redirect loop, …)
+            logger.warning("%s quote failed: %s", label, exc)
+            return None
+    logger.warning("%s quote failed after %d attempts: %s", label, _MAX_ATTEMPTS, last)
+    return None
+
+
+def _av_rate_limited(data: object) -> bool:
+    """True when an Alpha Vantage body is a throttle notice, not a quote."""
+    return isinstance(data, dict) and any(data.get(k) for k in _AV_RATE_LIMIT_KEYS)
 
 
 def _to_decimal(value: object) -> Decimal | None:
@@ -69,38 +129,43 @@ def _parse_stooq_close(text: str) -> Decimal | None:
 
 
 def fetch_stooq(symbol: str) -> Decimal | None:
-    """Latest close from Stooq's light-quote CSV (keyless), or None on failure."""
-    import httpx  # local import so the dependency is only needed when used
-
+    """Latest close from Stooq's light-quote CSV (keyless), or None on failure.
+    Retries transient network blips (timeout/connect drop, 429/5xx)."""
+    resp = _fetch_with_retry(
+        STOOQ_URL,
+        {"s": symbol.lower(), "f": "sd2t2ohlcv", "h": "", "e": "csv"},
+        f"Stooq ({symbol})",
+    )
+    if resp is None:
+        return None
     try:
-        resp = httpx.get(
-            STOOQ_URL,
-            params={"s": symbol.lower(), "f": "sd2t2ohlcv", "h": "", "e": "csv"},
-            timeout=_TIMEOUT,
-        )
-        resp.raise_for_status()
         return _parse_stooq_close(resp.text)
-    except Exception as exc:  # network/parse errors must never break the caller
+    except ValueError as exc:  # missing Close column / short row — never break caller
         logger.warning("Stooq quote failed for %s: %s", symbol, exc)
         return None
 
 
 def fetch_alphavantage(symbol: str, api_key: str) -> Decimal | None:
-    """Latest price from Alpha Vantage GLOBAL_QUOTE (keyed), or None on failure."""
-    import httpx
-
+    """Latest price from Alpha Vantage GLOBAL_QUOTE (keyed), or None on failure.
+    Retries transient network blips; an HTTP-200 rate-limit body (``Note`` /
+    ``Information``) is treated as a no-quote, not a silent zero."""
+    resp = _fetch_with_retry(
+        ALPHAVANTAGE_URL,
+        {"function": "GLOBAL_QUOTE", "symbol": symbol, "apikey": api_key},
+        f"Alpha Vantage ({symbol})",
+    )
+    if resp is None:
+        return None
     try:
-        resp = httpx.get(
-            ALPHAVANTAGE_URL,
-            params={"function": "GLOBAL_QUOTE", "symbol": symbol, "apikey": api_key},
-            timeout=_TIMEOUT,
-        )
-        resp.raise_for_status()
-        quote = resp.json().get("Global Quote") or {}
-        return _to_decimal(quote.get("05. price"))
-    except Exception as exc:
+        data = resp.json()
+    except ValueError as exc:  # non-JSON body (error page, etc.)
         logger.warning("Alpha Vantage quote failed for %s: %s", symbol, exc)
         return None
+    if _av_rate_limited(data):
+        logger.warning("Alpha Vantage rate-limited for %s (no quote returned)", symbol)
+        return None
+    quote = (data.get("Global Quote") if isinstance(data, dict) else None) or {}
+    return _to_decimal(quote.get("05. price"))
 
 
 def source_ready(source: str, api_key: str | None) -> bool:

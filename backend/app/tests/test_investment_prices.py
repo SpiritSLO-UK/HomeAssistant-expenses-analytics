@@ -98,6 +98,7 @@ def test_fetch_quote_manual_and_unknown_never_fetch():
 def test_stooq_csv_parsing(monkeypatch):
     # Parse a representative Stooq CSV without hitting the network.
     class _Resp:
+        status_code = 200
         text = "Symbol,Date,Time,Open,High,Low,Close,Volume\nAAPL.US,2026-05-31,22:00:04,191,193,189,192.25,1000\n"
 
         def raise_for_status(self):
@@ -118,6 +119,8 @@ def test_stooq_csv_parsing(monkeypatch):
 
 def _resp(text):
     class _R:
+        status_code = 200
+
         def __init__(self, t):
             self.text = t
 
@@ -163,3 +166,128 @@ def test_stooq_case_insensitive_header(monkeypatch):
     text = "symbol, date, time, open, high, low, CLOSE, volume\nAAPL.US,2026-05-31,22:00:04,191,193,189,192.25,1000\n"
     monkeypatch.setattr(httpx, "get", lambda *a, **k: _resp(text))
     assert price_service.fetch_stooq("aapl.us") == Decimal("192.25")
+
+
+# ---- Retry / backoff ------------------------------------------------------
+
+_STOOQ_OK = "Symbol,Date,Time,Open,High,Low,Close,Volume\nAAPL.US,2026-05-31,22:00:04,191,193,189,192.25,1000\n"
+
+
+class _FakeResp:
+    def __init__(self, status_code=200, text="", json_body=None):
+        self.status_code = status_code
+        self.text = text
+        self._json = json_body
+
+    def raise_for_status(self):
+        import httpx
+
+        if self.status_code >= 400:
+            raise httpx.HTTPStatusError("error", request=None, response=None)
+
+    def json(self):
+        return self._json
+
+
+def _sequence(responses):
+    """Return a fake httpx.get that yields ``responses`` in order; a response
+    that is an Exception instance is raised instead of returned."""
+    calls = {"n": 0}
+
+    def _get(*_a, **_k):
+        item = responses[calls["n"]]
+        calls["n"] += 1
+        if isinstance(item, Exception):
+            raise item
+        return item
+
+    return _get, calls
+
+
+def _no_sleep(monkeypatch):
+    monkeypatch.setattr(price_service.time, "sleep", lambda *_a, **_k: None)
+
+
+def test_stooq_retries_transient_5xx_then_succeeds(monkeypatch):
+    # A 503 blip must be retried, not fail the whole fetch.
+    import httpx
+
+    _no_sleep(monkeypatch)
+    get, calls = _sequence([_FakeResp(status_code=503), _FakeResp(text=_STOOQ_OK)])
+    monkeypatch.setattr(httpx, "get", get)
+    assert price_service.fetch_stooq("aapl.us") == Decimal("192.25")
+    assert calls["n"] == 2  # first 503, then success
+
+
+def test_stooq_retries_transient_timeout_then_succeeds(monkeypatch):
+    # A connect/read timeout (TransportError) is transient → retried.
+    import httpx
+
+    _no_sleep(monkeypatch)
+    get, calls = _sequence([httpx.ConnectTimeout("boom"), _FakeResp(text=_STOOQ_OK)])
+    monkeypatch.setattr(httpx, "get", get)
+    assert price_service.fetch_stooq("aapl.us") == Decimal("192.25")
+    assert calls["n"] == 2
+
+
+def test_stooq_gives_up_after_max_attempts(monkeypatch):
+    # Persistent 429 exhausts the bounded retry → None (never raises).
+    import httpx
+
+    _no_sleep(monkeypatch)
+    get, calls = _sequence([_FakeResp(status_code=429)] * 5)
+    monkeypatch.setattr(httpx, "get", get)
+    assert price_service.fetch_stooq("aapl.us") is None
+    assert calls["n"] == price_service._MAX_ATTEMPTS  # capped, not unbounded
+
+
+def test_stooq_permanent_4xx_not_retried(monkeypatch):
+    # A 404 is permanent: one attempt, then None.
+    import httpx
+
+    _no_sleep(monkeypatch)
+    get, calls = _sequence([_FakeResp(status_code=404), _FakeResp(text=_STOOQ_OK)])
+    monkeypatch.setattr(httpx, "get", get)
+    assert price_service.fetch_stooq("aapl.us") is None
+    assert calls["n"] == 1  # not retried
+
+
+# ---- Alpha Vantage rate-limit detection -----------------------------------
+
+
+def test_alphavantage_parses_global_quote(monkeypatch):
+    import httpx
+
+    _no_sleep(monkeypatch)
+    body = {"Global Quote": {"05. price": "192.2500"}}
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: _FakeResp(json_body=body))
+    assert price_service.fetch_alphavantage("AAPL.US", "KEY") == Decimal("192.2500")
+
+
+def test_alphavantage_note_ratelimit_is_no_quote(monkeypatch):
+    # HTTP 200 with a "Note" throttle body must resolve to None, not a zero.
+    import httpx
+
+    _no_sleep(monkeypatch)
+    body = {"Note": "Thank you for using Alpha Vantage! ... call frequency ..."}
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: _FakeResp(json_body=body))
+    assert price_service.fetch_alphavantage("AAPL.US", "KEY") is None
+
+
+def test_alphavantage_information_ratelimit_is_no_quote(monkeypatch):
+    # The newer "Information" throttle key is detected too.
+    import httpx
+
+    _no_sleep(monkeypatch)
+    body = {"Information": "Our standard API rate limit is 25 requests per day."}
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: _FakeResp(json_body=body))
+    assert price_service.fetch_alphavantage("AAPL.US", "KEY") is None
+
+
+def test_alphavantage_empty_quote_is_none(monkeypatch):
+    # An empty Global Quote (unknown symbol) is still a clean None.
+    import httpx
+
+    _no_sleep(monkeypatch)
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: _FakeResp(json_body={"Global Quote": {}}))
+    assert price_service.fetch_alphavantage("XXX", "KEY") is None
