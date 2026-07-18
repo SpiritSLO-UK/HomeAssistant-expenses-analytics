@@ -131,10 +131,20 @@ _SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
 _CHILD_ALLOWED_PREFIXES = ("/api/allowance/summary",)
 
 
+def _path_in(path: str, prefixes: tuple[str, ...]) -> bool:
+    """True if ``path`` equals one of ``prefixes`` or is a descendant of it, matched
+    on **path-segment boundaries**. Unlike a bare ``str.startswith`` this treats each
+    prefix as whole segments, so ``/api/users/me`` matches only ``/api/users/me`` and
+    ``/api/users/me/…`` — NOT sibling paths such as ``/api/users/members`` (the
+    prefix-collision behind the CR-SEC-16 roster leak, #368). Genuine subtrees like
+    ``/api/security`` and ``/api/allowance/summary`` still match their descendants."""
+    return any(path == p or path.startswith(p + "/") for p in prefixes)
+
+
 @app.middleware("http")
 async def _lock_guard(request: Request, call_next):
     if dbsession.is_locked() and request.url.path.startswith(_API_PREFIX):
-        if not request.url.path.startswith(_LOCK_EXEMPT):
+        if not _path_in(request.url.path, _LOCK_EXEMPT):
             return JSONResponse(
                 status_code=423,
                 content={"detail": "Database is locked. Unlock with your passphrase."},
@@ -163,7 +173,7 @@ def _access_denied(request: Request, path: str) -> JSONResponse | None:
         )
     # Admin-required MFA not yet enrolled (#157) — blocked until they set it up; the
     # MFA self-service endpoints (and gate-exempt /users/me) stay reachable to enrol.
-    if getattr(st, "mfa_setup_required", False) and not path.startswith(_SELF_SERVICE):
+    if getattr(st, "mfa_setup_required", False) and not _path_in(path, _SELF_SERVICE):
         return JSONResponse(
             status_code=403,
             content={
@@ -172,7 +182,7 @@ def _access_denied(request: Request, path: str) -> JSONResponse | None:
             },
         )
     # MFA entry gate (the user has MFA on but this request lacks a valid session).
-    if not getattr(st, "mfa_ok", True) and not path.startswith(_SELF_SERVICE):
+    if not getattr(st, "mfa_ok", True) and not _path_in(path, _SELF_SERVICE):
         return JSONResponse(
             status_code=403,
             content={"detail": "Two-factor verification required.", "mfa_required": True},
@@ -181,7 +191,7 @@ def _access_denied(request: Request, path: str) -> JSONResponse | None:
     if (
         request.method not in _SAFE_METHODS
         and not auth_service.can_write(st.user_role)
-        and not path.startswith(_SELF_SERVICE)
+        and not _path_in(path, _SELF_SERVICE)
     ):
         return JSONResponse(
             status_code=403,
@@ -189,14 +199,14 @@ def _access_denied(request: Request, path: str) -> JSONResponse | None:
         )
     # Child role: confined to its own allowance view (defence in depth — the nav
     # also hides everything else, but the API must not rely on the client).
-    if st.user_role == "child" and not path.startswith(_CHILD_ALLOWED_PREFIXES):
+    if st.user_role == "child" and not _path_in(path, _CHILD_ALLOWED_PREFIXES):
         return JSONResponse(
             status_code=403,
             content={"detail": "This area isn't available for your account."},
         )
     # Per-user blocked pages (#108): the owner can restrict an individual non-admin
     # user from specific pages — enforced here, not just hidden in the sidebar.
-    if any(path.startswith(prefix) for prefix in getattr(st, "user_blocked_prefixes", ())):
+    if _path_in(path, tuple(getattr(st, "user_blocked_prefixes", ()))):
         return JSONResponse(
             status_code=403,
             content={"detail": "This area isn't available for your account."},
@@ -244,13 +254,13 @@ async def _auth_guard(request: Request, call_next):
     # A disabled account is blocked everywhere except seeing its own status, even on
     # the otherwise gate-exempt paths (e.g. /api/security) — closes the disabled-owner
     # bypass where the retained admin role still granted access (SR-6).
-    if request.state.user_status == "disabled" and not path.startswith(_DISABLED_ALLOWED):
+    if request.state.user_status == "disabled" and not _path_in(path, _DISABLED_ALLOWED):
         return JSONResponse(
             status_code=403,
             content={"detail": "Your account has been disabled.", "account_status": "disabled"},
         )
 
-    if path.startswith(_GATE_EXEMPT):
+    if _path_in(path, _GATE_EXEMPT):
         return await call_next(request)
 
     denied = _access_denied(request, path)
