@@ -27,7 +27,7 @@ Assistant `/config` share. This is a deliberate change from the original spec
 Trade-off: the database is no longer visible in the HA *File editor* add-on. If
 you prefer that visibility over isolation, set `database_path` back to
 `/config/finance/finance.db` and add `homeassistant_config:rw` to the add-on
-`map:` — but understand that re-opens both directions of access.
+`map:` - but understand that re-opens both directions of access.
 
 ## Layers of protection
 
@@ -42,28 +42,28 @@ you prefer that visibility over isolation, set `database_path` back to
    `/app` and `/data` and explicitly denies `/config`, `/ssl`, `/share`, etc.
    Enable it after validating on your own HA (see that file's header).
 5. **Ingress auth.** The UI is served through Home Assistant ingress, so HA
-   handles authentication — the app is not exposed on a public port.
+   handles authentication - the app is not exposed on a public port.
 
 ### Standalone (no Home Assistant)
 
 Running via Docker there is no ingress in front, so **you** own the network edge:
-serve the app over **HTTPS** — a reverse proxy terminates TLS (see
-[reverse-proxy.md](reverse-proxy.md)) — whenever it is reachable beyond
+serve the app over **HTTPS** - a reverse proxy terminates TLS (see
+[reverse-proxy.md](reverse-proxy.md)) - whenever it is reachable beyond
 `localhost`, and keep the `finance_data` volume backed up. **Encrypted backups**
 (passphrase, AES-256-GCM) let you keep an off-device copy safely; optional at-rest
 encryption protects the live DB file.
 
-### Standalone trust model — direct port exposure (CR-DOC-1)
+### Standalone trust model - direct port exposure (CR-DOC-1)
 
 **The shipped `docker-compose.yml` is `localhost`-only.** It publishes the app on
 `8099:8099`, which binds the container port to **every** host interface with no
 reverse proxy in front. This is fine on a single machine you reach over
 `localhost`, but it is **not safe to expose to a wider network as-is**. The app
 derives identity from the `X-Remote-User-*` headers and **bootstraps the first
-user it sees as the household owner** — with the port reachable directly, anyone
+user it sees as the household owner** - with the port reachable directly, anyone
 who can hit it can send those headers, become owner, and read/write everything.
 
-- **Behind Home Assistant ingress this is a non-issue** — HA authenticates the
+- **Behind Home Assistant ingress this is a non-issue** - HA authenticates the
   user and **strips any inbound `X-Remote-User-*`** a client tries to forge, then
   injects the real identity. The add-on maps no port and runs ingress-only
   (`host_network: false`). The caveat below applies **only** to direct/standalone
@@ -74,7 +74,7 @@ who can hit it can send those headers, become owner, and read/write everything.
      it. This is the default posture and needs no extra components.
   2. **Front it with an authenticating, header-stripping reverse proxy.** Put
      Caddy/nginx in front, have it terminate TLS, authenticate the user, and
-     **strip every inbound `X-Remote-User-*` header** before proxying — injecting
+     **strip every inbound `X-Remote-User-*` header** before proxying - injecting
      its own trusted identity. See [reverse-proxy.md](reverse-proxy.md) and the
      bundled `Caddyfile`. A proxy that forwards client-supplied identity headers
      unfiltered is **not** a mitigation.
@@ -83,7 +83,7 @@ who can hit it can send those headers, become owner, and read/write everything.
      `X-Remote-User-*` headers and resolves every request to the single `local`
      owner, so a direct peer can't forge an identity by sending them. This is the
      right switch for a single-user standalone box that has no proxy supplying
-     identity — defence-in-depth on top of, not a replacement for, not exposing
+     identity - defence-in-depth on top of, not a replacement for, not exposing
      the raw port.
 
 The default (`HAFI_TRUST_PROXY_HEADERS=true`) exists to preserve the HA-ingress
@@ -99,8 +99,8 @@ authenticated the user. The app maps that to a `User` row. With no header
 behave exactly as before.
 
 - **Roles (RBAC).** `owner` (administrator), `member` (read/write), `viewer` and
-  `child` (read-only). A user's role is **always read from their stored row** —
-  never from the request — so a client can't assert a role by sending a header.
+  `child` (read-only). A user's role is **always read from their stored row** -
+  never from the request - so a client can't assert a role by sending a header.
   A single `_auth_guard` middleware enforces: pending/disabled → 403, read-only
   roles → only safe (GET) methods, and user-management endpoints additionally
   require the `owner` role.
@@ -113,7 +113,7 @@ behave exactly as before.
   12-hour TTL) and a recently-entered code (within a **10-minute step-up window**)
   is required to confirm admin actions. The MFA secret/sessions live inside the
   database, so the at-rest unlock (below) necessarily runs **first** and without
-  MFA — the order is always *passphrase → then code*, never a deadlock.
+  MFA - the order is always *passphrase → then code*, never a deadlock.
   There are currently **no backup/recovery codes**: if you lose your authenticator,
   another owner can disable/re-enrol MFA for you (and a sole owner restores from a
   backup), so keep a backup.
@@ -124,11 +124,11 @@ behave exactly as before.
   that are off (no at-rest encryption, no MFA, repeated failed unlocks, …) with a
   one-line fix; each item can be dismissed or snoozed.
 
-> **Trust boundary — important.** Identity is only as trustworthy as the proxy in
+> **Trust boundary - important.** Identity is only as trustworthy as the proxy in
 > front of the app. The `X-Remote-User-*` headers are set by Home Assistant
-> ingress, which **strips any inbound copy** a client tries to send — so through
+> ingress, which **strips any inbound copy** a client tries to send - so through
 > ingress a browser cannot forge them. This is **not** enforced by the app itself:
-> **do not expose the add-on's port directly** — the add-on is ingress-only by
+> **do not expose the add-on's port directly** - the add-on is ingress-only by
 > default (`host_network: false`, no port mapped). If you bypass ingress and reach
 > the app directly (or run the standalone compose without a header-stripping proxy),
 > a client could forge those headers and impersonate any user. Keep it behind
@@ -143,9 +143,9 @@ behave exactly as before.
 - **At rest, if you leave encryption off.** By default the database is plain
   SQLite, so anyone who can read the raw file (stolen disk, an untrusted backup
   destination) can read your data. **Optional at-rest encryption** (SQLCipher) is
-  now available — Settings → "Database encryption" — and closes this gap when
+  now available - Settings → "Database encryption" - and closes this gap when
   enabled; it's optional because the driver has no Windows wheel (it ships in the
-  Linux add-on image on **both amd64 and aarch64/Raspberry Pi** — amd64 via the
+  Linux add-on image on **both amd64 and aarch64/Raspberry Pi** - amd64 via the
   prebuilt wheel, aarch64 compiled from source in the image). Lost passphrase =
   unrecoverable.
 - **Forged identity if you bypass ingress.** Identity comes from the HA ingress

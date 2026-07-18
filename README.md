@@ -8,14 +8,14 @@ A **local-first, Home Assistant-first personal finance app**. Import bank
 statements, categorise transactions (rules + a vendor/category library), split
 them across categories, track projects, budgets and subscriptions, scan receipts
 (local OCR), handle multiple currencies, and publish finance sensors to Home
-Assistant over MQTT — with **optional, opt-in** local/cloud AI to suggest
+Assistant over MQTT - with **optional, opt-in** local/cloud AI to suggest
 categories. All privacy-first, with **strict local mode as the default**.
 
 <p align="center">
   <a href="docs/screenshots.md">
     <img src="docs/screenshots/capture-dashboard-1.PNG" alt="HA Finance Intelligence dashboard" width="900">
   </a>
-  <br><em>The dashboard, on the built-in demo data — <a href="docs/screenshots.md">see more screenshots →</a></em>
+  <br><em>The dashboard, on the built-in demo data - <a href="docs/screenshots.md">see more screenshots →</a></em>
 </p>
 
 Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md)
@@ -24,14 +24,14 @@ Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md
 ## 🏠 Install on Home Assistant (add-on)
 
 This is the **v1.0.2** release. The recommended way to run it is **on Home Assistant**
-as an add-on: it installs from a **prebuilt image** (no on-device build — a quick pull,
+as an add-on: it installs from a **prebuilt image** (no on-device build - a quick pull,
 even on a Raspberry Pi), shows up as an **ingress sidebar panel**, signs you in
 automatically with your Home Assistant identity (the first user becomes the owner), and
 can publish finance sensors over **MQTT** plus net an **energy-cost offset**.
 
 [![Add repository to your Home Assistant.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2FSpiritSLO-UK%2FHomeAssistant-expenses-analytics)
 
-1. Click the badge above (recommended — it opens HA and pre-fills the URL). Or add
+1. Click the badge above (recommended - it opens HA and pre-fills the URL). Or add
    it **manually**: open the Add-on Store (**Settings → Add-ons → Add-on Store**),
    then **⋮ (top-right) → Repositories**, paste
    `https://github.com/SpiritSLO-UK/HomeAssistant-expenses-analytics` and click **Add**.
@@ -40,14 +40,14 @@ can publish finance sensors over **MQTT** plus net an **energy-cost offset**.
    energy options), then **Start**.
 4. Click **Open Web UI**.
 
-Full walkthrough — options, MQTT sensors, energy-cost offset and isolation — is in
+Full walkthrough - options, MQTT sensors, energy-cost offset and isolation - is in
 **[docs/ha-install.md](docs/ha-install.md)**. _Requires a Home Assistant install
 with the Supervisor (Home Assistant OS or Supervised)._
 
 ## 🚀 Run it standalone (without Home Assistant)
 
 Prefer to run it on its own? It's the same complete, privacy-first finance app, run with
-Docker as a single-user local owner — no Home Assistant required.
+Docker as a single-user local owner - no Home Assistant required.
 
 ```bash
 git clone https://github.com/SpiritSLO-UK/HomeAssistant-expenses-analytics.git
@@ -59,24 +59,24 @@ docker compose up -d --build      # build + start
 Your data (SQLite DB + uploads + safety backups) is kept in the `finance_data`
 Docker volume. To set your base currency and other options, copy
 [`.env.example`](.env.example) to `.env` (it lists every setting with its
-default) and edit it — or set the `HAFI_*` vars in
+default) and edit it - or set the `HAFI_*` vars in
 [`docker-compose.yml`](docker-compose.yml) directly. Then
 **Settings → Demo data → Load demo data** to explore.
 
-Full standalone guide — config, exposure/trust caveat, HTTPS and upgrades — is in
+Full standalone guide - config, exposure/trust caveat, HTTPS and upgrades - is in
 **[docs/standalone.md](docs/standalone.md)**. See the [CHANGELOG](CHANGELOG.md) for
-what's in this release. _Provided "as is", no warranty, not financial advice — keep
+what's in this release. _Provided "as is", no warranty, not financial advice - keep
 your own backups._
 
 ## 📸 Screenshots
 
-A quick look (on demo data) — the full tour is in **[docs/screenshots.md](docs/screenshots.md)**.
+A quick look (on demo data) - the full tour is in **[docs/screenshots.md](docs/screenshots.md)**.
 
 | | |
 |---|---|
-| <img src="docs/screenshots/capture-dashboard-2.PNG" width="420" alt="Spending by category and a location map"><br>**Dashboard** — trends, categories, vendors & a spend map | <img src="docs/screenshots/capture-transactions-1.PNG" width="420" alt="Transactions list with an expanded row"><br>**Transactions** — filter + edit any row inline |
-| <img src="docs/screenshots/capture-receipts-1.PNG" width="420" alt="Receipt OCR and matching"><br>**Receipts** — local OCR + auto-match | <img src="docs/screenshots/capture-investments-1.PNG" width="420" alt="Investments and pensions"><br>**Investments** — holdings & value over time |
-| <img src="docs/screenshots/capture-settings-1.PNG" width="420" alt="Settings: services and storage stats"><br>**Settings** — services + storage stats, AI off by default | <img src="docs/screenshots/capture-logs-1.PNG" width="420" alt="Audit log with decisions grouped"><br>**Logs** — an audit trail, decisions grouped |
+| <img src="docs/screenshots/capture-dashboard-2.PNG" width="420" alt="Spending by category and a location map"><br>**Dashboard** - trends, categories, vendors & a spend map | <img src="docs/screenshots/capture-transactions-1.PNG" width="420" alt="Transactions list with an expanded row"><br>**Transactions** - filter + edit any row inline |
+| <img src="docs/screenshots/capture-receipts-1.PNG" width="420" alt="Receipt OCR and matching"><br>**Receipts** - local OCR + auto-match | <img src="docs/screenshots/capture-investments-1.PNG" width="420" alt="Investments and pensions"><br>**Investments** - holdings & value over time |
+| <img src="docs/screenshots/capture-settings-1.PNG" width="420" alt="Settings: services and storage stats"><br>**Settings** - services + storage stats, AI off by default | <img src="docs/screenshots/capture-logs-1.PNG" width="420" alt="Audit log with decisions grouped"><br>**Logs** - an audit trail, decisions grouped |
 
 ## Status
 
@@ -92,13 +92,13 @@ A quick look (on demo data) — the full tour is in **[docs/screenshots.md](docs
 | 7 | Review queue (resolve/ignore the things the app is unsure about) | ✅ |
 | 8 | Receipts & OCR (upload, optional local OCR, match to a transaction) | ✅ |
 | 9 | Local AI (opt-in): category suggestions via any OpenAI-compatible LLM | ✅ |
-| — | Recurring payments & subscriptions (auto-detected) | ✅ |
-| — | Data-safety: redaction, backup/restore, demo data, security hardening | ✅ |
-| — | Multi-currency + FX; encrypted backups + optional at-rest encryption | ✅ |
+| - | Recurring payments & subscriptions (auto-detected) | ✅ |
+| - | Data-safety: redaction, backup/restore, demo data, security hardening | ✅ |
+| - | Multi-currency + FX; encrypted backups + optional at-rest encryption | ✅ |
 | 10 | Cloud AI approval: preview + approve/reject each request, never-cloud category blocking, audit log | ✅ |
 | 11 | PDF statement import: best-effort, rows flagged for review | ✅ |
 | 12 | Polish: CI, dashboard trends/outliers, savings, investments & pensions, cars & home, geo/world map, data retention, multi-user & roles, global search, performance indexes | ✅ |
-| — | **v1.0.0 → v1.0.2** — standalone **and** a one-click **Home Assistant add-on** (prebuilt multi-arch image, ingress SSO, MQTT sensors, energy-cost offset, at-rest encryption); v1.0.1–v1.0.2 added polish, security hardening, and broader bank/receipt import (Curve, Barclaycard, define-your-own CSV) | ✅ |
+| - | **v1.0.0 → v1.0.2** - standalone **and** a one-click **Home Assistant add-on** (prebuilt multi-arch image, ingress SSO, MQTT sensors, energy-cost offset, at-rest encryption); v1.0.1–v1.0.2 added polish, security hardening, and broader bank/receipt import (Curve, Barclaycard, define-your-own CSV) | ✅ |
 
 ## What it does today
 
@@ -111,7 +111,7 @@ A quick look (on demo data) — the full tour is in **[docs/screenshots.md](docs
   transaction's spend location for the map), flag transfers/income/subscriptions,
   send to review, or block cloud AI. The Rules page has a built-in **"How rules
   work"** guide explaining every condition and action with worked examples.
-- **Manage categories** — add your own, recolour or rename any category, set its
+- **Manage categories** - add your own, recolour or rename any category, set its
   cloud-AI privacy level, **delete** one (its transactions fall back to
   uncategorised) or **merge** one into another. This now includes the built-in
   library categories; deleted built-ins can be restored with "Import library".
@@ -120,54 +120,54 @@ A quick look (on demo data) — the full tour is in **[docs/screenshots.md](docs
   "Advanced" toggle.
 - **Split** a transaction across several categories/projects; the dashboard uses
   the split parts.
-- **Projects & tags** — collect spend toward a goal (renovation, holiday, car)
+- **Projects & tags** - collect spend toward a goal (renovation, holiday, car)
   with per-project totals and breakdowns; flexible tags on transactions.
-- **Budgets** — per-category, per-project or total budgets over weekly →
+- **Budgets** - per-category, per-project or total budgets over weekly →
   yearly periods, with on-track / near-limit / over status.
-- **Savings** — track savings-account balances over time (manual snapshots, with
+- **Savings** - track savings-account balances over time (manual snapshots, with
   a growth sparkline) and set **goals** with progress bars; a goal can follow a
   savings account's latest balance or be tracked by hand.
-- **Investments & pensions** — track investment platforms and pensions: record a
+- **Investments & pensions** - track investment platforms and pensions: record a
   **value** from a statement (best for pensions, with a growth sparkline) or add
   **holdings** (units of a ticker with an average cost and a last price) to see
   market value and unrealised gain (±£ and %), plus **value over time** (a chart)
   and **day / month / year change**. An **optional price feed** keeps holding
-  prices current — **off by default**, with a choice of source: keyless public
+  prices current - **off by default**, with a choice of source: keyless public
   quotes (Stooq) or a keyed provider (Alpha Vantage via `HAFI_INVESTMENT_API_KEY`).
-  Only the ticker symbol is ever sent — never your balances or holdings — and you
+  Only the ticker symbol is ever sent - never your balances or holdings - and you
   can always just enter prices by hand.
-- **Cars & assets** — track a car, your home or anything else with a log timeline.
+- **Cars & assets** - track a car, your home or anything else with a log timeline.
   A car uses **one consistent measurement system** (no mix): **imperial** (miles ·
   gallons · **MPG**) or **metric** (km · litres · **L/100km**). Its **refuel**
   entries (odometer + fuel + cost) give economy between full fills, plus
   servicing/running costs and a per-fill economy history. A **home** tracks
   **utility meter readings** (electricity/gas/water) → usage and cost between
   readings, plus maintenance/running costs.
-- **Subscriptions** — recurring payments detected automatically, with a monthly
+- **Subscriptions** - recurring payments detected automatically, with a monthly
   cost total, plus **alerts** for renewals due soon and payments that look
   missed (also surfaced in the dashboard heads-up).
-- **Receipts** — upload a photo/PDF; optional local OCR (Tesseract) reads the
+- **Receipts** - upload a photo/PDF; optional local OCR (Tesseract) reads the
   merchant/date/total, or enter them by hand, then match to a transaction
   (amount/date/vendor scoring). OCR runs in the add-on; the rest works anywhere.
   You can also **attach a receipt directly to a transaction** from its drill-down
-  detail and **view the image/PDF** there — attached receipts keep their original
+  detail and **view the image/PDF** there - attached receipts keep their original
   (so they stay viewable) regardless of the delete-after-processing setting.
   Re-uploading the same file is detected by content hash and reported as
   **"already imported"** rather than duplicated.
-- **Paperless import** — pull documents from your own
+- **Paperless import** - pull documents from your own
   [Paperless-ngx](https://github.com/paperless-ngx/paperless-ngx) instance into
   receipts, straight from the Receipts page. **One-directional**: we only ever
-  *request* documents from Paperless — it never gets access to your finance data.
+  *request* documents from Paperless - it never gets access to your finance data.
   Off until you set `HAFI_PAPERLESS_URL` + `HAFI_PAPERLESS_TOKEN`. Imports are
   de-duplicated by content, so re-importing the same document is safe.
-- **Review queue** — a safety net listing anything uncertain (unmatched receipt,
+- **Review queue** - a safety net listing anything uncertain (unmatched receipt,
   low-confidence read, …) to resolve or ignore, with a second **Uncategorised**
   tab to clear category-less transactions inline. The dashboard surfaces both
   (plus any missing FX rate) in one **"Needs attention"** card that links straight
-  to where you clear each — and hides itself when there's nothing outstanding.
-- **AI assistant (opt-in)** — off by default; when enabled, suggests a category
+  to where you clear each - and hides itself when there's nothing outstanding.
+- **AI assistant (opt-in)** - off by default; when enabled, suggests a category
   for a transaction via any OpenAI-compatible LLM (local Ollama/LM Studio or
-  cloud). It only *suggests* — you confirm. You can **batch-categorise**
+  cloud). It only *suggests* - you confirm. You can **batch-categorise**
   uncategorised transactions either with a **local LLM** (on-device; scan →
   bulk-approve) or with **cloud AI** (review the exact redacted payloads that
   would be sent → approve the whole list at once → review the returned
@@ -177,17 +177,17 @@ A quick look (on demo data) — the full tour is in **[docs/screenshots.md](docs
   time you enable a cloud mode, a one-time disclaimer spells out exactly what
   this means. You can also **re-process** already-categorised transactions (a
   "re-check" toggle on the batch panels) to find better matches after plugging in
-  or improving a model — suggestions only, and a manual category is never
+  or improving a model - suggestions only, and a manual category is never
   overwritten.
-- **Services panel** — a **Settings → Services** card to see and switch each
+- **Services panel** - a **Settings → Services** card to see and switch each
   service from one place, **one panel per service** with a consistent header and
-  status: the **AI assistant** (a status + "turn off" — it reads *On* only when a
+  status: the **AI assistant** (a status + "turn off" - it reads *On* only when a
   real local/cloud mode is configured, *Off* otherwise), receipt **OCR** on/off,
   and **online exchange rates** on/off. MQTT is shown read-only (it's configured
   in the add-on options). Owner/settings-manager only.
-- **Multi-currency** — original amount kept and converted to your base currency;
+- **Multi-currency** - original amount kept and converted to your base currency;
   manual rates by default, opt-in online ECB rates (Frankfurter).
-- **Multi-user & roles** — identity comes from Home Assistant (the first person
+- **Multi-user & roles** - identity comes from Home Assistant (the first person
   becomes the **owner/administrator**); anyone new appears **pending** and has no
   access until the owner approves them. Roles are *owner* (admin), *member*
   (read/write), *viewer* (read-only), and *child* (allowance-only). Read-only
@@ -196,33 +196,33 @@ A quick look (on demo data) — the full tour is in **[docs/screenshots.md](docs
   Settings and nav-tab customisation are owner-only** by default; the owner can
   grant any member a **"manage settings"** permission from the Users page (each
   user still manages their own two-factor security). A **Setup wizard** (from the
-  Users page) branches by household shape — **Solo** (set currency + import) or
+  Users page) branches by household shape - **Solo** (set currency + import) or
   **Household / Family** (approve people + roles, share/privatise accounts, give
   kids an allowance).
-- **Shared vs private accounts** — on the **Accounts** page, mark an account
+- **Shared vs private accounts** - on the **Accounts** page, mark an account
   *private* and it (and its transactions) drop off everyone else's dashboards,
-  budgets, exports and lists — only you and the household owner see it. Accounts
+  budgets, exports and lists - only you and the household owner see it. Accounts
   stay *shared* by default. A **Mine / Shared / All** toggle on the dashboard lets
   you switch between your own, the household's shared, and everything you can see.
-- **Kids' allowance** — the *child* role is a friendly pocket-money view: a child
+- **Kids' allowance** - the *child* role is a friendly pocket-money view: a child
   sees only **their** budgets (candy, toys…), **their** savings, and an itemized
   list of purchases attributed to them. Parents attribute spend from the
-  Transactions page (a whole purchase or just part) or add manual items — and it
+  Transactions page (a whole purchase or just part) or add manual items - and it
   shows on the kid **without changing the parent's own expenses or budgets**.
-- **Two-factor (optional)** — each user can turn on TOTP MFA (Google
+- **Two-factor (optional)** - each user can turn on TOTP MFA (Google
   Authenticator, Aegis, 1Password…): a 6-digit code to open the app, and a fresh
   code to confirm admin actions. Time-based, on-device, off by default.
-- **Security health** — an owner-only panel flags protections that are off
+- **Security health** - an owner-only panel flags protections that are off
   (no at-rest encryption, no MFA, repeated failed unlock attempts, …) with a
   one-line fix for each. It never nags: dismiss or snooze any item.
-- **Logs / activity** — an owner-only **Logs** page shows an activity log of
+- **Logs / activity** - an owner-only **Logs** page shows an activity log of
   important actions (statement import & delete, transaction delete, demo-data
-  load, user role/approval changes, MFA enable/disable — filterable by action)
+  load, user role/approval changes, MFA enable/disable - filterable by action)
   plus the AI-call log. Low-level runtime/debug logs stream to the Home Assistant
   add-on **Log** panel at your chosen `log_level`.
-- **Data retention** — owner-only, off by default. For each kind of data
+- **Data retention** - owner-only, off by default. For each kind of data
   (transactions, AI request logs, activity/audit logs, receipt files,
-  failed-unlock records) you can **archive after N days** (reversible — hidden
+  failed-unlock records) you can **archive after N days** (reversible - hidden
   from lists *and* every total, kept) and/or **purge after N days**
   (permanent). A dry-run **removal plan** shows exactly what would go; purging is
   confirm-only (with a fresh MFA code if you use MFA) unless you opt a type into
@@ -231,57 +231,57 @@ A quick look (on demo data) — the full tour is in **[docs/screenshots.md](docs
   "delete the original file once it's processed & matched" toggle that keeps the
   extracted fields but drops the image. Changing the policy or running a purge is
   owner + MFA-gated.
-- **CSV export** — download your transactions (the "Export CSV" button on the
+- **CSV export** - download your transactions (the "Export CSV" button on the
   Transactions page honours the active filters and exports the whole filtered
   set), plus the data behind the dashboard charts (spending-by-category and the
   monthly spend/income/net trend) from small "⬇ CSV" links. Files carry a UTF-8
   BOM so they open cleanly in Excel.
-- **Resizable columns** — drag the edge of any column header on the Transactions
+- **Resizable columns** - drag the edge of any column header on the Transactions
   table to set its width; the widths are remembered on your device ("↔ Reset
   columns" restores the defaults).
-- **Global search** — a **Search** page finds any transaction (by description,
+- **Global search** - a **Search** page finds any transaction (by description,
   merchant or amount), vendor, category or project and links straight to it.
-- **Spending by location** — a dashboard card ranks the month's spend **by
+- **Spending by location** - a dashboard card ranks the month's spend **by
   country**. A transaction's country comes from (in order) its **own country**
-  (tag a whole trip on the **Travel** page — so a trip to Spain shows as Spain,
+  (tag a whole trip on the **Travel** page - so a trip to Spain shows as Spain,
   not the coarse "Eurozone"), else its **vendor's** country (Vendors page), else
   it's inferred from the **currency**. All local, no geocoding service is called.
   Transaction results are scoped to what you're allowed to see.
-- **Customisable dashboard** — a **⚙ Customise** toggle lets you show/hide **and
+- **Customisable dashboard** - a **⚙ Customise** toggle lets you show/hide **and
   reorder** the optional cards (Heads-up, Trends, Spending by category, Top vendors,
   By project, By member, Savings, Budgets, Business, Travel, Allowance, Processing)
   with up/down arrows; the layout and order are remembered on your device.
-- **Customisable navigation** — **✏️ Customise tabs** in the sidebar lets you
+- **Customisable navigation** - **✏️ Customise tabs** in the sidebar lets you
   **hide and reorder** nav tabs (▲/▼), remembered per device (Dashboard and
   Settings stay put). Plus **dark mode** (Appearance in Settings), persisted
   Transactions filters, and resizable table columns.
-- **Spending by member** — for multi-person households, a card breaking the
+- **Spending by member** - for multi-person households, a card breaking the
   month's spend down per member (plus a "Shared" row for joint accounts). Each
   person's figure covers the accounts they own, scoped to what you're allowed to
-  see — so it never exposes another member's private spend.
-- **Domain summary cards** — compact per-area cards (Savings, Budgets, Business,
+  see - so it never exposes another member's private spend.
+- **Domain summary cards** - compact per-area cards (Savings, Budgets, Business,
   Travel, Allowance) appear on the dashboard only when that area has data, each
-  toggleable and linking through to its full page — so the dashboard reflects
+  toggleable and linking through to its full page - so the dashboard reflects
   exactly the features you actually use.
-- **Processing card** — a pipeline-status snapshot: statements and transactions
+- **Processing card** - a pipeline-status snapshot: statements and transactions
   imported, receipt OCR progress, and how many enrichment calls went through AI
-  (cloud vs local) with the average AI turnaround — so you can see at a glance how
+  (cloud vs local) with the average AI turnaround - so you can see at a glance how
   much was handled locally vs sent to a cloud model (AI is off by default).
-- **Trends & heads-up** — the dashboard shows month-over-month spend/income/net
+- **Trends & heads-up** - the dashboard shows month-over-month spend/income/net
   sparklines with up/down arrows, and a non-nagging "heads-up" card that flags
   unusually large charges, categories spending well above their recent average,
   brand-new merchants, and budgets near or over. Heuristics are conservative and
   only kick in once there's enough history.
-- **Travel / spend-abroad** — a **Travel** page groups foreign-currency spend by
+- **Travel / spend-abroad** - a **Travel** page groups foreign-currency spend by
   currency (with a friendly country label) and **auto-detects trips** from clusters
   of foreign spend; turn any trip into a project (with a budget) in one click.
-- **Business expenses / VAT** — flag a transaction as **business** (per-row toggle
+- **Business expenses / VAT** - flag a transaction as **business** (per-row toggle
   + a "business only" filter), capture its **VAT** (by hand or auto-filled from a
   matched receipt), and a **Business** page totals business spend + reclaimable VAT
   by category & month with a CSV export for claiming.
-- **Home Assistant sensors** — optional MQTT discovery publishes spend/income/net,
+- **Home Assistant sensors** - optional MQTT discovery publishes spend/income/net,
   review count, per-budget progress, per-project totals and monthly subscriptions.
-- **Privacy & safety** — strict local by default, redaction, backup/restore,
+- **Privacy & safety** - strict local by default, redaction, backup/restore,
   encrypted backups, optional at-rest encryption, and tests that never touch live
   data.
 
@@ -294,11 +294,11 @@ everything external is auditable. ([spec §43](ha_finance_intelligence_spec.md))
 
 ## Can I run it without Home Assistant?
 
-**Yes — fully.** The backend is a normal FastAPI app and the frontend a normal
+**Yes - fully.** The backend is a normal FastAPI app and the frontend a normal
 Vite app. You only need Home Assistant to run it *as an add-on* with the
 sidebar panel. For development, testing and trying it out, you don't need HA at
 all (see Quick start). Everything the UI does goes through the REST API under
-`/api`, so the app is fully API-driven and scriptable — interactive API docs are
+`/api`, so the app is fully API-driven and scriptable - interactive API docs are
 served at **`/docs`** when the backend is running.
 
 ## Architecture (MVP)
@@ -331,11 +331,11 @@ scripts/    test.sh / dev.sh (bash; Linux/macOS/WSL + Git Bash)
 
 ## Requirements & recommended hardware
 
-It's deliberately light — SQLite + FastAPI, no heavy services. As a Home Assistant
+It's deliberately light - SQLite + FastAPI, no heavy services. As a Home Assistant
 add-on it runs comfortably on a **Raspberry Pi 4 (or 5)** or any HA host (x86/ARM);
 a Pi 3 works but will feel slower on imports/OCR.
 
-- **CPU/RAM:** modest — a few hundred MB; the app itself is I/O-light.
+- **CPU/RAM:** modest - a few hundred MB; the app itself is I/O-light.
 - **Disk:** small (your statements + SQLite DB + optional safety backups); receipt
   images are the main consumer if you store them.
 - **Optional extras add load:** OCR (Tesseract) and PDF rasterising are CPU-spikey
@@ -387,7 +387,7 @@ In the UI go to **Settings → Load demo data**, or:
 curl -X POST http://localhost:8099/api/backup/demo
 ```
 
-The demo set is generated **relative to today** — it spans the current month plus
+The demo set is generated **relative to today** - it spans the current month plus
 the previous two, across many vendors and categories, and includes two
 foreign-currency **trips** (so the **Travel** page populates) and a few
 **business** transactions with **VAT** (so the **Business** page shows reclaimable
@@ -395,8 +395,8 @@ VAT). Open the **Dashboard**, then explore **Transactions**, **Travel** and
 **Business**; the **Trends** card shows the month-on-month shape.
 
 Done exploring? **Settings → Remove demo data** (owner-only) deletes everything the
-demo seeded — its transactions, example projects/budgets/savings, demo members,
-vendors and review items — leaving a clean database. It removes **only** the
+demo seeded - its transactions, example projects/budgets/savings, demo members,
+vendors and review items - leaving a clean database. It removes **only** the
 demo's own rows (tracked from when it was loaded), so any real statements you have
 imported and anything you added yourself are left untouched.
 
@@ -409,7 +409,7 @@ cd backend && .venv/bin/python -m pytest # backend only (runs in parallel)
 
 The backend suite runs across all CPU cores via `pytest-xdist` (`-n auto`, in
 `pyproject.toml`); pass `-n0` to run serially under a debugger. Tests run against
-a throwaway temporary database and **refuse to start against a real one** — they
+a throwaway temporary database and **refuse to start against a real one** - they
 can never read or modify your finance data, and each parallel worker gets its own
 isolated temp DB ([docs/privacy.md](docs/privacy.md), backlog #30).
 
@@ -431,48 +431,48 @@ you can verify it. Duplicate rows (and re-uploaded files) are detected and skipp
 
 ## Privacy, security & backups
 
-- **Privacy model:** [docs/privacy.md](docs/privacy.md) — local-first, what
+- **Privacy model:** [docs/privacy.md](docs/privacy.md) - local-first, what
   happens when AI is enabled, and what we can/can't guarantee about third-party
   AI providers.
-- **Security & isolation:** [docs/security.md](docs/security.md) — the database
+- **Security & isolation:** [docs/security.md](docs/security.md) - the database
   lives in the add-on's private `/data` volume; file permissions, AppArmor, and
   the honest limits of isolation inside Home Assistant.
-- **Backup/restore & encryption:** Settings page — download/restore the
+- **Backup/restore & encryption:** Settings page - download/restore the
   database, export/import your config + library as JSON, **encrypted backups**
   (passphrase, AES-256-GCM), and optional **at-rest database encryption**
   (SQLCipher; Linux / the add-on). Cloud backup *destinations* (G-Drive/S3/
   Backblaze) are still on the roadmap (backlog #15).
-- **Data retention:** Settings → Data retention (owner-only, off by default) —
+- **Data retention:** Settings → Data retention (owner-only, off by default) -
   archive-then-purge windows per data type, an opt-in auto-purge, a dry-run
   removal plan, a safety backup before every purge (trimmed by age/size), and a
   default-on "delete a receipt's original once processed" toggle.
 
 ## Documentation
 
-Full docs live in [`docs/`](docs/README.md) — start there for the index. Key guides:
+Full docs live in [`docs/`](docs/README.md) - start there for the index. Key guides:
 
-- **[Configuration reference](docs/configuration.md)** — every setting: `HAFI_*`
+- **[Configuration reference](docs/configuration.md)** - every setting: `HAFI_*`
   env vars, add-on options, the in-app Settings (with defaults), a **Paperless-ngx
   setup walkthrough**, and what each **log level** records.
-- **[Troubleshooting](docs/troubleshooting.md)** — fixes for common install /
+- **[Troubleshooting](docs/troubleshooting.md)** - fixes for common install /
   import / OCR / MQTT / AI / unlock / FX issues.
-- **[Rules](docs/rules.md)** — auto-categorisation: precedence, every condition
+- **[Rules](docs/rules.md)** - auto-categorisation: precedence, every condition
   and action, worked examples.
 - **[Privacy](docs/privacy.md)** · **[Security & isolation](docs/security.md)** ·
   **[Architecture](docs/architecture.md)**.
-- **[HTTPS / reverse proxy](docs/reverse-proxy.md)** — serve the standalone app
+- **[HTTPS / reverse proxy](docs/reverse-proxy.md)** - serve the standalone app
   over TLS (bundled Caddy `docker-compose.tls.yml`) when reaching it across your network.
 
 ## Home Assistant add-on
 
-Install it from the add-on store — see **[Install on Home Assistant](#-install-on-home-assistant-add-on)**
+Install it from the add-on store - see **[Install on Home Assistant](#-install-on-home-assistant-add-on)**
 above (one-click repository add → Install) and the full
 **[docs/ha-install.md](docs/ha-install.md)** walkthrough. The [`addon/`](addon/)
 folder holds the add-on itself: [`config.yaml`](addon/config.yaml) (ingress panel
 on port 8099, private `/data` storage, the prebuilt-image reference) and
 [`run.sh`](addon/run.sh). Enable **MQTT** in the add-on options to publish finance
 sensors (spend/income/net, review count, per-budget progress, per-project totals,
-monthly subscriptions) to Home Assistant via MQTT discovery — off by default, point
+monthly subscriptions) to Home Assistant via MQTT discovery - off by default, point
 it at your broker (e.g. the Mosquitto add-on). The add-on is distributed as a
 **prebuilt multi-arch image** on GHCR (built by [`release.yml`](.github/workflows/release.yml)),
 so Supervisor pulls rather than builds.
@@ -482,12 +482,12 @@ so Supervisor pulls rather than builds.
 This software is provided **"as is", without warranty of any kind** and is
 **not** financial, accounting, tax, or investment advice. The authors and
 contributors accept **no responsibility or liability** for any loss, damage,
-inaccuracy, or corruption of data arising from its use — you use it, and store
+inaccuracy, or corruption of data arising from its use - you use it, and store
 your data with it, **at your own risk**.
 
 We have taken reasonable, good-faith precautions to protect your data (local-first
 by default, no external calls unless you opt in, private storage, redaction
-before any cloud AI, backup/restore, and tests that never touch live data — see
+before any cloud AI, backup/restore, and tests that never touch live data - see
 [docs/privacy.md](docs/privacy.md) and [docs/security.md](docs/security.md)).
 Even so, **you are responsible for your own backups** and for verifying that any
 figures are correct before relying on them. This disclaimer is in addition to
@@ -500,5 +500,5 @@ the warranty and liability terms of the licence below.
 ## License
 
 Licensed under the [Apache License 2.0](LICENSE) (which itself disclaims
-warranty and limits liability — sections 7 and 8).
+warranty and limits liability - sections 7 and 8).
 

@@ -3,28 +3,28 @@
 All notable changes to HA Finance Intelligence. This project uses date-stamped,
 human-readable entries; versions follow semantic versioning.
 
-## v1.0.2 — 2026-06-29
+## v1.0.2 - 2026-06-29
 
 A correctness, security-hardening and quality release on top of v1.0.1, with
 broader bank/receipt import support. Data and config carry over; database
 migrations run automatically on start.
 
-> Provided "as is", no warranty, not financial advice — keep your own backups.
+> Provided "as is", no warranty, not financial advice - keep your own backups.
 
 ### Added
-- **Curve support** — imports the real Curve app export, recognises **Curve Cash**
+- **Curve support** - imports the real Curve app export, recognises **Curve Cash**
   (cashback) rewards, and **de-duplicates** spend that also appears on the
   underlying funding card's own statement (kept-but-flagged when uncertain).
 - **Barclaycard** statement parser.
-- **Define-your-own CSV import** — map the columns of any bank's CSV export.
-- **Receipts → transactions** — suggests the matching transaction for an unmatched
+- **Define-your-own CSV import** - map the columns of any bank's CSV export.
+- **Receipts → transactions** - suggests the matching transaction for an unmatched
   receipt, with one-click *Add* from the Review Queue.
 - **Bulk AI suggest + categorise** from the Review Queue.
-- **AI extraction from PDF** receipts/invoices — the first page is rendered for the vision model (not images only).
+- **AI extraction from PDF** receipts/invoices - the first page is rendered for the vision model (not images only).
 
 ### Improved
 - **Spending-by-location** recognises more currencies (CZK/HUF/TRY/BRL/ISK/KRW/ILS/…).
-- **More honest, more robust UI** — typed API errors with the two-factor session
+- **More honest, more robust UI** - typed API errors with the two-factor session
   header on every request (uploads/downloads/restore now work under MFA),
   localised currency formatting, inline error banners, an app-wide error boundary,
   inputs that don't lose edits on a background refresh, and confirm dialogs on
@@ -49,34 +49,34 @@ migrations run automatically on start.
 - Cleared the SonarCloud backlog (security findings, code smells, cognitive
   complexity) and refreshed dependencies. No behaviour change.
 
-## v1.0.1 — 2026-06-07
+## v1.0.1 - 2026-06-07
 
-A polish release from real-world testing on top of v1.0.0 — quality-of-life
+A polish release from real-world testing on top of v1.0.0 - quality-of-life
 features, faster search at scale, a more honest UI, and several fixes. Data and
 config carry over; database migrations run automatically on start.
 
-> Provided "as is", no warranty, not financial advice — keep your own backups.
+> Provided "as is", no warranty, not financial advice - keep your own backups.
 
 ### Added
-- **Manage accounts** — create, rename, delete (when empty) or **merge** accounts,
+- **Manage accounts** - create, rename, delete (when empty) or **merge** accounts,
   and a new **Debit account** type.
-- **Settings → Storage & statistics** — database size on disk plus AI-call tallies
+- **Settings → Storage & statistics** - database size on disk plus AI-call tallies
   (cloud vs local, completed/failed, average turnaround).
-- **Choose what to publish to MQTT** — per-group *and* per-sensor selection; a
+- **Choose what to publish to MQTT** - per-group *and* per-sensor selection; a
   disabled sensor is removed from Home Assistant (its retained discovery is cleared).
-- **Reuse a receipt's AI-extracted category** for the transaction it matches — no
+- **Reuse a receipt's AI-extracted category** for the transaction it matches - no
   second AI call.
-- **Two-factor controls for admins** — require/scope MFA per user (optional vs
+- **Two-factor controls for admins** - require/scope MFA per user (optional vs
   required; app vs app+admin), an enrolment gate, and per-user page access.
 
 ### Improved
-- **Much faster transaction search at scale** — a SQLite FTS5 (trigram) index makes
+- **Much faster transaction search at scale** - a SQLite FTS5 (trigram) index makes
   substring search near-instant on very large datasets (falls back to the previous
   behaviour where unavailable); the Transactions search box now debounces.
-- **Logs** — AI & privacy **decisions** are grouped on their own in the action
+- **Logs** - AI & privacy **decisions** are grouped on their own in the action
   filter, and each decision kind (AI mode / OCR / FX / image-sent) is individually
   filterable.
-- **Receipts** — "View original" now **previews in a popup** instead of downloading.
+- **Receipts** - "View original" now **previews in a popup** instead of downloading.
 
 ### Fixed
 - Two-factor not prompting on a fresh open; removed a duplicate AI audit-log table.
@@ -90,37 +90,37 @@ config carry over; database migrations run automatically on start.
 ### Docs
 - A new **screenshot gallery** ([docs/screenshots.md](docs/screenshots.md)) plus a
   README hero/grid and refreshed community-intro post.
-- Documented that **the app learns** — categorisation goes manual → learned rules →
+- Documented that **the app learns** - categorisation goes manual → learned rules →
   vendor defaults → keyword library → (opt-in) AI, so over time there's less manual
   tidying and **fewer AI calls**.
 - The **local-LLM** path is noted as built-but-untested, with a call for feedback.
 
-## v1.0.0 — 2026-06-05
+## v1.0.0 - 2026-06-05
 
-The **1.0 release** — and the point the project becomes **Home Assistant-first**.
+The **1.0 release** - and the point the project becomes **Home Assistant-first**.
 Everything from the beta, now installable on Home Assistant as a first-class
 **add-on**: a one-click repository add, a prebuilt multi-arch image (amd64 +
-aarch64/Raspberry Pi — no on-device build), ingress single sign-on, MQTT sensors,
+aarch64/Raspberry Pi - no on-device build), ingress single sign-on, MQTT sensors,
 and an energy-cost offset that nets your solar/grid production against your energy
 bill. Validated end-to-end on a Raspberry Pi 4.
 
-> Provided "as is", no warranty, not financial advice — keep your own backups.
+> Provided "as is", no warranty, not financial advice - keep your own backups.
 
-### Added — Home Assistant
+### Added - Home Assistant
 - **Add-on install** from a prebuilt GHCR image via an HA **add-on repository**
-  (one-click "Add repository" badge); the Supervisor pulls the image — fast even
+  (one-click "Add repository" badge); the Supervisor pulls the image - fast even
   on a Raspberry Pi, no on-device build.
-- **Ingress SSO** — open from the HA sidebar; your Home Assistant identity signs
+- **Ingress SSO** - open from the HA sidebar; your Home Assistant identity signs
   you in, and the first user becomes the owner.
-- **MQTT discovery sensors** — spend / income / net / review / uncategorised /
+- **MQTT discovery sensors** - spend / income / net / review / uncategorised /
   subscriptions, plus per-budget and per-project, auto-created as an HA device.
-- **Energy-cost offset** — read solar/grid production from Home Assistant
+- **Energy-cost offset** - read solar/grid production from Home Assistant
   (`ha_api`) or MQTT and net it against your energy-bill spend, with a
   production/saving **trend over time**.
 - **At-rest database encryption** on both shipped architectures (SQLCipher; opt-in).
 
 ### Changed / fixed (since v0.9.5-beta)
-- Receipts-first **Import** page — a dedicated receipt uploader on top — plus a
+- Receipts-first **Import** page - a dedicated receipt uploader on top - plus a
   friendlier "this looks like a receipt" recovery when a statement image can't be read.
 - `index.html` is served `no-cache` so add-on updates load on next open (no full
   Home Assistant restart needed).
@@ -128,36 +128,36 @@ bill. Validated end-to-end on a Raspberry Pi 4.
   audit log** records every privacy-relevant change and every image sent to AI.
 - Many UX fixes surfaced by release-candidate testing on real Home Assistant hardware.
 
-## v0.9.5-beta — 2026-06-04
+## v0.9.5-beta - 2026-06-04
 
 The practical **close of beta development**. Everything the first beta listed as
 "not in this release" has since landed, plus a wave of depth and polish. Still
 standalone-first; the **Home Assistant add-on packaging is the next release**
-(and the point at which the branch strategy switches — `main` becomes the HA
+(and the point at which the branch strategy switches - `main` becomes the HA
 release line).
 
-> Same beta caveat: provided "as is", no warranty, not financial advice — keep
+> Same beta caveat: provided "as is", no warranty, not financial advice - keep
 > your own backups.
 
 ### Added
-- **Investments & pensions** — distinct models: an *investment* account is
+- **Investments & pensions** - distinct models: an *investment* account is
   **holdings-first** (tickers × price → market value, unrealised gain, value-over-
   time chart with day/month/year change) while a *pension* tracks a **statement
   value** with contributions/withdrawals. Optional, off-by-default **price feed**
   (keyless Stooq or keyed Alpha Vantage; only ticker symbols leave the box).
-- **Cars, home & assets** — a car uses one consistent unit system (imperial MPG or
+- **Cars, home & assets** - a car uses one consistent unit system (imperial MPG or
   metric L/100km) with refuel/economy history; a home tracks utility-meter readings
   → usage & cost; plus maintenance/running-cost logs.
-- **Spending by location** — a world/geo map ranks the month's spend by country
+- **Spending by location** - a world/geo map ranks the month's spend by country
   (per-transaction country → vendor country → currency fallback), with a
   `set_country` **rule action** and per-trip/per-vendor country overrides.
-- **Paperless-ngx import** — pull documents from your own Paperless into receipts
+- **Paperless-ngx import** - pull documents from your own Paperless into receipts
   (outbound-only; off until a URL + env token are set).
 - **Over-time charts** with a 6M/1Y/2Y/5Y range selector across Investments,
   Savings, Travel and Projects; Business gets a year scope.
 - **"Needs attention"** dashboard card (review queue + uncategorised + FX-needed)
   and a Review-page **Uncategorised** tab with inline quick-categorise.
-- **AI re-process** — re-run the model over already-categorised rows to find better
+- **AI re-process** - re-run the model over already-categorised rows to find better
   matches (suggest-only; never overwrites a manual choice).
 - UI: **dark mode**, **persisted filters**, **re-orderable + hideable** sidebar
   tabs and dashboard cards, resizable columns, an **About & source** card.
@@ -171,11 +171,11 @@ release line).
 - Tests run **across all CPU cores** (`pytest-xdist`); ~405 backend tests.
 - SonarCloud quality gate green (security hotspots reviewed; code smells cleared).
 
-## v0.9.0-beta — 2026-06-03
+## v0.9.0-beta - 2026-06-03
 
 First public **beta**. A complete, privacy-first personal-finance app you can run
 **standalone** (Docker) today. Home Assistant integration (one-click add-on
-install, MQTT sensors, ingress SSO) is scaffolded but **not part of this release** —
+install, MQTT sensors, ingress SSO) is scaffolded but **not part of this release** -
 it lands in a later version.
 
 > Beta caveat: provided “as is”, no warranty, not financial advice. Keep your own
@@ -192,11 +192,11 @@ Data (SQLite DB + uploads + safety backups) is kept in the `finance_data` volume
 
 ### Highlights
 
-- **Import** bank/card statements (CSV, PDF — incl. scanned-PDF OCR — and
+- **Import** bank/card statements (CSV, PDF - incl. scanned-PDF OCR - and
   photos/scans), with duplicate detection and an "already imported" guard.
 - **Categorise** automatically (rules → vendor → keyword) with an in-app rules
   guide; **split** transactions; **projects**, **tags**, **budgets** (weekly→yearly).
-- **Dashboard**: customisable, reorderable cards — spend/income/net, trends,
+- **Dashboard**: customisable, reorderable cards - spend/income/net, trends,
   heads-up alerts, by category / vendor / project / member, plus per-domain
   summaries (savings, budgets, business, travel, allowance) and a processing card.
 - **Travel** (foreign-currency trips), **Business/VAT**, **Savings** (balances,

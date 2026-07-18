@@ -4,7 +4,7 @@ Visual companion to [`ha_finance_intelligence_spec.md`](../ha_finance_intelligen
 and [`docs/context.md`](context.md). Backlog #94.
 
 > **Prefer a browser?** [**architecture.html**](architecture.html) is a
-> self-contained, styled version of these diagrams (inline SVG — renders offline,
+> self-contained, styled version of these diagrams (inline SVG - renders offline,
 > light/dark, no external scripts). This Markdown file keeps the same diagrams as
 > [Mermaid](https://mermaid.js.org) so they render on GitHub and in VS Code.
 
@@ -43,7 +43,7 @@ flowchart TB
 ```
 
 > Standalone (no Home Assistant): the same container runs behind an optional
-> TLS reverse proxy instead of HA ingress — see [reverse-proxy.md](reverse-proxy.md).
+> TLS reverse proxy instead of HA ingress - see [reverse-proxy.md](reverse-proxy.md).
 
 ## 2. Request flow
 
@@ -179,10 +179,10 @@ flowchart LR
 
 > The runtime image is multi-arch (amd64 / arm64). At-rest DB encryption (SQLCipher)
 > ships as a prebuilt wheel on amd64; on arm64 the `sqlcipher3` wheel is compiled in
-> a throwaway build stage so the Pi gets it too. It's opt-in — off by default.
+> a throwaway build stage so the Pi gets it too. It's opt-in - off by default.
 
 ## Keeping these current
 
 Update a diagram when the corresponding shape changes (a new external
 dependency, a new core entity, a changed flow). They are intentionally
-high-level — the source of truth is the code and the spec.
+high-level - the source of truth is the code and the spec.

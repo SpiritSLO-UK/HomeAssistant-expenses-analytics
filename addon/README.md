@@ -1,12 +1,12 @@
-# HA Finance Intelligence — Home Assistant add-on
+# HA Finance Intelligence - Home Assistant add-on
 
 A **local-first personal finance app**, packaged as a Home Assistant add-on:
 import bank statements, categorise spending, track budgets/projects/subscriptions/
 savings, scan receipts (local OCR), handle multiple currencies, publish finance
-sensors over MQTT, and net an energy-cost offset — with **optional, opt-in** AI and
+sensors over MQTT, and net an energy-cost offset - with **optional, opt-in** AI and
 **strict local mode as the default**. Current version: **v1.0.2**.
 
-It installs from a **prebuilt multi-arch image** (amd64 + aarch64/Raspberry Pi — no
+It installs from a **prebuilt multi-arch image** (amd64 + aarch64/Raspberry Pi - no
 on-device build), runs as an **ingress sidebar panel** (your Home Assistant identity
 signs you in), and keeps all data in the add-on's **private `/data` volume**
 (included in Home Assistant backups).
@@ -38,7 +38,7 @@ Assistant). Deeper guides live in the repo's [`docs/`](../docs/README.md):
 [changelog](CHANGELOG.md).
 
 > **Running without Home Assistant?** Use the **standalone (docker-compose)**
-> package instead — see [docs/standalone.md](../docs/standalone.md).
+> package instead - see [docs/standalone.md](../docs/standalone.md).
 
 > **Not financial advice**, provided "as is" without warranty. Keep your own
 > backups and verify figures before relying on them.
