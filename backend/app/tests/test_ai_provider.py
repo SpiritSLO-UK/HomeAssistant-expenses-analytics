@@ -167,3 +167,42 @@ def test_non_transient_status_not_retried(monkeypatch, no_sleep):
         _provider()._complete([{"role": "user", "content": "hi"}])
     assert len(calls) == 1
     assert no_sleep == []
+
+
+# --- available() validates the endpoint scheme ---
+
+
+def test_available_true_for_valid_https():
+    assert OpenAICompatibleProvider(base_url="https://api.example.com/v1", model="m").available()
+
+
+def test_available_true_for_valid_http():
+    assert OpenAICompatibleProvider(base_url="http://localhost:11434/v1", model="m").available()
+
+
+@pytest.mark.parametrize(
+    "bad_url",
+    [
+        "",  # empty
+        "api.example.com/v1",  # scheme-less
+        "//api.example.com/v1",  # scheme-relative
+        "ftp://api.example.com",  # unsupported scheme
+        "file:///etc/passwd",  # unsupported scheme
+        "http://",  # scheme but no host
+        "justtext",  # not a URL at all
+    ],
+)
+def test_available_false_for_malformed_endpoint(bad_url):
+    assert not OpenAICompatibleProvider(base_url=bad_url, model="m").available()
+
+
+def test_available_false_when_model_missing():
+    assert not OpenAICompatibleProvider(base_url="https://api.example.com/v1", model="").available()
+
+
+def test_available_logs_warning_for_bad_scheme(caplog):
+    import logging
+
+    with caplog.at_level(logging.WARNING):
+        assert not OpenAICompatibleProvider(base_url="ftp://x/v1", model="m").available()
+    assert any("http(s)" in rec.message or "ftp://x" in str(rec.args) for rec in caplog.records)
