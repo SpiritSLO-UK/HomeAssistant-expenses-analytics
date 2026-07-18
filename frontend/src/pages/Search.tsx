@@ -95,7 +95,7 @@ export default function Search() {
           id="search-input"
           autoFocus
           aria-label="Search transactions, vendors, categories, projects"
-          placeholder="Search transactions, vendors, categories, projects…"
+          placeholder="Try: groceries category:Food after:2026-01-01"
           value={term}
           onChange={(e) => setTerm(e.target.value)}
           onKeyDown={onInputKeyDown}
@@ -111,6 +111,23 @@ export default function Search() {
         {flat.length > 0 && (
           <p className="muted" style={{ marginBottom: 0 }}>Use ↑ and ↓ to navigate, Enter to open.</p>
         )}
+        <details style={{ marginTop: 8 }}>
+          <summary className="muted" style={{ cursor: "pointer" }}>Filter tips</summary>
+          <div className="muted" style={{ marginTop: 6, fontSize: "0.9rem" }}>
+            <p style={{ marginTop: 0 }}>
+              Mix these tokens into your text to narrow the results:
+            </p>
+            <ul style={{ margin: "0 0 6px", paddingLeft: 18 }}>
+              <li><code>category:Food</code> - only that category (exact name, case-insensitive)</li>
+              <li><code>after:2026-01-01</code> / <code>before:2026-03-31</code> - date bounds (inclusive)</li>
+              <li><code>2026-01-01..2026-03-31</code> - an inclusive date range</li>
+            </ul>
+            <p style={{ marginBottom: 0 }}>
+              Dates are <code>YYYY-MM-DD</code> or a whole month <code>YYYY-MM</code>. A bare word also matches
+              transaction tags. Example: <code>groceries category:Food after:2026-01-01</code>.
+            </p>
+          </div>
+        </details>
       </div>
 
       {debounced.trim().length >= 2 && (
