@@ -1,16 +1,23 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { searchAll } from "../api/client";
+
+// Highlight applied to the currently keyboard-selected result.
+const activeStyle: CSSProperties = { outline: "2px solid #3b82f6", outlineOffset: 2, borderRadius: 4 };
 
 // Global search: type anything to find transactions, vendors, categories or
 // projects and jump straight to them. The query is mirrored in the URL (?q=) so
-// the sidebar quick-search can deep-link here.
+// the sidebar quick-search can deep-link here. Results are keyboard-navigable:
+// ArrowDown/ArrowUp move a highlighted selection through the flattened list and
+// Enter opens it, reusing the exact same deep-links as clicking (added in #304).
 export default function Search() {
   const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
   const initial = params.get("q") ?? "";
   const [term, setTerm] = useState(initial);
   const [debounced, setDebounced] = useState(initial);
+  const [activeIndex, setActiveIndex] = useState(-1);
 
   // Debounce typing, and keep ?q= in sync so the result is shareable/back-able.
   useEffect(() => {
@@ -31,6 +38,52 @@ export default function Search() {
   const total =
     (r?.transactions.length ?? 0) + (r?.vendors.length ?? 0) + (r?.categories.length ?? 0) + (r?.projects.length ?? 0);
 
+  // Flattened, ordered view of every result with its DOM id and deep-link. The
+  // order and the `to` targets mirror the rendered sections exactly so keyboard
+  // activation and clicking always land on the same place.
+  const flat = useMemo(() => {
+    if (!r) return [];
+    return [
+      ...r.transactions.map((t) => ({ domId: `sr-tx-${t.id}`, to: `/transactions?focus=${t.id}` })),
+      ...r.vendors.map((v) => ({ domId: `sr-vd-${v.id}`, to: `/transactions?vendor_id=${v.id}` })),
+      ...r.categories.map((c) => ({ domId: `sr-cat-${c.id}`, to: `/transactions?category_id=${c.id}` })),
+      ...r.projects.map((p) => ({ domId: `sr-prj-${p.id}`, to: `/transactions?project_id=${p.id}` })),
+    ];
+  }, [r]);
+
+  const activeId = activeIndex >= 0 ? flat[activeIndex]?.domId : undefined;
+
+  // Reset the highlight whenever the query (and therefore the result set) changes.
+  useEffect(() => {
+    setActiveIndex(-1);
+  }, [debounced]);
+
+  // Keep the highlighted result scrolled into view as the user arrows through.
+  useEffect(() => {
+    if (!activeId) return;
+    document.getElementById(activeId)?.scrollIntoView({ block: "nearest" });
+  }, [activeId]);
+
+  const onInputKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (flat.length === 0) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveIndex((i) => (i + 1) % flat.length);
+      return;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveIndex((i) => (i <= 0 ? flat.length - 1 : i - 1));
+      return;
+    }
+    if (e.key === "Enter" && activeIndex >= 0) {
+      const item = flat[activeIndex];
+      if (item) navigate(item.to);
+    }
+  };
+
+  const styleFor = (domId: string): CSSProperties | undefined => (activeId === domId ? activeStyle : undefined);
+
   return (
     <div className="page">
       <h1 className="page__title">Search</h1>
@@ -45,15 +98,23 @@ export default function Search() {
           placeholder="Search transactions, vendors, categories, projects…"
           value={term}
           onChange={(e) => setTerm(e.target.value)}
+          onKeyDown={onInputKeyDown}
+          role="combobox"
+          aria-expanded={flat.length > 0}
+          aria-controls="search-results"
+          aria-activedescendant={activeId}
           style={{ width: "100%", fontSize: "1.05rem", padding: "8px 10px" }}
         />
         {debounced.trim().length < 2 && (
           <p className="muted" style={{ marginBottom: 0 }}>Type at least two characters.</p>
         )}
+        {flat.length > 0 && (
+          <p className="muted" style={{ marginBottom: 0 }}>Use ↑ and ↓ to navigate, Enter to open.</p>
+        )}
       </div>
 
       {debounced.trim().length >= 2 && (
-        <>
+        <div id="search-results">
           {q.isLoading && <p className="muted">Searching…</p>}
           {r && total === 0 && (
             <div className="card">
@@ -73,7 +134,9 @@ export default function Search() {
                 {r.transactions.map((t) => (
                   <li key={t.id}>
                     <span>
-                      <Link to={`/transactions?focus=${t.id}`}>{t.description}</Link>{" "}
+                      <Link id={`sr-tx-${t.id}`} style={styleFor(`sr-tx-${t.id}`)} to={`/transactions?focus=${t.id}`}>
+                        {t.description}
+                      </Link>{" "}
                       <span className="muted">· {t.transaction_date}</span>
                     </span>
                     <span>{t.amount} {t.currency}</span>
@@ -88,7 +151,15 @@ export default function Search() {
               <h2 className="card__title">Vendors ({r.vendors.length})</h2>
               <div className="chips">
                 {r.vendors.map((v) => (
-                  <Link key={v.id} className="chip" to={`/transactions?vendor_id=${v.id}`}>{v.name}</Link>
+                  <Link
+                    key={v.id}
+                    id={`sr-vd-${v.id}`}
+                    className="chip"
+                    style={styleFor(`sr-vd-${v.id}`)}
+                    to={`/transactions?vendor_id=${v.id}`}
+                  >
+                    {v.name}
+                  </Link>
                 ))}
               </div>
             </div>
@@ -99,7 +170,13 @@ export default function Search() {
               <h2 className="card__title">Categories ({r.categories.length})</h2>
               <div className="chips">
                 {r.categories.map((c) => (
-                  <Link key={c.id} className="chip" to={`/transactions?category_id=${c.id}`}>
+                  <Link
+                    key={c.id}
+                    id={`sr-cat-${c.id}`}
+                    className="chip"
+                    style={styleFor(`sr-cat-${c.id}`)}
+                    to={`/transactions?category_id=${c.id}`}
+                  >
                     <span className="chip__dot" style={{ background: c.colour ?? "#bbb" }} />
                     {c.name}
                   </Link>
@@ -114,14 +191,18 @@ export default function Search() {
               <ul className="kv">
                 {r.projects.map((p) => (
                   <li key={p.id}>
-                    <span><Link to={`/transactions?project_id=${p.id}`}>{p.name}</Link></span>
+                    <span>
+                      <Link id={`sr-prj-${p.id}`} style={styleFor(`sr-prj-${p.id}`)} to={`/transactions?project_id=${p.id}`}>
+                        {p.name}
+                      </Link>
+                    </span>
                     <span className="tag">{p.status}</span>
                   </li>
                 ))}
               </ul>
             </div>
           )}
-        </>
+        </div>
       )}
     </div>
   );
