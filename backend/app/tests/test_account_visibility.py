@@ -161,6 +161,56 @@ def test_empty_visible_set_returns_nothing_not_everything(client):
     assert _descs(client, None) == {"PRIVATE"}                  # owner still sees it
 
 
+def test_visible_ids_memoized_within_request_and_scope_unchanged(client):
+    """SR-E1 perf: repeated scope lookups in one request hit the DB once, and the
+    resolved scope is byte-for-byte what a fresh (un-memoized) query would give."""
+    from sqlalchemy import event
+
+    ids = _seed(client)
+    with SessionLocal() as db:
+        alice = db.get(User, ids["alice"])
+        # Ground truth: what the base predicate returns with no memo in play.
+        expected = set(db.scalars(select(Account.id).where(auth_service._shared_or_own(alice.id))).all())
+
+        account_selects: list[str] = []
+
+        def _count(conn, cursor, statement, params, context, executemany):
+            if "FROM accounts" in statement:
+                account_selects.append(statement)
+
+        event.listen(db.bind, "after_cursor_execute", _count)
+        try:
+            first = auth_service.visible_account_ids(db, alice)
+            second = auth_service.visible_account_ids(db, alice)
+        finally:
+            event.remove(db.bind, "after_cursor_execute", _count)
+
+        assert first == expected               # scope is unchanged by memoization
+        assert second == expected
+        assert len(account_selects) == 1       # the second call was served from cache
+        assert first is not second             # a fresh mutable set each call
+        first.add(-999)                        # mutating the result...
+        assert -999 not in auth_service.visible_account_ids(db, alice)  # ...never corrupts the memo
+
+
+def test_visible_ids_not_shared_across_users_or_requests(client):
+    """Two users resolved on one session get their own scope (no cross-user leak),
+    and a fresh session (i.e. a new request) starts with an empty memo."""
+    ids = _seed(client)
+    with SessionLocal() as db:
+        alice = db.get(User, ids["alice"])
+        bob = db.get(User, ids["bob"])
+        alice_scope = auth_service.visible_account_ids(db, alice)
+        bob_scope = auth_service.visible_account_ids(db, bob)
+        # Bob owns a private account Alice cannot see, so the sets must differ and
+        # Bob must NOT have inherited Alice's cached scope.
+        assert alice_scope != bob_scope
+        assert bob_scope == auth_service.visible_account_ids(db, bob)
+    # A brand-new session (next request) carries no memo from the previous one.
+    with SessionLocal() as fresh:
+        assert auth_service._VISIBLE_IDS_MEMO not in fresh.info
+
+
 def test_view_toggle_narrows(client):
     ids = _seed(client)
     # Give Alice her own private account so Mine/Shared/All differ for her.
