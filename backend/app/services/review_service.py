@@ -18,9 +18,10 @@ never write.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.models import ReviewItem
@@ -95,18 +96,49 @@ def resolve_for(db: Session, *, item_type: str, item_id: int, reason: str | None
 
 
 def list_items(
-    db: Session, status: str | None = "open", *, limit: int | None = DEFAULT_LIST_LIMIT
+    db: Session,
+    status: str | None = "open",
+    *,
+    item_type: str | None = None,
+    severity: str | None = None,
+    limit: int | None = DEFAULT_LIST_LIMIT,
 ) -> list[ReviewItem]:
     """Review items newest-first, bounded to ``limit`` rows so a huge backlog
     can't return an unbounded result set. ``limit`` defaults to
     :data:`DEFAULT_LIST_LIMIT`; pass a larger value to widen the window, or
-    ``None`` for no bound (use sparingly)."""
+    ``None`` for no bound (use sparingly).
+
+    Optionally narrow by ``item_type`` and/or ``severity`` (both default to
+    ``None`` = no filter, so existing callers are unaffected)."""
     stmt = select(ReviewItem).order_by(ReviewItem.created_at.desc())
     if status is not None:
         stmt = stmt.where(ReviewItem.status == status)
+    if item_type is not None:
+        stmt = stmt.where(ReviewItem.item_type == item_type)
+    if severity is not None:
+        stmt = stmt.where(ReviewItem.severity == severity)
     if limit is not None:
         stmt = stmt.limit(limit)
     return list(db.scalars(stmt).all())
+
+
+def bulk_resolve(db: Session, ids: Sequence[int], status: str = "resolved") -> int:
+    """Set ``status`` on many review items in a single UPDATE (not a per-id
+    loop). Terminal, user-driven action behind ``POST /review/bulk-resolve``, so
+    it owns its commit like :func:`set_status`. Validates ``status`` (SR-F9);
+    ids not present are silently skipped. Returns the number of rows updated."""
+    if status not in VALID_STATUSES:
+        raise ValueError(f"Unknown review status {status!r}. One of: {sorted(VALID_STATUSES)}")
+    if not ids:
+        return 0
+    resolved_at = datetime.now(UTC) if status != "open" else None
+    result = db.execute(
+        update(ReviewItem)
+        .where(ReviewItem.id.in_(ids))
+        .values(status=status, resolved_at=resolved_at)
+    )
+    db.commit()
+    return int(result.rowcount or 0)
 
 
 def set_status(db: Session, item: ReviewItem, status: str) -> ReviewItem:
