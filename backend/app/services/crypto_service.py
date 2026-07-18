@@ -29,7 +29,31 @@ _GCM_TAG_LEN = 16
 # Shortest possible valid container: header + salt + nonce + the GCM tag (an
 # empty plaintext still carries a 16-byte tag).
 _MIN_LEN = len(MAGIC) + _SALT_LEN + _NONCE_LEN + _GCM_TAG_LEN
-# scrypt cost parameters (interactive-strength; tune up if needed).
+# Minimum passphrase length enforced on the ENCRYPT side only (SR-E4). There is
+# no recovery if the passphrase is lost and these backups leave the device, so a
+# trivially short passphrase must be refused before it protects anything. Kept as
+# a plain length floor (no composition rules) to stay usable; decrypt imposes NO
+# floor so backups made with any passphrase — including older, shorter ones —
+# still open.
+_MIN_PASSPHRASE_LEN = 8
+
+# scrypt cost parameters.
+#
+# WARNING — these values are FIXED for the "HAFIENC1" container and are NOT
+# recorded in the on-disk blob (the header is magic|salt|nonce|ciphertext only).
+# Every backup is therefore implicitly bound to exactly these numbers: changing
+# any of them here would make _every existing backup_ underivable and impossible
+# to decrypt. Do not raise N/r/p in place.
+#
+# Safe upgrade path (deliberately NOT done in this change, to avoid format risk):
+#   1. Introduce a new magic/version, e.g. b"HAFIENC2", whose header stores the
+#      params (n, r, p) alongside salt/nonce.
+#   2. encrypt() writes the new magic + params; decrypt() dispatches on the magic
+#      bytes — reading params from the header for "HAFIENC2" and falling back to
+#      these fixed constants for legacy "HAFIENC1" blobs.
+#   3. Keep the "HAFIENC1" read path forever (back-compat), with a round-trip test
+#      proving old-format blobs still decrypt.
+# Until that versioned header lands, treat these three constants as immutable.
 _SCRYPT_N = 2**15
 _SCRYPT_R = 8
 _SCRYPT_P = 1
@@ -47,6 +71,13 @@ def _derive_key(passphrase: str, salt: bytes) -> bytes:
 def encrypt(data: bytes, passphrase: str) -> bytes:
     if not passphrase:
         raise ValueError("A passphrase is required to encrypt a backup.")
+    if len(passphrase) < _MIN_PASSPHRASE_LEN:
+        # Enforced on encrypt only: a too-short passphrase gives weak protection to
+        # an unrecoverable, off-device backup. Decrypt keeps no floor so existing
+        # backups made with shorter passphrases still open (SR-E4).
+        raise ValueError(
+            f"Passphrase must be at least {_MIN_PASSPHRASE_LEN} characters."
+        )
     salt = os.urandom(_SALT_LEN)
     nonce = os.urandom(_NONCE_LEN)
     key = _derive_key(passphrase, salt)
