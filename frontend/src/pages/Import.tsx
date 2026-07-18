@@ -144,6 +144,7 @@ export default function Import() {
           <input
             ref={fileInput}
             type="file"
+            aria-label="Statement file to import (CSV, PDF, or image)"
             // Broad accept so mobile file pickers don't grey out a bank CSV: phones
             // match by the OS-reported MIME, and a downloaded CSV is often
             // application/octet-stream / vnd.ms-excel / text/plain rather than
@@ -329,6 +330,7 @@ function ReceiptImportPanel() {
         ref={fileRef}
         type="file"
         accept="image/*,application/pdf"
+        aria-label="Receipt image or PDF"
         style={{ display: "none" }}
         onChange={(e) => {
           const f = e.target.files?.[0];

@@ -29,6 +29,7 @@ export default function CameraCaptureButton({
         type="file"
         accept="image/*"
         capture="environment"
+        aria-label={label}
         style={{ display: "none" }}
         onChange={(e) => {
           const f = e.target.files?.[0];
