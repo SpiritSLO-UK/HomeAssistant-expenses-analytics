@@ -283,6 +283,33 @@ def test_record_snapshot_is_throttled(db):
     assert rows[0].produced == Decimal("10")
 
 
+def test_snapshot_throttle_is_per_source(db):
+    """The throttle is keyed per source: one source's recent write must not suppress
+    a different source's snapshot (only same-source writes within the gap are skipped)."""
+    energy_service.record_snapshot(db, Decimal("10"), "ha_api")
+    energy_service.record_snapshot(db, Decimal("20"), "mqtt")   # different source → NOT throttled
+    energy_service.record_snapshot(db, Decimal("30"), "ha_api")  # same source, within gap → skipped
+    rows = db.query(EnergySnapshot).all()
+    by_source = {r.source: r.produced for r in rows}
+    assert len(rows) == 2
+    assert by_source["ha_api"] == Decimal("10")  # the later ha_api write was throttled out
+    assert by_source["mqtt"] == Decimal("20")
+
+
+def test_offset_non_live_mqtt_uses_last_snapshot(db):
+    """A non-live offset (e.g. during an MQTT publish) can't read the broker, so for
+    an MQTT source it falls back to the last persisted production snapshot, not 0."""
+    energy_service.validate_and_save(db, {"source": "mqtt", "tariff_per_kwh": "0.30"})
+    # No snapshot yet → non-live production is 0 (nothing to fall back to).
+    assert energy_service.offset(db, REF, live=False)["produced_kwh"] == "0"
+
+    db.add(EnergySnapshot(captured_at=datetime(2026, 6, 2, 10), produced=Decimal("50"), source="mqtt"))
+    db.commit()
+    out = energy_service.offset(db, REF, live=False)
+    assert Decimal(out["produced_kwh"]) == Decimal("50")
+    assert out["saving"] == "15.00"  # 50 * 0.30
+
+
 def test_production_history_endpoint(client):
     client.get("/api/users/me")
     r = client.get("/api/energy/production-history?period=month&count=3")

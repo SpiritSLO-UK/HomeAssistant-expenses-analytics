@@ -170,18 +170,32 @@ def _sum_numeric(values) -> Decimal:
     return total
 
 
-def _production_kwh(cfg: dict, *, live: bool) -> Decimal:
-    """Total produced kWh from the configured source. ``live=False`` (used during
-    an MQTT publish) skips any broker read to avoid latency/recursion."""
+def _last_snapshot(db: Session, source: str | None = None) -> EnergySnapshot | None:
+    """The most recent production snapshot, optionally scoped to one ``source``."""
+    stmt = select(EnergySnapshot).order_by(EnergySnapshot.captured_at.desc()).limit(1)
+    if source is not None:
+        stmt = stmt.where(EnergySnapshot.source == source)
+    return db.scalars(stmt).first()
+
+
+def _production_kwh(db: Session, cfg: dict, *, live: bool) -> Decimal:
+    """Total produced kWh from the configured source.
+
+    ``live=False`` (used during an MQTT publish) skips any broker read to avoid
+    latency/recursion; for an MQTT source it falls back to the last persisted
+    production snapshot so a non-live offset stays meaningful rather than zero."""
     source = cfg["source"]
     if source == "ha_api":
         states = ha_service.read_states(cfg["production_entities"])
         return _sum_numeric(states.values())
-    if source == "mqtt" and live:
-        from app.services import mqtt_service  # lazy: avoid import cycle
+    if source == "mqtt":
+        if live:
+            from app.services import mqtt_service  # lazy: avoid import cycle
 
-        payloads = mqtt_service.read_topics(cfg["production_topics"])
-        return _sum_numeric(payloads.values())
+            payloads = mqtt_service.read_topics(cfg["production_topics"])
+            return _sum_numeric(payloads.values())
+        last = _last_snapshot(db, "mqtt")
+        return Decimal(last.produced) if last is not None else Decimal("0")
     return Decimal("0")
 
 
@@ -191,11 +205,10 @@ def _now() -> datetime:
 
 def record_snapshot(db: Session, produced: Decimal, source: str) -> None:
     """Best-effort: store a production sample for the trend, throttled to one per
-    :data:`_SNAPSHOT_MIN_GAP`. Never raises into the offset read path."""
+    :data:`_SNAPSHOT_MIN_GAP` **per source** (each source snapshots on its own
+    cadence). Never raises into the offset read path."""
     try:
-        last = db.scalars(
-            select(EnergySnapshot).order_by(EnergySnapshot.captured_at.desc()).limit(1)
-        ).first()
+        last = _last_snapshot(db, source)
         now = _now()
         if last is not None and (now - last.captured_at) < _SNAPSHOT_MIN_GAP:
             return
@@ -243,7 +256,7 @@ def offset(
     elif cfg["source"] == "off":
         produced = Decimal("0")
     else:
-        produced = _production_kwh(cfg, live=live)
+        produced = _production_kwh(db, cfg, live=live)
         # A real live read → sample it for the production trend (throttled).
         if live:
             record_snapshot(db, produced, cfg["source"])
@@ -299,9 +312,7 @@ def last_saving(db: Session) -> Decimal:
     cfg = get_config(db)
     if cfg["source"] == "off":
         return Decimal("0.00")
-    latest = db.scalars(
-        select(EnergySnapshot).order_by(EnergySnapshot.captured_at.desc()).limit(1)
-    ).first()
+    latest = _last_snapshot(db)
     unit_price = _unit_price(db, cfg)
     if latest is None or unit_price is None:
         return Decimal("0.00")
