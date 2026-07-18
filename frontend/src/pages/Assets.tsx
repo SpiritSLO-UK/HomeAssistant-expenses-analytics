@@ -207,7 +207,9 @@ function HomeStatsPanel({ home }: Readonly<{ home: NonNullable<Asset["home"]> }>
   );
 }
 
-const METER_UNITS: Record<string, string> = { electricity: "kWh", gas: "kWh", water: "m3", other: "" };
+// "other" is intentionally absent: the lookup then yields undefined so the
+// `?? unit` fallback in the picker keeps whatever custom unit the user typed.
+const METER_UNITS: Record<string, string> = { electricity: "kWh", gas: "kWh", water: "m³" };
 
 function ReadingForm({ assetId, onAdded, onError }: Readonly<{ assetId: number; onAdded: () => void; onError: (e: unknown) => void }>) {
   const [date, setDate] = useState(today());
