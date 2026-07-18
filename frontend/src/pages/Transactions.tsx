@@ -193,6 +193,34 @@ export default function Transactions() {
     document.getElementById(`txn-row-${focusId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [focusId, data]);
 
+  // Re-sync the filter controls FROM the URL whenever the query string changes.
+  // The seeds above only read the URL once at mount. That covers a fresh mount
+  // (arriving from another route re-runs them), but NOT a same-path query change:
+  // navigating /transactions?category_id=5 → /transactions?vendor_id=3 keeps this
+  // component mounted (React Router preserves the element across search-only
+  // changes), so the seed never re-runs and a drill-down link (e.g. a category or
+  // vendor chip) would silently fail to apply its filter. This effect keeps the URL
+  // the source of truth for the controls in that case. We adopt only params that
+  // are PRESENT, so an unrelated navigation can't wipe a manually-set control
+  // (matching the seed semantics). The mirror effect below then writes the state
+  // back to the URL; the values are already equal, so React bails and it converges
+  // — no loop. `focus` is derived per-render (focusId above), so it needs none here.
+  useEffect(() => {
+    if (searchParams.has("search")) setSearch(searchParams.get("search") ?? "");
+    if (searchParams.has("date_from")) setDateFrom(searchParams.get("date_from") ?? "");
+    if (searchParams.has("date_to")) setDateTo(searchParams.get("date_to") ?? "");
+    if (searchParams.has("needs_review")) setNeedsReview(searchParams.get("needs_review") === "true");
+    if (searchParams.has("uncategorised")) setUncategorisedOnly(searchParams.get("uncategorised") === "true");
+    if (searchParams.has("include_archived")) setShowArchived(searchParams.get("include_archived") === "true");
+    if (searchParams.has("is_business")) setBusinessOnly(searchParams.get("is_business") === "true");
+    if (searchParams.has("category_id")) setCategoryFilter(searchParams.get("category_id") ?? "");
+    if (searchParams.has("vendor_id")) setVendorFilter(searchParams.get("vendor_id") ?? "");
+    if (searchParams.has("country")) setCountryFilter((searchParams.get("country") ?? "").toUpperCase());
+    if (searchParams.has("project_id")) setProjectFilter(searchParams.get("project_id") ?? "");
+    if (searchParams.has("member_id")) setMemberFilter(searchParams.get("member_id") ?? "");
+    if (searchParams.has("page")) setPage(Number(searchParams.get("page")) || 0);
+  }, [searchParams]);
+
   // Mirror the active filters into the URL (replace — no history spam) so a reload
   // restores them and the filtered view stays shareable/bookmarkable. A ?focus=
   // deep-link owns the URL, so skip syncing while focused.
