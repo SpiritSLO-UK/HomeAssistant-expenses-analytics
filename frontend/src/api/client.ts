@@ -2280,6 +2280,16 @@ export function mfaStepUp(code: string): Promise<{ status: string }> {
   return fetchJson("api/auth/mfa/step-up", { method: "POST", body: JSON.stringify({ code }) });
 }
 
+// One-time backup/recovery codes (CR-FEAT-1). POST replaces any prior set and
+// returns the plaintext codes ONCE (step-up gated); GET reports how many remain.
+export function generateMfaBackupCodes(): Promise<{ codes: string[]; remaining: number }> {
+  return fetchJson("api/auth/mfa/backup-codes", { method: "POST" });
+}
+
+export function getMfaBackupCodesRemaining(): Promise<{ remaining: number }> {
+  return fetchJson("api/auth/mfa/backup-codes");
+}
+
 // --- Activity log / audit viewer (owner-only, backlog #92) ---
 
 export interface AuditLogRow {
