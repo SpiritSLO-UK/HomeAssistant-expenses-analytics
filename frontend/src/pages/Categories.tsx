@@ -11,6 +11,7 @@ import {
   updateCategory,
   type Category,
 } from "../api/client";
+import { useConfirm } from "../components/dialogs";
 
 // Cloud-AI privacy levels a category can be set to (spec §22.4, §28). Each level
 // has its own icon so the three read at a glance in the chip selector + legend.
@@ -22,6 +23,7 @@ const PRIVACY_OPTIONS: { value: string; label: string }[] = [
 
 export default function Categories() {
   const qc = useQueryClient();
+  const confirm = useConfirm();
   const { data, isLoading } = useQuery({ queryKey: ["categories"], queryFn: listCategories });
   const [name, setName] = useState("");
   const [colour, setColour] = useState("#4CAF50");
@@ -153,21 +155,23 @@ export default function Categories() {
     create.mutate();
   }
 
-  function confirmDelete(c: Category) {
+  async function confirmDelete(c: Category) {
     const msg = c.is_system
       ? `Delete the built-in category "${c.name}"? Transactions using it become uncategorised. ` +
         `You can restore built-ins later with "Import library".`
       : `Delete the category "${c.name}"? Transactions using it become uncategorised.`;
-    if (globalThis.confirm(msg)) remove.mutate(c.id);
+    if (await confirm({ message: msg, confirmLabel: "Delete", danger: true })) remove.mutate(c.id);
   }
 
-  function confirmMerge() {
+  async function confirmMerge() {
     if (!mergeSource || !mergeTarget || mergeSource === mergeTarget) return;
     if (
-      globalThis.confirm(
-        `Merge "${nameOf(mergeSource)}" into "${nameOf(mergeTarget)}"? ` +
+      await confirm({
+        message:
+          `Merge "${nameOf(mergeSource)}" into "${nameOf(mergeTarget)}"? ` +
           `Everything in the first moves to the second, then the first is removed.`,
-      )
+        confirmLabel: "Merge",
+      })
     ) {
       merge.mutate({ source: Number(mergeSource), target: Number(mergeTarget) });
     }
@@ -288,11 +292,11 @@ export default function Categories() {
               key={o.value}
               className={"btn btn--sm" + (privacyDefault.data?.level === o.value ? "" : " btn--ghost")}
               disabled={applyPrivacy.isPending}
-              onClick={() => {
+              onClick={async () => {
                 if (
-                  globalThis.confirm(
-                    `Set every category to “${o.label}”? This overwrites any per-category choices.`,
-                  )
+                  await confirm({
+                    message: `Set every category to “${o.label}”? This overwrites any per-category choices.`,
+                  })
                 ) {
                   applyPrivacy.mutate(o.value);
                 }

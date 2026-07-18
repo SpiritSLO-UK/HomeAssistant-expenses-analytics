@@ -1,4 +1,5 @@
 import { approveAiRequest, classifyWithAi } from "../api/client";
+import { alertAsync, confirmAsync } from "../components/dialogs";
 
 export interface AiSuggestion {
   categoryId: number | null;
@@ -23,7 +24,14 @@ export async function suggestForTransaction(transactionId: number): Promise<AiSu
   let res = await classifyWithAi(transactionId);
   if (res.status === "approval_required") {
     const preview = JSON.stringify(res.payload ?? {}, null, 2);
-    if (!globalThis.confirm(`Cloud AI needs approval. Only this redacted payload is sent:\n\n${preview}\n\nApprove?`)) {
+    // Fails CLOSED via confirmAsync if no dialog provider is mounted — never
+    // native confirm, which a sandboxed HA-ingress iframe can suppress.
+    const approved = await confirmAsync({
+      title: "Approve cloud AI request?",
+      message: `Cloud AI needs approval. Only this redacted payload is sent:\n\n${preview}`,
+      confirmLabel: "Approve",
+    });
+    if (!approved) {
       return null;
     }
     res = await approveAiRequest(res.ai_request_id);
@@ -38,11 +46,16 @@ export async function suggestForTransaction(transactionId: number): Promise<AiSu
       country ? `Country: ${country}` : null,
       res.rationale || null,
     ].filter(Boolean);
-    if (globalThis.confirm(`AI suggests:\n\n${lines.join("\n")}\n\nApply?`)) {
+    const apply = await confirmAsync({
+      title: "Apply AI suggestion?",
+      message: `AI suggests:\n\n${lines.join("\n")}`,
+      confirmLabel: "Apply",
+    });
+    if (apply) {
       return { categoryId: res.category_id, country, vendor };
     }
     return null;
   }
-  globalThis.alert("AI couldn't suggest anything for this transaction.");
+  await alertAsync({ message: "AI couldn't suggest anything for this transaction." });
   return null;
 }

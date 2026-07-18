@@ -13,6 +13,7 @@ import {
   type User,
 } from "../api/client";
 import { useServerState } from "../lib/useServerState";
+import { useConfirm } from "../components/dialogs";
 
 function badge(a: Account): { label: string; colour: string } {
   if (a.owner_user_id === null) return { label: "Shared · household", colour: "#3aa55a" };
@@ -228,6 +229,7 @@ function AccountRow({ account, isAdmin, meId, users, accounts, fail, clearErr }:
 // Delete (empty accounts) or merge (accounts that still have data) — owner-only.
 function AccountAdminControls({ account, accounts, fail, clearErr }: Readonly<{ account: Account; accounts: Account[]; fail: Fail; clearErr: () => void }>) {
   const invalidate = useInvalidateAccounts();
+  const confirm = useConfirm();
   const [mergeTarget, setMergeTarget] = useState<number | "">("");
   const others = accounts.filter((a) => a.id !== account.id);
 
@@ -249,8 +251,8 @@ function AccountAdminControls({ account, accounts, fail, clearErr }: Readonly<{ 
       <button
         className="btn btn--ghost"
         disabled={del.isPending}
-        onClick={() => {
-          if (globalThis.confirm(`Delete account "${account.name}"? This can't be undone.`)) del.mutate();
+        onClick={async () => {
+          if (await confirm({ message: `Delete account "${account.name}"? This can't be undone.`, confirmLabel: "Delete", danger: true })) del.mutate();
         }}
       >
         {del.isPending ? "Deleting…" : "Delete"}
@@ -271,9 +273,9 @@ function AccountAdminControls({ account, accounts, fail, clearErr }: Readonly<{ 
       <button
         className="btn btn--ghost"
         disabled={mergeTarget === "" || merge.isPending}
-        onClick={() => {
+        onClick={async () => {
           const t = others.find((o) => o.id === mergeTarget);
-          if (t && globalThis.confirm(`Move everything from "${account.name}" into "${t.name}", then delete "${account.name}"?`)) {
+          if (t && await confirm({ message: `Move everything from "${account.name}" into "${t.name}", then delete "${account.name}"?`, confirmLabel: "Merge" })) {
             merge.mutate(mergeTarget as number);
           }
         }}

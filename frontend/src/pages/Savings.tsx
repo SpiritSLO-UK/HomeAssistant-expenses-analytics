@@ -19,6 +19,7 @@ import {
 import { isAmount, parseAmount } from "../lib/num";
 import { money } from "../lib/money";
 import { useServerState } from "../lib/useServerState";
+import { useConfirm, usePrompt } from "../components/dialogs";
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -114,6 +115,7 @@ function AccountCard({
   onChange: () => void;
   onError: (e: unknown) => void;
 }>) {
+  const confirm = useConfirm();
   const [open, setOpen] = useState(false);
   const history = useQuery({
     queryKey: ["savings-history", account.id],
@@ -147,13 +149,13 @@ function AccountCard({
   });
 
   // Confirm a deposit/withdraw, showing the resulting balance, before applying.
-  function doAdjust(direction: "deposit" | "withdraw") {
+  async function doAdjust(direction: "deposit" | "withdraw") {
     const amt = parseAmount(delta);
     if (amt == null || amt === 0) return;
     const current = Number(account.latest_balance ?? 0);
     const next = direction === "deposit" ? current + amt : current - amt;
     const verb = direction === "deposit" ? "Deposit" : "Withdraw";
-    if (globalThis.confirm(`${verb} ${money(amt, base)}?\nNew balance: ${money(next, base)}.`)) {
+    if (await confirm({ message: `${verb} ${money(amt, base)}?\nNew balance: ${money(next, base)}.`, confirmLabel: verb })) {
       adjust.mutate(direction);
     }
   }
@@ -353,6 +355,8 @@ function GoalsCard({
   onChange: () => void;
   onError: (e: unknown) => void;
 }>) {
+  const confirm = useConfirm();
+  const prompt = usePrompt();
   const [name, setName] = useState("");
   const [target, setTarget] = useState("");
   const [targetDate, setTargetDate] = useState("");
@@ -409,8 +413,8 @@ function GoalsCard({
                     {" · "}
                     <button
                       className="link-btn"
-                      onClick={() => {
-                        const v = globalThis.prompt(`Update current amount for "${g.name}" (${base})`, g.current_amount);
+                      onClick={async () => {
+                        const v = await prompt({ title: "Update current amount", message: `Update current amount for "${g.name}" (${base})`, defaultValue: String(g.current_amount ?? ""), confirmLabel: "Update" });
                         const trimmed = v?.trim();
                         if (trimmed && isAmount(trimmed)) setCurrent.mutate({ id: g.id, current_amount: trimmed });
                       }}
@@ -420,7 +424,7 @@ function GoalsCard({
                   </>
                 )}
                 {" · "}
-                <button className="link-btn" onClick={() => { if (globalThis.confirm(`Delete goal "${g.name}"?`)) remove.mutate(g.id); }}>
+                <button className="link-btn" onClick={async () => { if (await confirm({ message: `Delete goal "${g.name}"?`, confirmLabel: "Delete", danger: true })) remove.mutate(g.id); }}>
                   delete
                 </button>
               </div>

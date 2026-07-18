@@ -9,6 +9,7 @@ import {
   getTravelTrips,
   type Trip,
 } from "../api/client";
+import { usePrompt } from "../components/dialogs";
 import CountrySelect from "../components/CountrySelect";
 import OverTimeChart from "../components/OverTimeChart";
 
@@ -37,6 +38,7 @@ function TripCountry({ onSet, pending }: Readonly<{ onSet: (code: string) => voi
 
 export default function Travel() {
   const qc = useQueryClient();
+  const prompt = usePrompt();
   const [gapDays, setGapDays] = useState(14);
   const [months, setMonths] = useState(12);
   const [msg, setMsg] = useState<string | null>(null);   // success notice (green)
@@ -83,9 +85,9 @@ export default function Travel() {
     },
   });
 
-  function createFor(trip: Trip) {
+  async function createFor(trip: Trip) {
     const suggested = `${trip.label} ${trip.last.slice(0, 4)}`.trim();
-    const name = globalThis.prompt("Name this trip project:", suggested)?.trim();
+    const name = (await prompt({ title: "Name this trip project", message: "Name this trip project:", defaultValue: suggested, confirmLabel: "Create" }))?.trim();
     if (name) makeProject.mutate({ name, ids: trip.transaction_ids });
   }
 

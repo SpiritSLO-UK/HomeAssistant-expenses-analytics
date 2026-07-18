@@ -11,6 +11,7 @@ import {
   listCategories,
   type BudgetSummaryItem,
 } from "../api/client";
+import { useConfirm } from "../components/dialogs";
 
 function thisMonth(): string {
   const d = new Date();
@@ -46,6 +47,7 @@ type WithPace = BudgetSummaryItem & {
 
 export default function Budgets() {
   const qc = useQueryClient();
+  const confirm = useConfirm();
   const [month, setMonth] = useState(thisMonth());
   const [annual, setAnnual] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -121,8 +123,8 @@ export default function Budgets() {
               month={`${month}-01`}
               annual={annual}
               categoryName={catName(b.category_id)}
-              onDelete={() => {
-                if (confirm(`Delete budget "${b.name}"?`)) remove.mutate(b.budget_id);
+              onDelete={async () => {
+                if (await confirm({ message: `Delete budget "${b.name}"?`, confirmLabel: "Delete", danger: true })) remove.mutate(b.budget_id);
               }}
             />
           ))}

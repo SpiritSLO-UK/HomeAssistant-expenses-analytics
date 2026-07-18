@@ -23,6 +23,7 @@ import {
 } from "../api/client";
 import { isAmount, parseAmount } from "../lib/num";
 import { useServerState } from "../lib/useServerState";
+import { useConfirm } from "../components/dialogs";
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -400,6 +401,7 @@ function HoldingRow({
   onChange: () => void;
   onError: (e: unknown) => void;
 }>) {
+  const confirm = useConfirm();
   const [units, setUnits] = useServerState(holding.units);
   const [avgCost, setAvgCost] = useServerState(holding.avg_cost ?? "");
 
@@ -445,7 +447,7 @@ function HoldingRow({
         </button>{" "}
         <button
           className="link-btn"
-          onClick={() => { if (globalThis.confirm(`Remove holding ${holding.symbol}?`)) remove.mutate(); }}
+          onClick={async () => { if (await confirm({ message: `Remove holding ${holding.symbol}?`, confirmLabel: "Remove", danger: true })) remove.mutate(); }}
         >
           ✕
         </button>

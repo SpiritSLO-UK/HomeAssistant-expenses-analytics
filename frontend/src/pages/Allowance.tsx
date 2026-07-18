@@ -15,6 +15,7 @@ import {
 } from "../api/client";
 import { isAmount } from "../lib/num";
 import { useServerState } from "../lib/useServerState";
+import { useConfirm } from "../components/dialogs";
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -37,6 +38,7 @@ function BudgetBar({ b, base, manage }: Readonly<{ b: ChildBudgetStatus; base: s
   // Re-sync from the server value so the Save disabled-compare stays accurate after a
   // refetch, rather than comparing against a baseline captured only at mount (FE-7).
   const [amount, setAmount] = useServerState(b.amount);
+  const confirm = useConfirm();
   return (
     <li>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
@@ -61,7 +63,7 @@ function BudgetBar({ b, base, manage }: Readonly<{ b: ChildBudgetStatus; base: s
             <button
               className="link-btn"
               title="Remove this budget"
-              onClick={() => { if (globalThis.confirm(`Remove the "${b.name}" budget?`)) manage.onDelete(b.budget_id); }}
+              onClick={async () => { if (await confirm({ message: `Remove the "${b.name}" budget?`, confirmLabel: "Remove", danger: true })) manage.onDelete(b.budget_id); }}
             >
               ✕
             </button>
@@ -150,6 +152,7 @@ function ChildHome() {
  *  adults see the allowance read-only. The backend enforces the same. */
 function ParentManager({ canManage }: Readonly<{ canManage: boolean }>) {
   const qc = useQueryClient();
+  const confirm = useConfirm();
   const users = useQuery({ queryKey: ["users"], queryFn: listUsers });
   const categories = useQuery({ queryKey: ["categories"], queryFn: listCategories });
   const [childId, setChildId] = useState<number | null>(null);
@@ -319,7 +322,7 @@ function ParentManager({ canManage }: Readonly<{ canManage: boolean }>) {
                   {it.amount} {it.currency}{" "}
                   <button
                     className="link-btn"
-                    onClick={() => { if (globalThis.confirm(`Remove "${it.description ?? "this item"}"?`)) removeItem.mutate(it.id); }}
+                    onClick={async () => { if (await confirm({ message: `Remove "${it.description ?? "this item"}"?`, confirmLabel: "Remove", danger: true })) removeItem.mutate(it.id); }}
                   >
                     remove
                   </button>

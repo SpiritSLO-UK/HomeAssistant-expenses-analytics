@@ -12,6 +12,7 @@ import {
 } from "../api/client";
 import { money } from "../lib/money";
 import { isAmount, roundStr } from "../lib/num";
+import { useConfirm } from "../components/dialogs";
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -110,6 +111,7 @@ function NewAssetForm({ onCreated, onError }: Readonly<{ onCreated: () => void; 
 
 function AssetCard({ asset, onChange, onError }: Readonly<{ asset: Asset; onChange: () => void; onError: (e: unknown) => void }>) {
   const [open, setOpen] = useState(false);
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const detail = useQuery({
     queryKey: ["asset", asset.id],
@@ -141,7 +143,7 @@ function AssetCard({ asset, onChange, onError }: Readonly<{ asset: Asset; onChan
         </div>
         <button
           className="link-btn"
-          onClick={() => { if (globalThis.confirm(`Delete "${asset.name}" and all its logs?`)) remove.mutate(); }}
+          onClick={async () => { if (await confirm({ message: `Delete "${asset.name}" and all its logs?`, confirmLabel: "Delete", danger: true })) remove.mutate(); }}
         >
           ✕
         </button>
@@ -349,6 +351,7 @@ function EntryForm({ assetId, onAdded, onError }: Readonly<{ assetId: number; on
 function LogHistory({ asset, logs, onChange, onError }: Readonly<{
   asset: Asset; logs: AssetLog[]; onChange: () => void; onError: (e: unknown) => void;
 }>) {
+  const confirm = useConfirm();
   const remove = useMutation({
     mutationFn: (id: number) => deleteAssetLog(id),
     onSuccess: onChange,
@@ -399,7 +402,7 @@ function LogHistory({ asset, logs, onChange, onError }: Readonly<{
                 </td>
                 <td style={{ whiteSpace: "nowrap" }}>{lg.cost == null ? "—" : money(lg.cost)}</td>
                 <td>
-                  <button className="link-btn" onClick={() => { if (globalThis.confirm("Delete this entry?")) remove.mutate(lg.id); }}>✕</button>
+                  <button className="link-btn" onClick={async () => { if (await confirm({ message: "Delete this entry?", confirmLabel: "Delete", danger: true })) remove.mutate(lg.id); }}>✕</button>
                 </td>
               </tr>
             );

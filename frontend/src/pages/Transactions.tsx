@@ -30,6 +30,7 @@ import AiBatchPanel from "../components/AiBatchPanel";
 import CloudAiBatchPanel from "../components/CloudAiBatchPanel";
 import AssignToChildButton from "../components/AssignToChildButton";
 import ReceiptPreview from "../components/ReceiptPreview";
+import { useAlert, useConfirm, usePrompt } from "../components/dialogs";
 import { useResizableColumns, type ColumnDef } from "../useResizableColumns";
 import { suggestForTransaction } from "../lib/aiSuggest";
 import { recommendedVendorName } from "../lib/vendorSignature";
@@ -73,6 +74,9 @@ const numOrUndef = (v: string): number | undefined => (v ? Number(v) : undefined
 
 export default function Transactions() {
   const qc = useQueryClient();
+  const confirm = useConfirm();
+  const prompt = usePrompt();
+  const alert = useAlert();
   // Deep-link (Review Queue "Open transaction →", trip drill-down): when a
   // ?focus=<id> is present we narrow the list to *just that one transaction* so
   // it's always surfaced — the previous highlight-only approach silently failed
@@ -295,9 +299,9 @@ export default function Transactions() {
   });
 
   // Prompt for a VAT amount (blank clears it).
-  function editVat(t: Transaction) {
+  async function editVat(t: Transaction) {
     const current = t.vat_amount ?? "";
-    const input = globalThis.prompt(`VAT amount for this transaction (in ${t.currency}, blank to clear):`, current);
+    const input = await prompt({ title: "VAT amount", message: `VAT amount for this transaction (in ${t.currency}, blank to clear):`, defaultValue: String(current), confirmLabel: "Save" });
     if (input === null) return; // cancelled
     const trimmed = input.trim();
     if (trimmed === "") {
@@ -305,7 +309,7 @@ export default function Transactions() {
       return;
     }
     if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) {
-      globalThis.alert("Enter a number like 4.20 (or blank to clear).");
+      await alert({ message: "Enter a number like 4.20 (or blank to clear)." });
       return;
     }
     setVat.mutate({ id: t.id, value: trimmed });
@@ -315,7 +319,7 @@ export default function Transactions() {
   // the current page).
   const exportCsv = useMutation({
     mutationFn: () => exportTransactionsCsv(filters),
-    onError: (e) => globalThis.alert(String(e instanceof Error ? e.message : e)),
+    onError: (e) => { alert({ message: String(e instanceof Error ? e.message : e) }); },
   });
 
   const setProject = useMutation({
@@ -347,7 +351,7 @@ export default function Transactions() {
       qc.invalidateQueries({ queryKey: ["vendors"] });
       qc.invalidateQueries({ queryKey: ["dash-vendors"] });
     },
-    onError: (e) => globalThis.alert(String(e instanceof Error ? e.message : e)),
+    onError: (e) => { alert({ message: String(e instanceof Error ? e.message : e) }); },
   });
 
   // Set (or clear) a transaction's own country — beats the vendor's country for the
@@ -370,7 +374,7 @@ export default function Transactions() {
       qc.invalidateQueries({ queryKey: ["dashboard-projects"] });
       qc.invalidateQueries({ queryKey: ["tags"] });
     },
-    onError: (e) => globalThis.alert(String(e instanceof Error ? e.message : e)),
+    onError: (e) => { alert({ message: String(e instanceof Error ? e.message : e) }); },
   });
 
   function applyBulk(patch: BulkUpdate, clearAfter = false) {
@@ -394,8 +398,8 @@ export default function Transactions() {
   });
 
   // Add a tag via a small prompt, then persist the new full set (spec §18.3).
-  function addTag(t: Transaction) {
-    const name = globalThis.prompt("Add a tag (e.g. reimbursable, work, gift):")?.trim();
+  async function addTag(t: Transaction) {
+    const name = (await prompt({ title: "Add a tag", message: "Add a tag (e.g. reimbursable, work, gift):", confirmLabel: "Add" }))?.trim();
     if (!name) return;
     const current = (t.tags ?? []).map((x) => x.name);
     if (current.some((c) => c.toLowerCase() === name.toLowerCase())) return;
@@ -415,7 +419,7 @@ export default function Transactions() {
       if (s.country) setCountry.mutate({ id: t.id, country: s.country });
       if (s.vendor && !t.merchant_id) createVendor.mutate({ id: t.id, name: s.vendor });
     } catch (e) {
-      globalThis.alert(String(e instanceof Error ? e.message : e));
+      await alert({ message: String(e instanceof Error ? e.message : e) });
     }
   }
 
@@ -641,8 +645,8 @@ export default function Transactions() {
                 />
                 <button
                   className="btn btn--sm btn--ghost"
-                  onClick={() => {
-                    const t = globalThis.prompt("Add a tag to the selected transactions:")?.trim();
+                  onClick={async () => {
+                    const t = (await prompt({ title: "Add a tag", message: "Add a tag to the selected transactions:", confirmLabel: "Add" }))?.trim();
                     if (t) applyBulk({ add_tag: t });
                   }}
                 >
@@ -656,8 +660,8 @@ export default function Transactions() {
                 </button>
                 <button
                   className="btn btn--sm btn--ghost"
-                  onClick={() => {
-                    if (globalThis.confirm(`Archive ${selected.size} transaction(s)? They're hidden from totals (reversible).`))
+                  onClick={async () => {
+                    if (await confirm({ message: `Archive ${selected.size} transaction(s)? They're hidden from totals (reversible).`, confirmLabel: "Archive" }))
                       applyBulk({ archive: true }, true);
                   }}
                 >
@@ -665,8 +669,8 @@ export default function Transactions() {
                 </button>
                 <button
                   className="btn btn--sm btn--ghost"
-                  onClick={() => {
-                    if (globalThis.confirm(`Permanently delete ${selected.size} transaction(s)? This can't be undone.`))
+                  onClick={async () => {
+                    if (await confirm({ message: `Permanently delete ${selected.size} transaction(s)? This can't be undone.`, confirmLabel: "Delete", danger: true }))
                       applyBulk({ delete: true }, true);
                   }}
                 >

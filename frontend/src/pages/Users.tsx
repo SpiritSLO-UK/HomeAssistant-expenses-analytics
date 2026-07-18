@@ -13,6 +13,7 @@ import {
   type User,
 } from "../api/client";
 import { BLOCKABLE_NAV_ITEMS, navKey } from "../nav";
+import { useConfirm } from "../components/dialogs";
 
 const ROLES = ["owner", "member", "viewer", "child"];
 
@@ -34,6 +35,7 @@ const ROLE_HINT: Record<string, string> = {
 
 export default function Users() {
   const qc = useQueryClient();
+  const confirm = useConfirm();
   const [err, setErr] = useState<string | null>(null);
 
   // Admin actions can require a fresh MFA step-up (#124). Every challenged action
@@ -191,8 +193,8 @@ export default function Users() {
                       </button>{" "}
                       <button
                         className="link-btn"
-                        onClick={() => {
-                          if (globalThis.confirm(`Deny "${u.display_name}"? They won't get access.`))
+                        onClick={async () => {
+                          if (await confirm({ message: `Deny "${u.display_name}"? They won't get access.`, confirmLabel: "Deny", danger: true }))
                             doPatch(u.id, { status: "disabled" });
                         }}
                       >
@@ -300,8 +302,8 @@ export default function Users() {
                         ) : (
                           <button
                             className="link-btn"
-                            onClick={() => {
-                              if (globalThis.confirm(`Remove "${u.display_name}"? They lose all access.`))
+                            onClick={async () => {
+                              if (await confirm({ message: `Remove "${u.display_name}"? They lose all access.`, confirmLabel: "Remove", danger: true }))
                                 doRemove(u.id);
                             }}
                           >
