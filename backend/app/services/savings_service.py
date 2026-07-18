@@ -9,8 +9,8 @@ transaction's ``needs_rate``); single-currency households are unaffected.
 
 from __future__ import annotations
 
-from datetime import date
-from decimal import Decimal
+from datetime import date, timedelta
+from decimal import ROUND_CEILING, Decimal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -272,6 +272,90 @@ def goal_current(db: Session, goal: SavingsGoal) -> Decimal:
     return Decimal(goal.current_amount or 0)
 
 
+# --- Deposit-rate / time-to-goal forecast ------------------------------------
+#
+# From a goal's balance-snapshot history we infer an average net-deposit rate
+# (contributions minus withdrawals per ~30-day month) and, at that rate, project
+# when the target is reached and whether that lands on/behind any ``target_date``.
+# Additive to the goal summary — every state returns the same keys so callers can
+# read ``forecast`` without changing existing fields.
+
+FORECAST_PERIOD_DAYS = Decimal("30")  # a "month" for the reported rate/horizon
+
+
+def _monthly_deposit_rate(snapshots: list[tuple[date, Decimal]]) -> Decimal | None:
+    """Average net contribution per 30-day month across the snapshot window
+    (``latest − earliest`` balance over the elapsed days). ``None`` when fewer
+    than two snapshots span a positive number of days — no rate can be inferred."""
+    if len(snapshots) < 2:
+        return None
+    (first_date, first_bal), (last_date, last_bal) = snapshots[0], snapshots[-1]
+    elapsed_days = (last_date - first_date).days
+    if elapsed_days <= 0:
+        return None
+    return (last_bal - first_bal) / Decimal(elapsed_days) * FORECAST_PERIOD_DAYS
+
+
+def _forecast_result(state: str, *, monthly_rate: Decimal | None = None,
+                     projected_date: date | None = None,
+                     months_remaining: Decimal | None = None,
+                     on_track: bool | None = None) -> dict:
+    """Uniform forecast payload; unfilled parts stay ``None`` so the shape is
+    stable across every ``state``."""
+    return {
+        "state": state,
+        "monthly_deposit_rate": (
+            str(monthly_rate.quantize(TWO_DP)) if monthly_rate is not None else None
+        ),
+        "projected_date": projected_date.isoformat() if projected_date else None,
+        "months_remaining": (
+            round(float(months_remaining), 1) if months_remaining is not None else None
+        ),
+        "on_track": on_track,
+    }
+
+
+_ON_TRACK_STATE = {True: "on_track", False: "behind", None: "projected"}
+
+
+def forecast_goal(*, current: Decimal, target: Decimal,
+                  snapshots: list[tuple[date, Decimal]],
+                  target_date: date | None, today: date) -> dict:
+    """Project when ``target`` is reached at the recent average deposit rate.
+
+    Pure and DB-free. States: ``no_forecast`` (no target or no usable deposit
+    history), ``achieved`` (already at/over target), ``not_progressing`` (net
+    withdrawals — target recedes), and ``on_track`` / ``behind`` / ``projected``
+    (has a date; on/behind is set only when the goal has a ``target_date``).
+    """
+    remaining = target - current
+    if target <= 0:
+        return _forecast_result("no_forecast")
+    if remaining <= 0:
+        return _forecast_result("achieved")
+    monthly = _monthly_deposit_rate(snapshots)
+    if monthly is None:
+        return _forecast_result("no_forecast")
+    if monthly <= 0:
+        return _forecast_result("not_progressing", monthly_rate=monthly)
+    months_remaining = remaining / monthly
+    days = int((months_remaining * FORECAST_PERIOD_DAYS).to_integral_value(ROUND_CEILING))
+    projected = today + timedelta(days=days)
+    on_track = None if target_date is None else projected <= target_date
+    return _forecast_result(
+        _ON_TRACK_STATE[on_track], monthly_rate=monthly, projected_date=projected,
+        months_remaining=months_remaining, on_track=on_track,
+    )
+
+
+def _goal_snapshots(db: Session, goal: SavingsGoal) -> list[tuple[date, Decimal]]:
+    """Dated balance history backing a goal's deposit rate. Only linked goals have
+    one; a manual goal tracks a single ``current_amount`` (no history → no rate)."""
+    if goal.account_id is None:
+        return []
+    return [(b.as_of_date, Decimal(b.balance)) for b in balance_history(db, goal.account_id)]
+
+
 def goal_to_dict(db: Session, goal: SavingsGoal) -> dict:
     current = goal_current(db, goal)
     target = Decimal(goal.target_amount)
@@ -289,6 +373,10 @@ def goal_to_dict(db: Session, goal: SavingsGoal) -> dict:
         "percent": round(percent, 1),
         "currency": goal.currency,
         "status": "achieved" if current >= target and target > 0 else goal.status,
+        "forecast": forecast_goal(
+            current=current, target=target, snapshots=_goal_snapshots(db, goal),
+            target_date=goal.target_date, today=date.today(),
+        ),
     }
 
 
