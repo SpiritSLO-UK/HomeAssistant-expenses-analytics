@@ -533,12 +533,14 @@ export default function Transactions() {
       <div className="card">
         <div className="filters">
           <input
+            name="txn-filter-search"
+            autoComplete="off"
             placeholder="Search description / merchant"
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(0); }}
           />
-          <label>From <input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(0); }} /></label>
-          <label>To <input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(0); }} /></label>
+          <label>From <input name="txn-filter-date-from" type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(0); }} /></label>
+          <label>To <input name="txn-filter-date-to" type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(0); }} /></label>
           <span style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
             <span className="muted" style={{ fontSize: "0.8rem" }}>Quick:</span>
             {[
@@ -560,13 +562,13 @@ export default function Transactions() {
             )}
           </span>
           <label>Category{" "}
-            <select value={categoryFilter} onChange={(e) => { setCategoryFilter(e.target.value); setPage(0); }}>
+            <select name="txn-filter-category" value={categoryFilter} onChange={(e) => { setCategoryFilter(e.target.value); setPage(0); }}>
               <option value="">All</option>
               {categories.data?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </label>
           <label>Vendor{" "}
-            <select value={vendorFilter} onChange={(e) => { setVendorFilter(e.target.value); setPage(0); }}>
+            <select name="txn-filter-vendor" value={vendorFilter} onChange={(e) => { setVendorFilter(e.target.value); setPage(0); }}>
               <option value="">All</option>
               {vendors.data?.map((v) => (
                 <option key={v.id} value={v.id}>{v.display_name ?? v.canonical_name}</option>
@@ -574,7 +576,7 @@ export default function Transactions() {
             </select>
           </label>
           <label>Project{" "}
-            <select value={projectFilter} onChange={(e) => { setProjectFilter(e.target.value); setPage(0); }}>
+            <select name="txn-filter-project" value={projectFilter} onChange={(e) => { setProjectFilter(e.target.value); setPage(0); }}>
               <option value="">All</option>
               {projects.data?.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
@@ -587,7 +589,7 @@ export default function Transactions() {
           )}
           {(members.data?.length ?? 0) > 1 && (
             <label title="Show one household member's own-account transactions">Member{" "}
-              <select value={memberFilter} onChange={(e) => { setMemberFilter(e.target.value); setPage(0); }}>
+              <select name="txn-filter-member" value={memberFilter} onChange={(e) => { setMemberFilter(e.target.value); setPage(0); }}>
                 <option value="">All members</option>
                 {members.data?.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}
               </select>

@@ -308,8 +308,8 @@ function NewAccountForm({ onCreated, onError }: Readonly<{ onCreated: () => void
       style={{ marginTop: 12 }}
       onSubmit={(e) => { e.preventDefault(); if (name) create.mutate(); }}
     >
-      <input placeholder="New account name (e.g. Cash ISA)" value={name} onChange={(e) => setName(e.target.value)} />
-      <input placeholder="Institution (optional)" value={institution} onChange={(e) => setInstitution(e.target.value)} />
+      <input name="new-account-name" autoComplete="off" placeholder="New account name (e.g. Cash ISA)" value={name} onChange={(e) => setName(e.target.value)} />
+      <input name="new-account-institution" autoComplete="off" placeholder="Institution (optional)" value={institution} onChange={(e) => setInstitution(e.target.value)} />
       <button className="btn" type="submit" disabled={!name || create.isPending}>
         {create.isPending ? "Adding…" : "Add account"}
       </button>

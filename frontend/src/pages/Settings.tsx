@@ -374,6 +374,8 @@ export default function Settings() {
         <div className="form-row">
           <input
             type="password"
+            name="encrypted-backup-passphrase"
+            autoComplete="new-password"
             placeholder="Passphrase"
             value={passphrase}
             onChange={(e) => setPassphrase(e.target.value)}
@@ -1236,6 +1238,7 @@ function AiCard({
       <div className="form-row" style={{ flexWrap: "wrap", gap: 8, marginTop: 10, alignItems: "center" }}>
         <input
           type="password"
+          name="ai-api-key"
           autoComplete="off"
           placeholder="API key (stored encrypted)"
           value={keyInput}
@@ -1384,6 +1387,8 @@ function MfaBackupCodesSection({
             onSubmit={(e) => { e.preventDefault(); if (stepCode) stepUp.mutate(); }}
           >
             <input
+              name="mfa-backup-stepup-code"
+              autoComplete="one-time-code"
               inputMode="numeric"
               autoFocus
               placeholder="123456"
@@ -1518,6 +1523,8 @@ function MfaCard({
           </p>
           <div className="form-row">
             <input
+              name="mfa-enable-code"
+              autoComplete="one-time-code"
               inputMode="numeric"
               placeholder="123456"
               maxLength={8}
@@ -1561,6 +1568,8 @@ function MfaCard({
               </p>
               <div className="form-row">
                 <input
+                  name="mfa-disable-code"
+                  autoComplete="one-time-code"
                   inputMode="numeric"
                   placeholder="123456"
                   maxLength={8}
@@ -1773,6 +1782,8 @@ function SecurityCard({
           <div className="form-row">
             <input
               type="password"
+              name="enable-encryption-passphrase"
+              autoComplete="new-password"
               placeholder="New passphrase"
               value={pass}
               onChange={(e) => setPass(e.target.value)}
@@ -1824,6 +1835,8 @@ function SecurityCard({
           <div className="form-row">
             <input
               type="password"
+              name="disable-encryption-passphrase"
+              autoComplete="current-password"
               placeholder="Passphrase to disable"
               value={pass}
               onChange={(e) => setPass(e.target.value)}
@@ -2101,6 +2114,8 @@ function RetentionCard({
             onSubmit={(e) => { e.preventDefault(); if (stepCode) stepUp.mutate(); }}
           >
             <input
+              name="mfa-retention-stepup-code"
+              autoComplete="one-time-code"
               inputMode="numeric"
               autoFocus
               placeholder="123456"

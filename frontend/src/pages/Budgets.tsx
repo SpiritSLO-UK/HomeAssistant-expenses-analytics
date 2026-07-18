@@ -277,7 +277,7 @@ function NewBudget({
         Spend is in your base currency ({base}); split transactions count per category.
       </p>
       <div className="form-row" style={{ flexWrap: "wrap", gap: 8 }}>
-        <input placeholder="Name (e.g. Groceries)" value={name} onChange={(e) => setName(e.target.value)} style={{ minWidth: 160 }} />
+        <input name="new-budget-name" autoComplete="off" placeholder="Name (e.g. Groceries)" value={name} onChange={(e) => setName(e.target.value)} style={{ minWidth: 160 }} />
         <input
           type="number" step="0.01" min="0"
           placeholder={`Amount (${base})`}
