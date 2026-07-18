@@ -58,9 +58,22 @@ class ProjectTotal(BaseModel):
     percent: float | None
 
 
+class ProjectForecast(BaseModel):
+    """Run-rate / burn-down forecast vs budget (spec §18.2). Present only when the
+    project has a positive budget; money fields are ``Decimal`` like their siblings."""
+
+    budget: Decimal
+    remaining: Decimal
+    run_rate_per_day: Decimal | None
+    forecast_total: Decimal | None
+    on_track: bool
+    exhaustion_date: date | None
+
+
 class ProjectSummary(ProjectTotal):
     transaction_count: int
     first_transaction: date | None
     last_transaction: date | None
+    forecast: ProjectForecast | None = None
     by_category: list[BreakdownItem]
     by_vendor: list[BreakdownItem]
