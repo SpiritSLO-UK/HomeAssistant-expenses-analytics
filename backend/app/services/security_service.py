@@ -85,7 +85,11 @@ def save_stored_key(passphrase: str) -> None:
     key is authoritative there.
     """
     path = _key_file_path()
-    path.write_text(passphrase, encoding="utf-8")
+    # NOSONAR(python:S2083): the path is the FIXED ".db_key" filename joined to the
+    # app's own operator-configured data dir (settings.database_file.parent). It is
+    # not request/attacker-controlled, and mirrors the existing encryption.json marker
+    # write. Flagged as a path-injection false positive.
+    path.write_text(passphrase, encoding="utf-8")  # NOSONAR
     os.chmod(path, 0o600)  # owner read/write only
 
 
