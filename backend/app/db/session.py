@@ -22,6 +22,7 @@ from typing import Any, cast
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import CursorResult, Engine
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import QueuePool
 
 from app.config import settings
 
@@ -126,7 +127,13 @@ def _build_encrypted_engine(passphrase: str) -> Engine:
         conn.execute("PRAGMA synchronous=NORMAL")
         return conn
 
-    return create_engine("sqlite://", creator=_creator, future=True, **_POOL_KW)
+    # The "sqlite://" URL (no file) would default to SingletonThreadPool, which
+    # rejects pool_size/max_overflow; force QueuePool so the encrypted path gets
+    # the same generous pool as the plaintext engine. The creator opens the real
+    # SQLCipher file per connection (check_same_thread=False), so pooling is safe.
+    return create_engine(
+        "sqlite://", creator=_creator, future=True, poolclass=QueuePool, **_POOL_KW
+    )
 
 
 def configure(passphrase: str | None = None) -> None:
