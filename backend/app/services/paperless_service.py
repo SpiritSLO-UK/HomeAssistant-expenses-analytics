@@ -12,12 +12,15 @@ need at-rest encryption (deferred #15). The feature is off unless both are set.
 
 An imported document is de-duplicated by content hash (``receipt_service.store_upload``)
 and then OCR'd if OCR is enabled, exactly like an uploaded receipt — so a
-re-import never creates a duplicate.
+re-import never creates a duplicate. A re-import of a document that was pulled in
+*before* the OCR engine was available (so its receipt still has no OCR text) also
+re-runs OCR now that the engine is present, without re-downloading or duplicating.
 """
 
 from __future__ import annotations
 
 import re
+import time
 from pathlib import Path
 
 from sqlalchemy.orm import Session
@@ -29,6 +32,21 @@ from app.services import receipt_service, settings_service
 logger = get_logger(__name__)
 
 _TIMEOUT = 15.0
+
+# Bounded retry for transient upstream blips (connect/read timeouts, 429/5xx),
+# mirroring the price/AI-provider policy (#356): small and capped so a flaky
+# moment recovers without hammering Paperless. Unlike the best-effort FX/price
+# fetches, listing/importing is interactive, so once retries are exhausted (or a
+# permanent 4xx occurs) we re-raise for the caller to surface a clear message.
+_RETRY_STATUS = frozenset({408, 425, 429, 500, 502, 503, 504})
+_MAX_ATTEMPTS = 3
+_BACKOFF_BASE = 0.5
+
+# OCR statuses that mean "no usable OCR text yet" — a receipt in one of these is
+# eligible for (re-)OCR on re-import once OCR is enabled and the engine is present
+# (fixes ~137 documents imported before an OCR engine was installed). "processing"
+# and "processed" are excluded so we never race or redo a completed extraction.
+_OCR_INCOMPLETE = frozenset({"not_processed", "skipped", "failed"})
 _MB = 1024 * 1024
 # Download cap for a pulled document — matches the receipts upload cap (15 MB,
 # routes_receipts.MAX_BYTES) so Paperless imports can't smuggle in something the
@@ -86,20 +104,59 @@ def _require_config(db: Session) -> str:
     return url.rstrip("/")
 
 
+def _is_transient(exc: Exception) -> bool:
+    """Whether an httpx error is worth retrying: a transport drop/timeout, or a
+    server-side / rate-limit status (429/5xx). Permanent 4xx fail fast."""
+    import httpx
+
+    if isinstance(exc, httpx.TransportError):  # connect/read timeouts, drops
+        return True
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code in _RETRY_STATUS
+    return False
+
+
+def _with_retry(op, label: str):
+    """Run an httpx call ``op`` with a small bounded retry on transient errors,
+    then re-raise the last error so an interactive import/list still surfaces a
+    clear message. Non-transient errors (4xx, parse) propagate immediately."""
+    import httpx
+
+    for attempt in range(_MAX_ATTEMPTS):
+        try:
+            return op()
+        except httpx.HTTPError as exc:
+            if not _is_transient(exc) or attempt + 1 >= _MAX_ATTEMPTS:
+                raise
+            logger.warning(
+                "Paperless %s transient error (attempt %d/%d): %s",
+                label, attempt + 1, _MAX_ATTEMPTS, exc,
+            )
+            time.sleep(_BACKOFF_BASE * (2**attempt))
+    return None  # unreachable: the loop always returns or raises
+
+
 def _get(db: Session, path: str, **kwargs):
     """Authenticated GET against the Paperless API. Raises on transport/HTTP error
     so the caller can surface a clear message (unlike the best-effort FX/price
-    fetches, listing/importing is interactive and the user wants feedback)."""
+    fetches, listing/importing is interactive and the user wants feedback).
+    Transient failures (timeout/connect drop, 429/5xx) are retried first (#356)."""
     import httpx  # local import so the dependency is only needed when used
 
     base = _require_config(db)
     headers = {"Authorization": f"Token {env_settings.paperless_token}"}
-    # follow_redirects=False (CR-SEC-3): a self-hosted Paperless is legitimately on
-    # the LAN, so we don't block private hosts — but we must never follow a redirect,
-    # which could bounce our API token to a different (attacker) host.
-    resp = httpx.get(f"{base}{path}", headers=headers, timeout=_TIMEOUT, follow_redirects=False, **kwargs)
-    resp.raise_for_status()
-    return resp
+
+    def op():
+        # follow_redirects=False (CR-SEC-3): a self-hosted Paperless is legitimately
+        # on the LAN, so we don't block private hosts — but we must never follow a
+        # redirect, which could bounce our API token to a different (attacker) host.
+        resp = httpx.get(
+            f"{base}{path}", headers=headers, timeout=_TIMEOUT, follow_redirects=False, **kwargs
+        )
+        resp.raise_for_status()
+        return resp
+
+    return _with_retry(op, f"GET {path}")
 
 
 def test_connection(db: Session) -> dict:
@@ -163,27 +220,33 @@ def _download_capped(db: Session, doc_id: int) -> tuple[str, bytes]:
     headers = {"Authorization": f"Token {env_settings.paperless_token}"}
     limit_mb = _MAX_DOWNLOAD_BYTES // _MB
     too_large = ValueError(f"Paperless document {doc_id} is too large (max {limit_mb} MB).")
-    # follow_redirects=False (CR-SEC-3): never bounce our token to another host.
-    with httpx.stream(
-        "GET",
-        f"{base}/api/documents/{doc_id}/download/",
-        headers=headers,
-        timeout=_TIMEOUT,
-        follow_redirects=False,
-    ) as resp:
-        resp.raise_for_status()
-        declared = resp.headers.get("content-length")
-        if declared and declared.isdigit() and int(declared) > _MAX_DOWNLOAD_BYTES:
-            raise too_large
-        content_type = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
-        chunks: list[bytes] = []
-        total = 0
-        for chunk in resp.iter_bytes():
-            total += len(chunk)
-            if total > _MAX_DOWNLOAD_BYTES:
+
+    def op():
+        # follow_redirects=False (CR-SEC-3): never bounce our token to another host.
+        with httpx.stream(
+            "GET",
+            f"{base}/api/documents/{doc_id}/download/",
+            headers=headers,
+            timeout=_TIMEOUT,
+            follow_redirects=False,
+        ) as resp:
+            resp.raise_for_status()
+            declared = resp.headers.get("content-length")
+            if declared and declared.isdigit() and int(declared) > _MAX_DOWNLOAD_BYTES:
                 raise too_large
-            chunks.append(chunk)
-    return content_type, b"".join(chunks)
+            content_type = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
+            chunks: list[bytes] = []
+            total = 0
+            for chunk in resp.iter_bytes():
+                total += len(chunk)
+                if total > _MAX_DOWNLOAD_BYTES:
+                    raise too_large
+                chunks.append(chunk)
+        return content_type, b"".join(chunks)
+
+    # A transient blip retries the whole streamed download (bounded); the size cap
+    # (ValueError) is not an httpx error, so it propagates immediately, un-retried.
+    return _with_retry(op, f"download {doc_id}")
 
 
 def fetch_document(db: Session, doc_id: int) -> tuple[str, bytes]:
@@ -198,15 +261,31 @@ def fetch_document(db: Session, doc_id: int) -> tuple[str, bytes]:
     return safe, content
 
 
+def _should_ocr(db: Session, receipt, created: bool) -> bool:
+    """Whether to run OCR for a just-stored import. Always for a new receipt; for
+    an existing one (re-import) only when it still has no OCR text and its original
+    file is on disk — this back-fills receipts pulled in before an OCR engine was
+    available, without re-downloading (OCR reads the stored file) or duplicating."""
+    if not settings_service.get_ocr_enabled(db):
+        return False
+    if created:
+        return True
+    if receipt.ocr_status not in _OCR_INCOMPLETE:
+        return False
+    return receipt.storage_path is not None and Path(receipt.storage_path).exists()
+
+
 def import_document(db: Session, doc_id: int) -> dict:
     """Pull a Paperless document into the receipts pipeline (dedup by content hash;
-    OCR if enabled). Returns the resulting receipt id + whether it was new."""
+    OCR if enabled). Returns the resulting receipt id + whether it was new. A
+    re-import whose receipt never got OCR text (e.g. imported before the OCR engine
+    existed) is (re-)OCR'd now that the engine is available."""
     _require_config(db)
     filename, content = fetch_document(db, doc_id)
     if not content:
         raise ValueError("Paperless returned an empty document")
     receipt, created = receipt_service.store_upload(db, filename, content)
-    if created and settings_service.get_ocr_enabled(db):
+    if _should_ocr(db, receipt, created):
         receipt_service.run_ocr(db, receipt, auto_match=True)
     return {
         "receipt_id": receipt.id,
