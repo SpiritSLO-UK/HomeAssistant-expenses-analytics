@@ -286,3 +286,106 @@ def test_update_goal_can_clear_target_date(db):
     # ...but omitting a required field (or passing None for it) never nulls it.
     savings_service.update_goal(db, goal, name=None)
     assert goal.name == "Trip"
+
+
+# --- Deposit-rate / time-to-goal forecast (pure) -----------------------------
+
+from datetime import timedelta  # noqa: E402
+
+
+def test_forecast_steady_rate_reaches_goal_by_projected_date():
+    from app.services import savings_service
+
+    today = date(2026, 1, 31)
+    # 300 saved over exactly 30 days → 300/month. current=300, need 600 more → 2 months.
+    snaps = [(date(2026, 1, 1), Decimal("0")), (date(2026, 1, 31), Decimal("300"))]
+    fc = savings_service.forecast_goal(
+        current=Decimal("300"), target=Decimal("900"), snapshots=snaps,
+        target_date=date(2026, 12, 1), today=today,
+    )
+    assert fc["state"] == "on_track"
+    assert Decimal(fc["monthly_deposit_rate"]) == Decimal("300.00")
+    assert fc["months_remaining"] == 2.0
+    assert fc["projected_date"] == (today + timedelta(days=60)).isoformat()
+    assert fc["on_track"] is True
+
+    # Same rate but a target_date before the projected date → behind.
+    behind = savings_service.forecast_goal(
+        current=Decimal("300"), target=Decimal("900"), snapshots=snaps,
+        target_date=date(2026, 2, 1), today=today,
+    )
+    assert behind["state"] == "behind"
+    assert behind["on_track"] is False
+
+    # No target_date → still projects a date, but on_track is undetermined.
+    no_deadline = savings_service.forecast_goal(
+        current=Decimal("300"), target=Decimal("900"), snapshots=snaps,
+        target_date=None, today=today,
+    )
+    assert no_deadline["state"] == "projected"
+    assert no_deadline["on_track"] is None
+    assert no_deadline["projected_date"] == (today + timedelta(days=60)).isoformat()
+
+
+def test_forecast_no_history_gives_no_forecast():
+    from app.services import savings_service
+
+    for snaps in ([], [(date(2026, 1, 1), Decimal("100"))]):
+        fc = savings_service.forecast_goal(
+            current=Decimal("100"), target=Decimal("1000"), snapshots=snaps,
+            target_date=None, today=date(2026, 1, 1),
+        )
+        assert fc["state"] == "no_forecast"
+        assert fc["projected_date"] is None
+        assert fc["monthly_deposit_rate"] is None
+
+
+def test_forecast_already_achieved():
+    from app.services import savings_service
+
+    fc = savings_service.forecast_goal(
+        current=Decimal("1000"), target=Decimal("1000"),
+        snapshots=[(date(2026, 1, 1), Decimal("0")), (date(2026, 2, 1), Decimal("1000"))],
+        target_date=date(2026, 6, 1), today=date(2026, 2, 1),
+    )
+    assert fc["state"] == "achieved"
+    assert fc["projected_date"] is None
+    assert fc["on_track"] is None
+
+
+def test_forecast_withdrawing_is_not_progressing():
+    from app.services import savings_service
+
+    # Net withdrawals over the window → target recedes, no completion date.
+    snaps = [(date(2026, 1, 1), Decimal("500")), (date(2026, 1, 31), Decimal("300"))]
+    fc = savings_service.forecast_goal(
+        current=Decimal("300"), target=Decimal("1000"), snapshots=snaps,
+        target_date=date(2026, 6, 1), today=date(2026, 1, 31),
+    )
+    assert fc["state"] == "not_progressing"
+    assert Decimal(fc["monthly_deposit_rate"]) == Decimal("-200.00")
+    assert fc["projected_date"] is None
+    assert fc["on_track"] is None
+
+
+def test_goal_summary_exposes_forecast_field(db):
+    from app.services import savings_service
+
+    acct = savings_service.create_account(db, name="ISA")
+    savings_service.record_balance(db, acct.id, as_of=date(2026, 1, 1), balance=Decimal("0"))
+    savings_service.record_balance(db, acct.id, as_of=date(2026, 1, 31), balance=Decimal("300"))
+    goal = savings_service.create_goal(
+        db, name="House", target_amount=Decimal("900"), account_id=acct.id
+    )
+
+    d = savings_service.goal_to_dict(db, goal)
+    # Existing fields remain untouched (backward compatible)...
+    assert d["current"] == "300.00"
+    assert d["remaining"] == "600.00"
+    # ...and the additive forecast is present with a positive rate.
+    assert Decimal(d["forecast"]["monthly_deposit_rate"]) == Decimal("300.00")
+    assert d["forecast"]["state"] in {"on_track", "behind", "projected"}
+
+    # A manual goal has no balance history → no forecast.
+    manual = savings_service.create_goal(db, name="Trip", target_amount=Decimal("500"))
+    assert savings_service.goal_to_dict(db, manual)["forecast"]["state"] == "no_forecast"
