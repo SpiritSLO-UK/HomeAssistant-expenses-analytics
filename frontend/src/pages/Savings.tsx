@@ -17,6 +17,7 @@ import {
   type SavingsGoal,
 } from "../api/client";
 import { isAmount, parseAmount } from "../lib/num";
+import { money } from "../lib/money";
 import { useServerState } from "../lib/useServerState";
 
 function today(): string {
@@ -152,10 +153,15 @@ function AccountCard({
     const current = Number(account.latest_balance ?? 0);
     const next = direction === "deposit" ? current + amt : current - amt;
     const verb = direction === "deposit" ? "Deposit" : "Withdraw";
-    if (globalThis.confirm(`${verb} ${amt.toFixed(2)} ${base}?\nNew balance: ${next.toFixed(2)} ${base}.`)) {
+    if (globalThis.confirm(`${verb} ${money(amt, base)}?\nNew balance: ${money(next, base)}.`)) {
       adjust.mutate(direction);
     }
   }
+
+  // A deposit/withdraw needs a valid, non-zero, non-negative amount (parseAmount
+  // rejects blank/NaN/negative; zero is a no-op) to enable the buttons.
+  const deltaNum = parseAmount(delta);
+  const canAdjust = deltaNum != null && deltaNum !== 0;
 
   const hist = history.data ?? [];
   const points = hist.map((b) => Number(b.balance));
@@ -191,10 +197,10 @@ function AccountCard({
               style={{ width: 120 }}
               onChange={(e) => setDelta(e.target.value)}
             />
-            <button className="btn btn--sm" disabled={!delta || adjust.isPending} onClick={() => doAdjust("deposit")}>
+            <button className="btn btn--sm" disabled={!canAdjust || adjust.isPending} onClick={() => doAdjust("deposit")}>
               ＋ Deposit
             </button>
-            <button className="btn btn--sm btn--ghost" disabled={!delta || adjust.isPending} onClick={() => doAdjust("withdraw")}>
+            <button className="btn btn--sm btn--ghost" disabled={!canAdjust || adjust.isPending} onClick={() => doAdjust("withdraw")}>
               － Withdraw
             </button>
           </div>
@@ -236,7 +242,7 @@ function AccountCard({
               style={{ width: 150 }}
               onChange={(e) => setAmount(e.target.value)}
             />
-            <button className="btn btn--sm btn--ghost" type="submit" disabled={!amount || setBalance.isPending}>
+            <button className="btn btn--sm btn--ghost" type="submit" disabled={!isAmount(amount) || setBalance.isPending}>
               {setBalance.isPending ? "Saving…" : "Set from statement"}
             </button>
           </form>
@@ -366,7 +372,8 @@ function GoalsCard({
                       className="link-btn"
                       onClick={() => {
                         const v = globalThis.prompt(`Update current amount for "${g.name}" (${base})`, g.current_amount);
-                        if (v?.trim()) setCurrent.mutate({ id: g.id, current_amount: v.trim() });
+                        const trimmed = v?.trim();
+                        if (trimmed && isAmount(trimmed)) setCurrent.mutate({ id: g.id, current_amount: trimmed });
                       }}
                     >
                       update amount
