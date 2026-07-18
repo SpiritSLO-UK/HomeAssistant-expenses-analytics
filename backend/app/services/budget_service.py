@@ -12,6 +12,11 @@ Split transactions contribute per-part to the matching category/project (spec
 
 Status (spec §19.2): ``over`` when spent exceeds the budget, ``warn`` at/above
 the alert threshold (default 80%), else ``ok``.
+
+Pace (additive): alongside the total-vs-cap status, a **pace** signal compares
+spend against the PRORATED expectation for the elapsed fraction of the period
+(e.g. half-way through a monthly budget, ~50% of the cap is "on track"). This
+never changes the over/warn/ok semantics — it only adds fields.
 """
 
 from __future__ import annotations
@@ -140,6 +145,58 @@ def _status(spent: Decimal, amount: Decimal, threshold: int | None) -> str:
     return "ok"
 
 
+# Spend within ±5% of the cap around the prorated expectation counts as "on
+# track" — a small band so day-to-day lumpiness doesn't flip the signal.
+_PACE_TOLERANCE = Decimal("0.05")
+_CENTS = Decimal("0.01")
+
+
+def elapsed_fraction(start: date, end: date, ref: date) -> Decimal:
+    """Fraction (0..1) of the period ``[start, end)`` elapsed as of ``ref``.
+
+    ``ref`` before the window → 0 (period not started); on/after the window → 1
+    (period ended → full period). A zero/negative-length window is treated as
+    fully elapsed to guard against divide-by-zero. ``ref`` counts as a day
+    already under way, so day 15 of a 30-day period → 15/30.
+    """
+    total_days = (end - start).days
+    if total_days <= 0:
+        return Decimal("1")
+    if ref < start:
+        return Decimal("0")
+    if ref >= end:
+        return Decimal("1")
+    frac = Decimal((ref - start).days + 1) / Decimal(total_days)
+    return frac if frac < 1 else Decimal("1")
+
+
+def _pace_status(spent: Decimal, expected: Decimal, cap: Decimal) -> str:
+    """Spend relative to the prorated expectation: ``ahead`` = spending faster
+    than the elapsed period (over pace), ``behind`` = under the elapsed pace,
+    ``on_track`` = within a ±5%-of-cap band."""
+    if cap <= 0:
+        return "on_track"
+    tol = cap * _PACE_TOLERANCE
+    if spent > expected + tol:
+        return "ahead"
+    if spent < expected - tol:
+        return "behind"
+    return "on_track"
+
+
+def _pace_fields(spent: Decimal, cap: Decimal, start: date, end: date, ref: date) -> dict:
+    """Additive pace signal for the budget summary (see module docstring)."""
+    frac = elapsed_fraction(start, end, ref)
+    expected = (cap * frac).quantize(_CENTS)
+    return {
+        "elapsed_fraction": float(round(frac, 4)),
+        "pace_expected": str(expected),
+        # Prorated headroom: positive = under the elapsed pace, negative = over.
+        "pace_remaining": str((expected - spent).quantize(_CENTS)),
+        "pace_status": _pace_status(spent, expected, cap),
+    }
+
+
 def _eval_window(budget: Budget, ref: date, annual: bool) -> tuple[date, date, Decimal]:
     """The [start, end) window and the cap to compare against. ``annual`` evaluates
     the whole calendar year and annualises the cap (amount × periods-per-year).
@@ -189,6 +246,7 @@ def status_for(
         "alert_threshold_percent": budget.alert_threshold_percent,
         "period_start": start.isoformat(),
         "period_end": end.isoformat(),
+        **_pace_fields(spent, amount, start, end, ref),
     }
 
 
