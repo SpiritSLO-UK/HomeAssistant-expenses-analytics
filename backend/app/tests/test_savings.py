@@ -399,6 +399,105 @@ def test_forecast_withdrawing_is_not_progressing():
     assert fc["on_track"] is None
 
 
+def test_forecast_interest_only_fallback_projects_date():
+    import pytest
+
+    from app.services import savings_service
+
+    # A single snapshot → no inferable deposit rate, but the account earns interest,
+    # so a brand-new linked goal still projects a completion date instead of blank.
+    # 12%/yr compounded monthly on 1000 toward 2000 → ln(2)/ln(1.01) ≈ 69.7 months.
+    fc = savings_service.forecast_goal(
+        current=Decimal("1000"), target=Decimal("2000"),
+        snapshots=[(date(2026, 1, 1), Decimal("1000"))],
+        target_date=None, today=date(2026, 1, 1), annual_rate=Decimal("12"),
+    )
+    assert fc["state"] == "projected"
+    # Interest-only: no deposit rate to report, but a real horizon + date.
+    assert fc["monthly_deposit_rate"] is None
+    assert fc["months_remaining"] == pytest.approx(69.7, abs=0.1)
+    assert fc["projected_date"] is not None
+
+
+def test_forecast_interest_fallback_respects_target_date():
+    from app.services import savings_service
+
+    # Same 12%/yr interest projection (~69.7 months out) but a near target_date →
+    # behind; a far one → on_track. Reuses the existing on/behind states.
+    kwargs = {
+        "current": Decimal("1000"), "target": Decimal("2000"),
+        "snapshots": [(date(2026, 1, 1), Decimal("1000"))],
+        "today": date(2026, 1, 1), "annual_rate": Decimal("12"),
+    }
+    behind = savings_service.forecast_goal(target_date=date(2026, 6, 1), **kwargs)
+    assert behind["state"] == "behind"
+    assert behind["on_track"] is False
+
+    on_track = savings_service.forecast_goal(target_date=date(2040, 1, 1), **kwargs)
+    assert on_track["state"] == "on_track"
+    assert on_track["on_track"] is True
+
+
+def test_forecast_no_history_and_no_rate_stays_no_forecast():
+    from app.services import savings_service
+
+    # Nothing to project from — no usable history and no rate → graceful blank state.
+    fc = savings_service.forecast_goal(
+        current=Decimal("100"), target=Decimal("1000"), snapshots=[],
+        target_date=None, today=date(2026, 1, 1), annual_rate=None,
+    )
+    assert fc["state"] == "no_forecast"
+    assert fc["projected_date"] is None
+    assert fc["monthly_deposit_rate"] is None
+
+
+def test_forecast_prefers_deposit_rate_over_interest():
+    from app.services import savings_service
+
+    # With enough history to infer deposits, the deposit rate wins over interest:
+    # 300/month reaches the target and reports monthly_deposit_rate.
+    snaps = [(date(2026, 1, 1), Decimal("0")), (date(2026, 1, 31), Decimal("300"))]
+    fc = savings_service.forecast_goal(
+        current=Decimal("300"), target=Decimal("900"), snapshots=snaps,
+        target_date=None, today=date(2026, 1, 31), annual_rate=Decimal("12"),
+    )
+    assert fc["state"] == "projected"
+    assert Decimal(fc["monthly_deposit_rate"]) == Decimal("300.00")
+
+
+def test_forecast_withdrawals_ignore_interest_fallback():
+    from app.services import savings_service
+
+    # Observed net withdrawals stay not_progressing even if a rate is present —
+    # interest doesn't paper over a pot the user is actively drawing down.
+    snaps = [(date(2026, 1, 1), Decimal("500")), (date(2026, 1, 31), Decimal("300"))]
+    fc = savings_service.forecast_goal(
+        current=Decimal("300"), target=Decimal("1000"), snapshots=snaps,
+        target_date=None, today=date(2026, 1, 31), annual_rate=Decimal("12"),
+    )
+    assert fc["state"] == "not_progressing"
+
+
+def test_goal_summary_forecast_uses_interest_when_history_too_thin(db):
+    from app.services import savings_service
+
+    acct = savings_service.create_account(db, name="ISA")
+    savings_service.set_interest_rate(db, acct.id, Decimal("12"))
+    # A single snapshot → too thin for a deposit rate, but the linked account earns
+    # interest, so the new goal gets a projection end-to-end via goal_to_dict.
+    savings_service.record_balance(db, acct.id, as_of=date(2026, 1, 1), balance=Decimal("1000"))
+    goal = savings_service.create_goal(
+        db, name="Nest egg", target_amount=Decimal("2000"), account_id=acct.id
+    )
+
+    fc = savings_service.goal_to_dict(db, goal)["forecast"]
+    assert fc["state"] in {"on_track", "behind", "projected"}
+    assert fc["monthly_deposit_rate"] is None
+    assert fc["projected_date"] is not None
+    assert fc["months_remaining"] is not None
+    assert fc["months_remaining"] > 0
+
+
 def test_goal_summary_exposes_forecast_field(db):
     from app.services import savings_service
 
