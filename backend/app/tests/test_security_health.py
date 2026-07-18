@@ -152,3 +152,142 @@ def test_health_is_owner_only(client):
     client.patch(f"/api/users/{mike_id}", json={"role": "member", "status": "approved"})
 
     assert client.get("/api/security/health", headers=member).status_code == 403
+
+
+# --- New posture checks: stored-key+no-MFA, stale backup, settings-managers w/o MFA ---
+
+def _fake_status(**over) -> dict:
+    """A security_service.status() shape the health check consumes, with encryption
+    on and a stored (unattended) key by default — the tests override what they need."""
+    base = {
+        "encryption_available": True,
+        "encryption_enabled": True,
+        "unlock_mode": "stored",
+        "locked": False,
+        "stored_key_present": True,
+        "failed_unlocks": {"recent": 0, "last_attempt_at": None},
+    }
+    base.update(over)
+    return base
+
+
+def _manager(db, household_id, *, mfa=False, name="Mgr"):
+    u = User(household_id=household_id, display_name=name, role="member", status="approved",
+             is_active=True, can_manage_settings=True, mfa_enabled=mfa)
+    db.add(u)
+    db.flush()
+    return u
+
+
+def test_stored_key_without_mfa_is_flagged(db, monkeypatch):
+    """SR: a stored (on-disk) key with an owner lacking MFA is a weaker posture —
+    the login is the only remaining gate, so warn."""
+    hh = get_or_create_default_household(db)
+    caller = _owner(db, hh.id, mfa=False, name="Caller")
+    db.commit()
+    monkeypatch.setattr(security_service, "status", lambda: _fake_status(unlock_mode="stored"))
+
+    c = _check(security_health_service.evaluate(db, caller)["checks"], "stored_key_no_mfa")
+    assert c is not None and c["severity"] == "warn" and c["active"] is True
+
+
+def test_stored_key_no_mfa_absent_when_owner_has_mfa(db, monkeypatch):
+    hh = get_or_create_default_household(db)
+    caller = _owner(db, hh.id, mfa=True, name="Caller")
+    db.commit()
+    monkeypatch.setattr(security_service, "status", lambda: _fake_status(unlock_mode="stored"))
+
+    assert _check(security_health_service.evaluate(db, caller)["checks"], "stored_key_no_mfa") is None
+
+
+def test_stored_key_no_mfa_absent_when_prompt_mode(db, monkeypatch):
+    """Prompt-mode unlock has no on-disk key, so the combined gap must not fire even
+    when an owner lacks MFA."""
+    hh = get_or_create_default_household(db)
+    caller = _owner(db, hh.id, mfa=False, name="Caller")
+    db.commit()
+    monkeypatch.setattr(security_service, "status", lambda: _fake_status(unlock_mode="prompt"))
+
+    assert _check(security_health_service.evaluate(db, caller)["checks"], "stored_key_no_mfa") is None
+
+
+def test_settings_manager_without_mfa_is_flagged(db, monkeypatch):
+    hh = get_or_create_default_household(db)
+    caller = _owner(db, hh.id, mfa=True, name="Caller")
+    _manager(db, hh.id, mfa=False)
+    db.commit()
+    monkeypatch.setattr(security_service, "status", lambda: _fake_status())
+
+    c = _check(security_health_service.evaluate(db, caller)["checks"], "settings_managers_mfa")
+    assert c is not None and c["severity"] == "warn" and c["active"] is True
+
+
+def test_settings_manager_with_mfa_not_flagged(db, monkeypatch):
+    hh = get_or_create_default_household(db)
+    caller = _owner(db, hh.id, mfa=True, name="Caller")
+    _manager(db, hh.id, mfa=True)
+    db.commit()
+    monkeypatch.setattr(security_service, "status", lambda: _fake_status())
+
+    assert _check(security_health_service.evaluate(db, caller)["checks"], "settings_managers_mfa") is None
+
+
+def test_settings_managers_mfa_is_household_scoped(db, monkeypatch):
+    """A settings-manager without MFA in another household must not surface here (#362)."""
+    hh = get_or_create_default_household(db)
+    caller = _owner(db, hh.id, mfa=True, name="Caller")
+    other = Household(name="Other", currency="GBP", mode="household")
+    db.add(other)
+    db.flush()
+    _manager(db, other.id, mfa=False, name="Stranger")
+    db.commit()
+    monkeypatch.setattr(security_service, "status", lambda: _fake_status())
+
+    assert _check(security_health_service.evaluate(db, caller)["checks"], "settings_managers_mfa") is None
+
+
+def test_stale_backup_flagged_when_none_exist(db, monkeypatch):
+    hh = get_or_create_default_household(db)
+    caller = _owner(db, hh.id, mfa=True, name="Caller")
+    db.commit()
+    monkeypatch.setattr(security_service, "status", lambda: _fake_status())
+    monkeypatch.setattr(security_health_service, "_latest_backup_age_days", lambda: None)
+
+    c = _check(security_health_service.evaluate(db, caller)["checks"], "stale_backup")
+    assert c is not None and c["severity"] == "warn" and c["active"] is True
+
+
+def test_stale_backup_flagged_when_old(db, monkeypatch):
+    hh = get_or_create_default_household(db)
+    caller = _owner(db, hh.id, mfa=True, name="Caller")
+    db.commit()
+    monkeypatch.setattr(security_service, "status", lambda: _fake_status())
+    monkeypatch.setattr(security_health_service, "_latest_backup_age_days", lambda: 45.0)
+
+    c = _check(security_health_service.evaluate(db, caller)["checks"], "stale_backup")
+    assert c is not None and c["severity"] == "warn" and c["active"] is True
+
+
+def test_stale_backup_ok_when_recent(db, monkeypatch):
+    hh = get_or_create_default_household(db)
+    caller = _owner(db, hh.id, mfa=True, name="Caller")
+    db.commit()
+    monkeypatch.setattr(security_service, "status", lambda: _fake_status())
+    monkeypatch.setattr(security_health_service, "_latest_backup_age_days", lambda: 2.0)
+
+    assert _check(security_health_service.evaluate(db, caller)["checks"], "stale_backup") is None
+
+
+def test_latest_backup_age_days_reads_newest_file(monkeypatch, tmp_path):
+    import os
+    import time as _time
+
+    monkeypatch.setattr(security_health_service.backup_service, "backups_dir", lambda: tmp_path)
+    assert security_health_service._latest_backup_age_days() is None
+
+    f = tmp_path / "safety-20260101.db"
+    f.write_bytes(b"x")
+    old = _time.time() - 10 * 86400
+    os.utime(f, (old, old))
+    age = security_health_service._latest_backup_age_days()
+    assert age is not None and age > 9  # ~10 days old
