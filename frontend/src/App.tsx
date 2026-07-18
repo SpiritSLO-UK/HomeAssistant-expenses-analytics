@@ -32,7 +32,7 @@ const Users = lazy(() => import("./pages/Users"));
 const FamilySetup = lazy(() => import("./pages/FamilySetup"));
 const Setup = lazy(() => import("./pages/Setup"));
 const Logs = lazy(() => import("./pages/Logs"));
-import { getMe, getSecurityStatus, getSettings, mfaEnable, mfaSetup, mfaVerify, unlockDatabase, type Me, type SecurityStatus } from "./api/client";
+import { ApiError, getMe, getSecurityStatus, getSettings, mfaEnable, mfaSetup, mfaVerify, unlockDatabase, type Me, type SecurityStatus } from "./api/client";
 import { setDisplayCurrency } from "./lib/money";
 import { NAV_ITEMS } from "./nav";
 import { DialogProvider } from "./components/dialogs";
@@ -372,6 +372,18 @@ function AccountGate({ status, name }: Readonly<{ status: string; name: string }
   );
 }
 
+// Surface the REAL server error (e.g. "Passphrase is required.", a rate-limit
+// message) rather than always blaming a wrong passphrase. Mirrors the ApiError
+// detail extraction used elsewhere (Import.tsx errorMessage, Settings fail path).
+function unlockErrorMessage(error: unknown): string {
+  const fallback = "Could not unlock. Check the key and try again.";
+  if (error instanceof ApiError) {
+    return typeof error.body?.detail === "string" ? error.body.detail : fallback;
+  }
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
+}
+
 function UnlockGate({ failedRecent = 0 }: Readonly<{ failedRecent?: number }>) {
   const qc = useQueryClient();
   const [passphrase, setPassphrase] = useState("");
@@ -412,7 +424,7 @@ function UnlockGate({ failedRecent = 0 }: Readonly<{ failedRecent?: number }>) {
             {unlock.isPending ? "Unlocking…" : "Unlock"}
           </button>
         </form>
-        {unlock.isError && <p className="status status--error">Wrong passphrase.</p>}
+        {unlock.isError && <p className="status status--error">{unlockErrorMessage(unlock.error)}</p>}
         <p className="muted" style={{ fontSize: "0.78rem" }}>
           Lost the passphrase? The data cannot be recovered.
         </p>
