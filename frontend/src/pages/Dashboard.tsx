@@ -16,6 +16,7 @@ import {
   getCategoryBreakdown,
   getCountryBreakdown,
   getDashboardProjects,
+  getDemoStatus,
   getEnergyOffset,
   getInvestmentSummary,
   getMe,
@@ -411,6 +412,8 @@ export default function Dashboard() {
       )}
 
       <SecurityBanner />
+
+      <DemoStalenessBanner />
 
       <QuickAddCard />
 
@@ -1147,6 +1150,34 @@ function SecurityBanner() {
       <p className="status status--warn" style={{ margin: 0 }}>
         ⚠️ {active} security recommendation{active > 1 ? "s" : ""}.{" "}
         <Link to="/settings">Review in Settings →</Link>
+      </p>
+    </div>
+  );
+}
+
+// The demo dataset's dates are seeded relative to the day it was loaded, so after a
+// while it starts to look out of date. Once the demo has been loaded for at least a
+// few days, show a gentle, dismissible (this-session) info banner pointing to the
+// reload/remove controls in Settings. Hidden entirely when there is no demo data (or
+// its age can't be determined), so the empty-state and e2e smoke test are unaffected.
+const DEMO_STALENESS_THRESHOLD_DAYS = 7;
+
+function DemoStalenessBanner() {
+  const [dismissed, setDismissed] = useState(false);
+  const q = useQuery({ queryKey: ["demo-status"], queryFn: getDemoStatus });
+  const status = q.data;
+  if (dismissed || !status?.has_demo_data) return null;
+  const ageDays = status.age_days;
+  if (ageDays === null || ageDays < DEMO_STALENESS_THRESHOLD_DAYS) return null;
+
+  return (
+    <div className="card" style={{ borderLeft: "3px solid #4a90d9" }}>
+      <p className="muted" style={{ margin: 0, display: "flex", gap: 12, alignItems: "baseline", flexWrap: "wrap" }}>
+        <span>
+          ℹ️ Demo data was loaded {ageDays} day{ageDays === 1 ? "" : "s"} ago - its dates may look out
+          of date. Reload it from <Link to="/settings">Settings</Link>, or remove demo data there.
+        </span>
+        <button className="link-btn" onClick={() => setDismissed(true)}>Dismiss</button>
       </p>
     </div>
   );
