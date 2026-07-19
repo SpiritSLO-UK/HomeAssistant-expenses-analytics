@@ -65,6 +65,7 @@ import CloudAiDisclaimerDialog from "../components/CloudAiDisclaimerDialog";
 import { useConfirm } from "../components/dialogs";
 import CountrySelect from "../components/CountrySelect";
 import PaperlessSetupNote from "../components/PaperlessSetupNote";
+import SubTabs, { type ControlledSubTab } from "../components/SubTabs";
 import { useOptimisticSelect } from "../hooks/useOptimisticSelect";
 
 const THEME_OPTIONS: { value: ThemePref; label: string }[] = [
@@ -162,6 +163,9 @@ function StatsCard() {
   );
 }
 
+// The Settings page is split into these tabbed sections (grouped-nav PR4).
+type SettingsSection = "general" | "ai" | "security" | "integrations" | "data";
+
 export default function Settings() {
   const qc = useQueryClient();
   const confirm = useConfirm();
@@ -172,6 +176,10 @@ export default function Settings() {
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [passphrase, setPassphrase] = useState("");
+  // Which settings section is shown. The long page is split into tabbed sections
+  // (grouped-nav PR4); each card below is gated on `active === <section>` so only
+  // one section's cards render at a time. Default "General".
+  const [section, setSection] = useState<SettingsSection>("general");
 
   function ok(m: string) {
     setMsg(m);
@@ -242,15 +250,38 @@ export default function Settings() {
     onError: fail,
   });
 
+  // Sections whose cards are all owner/manager-gated (AI, Integrations) show no
+  // tab at all for a user who can't manage settings, rather than an empty panel.
+  const canManage = me.data?.can_manage_settings === true;
+  const tabs: ControlledSubTab[] = [
+    { key: "general", label: "General", icon: "⚙️" },
+    ...(canManage ? [{ key: "ai", label: "AI & privacy", icon: "🤖" }] : []),
+    { key: "security", label: "Security", icon: "🔒" },
+    ...(canManage ? [{ key: "integrations", label: "Integrations", icon: "🔌" }] : []),
+    { key: "data", label: "Data", icon: "🗄️" },
+  ];
+  // Fall back to General if the active section's tab isn't visible (e.g. a
+  // manager-only tab after access changes), so we never show a blank panel.
+  const active = tabs.some((t) => t.key === section) ? section : "general";
+
   return (
     <div className="page">
       <h1 className="page__title">Settings</h1>
 
-      <AppearanceCard />
-
       {msg && <p className="status status--ok">{msg}</p>}
       {err && <p className="status status--error">{err}</p>}
 
+      <SubTabs
+        mode="controlled"
+        tabs={tabs}
+        active={active}
+        onChange={(key) => setSection(key as SettingsSection)}
+        ariaLabel="Settings sections"
+      />
+
+      {active === "general" && <AppearanceCard />}
+
+      {active === "general" && (
       <div className="card">
         <h2 className="card__title">Status</h2>
         <ul className="kv">
@@ -267,8 +298,9 @@ export default function Settings() {
           your own backups. Built with the help of an AI assistant; review before relying on it.
         </p>
       </div>
+      )}
 
-      {me.data && !me.data.can_manage_settings && (
+      {active === "general" && me.data && !me.data.can_manage_settings && (
         <div className="card">
           <p className="muted">
             General settings (currency, integrations, AI) are managed by the owner or someone
@@ -277,30 +309,31 @@ export default function Settings() {
         </div>
       )}
 
-      {me.data?.can_manage_settings && <StatsCard />}
+      {active === "data" && me.data?.can_manage_settings && <StatsCard />}
 
-      {me.data?.can_manage_settings && <ServicesCard onMessage={ok} onError={fail} />}
+      {active === "general" && me.data?.can_manage_settings && <ServicesCard onMessage={ok} onError={fail} />}
 
-      {me.data?.can_manage_settings && <CurrencyFx onMessage={ok} onError={fail} />}
+      {active === "general" && me.data?.can_manage_settings && <CurrencyFx onMessage={ok} onError={fail} />}
 
-      {me.data?.can_manage_settings && <LocationDefaultsCard onMessage={ok} onError={fail} />}
+      {active === "general" && me.data?.can_manage_settings && <LocationDefaultsCard onMessage={ok} onError={fail} />}
 
-      {me.data?.can_manage_settings && <MqttCard onMessage={ok} onError={fail} />}
+      {active === "integrations" && me.data?.can_manage_settings && <MqttCard onMessage={ok} onError={fail} />}
 
-      {me.data?.can_manage_settings && <IntegrationsCard onMessage={ok} onError={fail} />}
+      {active === "integrations" && me.data?.can_manage_settings && <IntegrationsCard onMessage={ok} onError={fail} />}
 
-      {me.data?.can_manage_settings && <AiCard onMessage={ok} onError={fail} />}
+      {active === "ai" && me.data?.can_manage_settings && <AiCard onMessage={ok} onError={fail} />}
 
-      <MfaCard onMessage={ok} onError={fail} />
+      {active === "security" && <MfaCard onMessage={ok} onError={fail} />}
 
-      <SecurityHealthCard onError={fail} />
+      {active === "security" && <SecurityHealthCard onError={fail} />}
 
-      <SecurityCard onMessage={ok} onError={fail} />
+      {active === "security" && <SecurityCard onMessage={ok} onError={fail} />}
 
-      <RetentionCard onMessage={ok} onError={fail} />
+      {active === "data" && <RetentionCard onMessage={ok} onError={fail} />}
 
-      <LoggingCard onMessage={ok} onError={fail} />
+      {active === "general" && <LoggingCard onMessage={ok} onError={fail} />}
 
+      {active === "data" && (
       <div className="card">
         <h2 className="card__title">Demo data</h2>
         <p className="muted">Load a small fabricated dataset to explore the app. Safe to re-run — duplicates are skipped.</p>
@@ -333,10 +366,11 @@ export default function Settings() {
           )}
         </div>
       </div>
+      )}
 
       {/* Backup/restore + config import-export are owner-only (server enforces
           require_owner; restoring an arbitrary DB or importing config = takeover). */}
-      {me.data?.is_admin && (
+      {active === "data" && me.data?.is_admin && (
       <>
       <div className="card">
         <h2 className="card__title">Backup &amp; restore</h2>
@@ -421,6 +455,7 @@ export default function Settings() {
       </>
       )}
 
+      {active === "general" && (
       <div className="card">
         <h2 className="card__title">About &amp; source</h2>
         <p className="muted">
@@ -439,6 +474,7 @@ export default function Settings() {
           see the disclaimer above and the privacy / security docs. Built with the help of an AI assistant.
         </p>
       </div>
+      )}
     </div>
   );
 }
