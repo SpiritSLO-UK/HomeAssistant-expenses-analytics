@@ -81,6 +81,10 @@ class User(Base, TimestampMixin):
     # JSON array of nav-page keys (e.g. ["budgets","investments"]). NULL/empty =
     # unrestricted. Enforced server-side by the auth guard + hidden in the sidebar.
     blocked_nav: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Per-user customised sidebar layout (grouped nav, backlog PR1/4), JSON object
+    # of {v, groups:[{id,label?,icon?,items:[{path,label?,hidden?}]}]}. NULL = use
+    # the built-in default layout. Set self-service via PUT /users/me/nav-layout.
+    nav_layout: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     @property
     def blocked_nav_keys(self) -> list[str]:
@@ -92,3 +96,18 @@ class User(Base, TimestampMixin):
         except (ValueError, TypeError):
             return []
         return [str(k) for k in data] if isinstance(data, list) else []
+
+    @property
+    def nav_layout_obj(self) -> dict | None:
+        """The parsed custom nav layout, or ``None`` when unset/invalid.
+
+        Defensive like ``blocked_nav_keys``: NULL/empty or malformed JSON (or a
+        non-object payload) collapses to ``None`` so the frontend falls back to the
+        built-in default layout."""
+        if not self.nav_layout:
+            return None
+        try:
+            data = json.loads(self.nav_layout)
+        except (ValueError, TypeError):
+            return None
+        return data if isinstance(data, dict) else None

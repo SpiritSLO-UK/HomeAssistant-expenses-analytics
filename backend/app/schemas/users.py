@@ -47,6 +47,9 @@ class MeOut(BaseModel):
     # True when an admin requires MFA but the user hasn't enrolled yet (#157) — the
     # frontend then shows the "set up MFA" gate.
     mfa_setup_required: bool = False
+    # The user's custom sidebar layout (grouped nav, PR1/4), or null to use the
+    # built-in default. Stored/normalised server-side; see routes_users.
+    nav_layout: dict | None = None
 
 
 class MemberOut(BaseModel):
@@ -57,6 +60,30 @@ class MemberOut(BaseModel):
     id: int
     display_name: str
     role: str
+
+
+class NavLayoutItemIn(BaseModel):
+    """One nav entry inside a group. ``path`` is validated against the server-side
+    allowlist in the route; unknown paths are silently dropped."""
+
+    path: str
+    label: str | None = None
+    icon: str | None = None
+    hidden: bool | None = None
+
+
+class NavLayoutGroupIn(BaseModel):
+    id: str
+    label: str | None = None
+    icon: str | None = None
+    items: list[NavLayoutItemIn] = []
+
+
+class NavLayoutIn(BaseModel):
+    """PUT body for a user's custom sidebar layout (grouped nav, PR1/4)."""
+
+    v: int = 1
+    groups: list[NavLayoutGroupIn] = []
 
 
 class UserUpdate(BaseModel):
