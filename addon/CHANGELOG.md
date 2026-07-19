@@ -24,7 +24,16 @@ config carry over; database migrations run automatically on start.
 - **Smarter search** - category and date filter tokens, tag-name matches, and
   keyboard navigation of results.
 - **Tag housekeeping** - merge tags, see usage counts and clean up unused tags
-  from Settings; vendors get a merge tool too.
+  from a dedicated Tags page; vendors get a merge tool too.
+- **Edit after creation** - projects, budgets, rules and savings goals can be
+  edited after they're created, instead of delete-and-recreate.
+- **Your date format** - a Settings toggle shows dates as ISO, US or UK
+  everywhere; the Transactions CSV export can also export your ticked selection
+  or the whole filtered set.
+- **Security events to MQTT (opt-in)** - publish failed unlocks, failed
+  two-factor and wrong-passphrase events so Home Assistant can alert on them.
+- **Cloud AI runs in the background** - sending a cloud AI categorisation batch
+  no longer blocks and shows live progress.
 - **AI key from the UI** - set the AI provider key in Settings on a standalone
   install; it's stored encrypted at rest (the `HAFI_AI_API_KEY` environment
   variable still wins).

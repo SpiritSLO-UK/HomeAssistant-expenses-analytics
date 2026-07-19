@@ -10,13 +10,14 @@ human-readable entries; versions follow semantic versioning.
 ### Highlights
 
 A wide-ranging hardening, insight and polish release on top of v1.0.2 - roughly
-190 pull requests. Two-factor gains single-use **backup/recovery codes**; the
+230 pull requests. Two-factor gains single-use **backup/recovery codes**; the
 container now runs as a **non-root user**; budgets, projects and savings goals
-get **forecasts** (pace, burn-down, time-to-goal); US bank statements import
-correctly; native browser popups are replaced by an **in-app modal system**; and
-a systematic correctness-and-performance review swept roughly 30 backend
-services. Data and config carry over; database migrations run automatically on
-start.
+get **forecasts** (pace, burn-down, time-to-goal) and can be **edited after
+creation**; US bank statements import correctly; dates display in your chosen
+format app-wide; native browser popups are replaced by an **in-app modal
+system**; and a systematic correctness-and-performance review swept roughly 30
+backend services. Data and config carry over; database migrations run
+automatically on start.
 
 ### Security & hardening
 - **MFA backup/recovery codes** - generate single-use codes from a new Settings
@@ -54,6 +55,9 @@ start.
   clear message instead of a generic failure.
 - **Security-health card** - new checks: stored key without MFA, stale backups,
   and settings managers without MFA.
+- **Security events to MQTT (opt-in)** - failed unlocks, failed two-factor
+  attempts and wrong-passphrase events can be published to MQTT so Home
+  Assistant can alert on them; off by default, gated by a Settings toggle.
 - Broader PII redaction, OCR decompression-bomb and page-budget guards, capped
   audit-row size, and household-scoped audit queries.
 
@@ -94,13 +98,25 @@ start.
   page), tag-name matches, deep-linked result chips, and keyboard navigation of
   grouped results with Enter-to-open.
 - **Tag management** - merge tags, see usage counts and clean up unused tags
-  from a new Settings card.
+  from a dedicated **Tags** page in the sidebar.
+- **Edit after creation** - projects, budgets, rules and savings goals can be
+  edited after they are created (and a savings account's name/institution),
+  instead of delete-and-recreate.
+- **App-wide date format** - a Settings toggle picks how dates display
+  everywhere (ISO `2026-07-18`, US `07/18/2026` or UK `18/07/2026`).
+- **Export what you see** - the Transactions CSV export honours your ticked
+  selection, and can export the whole filtered set rather than just the current
+  page.
 - **Activity log** - server-side search with actor and date-range filters, and
   an owner-only audit-log CSV export.
 - **Quality-of-life** - a vendor merge UI, clone + drag-to-reorder for rules, a
-  penny-exact percentage split helper, bulk recolour of categories, AI-batch
-  select-all + CSV export, and heads-up dashboard alerts you can enable, disable
-  or clear.
+  penny-exact percentage split helper, bulk recolour of categories with a new
+  category defaulting to an unused colour, AI-batch select-all + CSV export, and
+  heads-up dashboard alerts you can enable, disable or clear. Search keyboard
+  navigation now stays out of the way until you actually press an arrow key.
+- **Cloud AI batch runs in the background** - sending a cloud AI categorisation
+  batch no longer blocks; it runs in the background with live
+  sent/received progress you can watch.
 - **Consistent budgets/projects/savings** - the three pages now share one
   progress-bar and list-row style, so budgets, projects and savings goals read
   the same way; a budget row also shows one clear pace signal instead of several
@@ -129,7 +145,7 @@ start.
   MQTT isn't live.
 
 ### Testing & docs
-- **1,067 backend tests**, plus a new **Playwright browser suite** (55+
+- **1,095 backend tests**, plus a new **Playwright browser suite** (55+
   tests: a render smoke of every page and end-to-end task flows) with an HTML
   report attached to CI runs and releases, and a step-by-step UI test
   walkthrough. CI additionally guards the non-root container, encryption
