@@ -64,6 +64,9 @@ export default function Sidebar({
   const roleItems = NAV_ITEMS.filter((item) => {
     if (isChild) return item.childVisible;
     if (!item.ownerOnly && blocked.has(navKey(item.path))) return false;
+    // Settings-manager-only pages (e.g. Tags) follow the same grant as the
+    // "Customise tabs" control — canManageTabs === can_manage_settings (#28).
+    if (item.manageSettingsOnly && !canManageTabs) return false;
     return !item.ownerOnly || isAdmin;
   });
 

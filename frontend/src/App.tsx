@@ -12,6 +12,7 @@ const Search = lazy(() => import("./pages/Search"));
 const Import = lazy(() => import("./pages/Import"));
 const Transactions = lazy(() => import("./pages/Transactions"));
 const Categories = lazy(() => import("./pages/Categories"));
+const Tags = lazy(() => import("./pages/Tags"));
 const Vendors = lazy(() => import("./pages/Vendors"));
 const Rules = lazy(() => import("./pages/Rules"));
 const Projects = lazy(() => import("./pages/Projects"));
@@ -110,6 +111,7 @@ function AppRoutes() {
           <Route path="/import" element={<Import />} />
           <Route path="/transactions" element={<Transactions />} />
           <Route path="/categories" element={<Categories />} />
+          <Route path="/tags" element={<Tags />} />
           <Route path="/vendors" element={<Vendors />} />
           <Route path="/rules" element={<Rules />} />
           <Route path="/projects" element={<Projects />} />
