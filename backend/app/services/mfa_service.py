@@ -116,7 +116,11 @@ def encrypt_secret(secret: str | None) -> str | None:
     key = _app_key()
     if not secret or not key:
         return secret
-    blob = crypto_service.encrypt(secret.encode("utf-8"), key)
+    # encrypt_internal (not encrypt): HAFI_DB_KEY is an internal app key, not a
+    # user-chosen backup passphrase, so the 8-char backup floor must not apply —
+    # a short db_key must still let enrolment store a seed rather than 500 (#22).
+    # Same container format, so existing ``mfaenc1:`` seeds still decrypt.
+    blob = crypto_service.encrypt_internal(secret.encode("utf-8"), key)
     return _ENC_PREFIX + base64.b64encode(blob).decode("ascii")
 
 
@@ -135,7 +139,7 @@ def decrypt_secret(stored: str | None) -> str | None:
         return None
     try:
         blob = base64.b64decode(stored[len(_ENC_PREFIX):].encode("ascii"), validate=True)
-        return crypto_service.decrypt(blob, key).decode("utf-8")
+        return crypto_service.decrypt_internal(blob, key).decode("utf-8")
     except (crypto_service.DecryptError, ValueError):
         # binascii.Error and UnicodeDecodeError both subclass ValueError, so
         # catching ValueError already covers them.
