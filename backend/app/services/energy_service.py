@@ -24,11 +24,11 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.logging import get_logger
 from app.models import AssetLog, EnergySnapshot, Transaction
-from app.services import dashboard_service, ha_service, settings_service
+from app.services import dashboard_service, ha_service, settings_service, split_service
 from app.services.household_service import get_or_create_default_household
 from app.services.scope import account_scope_condition, archived_condition
 
@@ -227,6 +227,39 @@ def record_snapshot(db: Session, produced: Decimal, source: str) -> None:
 # --- offset -----------------------------------------------------------------
 
 
+def _baseline_before(db: Session, start_dt: datetime) -> Decimal | None:
+    """Produced value of the last snapshot captured before ``start_dt`` — the
+    month-start baseline for a cumulative (lifetime) counter — or ``None`` when no
+    earlier snapshot exists. Household-wide, mirroring ``production_history``."""
+    snap = db.scalars(
+        select(EnergySnapshot)
+        .where(EnergySnapshot.captured_at < start_dt)
+        .order_by(EnergySnapshot.captured_at.desc())
+        .limit(1)
+    ).first()
+    return Decimal(snap.produced) if snap is not None else None
+
+
+def _month_production(db: Session, cfg: dict, current: Decimal, ref: date) -> Decimal:
+    """Production attributable to ``ref``'s month from a live/current reading.
+
+    interval   → the reading already *is* the period's production, so pass it through.
+    cumulative → a lifetime counter, so the month's production is the rise since the
+                 month-start baseline (the last snapshot before the month began),
+                 mirroring ``_produced_in_bucket``; a drop (meter reset) clamps to 0.
+                 With no baseline yet there is nothing to subtract, so the raw reading
+                 stands rather than being reported as the entire lifetime total.
+    """
+    if cfg["production_semantics"] != "cumulative":
+        return current
+    start, _ = dashboard_service.month_bounds(ref)
+    baseline = _baseline_before(db, datetime.combine(start, datetime.min.time()))
+    if baseline is None:
+        return current
+    delta = current - baseline
+    return delta if delta > 0 else Decimal("0")
+
+
 def _energy_spend(db: Session, ref: date, category_id: int | None, account_ids: set[int] | None) -> Decimal:
     if category_id is None:
         return Decimal("0")
@@ -256,10 +289,14 @@ def offset(
     elif cfg["source"] == "off":
         produced = Decimal("0")
     else:
-        produced = _production_kwh(db, cfg, live=live)
-        # A real live read → sample it for the production trend (throttled).
+        current = _production_kwh(db, cfg, live=live)
+        # A real live read → sample the RAW reading for the production trend (throttled).
+        # The trend aggregates raw cumulative values, so it must store the reading itself.
         if live:
-            record_snapshot(db, produced, cfg["source"])
+            record_snapshot(db, current, cfg["source"])
+        # A cumulative source's raw reading is a lifetime total, so net it against the
+        # month-start baseline (finding #9); an interval reading passes straight through.
+        produced = _month_production(db, cfg, current, ref)
 
     tariff = cfg["tariff_per_kwh"]
     if tariff:
@@ -316,7 +353,10 @@ def last_saving(db: Session) -> Decimal:
     unit_price = _unit_price(db, cfg)
     if latest is None or unit_price is None:
         return Decimal("0.00")
-    return (Decimal(latest.produced) * unit_price).quantize(Decimal("0.01"))
+    # Match offset(): for a cumulative counter net the lifetime reading against its
+    # month-start baseline so the MQTT sensor isn't the whole lifetime × price (finding #9).
+    produced = _month_production(db, cfg, Decimal(latest.produced), latest.captured_at.date())
+    return (produced * unit_price).quantize(Decimal("0.01"))
 
 
 def status(db: Session) -> dict:
@@ -371,23 +411,59 @@ def _clamp_count(count) -> int:
     return max(1, min(n, 366))
 
 
+def _split_spend_for_category(txn: Transaction, category_id: int) -> Decimal:
+    """A split transaction's spend attributable to ``category_id`` in base currency
+    (positive = money out), mirroring ``dashboard_service``'s split allocation: each
+    part uses the parent's penny-exact base share; a split-flagged txn carrying no
+    parts falls back to its own category."""
+    if not txn.splits:
+        if txn.category_id == category_id:
+            return -(txn.base_amount or Decimal("0"))
+        return Decimal("0")
+    total = Decimal("0")
+    for split in txn.splits:
+        if split.category_id != category_id:
+            continue
+        base = split_service.split_base_amount(txn, split)
+        if base is not None:
+            total += -base
+    return total
+
+
 def _spend_in_range(
     db: Session, category_id: int, start: date, end: date, account_ids: set[int] | None
 ) -> Decimal:
-    val = db.scalar(
+    """Energy-bill spend in ``[start, end)`` for ``category_id`` — split-aware and
+    spendable-filtered exactly like ``dashboard_service.category_breakdown``, so a
+    history bucket agrees with the offset's current-month spend (finding #14). A split
+    transaction contributes only its part(s) in this category, and a parent sitting in
+    another category (or none) can still contribute its energy split here."""
+    scope = [
+        Transaction.transaction_date >= start,
+        Transaction.transaction_date < end,
+        Transaction.base_amount < 0,  # spend only (money out)
+        Transaction.is_transfer.is_(False),
+        Transaction.is_duplicate.is_(False),
+        Transaction.base_amount.is_not(None),
+        *account_scope_condition(account_ids),
+        *archived_condition(),
+    ]
+    # Bulk path: non-split transactions filed directly under this category.
+    bulk = db.scalar(
         select(func.coalesce(func.sum(-Transaction.base_amount), 0)).where(
-            Transaction.transaction_date >= start,
-            Transaction.transaction_date < end,
-            Transaction.base_amount < 0,
-            Transaction.category_id == category_id,
-            Transaction.is_transfer.is_(False),
-            Transaction.is_duplicate.is_(False),
-            Transaction.base_amount.is_not(None),
-            *account_scope_condition(account_ids),
-            *archived_condition(),
+            *scope, Transaction.is_split.is_(False), Transaction.category_id == category_id
         )
     )
-    return Decimal(str(val or 0))
+    total = Decimal(str(bulk or 0))
+    # Split path: allocate each split transaction's matching parts (few rows, eager-loaded).
+    split_txns = db.scalars(
+        select(Transaction)
+        .where(*scope, Transaction.is_split.is_(True))
+        .options(selectinload(Transaction.splits))
+    ).all()
+    for txn in split_txns:
+        total += _split_spend_for_category(txn, category_id)
+    return total
 
 
 def history(
