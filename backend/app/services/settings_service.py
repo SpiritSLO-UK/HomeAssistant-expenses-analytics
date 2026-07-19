@@ -278,7 +278,11 @@ def _encrypt_ai_key(raw: str) -> str:
     key = _app_key()
     if not key:
         return raw
-    blob = crypto_service.encrypt(raw.encode("utf-8"), key)
+    # encrypt_internal (not encrypt): HAFI_DB_KEY is an internal app key, not a
+    # user-chosen backup passphrase, so the 8-char backup floor must not apply —
+    # a short db_key must still store an AI key rather than 500 (#22). Same
+    # container format, so existing ``aienc1:`` values still decrypt.
+    blob = crypto_service.encrypt_internal(raw.encode("utf-8"), key)
     return _ENC_PREFIX + base64.b64encode(blob).decode("ascii")
 
 
@@ -298,7 +302,7 @@ def _decrypt_ai_key(stored: str | None) -> str | None:
         return None
     try:
         blob = base64.b64decode(stored[len(_ENC_PREFIX):].encode("ascii"), validate=True)
-        return crypto_service.decrypt(blob, key).decode("utf-8")
+        return crypto_service.decrypt_internal(blob, key).decode("utf-8")
     except (crypto_service.DecryptError, ValueError):
         # binascii.Error and UnicodeDecodeError both subclass ValueError.
         return None

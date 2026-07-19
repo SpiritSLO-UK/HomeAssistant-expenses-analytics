@@ -68,7 +68,32 @@ def _derive_key(passphrase: str, salt: bytes) -> bytes:
     return kdf.derive(passphrase.encode("utf-8"))
 
 
+def encrypt_internal(data: bytes, passphrase: str) -> bytes:
+    """Encrypt with the ``HAFIENC1`` container but WITHOUT the ``_MIN_PASSPHRASE_LEN``
+    floor. For INTERNALLY-derived keys only — the app secret ``HAFI_DB_KEY`` that
+    field-encrypts the stored AI API key and the MFA TOTP seed. That key is not a
+    user-chosen backup passphrase (SQLCipher imposes no length floor on it either),
+    so it must not be rejected here for being short.
+
+    The container is byte-for-byte identical to :func:`encrypt`'s output — only the
+    length check differs — so values written through either path decrypt with the
+    same :func:`decrypt`/:func:`decrypt_internal` and already-stored secrets keep
+    opening. A passphrase is still required (empty is refused)."""
+    if not passphrase:
+        raise ValueError("A passphrase is required to encrypt.")
+    salt = os.urandom(_SALT_LEN)
+    nonce = os.urandom(_NONCE_LEN)
+    key = _derive_key(passphrase, salt)
+    ciphertext = AESGCM(key).encrypt(nonce, data, MAGIC)
+    return MAGIC + salt + nonce + ciphertext
+
+
 def encrypt(data: bytes, passphrase: str) -> bytes:
+    """Encrypt a backup with a USER-CHOSEN passphrase, enforcing the length floor.
+
+    Use this for anything protected by a passphrase the user typed. For internal
+    app keys (``HAFI_DB_KEY``) use :func:`encrypt_internal`, which skips the floor.
+    """
     if not passphrase:
         raise ValueError("A passphrase is required to encrypt a backup.")
     if len(passphrase) < _MIN_PASSPHRASE_LEN:
@@ -78,11 +103,7 @@ def encrypt(data: bytes, passphrase: str) -> bytes:
         raise ValueError(
             f"Passphrase must be at least {_MIN_PASSPHRASE_LEN} characters."
         )
-    salt = os.urandom(_SALT_LEN)
-    nonce = os.urandom(_NONCE_LEN)
-    key = _derive_key(passphrase, salt)
-    ciphertext = AESGCM(key).encrypt(nonce, data, MAGIC)
-    return MAGIC + salt + nonce + ciphertext
+    return encrypt_internal(data, passphrase)
 
 
 def is_encrypted(blob: bytes) -> bool:
@@ -105,3 +126,13 @@ def decrypt(blob: bytes, passphrase: str) -> bytes:
         return AESGCM(key).decrypt(nonce, ciphertext, MAGIC)
     except InvalidTag as exc:
         raise DecryptError("Wrong passphrase or the backup file is corrupted.") from exc
+
+
+def decrypt_internal(blob: bytes, passphrase: str) -> bytes:
+    """Decrypt a container produced by :func:`encrypt_internal` (or :func:`encrypt`).
+
+    The two encrypt paths share one format, so this is the counterpart of
+    :func:`decrypt`; it exists only so the internal (no-floor) callers read through
+    a symmetric name. Decrypt never imposes a passphrase-length floor, so a value
+    written with a short internal key still opens."""
+    return decrypt(blob, passphrase)
