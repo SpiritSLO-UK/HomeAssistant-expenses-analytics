@@ -6,6 +6,9 @@ export interface NavItem {
   label: string;
   icon: string;
   ownerOnly?: boolean; // shown only to the owner (administrator)
+  // Shown only to users who can manage settings (owner or an owner-granted member).
+  // Gated the same way the old Settings Tags card was (`can_manage_settings`).
+  manageSettingsOnly?: boolean;
   // Shown to the restricted `child` role (which sees nothing else). Mirrors
   // `_CHILD_ALLOWED_PREFIXES` in backend/app/main.py — keep the two in sync.
   childVisible?: boolean;
@@ -17,6 +20,7 @@ export const NAV_ITEMS: NavItem[] = [
   { path: "/import", label: "Import", icon: "📥" },
   { path: "/transactions", label: "Transactions", icon: "💳" },
   { path: "/categories", label: "Categories", icon: "🏷️" },
+  { path: "/tags", label: "Tags", icon: "🔖", manageSettingsOnly: true },
   { path: "/vendors", label: "Vendors", icon: "🏬" },
   { path: "/rules", label: "Rules", icon: "⚙️" },
   { path: "/projects", label: "Projects", icon: "📁" },

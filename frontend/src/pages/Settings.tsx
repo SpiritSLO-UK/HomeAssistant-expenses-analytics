@@ -50,10 +50,6 @@ import {
   mfaStepUp,
   generateMfaBackupCodes,
   getMfaBackupCodesRemaining,
-  listTags,
-  getTagUsage,
-  mergeTags,
-  deleteUnusedTags,
   type AIStatus,
   type RetentionPolicyResponse,
   type RetentionTypePolicy,
@@ -65,7 +61,7 @@ import { useServerState } from "../lib/useServerState";
 import { clearAllPrefs, getThemePref, isCloudAiAcknowledged, setCloudAiAcknowledged } from "../prefs";
 import { setTheme, type ThemePref } from "../theme";
 import CloudAiDisclaimerDialog from "../components/CloudAiDisclaimerDialog";
-import { useConfirm, useAlert } from "../components/dialogs";
+import { useConfirm } from "../components/dialogs";
 import CountrySelect from "../components/CountrySelect";
 import PaperlessSetupNote from "../components/PaperlessSetupNote";
 import { useOptimisticSelect } from "../hooks/useOptimisticSelect";
@@ -289,8 +285,6 @@ export default function Settings() {
 
       {me.data?.can_manage_settings && <MqttCard onMessage={ok} onError={fail} />}
 
-      {me.data?.can_manage_settings && <TagsCard onMessage={ok} onError={fail} />}
-
       {me.data?.can_manage_settings && <IntegrationsCard onMessage={ok} onError={fail} />}
 
       {me.data?.can_manage_settings && <AiCard onMessage={ok} onError={fail} />}
@@ -480,131 +474,6 @@ function ServicePanel({
       </div>
       <span className="muted service-panel__detail">{detail}</span>
       {children}
-    </div>
-  );
-}
-
-// Compact tag housekeeping: merge duplicate tags and clear out unused ones. The
-// per-transaction tagging itself lives on the Transactions page — this card is only
-// the household-wide cleanup surface for the merge/usage/prune service functions.
-function TagsCard({
-  onMessage,
-  onError,
-}: Readonly<{
-  onMessage: (m: string) => void;
-  onError: (e: unknown) => void;
-}>) {
-  const qc = useQueryClient();
-  const confirm = useConfirm();
-  const alert = useAlert();
-  const tags = useQuery({ queryKey: ["tags"], queryFn: listTags });
-  const usage = useQuery({ queryKey: ["tags-usage"], queryFn: getTagUsage });
-  const [sourceId, setSourceId] = useState("");
-  const [targetId, setTargetId] = useState("");
-
-  const counts = new Map((usage.data ?? []).map((u) => [u.id, u.count]));
-
-  function refresh() {
-    qc.invalidateQueries({ queryKey: ["tags"] });
-    qc.invalidateQueries({ queryKey: ["tags-usage"] });
-    qc.invalidateQueries({ queryKey: ["transactions"] }); // a merge re-points txn tags
-  }
-
-  const merge = useMutation({
-    mutationFn: (v: { source: number; target: number }) => mergeTags(v.source, v.target),
-    onSuccess: (surviving) => {
-      onMessage(`Tags merged into "${surviving.name}".`);
-      setSourceId("");
-      setTargetId("");
-      refresh();
-    },
-    onError,
-  });
-
-  const prune = useMutation({
-    mutationFn: deleteUnusedTags,
-    onSuccess: (r) => {
-      refresh();
-      const m = r.deleted === 1 ? "Removed 1 unused tag." : `Removed ${r.deleted} unused tags.`;
-      void alert({ message: m });
-    },
-    onError,
-  });
-
-  const nameOf = (id: number): string => tags.data?.find((t) => t.id === id)?.name ?? "tag";
-
-  async function doMerge() {
-    const source = Number(sourceId);
-    const target = Number(targetId);
-    if (!source || !target || source === target) return;
-    const ok = await confirm({
-      message: `Merge "${nameOf(source)}" into "${nameOf(target)}"? Its transactions move to "${nameOf(target)}" and "${nameOf(source)}" is deleted.`,
-      confirmLabel: "Merge",
-      danger: true,
-    });
-    if (ok) merge.mutate({ source, target });
-  }
-
-  async function doPrune() {
-    const ok = await confirm({
-      message: "Remove every tag that no transaction uses?",
-      confirmLabel: "Remove unused",
-      danger: true,
-    });
-    if (ok) prune.mutate();
-  }
-
-  const list = tags.data ?? [];
-  const canMerge = Boolean(sourceId) && Boolean(targetId) && sourceId !== targetId;
-
-  return (
-    <div className="card">
-      <h2 className="card__title">Tags</h2>
-      <p className="muted" style={{ marginTop: 0, fontSize: "0.85rem" }}>
-        Tag housekeeping. Merge duplicate tags or remove ones no transaction uses. To add or remove
-        a tag on a transaction, use the “+ tag” button on the Transactions page.
-      </p>
-      {list.length === 0 && <p className="muted">No tags yet.</p>}
-      {list.length > 0 && (
-        <ul className="kv">
-          {list.map((t) => (
-            <li key={t.id}>
-              <span>{t.name}</span>
-              <span>{counts.get(t.id) ?? 0}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-      {list.length > 1 && (
-        <div className="form-row" style={{ flexWrap: "wrap", gap: 8, alignItems: "flex-end" }}>
-          <label>
-            Merge
-            <select value={sourceId} onChange={(e) => setSourceId(e.target.value)}>
-              <option value="">source tag…</option>
-              {list.map((t) => (
-                <option key={t.id} value={t.id}>{t.name}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            into
-            <select value={targetId} onChange={(e) => setTargetId(e.target.value)}>
-              <option value="">target tag…</option>
-              {list.map((t) => (
-                <option key={t.id} value={t.id}>{t.name}</option>
-              ))}
-            </select>
-          </label>
-          <button className="btn" disabled={!canMerge || merge.isPending} onClick={doMerge}>
-            {merge.isPending ? "Merging…" : "Merge"}
-          </button>
-        </div>
-      )}
-      <div style={{ marginTop: 12 }}>
-        <button className="btn btn--danger" disabled={prune.isPending} onClick={doPrune}>
-          {prune.isPending ? "Removing…" : "Remove unused tags"}
-        </button>
-      </div>
     </div>
   );
 }

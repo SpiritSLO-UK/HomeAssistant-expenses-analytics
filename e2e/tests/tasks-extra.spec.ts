@@ -132,13 +132,13 @@ test.describe("task flows: settings, users, error paths", () => {
     await expect(dialog).toBeHidden();
   });
 
-  test("tags: an unused tag is removed end-to-end via the Settings Tags card (#456)", async ({ page, request }) => {
+  test("tags: an unused tag is removed end-to-end via the Tags page (#456)", async ({ page, request }) => {
     const name = `${RUN}-tag`;
     // Create an (unused) tag over the API, then remove it through the UI flow.
     const created = await request.post("/api/tags", { data: { name } });
     expect(created.status()).toBe(201);
 
-    await gotoPage(page, { route: "/settings", heading: "Settings" });
+    await gotoPage(page, { route: "/tags", heading: "Tags" });
     const card = page.locator(".card").filter({ hasText: "Merge duplicate tags" });
     // The tag name renders in the usage-list span AND in both merge <select>
     // options, so scope to the list span (not options) to avoid a strict-mode

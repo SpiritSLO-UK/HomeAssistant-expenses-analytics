@@ -42,6 +42,7 @@ BLOCKABLE_NAV: dict[str, str] = {
     "import": "/api/imports",
     "transactions": "/api/transactions",
     "categories": "/api/categories",
+    "tags": "/api/tags",
     "vendors": "/api/vendors",
     "rules": "/api/rules",
     "projects": "/api/projects",

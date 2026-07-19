@@ -35,11 +35,11 @@ test('logs: audit CSV export button downloads a file (#455)', async ({ page }) =
   expect(download.suggestedFilename()).toContain("audit");
 });
 
-test('settings: Tags management card is present (#456)', async ({ page }) => {
-  await gotoPage(page, { route: "/settings", heading: "Settings" });
-  // The new owner-gated Tags card.
+test('tags: the Tags page surfaces the tag-housekeeping controls (#456)', async ({ page }) => {
+  await gotoPage(page, { route: "/tags", heading: "Tags" });
+  // The owner-gated Tags page (moved off Settings into its own sidebar page).
   await expect(page.getByRole("heading", { name: /^Tags$/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /Remove unused/i })).toBeVisible();
-  // Merge control (source -> target selects + the card's description).
+  // Merge control (source -> target selects + the page's description).
   await expect(page.getByText(/Merge duplicate tags/i)).toBeVisible();
 });

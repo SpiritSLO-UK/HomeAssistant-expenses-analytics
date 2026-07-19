@@ -533,8 +533,8 @@ export default function Transactions() {
           </button>
           <Link
             className="btn btn--ghost"
-            to="/settings"
-            title="Merge or remove tags (tag housekeeping) in Settings"
+            to="/tags"
+            title="Merge or remove tags (tag housekeeping) on the Tags page"
           >
             🏷 Manage tags
           </Link>
