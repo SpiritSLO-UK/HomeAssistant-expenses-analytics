@@ -36,7 +36,7 @@ from app.services import (
     settings_service,
 )
 from app.services.ai_provider import AIError
-from app.services.ai_service import AIDisabled
+from app.services.ai_service import AIDisabled, AIRateLimited
 from app.services.auth_service import get_current_user
 from app.services.import_service import ImportFailed
 
@@ -111,7 +111,9 @@ def _rows_from_ai(extracted: list[dict], base_currency: str) -> list[StandardTra
 
 
 @router.post("/ai-extract", response_model=UploadResponse,
-             responses={400: {"description": "Bad request / AI off"}, 502: {"description": "AI error"}})
+             responses={400: {"description": "Bad request / AI off"},
+                        429: {"description": "AI rate limit reached"},
+                        502: {"description": "AI error"}})
 async def ai_extract(
     file: Annotated[UploadFile, File()],
     db: Annotated[Session, Depends(get_db)],
@@ -130,8 +132,14 @@ async def ai_extract(
         # The vision-AI call is a synchronous, blocking network request (sync
         # httpx, up to a 30s timeout) — run it off the event loop (CR-BUG-1).
         extracted = await anyio.to_thread.run_sync(
-            ai_service.extract_statement_image, db, content, mime
+            functools.partial(
+                ai_service.extract_statement_image, db, content, mime, user_id=user.id
+            )
         )
+    except AIRateLimited as exc:
+        raise HTTPException(
+            status_code=429, detail=str(exc), headers={"Retry-After": str(exc.retry_after)}
+        ) from exc
     except AIDisabled as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except AIError as exc:

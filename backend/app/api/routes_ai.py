@@ -181,10 +181,14 @@ def classify_batch(
 
 
 @router.post("/apply", response_model=ApplyResult)
-def apply(payload: ApplyRequest, db: Annotated[Session, Depends(get_db)]) -> dict:
-    """Apply user-approved AI category suggestions (treated as manual choices)."""
+def apply(payload: ApplyRequest, request: Request, db: Annotated[Session, Depends(get_db)]) -> dict:
+    """Apply user-approved AI category suggestions (treated as manual choices).
+
+    Scoped to the caller's visible accounts — a member can never write a category
+    onto a transaction in an account they can't see (mirrors classify /
+    classify-batch; IDOR guard #17)."""
     items = [{"transaction_id": i.transaction_id, "category_id": i.category_id} for i in payload.items]
-    return {"applied": ai_service.apply_suggestions(db, items)}
+    return {"applied": ai_service.apply_suggestions(db, items, account_ids=_scope(request, db))}
 
 
 @router.post(

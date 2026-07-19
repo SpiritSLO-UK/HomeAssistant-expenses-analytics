@@ -125,6 +125,54 @@ def test_daily_cap_zero_disables(client, monkeypatch):
     assert client.post("/api/ai/test").status_code == 200
 
 
+# --- vision extract path: rate limit WITHOUT the payload cap (#29) ---
+
+
+class _StubVision:
+    name = "fake"
+    model = "m"
+
+    def available(self) -> bool:
+        return True
+
+    def extract_from_image(self, image_b64, mime, *, system, instruction):
+        return {"transactions": [{"date": "2026-06-01", "description": "X", "amount": "-1.00"}]}
+
+
+def _local_llm(db) -> None:
+    settings_service.set_value(db, settings_service.PRIVACY_MODE, "local_llm")
+    db.commit()
+
+
+def test_vision_extract_route_enforces_rate_limit(client, monkeypatch):
+    # The image-extract routes are outside routes_ai's guard, so the per-user rate
+    # limit is enforced in ai_service._require_vision. First call passes; the next
+    # within the window trips 429 (+Retry-After), same as the classify routes.
+    monkeypatch.setattr(settings, "ai_rate_limit_per_minute", 1)
+    with SessionLocal() as db:
+        _local_llm(db)
+    monkeypatch.setattr(ai_service, "get_provider", lambda _db: _StubVision())
+    img = {"file": ("s.png", b"\x89PNG\r\n" + b"0" * 100, "image/png")}
+    first = client.post("/api/imports/ai-extract", files=img)
+    assert first.status_code != 429  # a normal image is allowed through
+    second = client.post("/api/imports/ai-extract", files=img)
+    assert second.status_code == 429
+    assert int(second.headers["Retry-After"]) >= 1
+
+
+def test_vision_extract_route_bypasses_payload_cap(client, monkeypatch):
+    # A legitimate image far larger than the 100 KB AI JSON payload cap must NOT be
+    # 413'd on the vision route — only its own 15 MB image cap applies (#29).
+    monkeypatch.setattr(settings, "ai_max_payload_bytes", 50)
+    with SessionLocal() as db:
+        _local_llm(db)
+    monkeypatch.setattr(ai_service, "get_provider", lambda _db: _StubVision())
+    big_img = {"file": ("s.png", b"\x89PNG\r\n" + b"0" * 5000, "image/png")}  # >> 50-byte cap
+    r = client.post("/api/imports/ai-extract", files=big_img)
+    assert r.status_code != 413
+    assert r.status_code == 200, r.text
+
+
 def test_daily_cap_blocks_vision_extract_in_service_layer(db, monkeypatch):
     # The image-extract routes live outside routes_ai's guard, so the budget is
     # also enforced in ai_service._require_vision before any provider dispatch.
