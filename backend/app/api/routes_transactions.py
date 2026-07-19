@@ -29,6 +29,7 @@ from app.schemas.transactions import (
 from app.services import (
     audit_service,
     export_service,
+    geo,
     import_service,
     receipt_service,
     rule_service,
@@ -159,11 +160,37 @@ def list_transactions(
     ).all()
 
     return {
-        "items": list(rows),
+        "items": _serialise_with_country(db, list(rows)),
         "total": total,
         "limit": limit,
         "offset": offset,
     }
+
+
+def _vendor_countries(db: Session, txns: list[Transaction]) -> dict[int, str | None]:
+    """Vendor country per merchant referenced by ``txns`` — one query, no N+1."""
+    ids = {t.merchant_id for t in txns if t.merchant_id is not None}
+    if not ids:
+        return {}
+    return {vid: country for vid, country in db.execute(select(Vendor.id, Vendor.country).where(Vendor.id.in_(ids)))}
+
+
+def _serialise_with_country(db: Session, txns: list[Transaction]) -> list[TransactionOut]:
+    """Attach the inferred ``resolved_country`` (geo.country_for) to each list row.
+
+    Same precedence the spend-by-location map uses (txn -> vendor -> household
+    default -> currency); the stored ``country`` is left untouched. The FE row
+    picker shows this as its default when a row has no stored country."""
+    default_country = settings_service.get_default_vendor_country(db)
+    vendor_countries = _vendor_countries(db, txns)
+    items: list[TransactionOut] = []
+    for txn in txns:
+        out = TransactionOut.model_validate(txn)
+        out.resolved_country = geo.country_for(
+            txn.currency, vendor_countries.get(txn.merchant_id), txn.country, default_country
+        )
+        items.append(out)
+    return items
 
 
 @router.post("/recategorise")

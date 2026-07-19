@@ -37,6 +37,10 @@ class TransactionOut(BaseModel):
     amount: Decimal
     currency: str
     country: str | None = None  # per-transaction country for the spend-by-location map
+    # Inferred country (txn -> vendor -> household default -> currency, geo.country_for).
+    # Never persisted: the row picker shows it as the default when ``country`` is unset,
+    # so a base-currency (e.g. GBP -> GB) row still resolves instead of showing "—".
+    resolved_country: str | None = None
     direction: str
     base_amount: Decimal | None
     fx_rate: Decimal | None
