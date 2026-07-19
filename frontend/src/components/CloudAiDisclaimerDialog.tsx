@@ -59,8 +59,8 @@ export default function CloudAiDisclaimerDialog({
         </ul>
         <div className="form-row" style={{ justifyContent: "flex-end", gap: 8, marginTop: 8 }}>
           {/* Focus the safe (Cancel) action by default — this gates enabling cloud AI. */}
-          <button className="btn btn--ghost" autoFocus onClick={onCancel}>Cancel</button>
-          <button className="btn" onClick={onConfirm}>I understand — enable cloud AI</button>
+          <button type="button" className="btn btn--ghost" autoFocus onClick={onCancel}>Cancel</button>
+          <button type="button" className="btn" onClick={onConfirm}>I understand — enable cloud AI</button>
         </div>
       </div>
     </dialog>

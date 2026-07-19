@@ -164,7 +164,7 @@ export default function CloudAiBatchPanel({ base, onClose }: Readonly<{ base: st
     <div className="card" style={{ borderLeft: "3px solid #e0a800" }}>
       <div className="page__head">
         <h2 className="card__title">☁️ AI categorise uncategorised (cloud)</h2>
-        <button className="link-btn" onClick={onClose}>close</button>
+        <button type="button" className="link-btn" onClick={onClose}>close</button>
       </div>
       <p className="muted">
         Sends a <strong>redacted</strong>, minimal payload per transaction to your configured cloud AI —
@@ -175,7 +175,7 @@ export default function CloudAiBatchPanel({ base, onClose }: Readonly<{ base: st
 
       {!items && !suggestions && (
         <div className="form-row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <button className="btn" disabled={prepare.isPending} onClick={() => prepare.mutate()}>
+          <button type="button" className="btn" disabled={prepare.isPending} onClick={() => prepare.mutate()}>
             {prepare.isPending ? "Scanning…" : scanLabel}
           </button>
           <label className="checkbox">
@@ -222,6 +222,7 @@ export default function CloudAiBatchPanel({ base, onClose }: Readonly<{ base: st
                     <td className="num">{it.amount} {it.currency}</td>
                     <td>
                       <button
+                        type="button"
                         className="link-btn"
                         onClick={() => setShowPayload(showPayload === it.ai_request_id ? null : it.ai_request_id)}
                       >
@@ -235,6 +236,7 @@ export default function CloudAiBatchPanel({ base, onClose }: Readonly<{ base: st
           </div>
           <div className="form-row" style={{ gap: 8, marginTop: 8, flexWrap: "wrap" }}>
             <button
+              type="button"
               className="btn"
               disabled={toSend.size === 0 || send.isPending || sending}
               onClick={() => send.mutate()}
@@ -291,7 +293,7 @@ export default function CloudAiBatchPanel({ base, onClose }: Readonly<{ base: st
             </table>
           </div>
           <div className="form-row" style={{ gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-            <button className="btn" disabled={picked.size === 0 || apply.isPending} onClick={() => apply.mutate()}>
+            <button type="button" className="btn" disabled={picked.size === 0 || apply.isPending} onClick={() => apply.mutate()}>
               {apply.isPending ? "Applying…" : `Apply ${picked.size} selected`}
             </button>
             <button className="btn btn--ghost" type="button" onClick={exportSuggestions}>

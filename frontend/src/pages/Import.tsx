@@ -172,6 +172,7 @@ export default function Import() {
             ))}
           </select>
           <button
+            type="button"
             className="btn"
             disabled={!file || anyPending}
             onClick={() => upload.mutate()}
@@ -179,12 +180,12 @@ export default function Import() {
             {upload.isPending ? "Uploading…" : "Preview"}
           </button>
           {file && (
-            <button className="btn btn--ghost" onClick={() => setShowMapper((v) => !v)}>
+            <button type="button" className="btn btn--ghost" onClick={() => setShowMapper((v) => !v)}>
               {showMapper ? "Hide column mapping" : "⚙ Map columns (custom CSV)"}
             </button>
           )}
           {(preview || confirmed) && (
-            <button className="btn btn--ghost" onClick={reset}>
+            <button type="button" className="btn btn--ghost" onClick={reset}>
               Start over
             </button>
           )}
@@ -211,11 +212,11 @@ export default function Import() {
               read it. (For statements, a <strong>CSV export</strong> is the most reliable.)
             </p>
             <div className="form-row" style={{ gap: 8, flexWrap: "wrap" }}>
-              <button className="btn" disabled={anyPending} onClick={() => addAsReceipt.mutate()}>
+              <button type="button" className="btn" disabled={anyPending} onClick={() => addAsReceipt.mutate()}>
                 {addAsReceipt.isPending ? "Adding…" : "🧾 Add as a receipt instead"}
               </button>
               {aiStatus.data?.enabled && (
-                <button className="btn btn--ghost" disabled={anyPending} onClick={tryAiExtract}>
+                <button type="button" className="btn btn--ghost" disabled={anyPending} onClick={tryAiExtract}>
                   {aiExtract.isPending ? "Asking AI…" : "✨ Extract with AI"}
                 </button>
               )}
@@ -255,6 +256,7 @@ export default function Import() {
           <PreviewTable rows={preview.preview} />
           <div className="form-row">
             <button
+              type="button"
               className="btn"
               disabled={anyPending || preview.report.new === 0}
               onClick={() => confirm.mutate()}
@@ -340,7 +342,7 @@ function ReceiptImportPanel() {
         }}
       />
       <div className="form-row" style={{ gap: 8, flexWrap: "wrap" }}>
-        <button className="btn" disabled={upload.isPending} onClick={() => fileRef.current?.click()}>
+        <button type="button" className="btn" disabled={upload.isPending} onClick={() => fileRef.current?.click()}>
           {upload.isPending ? "Uploading…" : "🧾 Upload receipt"}
         </button>
         <CameraCaptureButton onCapture={send} disabled={upload.isPending} />
@@ -681,16 +683,16 @@ function CsvMappingPanel({
           </label>
           {selected && (
             <>
-              <button className="btn btn--ghost" onClick={() => exportProfile(selected)} title="Download (anonymous — column names only)">⬇ Export</button>
-              <button className="btn btn--ghost" onClick={() => shareProfile(selected)} title="Open a prefilled GitHub issue">↗ Share</button>
-              <button className="btn btn--ghost" disabled={del.isPending} onClick={() => del.mutate(selected.id)} title="Delete this profile">🗑</button>
+              <button type="button" className="btn btn--ghost" onClick={() => exportProfile(selected)} title="Download (anonymous — column names only)">⬇ Export</button>
+              <button type="button" className="btn btn--ghost" onClick={() => shareProfile(selected)} title="Open a prefilled GitHub issue">↗ Share</button>
+              <button type="button" className="btn btn--ghost" disabled={del.isPending} onClick={() => del.mutate(selected.id)} title="Delete this profile">🗑</button>
             </>
           )}
         </div>
       )}
 
       <div className="form-row" style={{ flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-        <button className="btn btn--ghost" onClick={applyAutodetect} title="Guess columns from their header names">
+        <button type="button" className="btn btn--ghost" onClick={applyAutodetect} title="Guess columns from their header names">
           ✨ Auto-detect columns
         </button>
         <label title="How dates like 01/02/2024 are read — pick your bank's order if auto-detect gets it wrong">
@@ -754,11 +756,12 @@ function CsvMappingPanel({
       )}
 
       <div className="form-row" style={{ flexWrap: "wrap", gap: 8 }}>
-        <button className="btn" disabled={!canPreview || preview.isPending} onClick={() => preview.mutate()}>
+        <button type="button" className="btn" disabled={!canPreview || preview.isPending} onClick={() => preview.mutate()}>
           {preview.isPending ? "Previewing…" : "Preview with this mapping"}
         </button>
         <input placeholder="Profile name" value={profileName} onChange={(e) => setProfileName(e.target.value)} />
         <button
+          type="button"
           className="btn btn--ghost"
           disabled={!canPreview || !profileName.trim() || save.isPending}
           onClick={() => save.mutate()}

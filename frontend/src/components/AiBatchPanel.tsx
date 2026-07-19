@@ -108,7 +108,7 @@ export default function AiBatchPanel({ base, onClose }: Readonly<{ base: string;
     <div className="card" style={{ borderLeft: "3px solid #6c5ce7" }}>
       <div className="page__head">
         <h2 className="card__title">✨ AI categorise uncategorised (local)</h2>
-        <button className="link-btn" onClick={onClose}>close</button>
+        <button type="button" className="link-btn" onClick={onClose}>close</button>
       </div>
       <p className="muted">
         Runs your local LLM over your transactions and proposes a category for each. Review the list,
@@ -118,7 +118,7 @@ export default function AiBatchPanel({ base, onClose }: Readonly<{ base: string;
       </p>
 
       <div className="form-row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <button className="btn" disabled={scan.isPending} onClick={() => scan.mutate()}>
+        <button type="button" className="btn" disabled={scan.isPending} onClick={() => scan.mutate()}>
           {scan.isPending ? "Scanning…" : "Scan now"}
         </button>
         <label className="checkbox">
@@ -167,7 +167,7 @@ export default function AiBatchPanel({ base, onClose }: Readonly<{ base: string;
             </table>
           </div>
           <div className="form-row" style={{ gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-            <button className="btn" disabled={picked.size === 0 || apply.isPending} onClick={() => apply.mutate()}>
+            <button type="button" className="btn" disabled={picked.size === 0 || apply.isPending} onClick={() => apply.mutate()}>
               {apply.isPending ? "Applying…" : `Apply ${picked.size} selected`}
             </button>
             <button className="btn btn--ghost" type="button" onClick={exportCsv}>
