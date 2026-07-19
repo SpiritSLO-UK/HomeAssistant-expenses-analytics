@@ -1432,43 +1432,50 @@ function MfaCard({
   const [setup, setSetup] = useState<{ secret: string; otpauth_uri: string } | null>(null);
   const [code, setCode] = useState("");
   const [scope, setScope] = useState("app_admin"); // what MFA gates (#157)
+  // MFA errors (wrong/expired code) render INLINE next to the code input rather
+  // than via the page-level onError banner at the very top of Settings, which
+  // sits far above this card and reads as "nothing happened".
+  const [mfaErr, setMfaErr] = useState<string | null>(null);
 
   const begin = useMutation({
     mutationFn: mfaSetup,
-    onSuccess: (s) => setSetup(s),
-    onError,
+    onSuccess: (s) => { setMfaErr(null); setSetup(s); },
+    onError: (e) => setMfaErr(String(e)),
   });
-  // After enable succeeds, mint a session with the same code so the user isn't
-  // bounced to the entry gate. Only report "enabled" on a verified success; if
-  // verify fails, surface that error instead of silently claiming success.
-  const finishEnable = () => {
-    mfaVerify(code)
-      .then(() => {
-        setCode("");
-        onMessage("Two-factor authentication enabled.");
-      })
-      .catch((e) => {
-        setCode("");
-        onError(e);
-      });
-  };
+  // Enabling MFA is a two-step chain: mfaEnable turns MFA on but does NOT mint a
+  // session token; mfaVerify (with the same code) is what mints the app-entry
+  // session (setSessionToken). We MUST mint the token BEFORE invalidating queries
+  // — otherwise the mass refetch fires with no session token, every protected
+  // query 403s, and /api/users/me briefly reports mfa_required, bouncing the whole
+  // app to the entry gate (unmounting Settings + the backup-codes section). So we
+  // fold verify into the mutation and invalidate only in onSettled, mirroring
+  // App.tsx's MfaSetupGate.
   const enable = useMutation({
-    mutationFn: () => mfaEnable(code, scope),
+    mutationFn: async () => {
+      await mfaEnable(code, scope);
+      // If the TOTP period rolled over between enable and verify this throws —
+      // MFA is already on and the pending secret is consumed, so onSettled's
+      // refetch flips me to mfa_required and the app-entry gate takes a fresh code.
+      await mfaVerify(code);
+    },
     onSuccess: () => {
       setSetup(null);
-      qc.invalidateQueries();
-      finishEnable();
+      setCode("");
+      setMfaErr(null);
+      onMessage("Two-factor authentication enabled.");
     },
-    onError,
+    onError: (e) => { setCode(""); setMfaErr(String(e)); },
+    onSettled: () => qc.invalidateQueries(),
   });
   const disable = useMutation({
     mutationFn: () => mfaDisable(code),
     onSuccess: () => {
       setCode("");
+      setMfaErr(null);
       onMessage("Two-factor authentication disabled.");
       qc.invalidateQueries();
     },
-    onError,
+    onError: (e) => { setCode(""); setMfaErr(String(e)); },
   });
 
   // Drop this device's MFA session so the entry challenge re-appears immediately —
@@ -1494,9 +1501,12 @@ function MfaCard({
       </p>
 
       {!enabled && !setup && (
-        <button className="btn" disabled={begin.isPending} onClick={() => begin.mutate()}>
-          {begin.isPending ? "Preparing…" : "Set up two-factor"}
-        </button>
+        <>
+          <button className="btn" disabled={begin.isPending} onClick={() => begin.mutate()}>
+            {begin.isPending ? "Preparing…" : "Set up two-factor"}
+          </button>
+          {mfaErr && <p className="status status--error">{mfaErr}</p>}
+        </>
       )}
 
       {!enabled && setup && (
@@ -1539,16 +1549,17 @@ function MfaCard({
               placeholder="123456"
               maxLength={8}
               value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+              onChange={(e) => { setMfaErr(null); setCode(e.target.value.replace(/\D/g, "")); }}
               style={{ width: 120 }}
             />
             <button className="btn" disabled={!code || enable.isPending} onClick={() => enable.mutate()}>
               {enable.isPending ? "Confirming…" : "Confirm & enable"}
             </button>
-            <button className="btn btn--ghost" onClick={() => { setSetup(null); setCode(""); }}>
+            <button className="btn btn--ghost" onClick={() => { setSetup(null); setCode(""); setMfaErr(null); }}>
               Cancel
             </button>
           </div>
+          {mfaErr && <p className="status status--error">{mfaErr}</p>}
         </>
       )}
 
@@ -1584,13 +1595,14 @@ function MfaCard({
                   placeholder="123456"
                   maxLength={8}
                   value={code}
-                  onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+                  onChange={(e) => { setMfaErr(null); setCode(e.target.value.replace(/\D/g, "")); }}
                   style={{ width: 150 }}
                 />
                 <button className="btn btn--ghost" disabled={!code || disable.isPending} onClick={() => disable.mutate()}>
                   {disable.isPending ? "Disabling…" : "Disable two-factor"}
                 </button>
               </div>
+              {mfaErr && <p className="status status--error">{mfaErr}</p>}
             </>
           )}
           <MfaBackupCodesSection onMessage={onMessage} onError={onError} />
