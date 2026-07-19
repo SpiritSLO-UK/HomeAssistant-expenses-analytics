@@ -40,22 +40,22 @@ class RestoreError(Exception):
     """Raised when an uploaded database fails validation."""
 
 
+def _encryption_enabled() -> bool:
+    """True when the at-rest-encryption marker reports the live DB is encrypted."""
+    from app.services import security_service
+
+    marker = security_service.read_marker()
+    return bool(marker and marker.get("enabled"))
+
+
 # --- Full database backup/restore ---
 
-def snapshot_database() -> Path:
-    """Return a path to a consistent point-in-time copy of the database.
-
-    Uses SQLite's online backup API so the copy is valid even with WAL writes
-    in flight. Caller is responsible for deleting the temp file.
-    """
-    src = settings.database_file
-    fd, tmp_name = tempfile.mkstemp(prefix="hafi-backup-", suffix=".db")
-    os.close(fd)
-    tmp = Path(tmp_name)
+def _snapshot_plaintext(src: Path, dst: Path) -> None:
+    """Copy a plaintext SQLite DB via the online backup API (WAL-safe)."""
     # NB: `with sqlite3.connect(...)` commits but does NOT close the connection,
     # which would leave the file locked on Windows. Close explicitly.
     src_con = sqlite3.connect(str(src))
-    dst_con = sqlite3.connect(str(tmp))
+    dst_con = sqlite3.connect(str(dst))
     try:
         # Wait for a concurrent writer to release its lock instead of failing
         # immediately with "database is locked" mid-backup.
@@ -64,6 +64,49 @@ def snapshot_database() -> Path:
     finally:
         dst_con.close()
         src_con.close()
+
+
+def _snapshot_encrypted(dst: Path) -> None:
+    """Write a PLAINTEXT snapshot of the encrypted live DB to ``dst``.
+
+    stdlib ``sqlite3`` can't decrypt a SQLCipher file, and in prompt-unlock mode the
+    passphrase is not stored anywhere readable — it only lives inside the active
+    engine's connection ``creator``. So borrow a keyed connection from the engine
+    pool and run ``sqlcipher_export`` into an unkeyed (``KEY ''``) attached database,
+    mirroring :func:`security_service.disable_encryption`. The result is an ordinary
+    SQLite file the existing plaintext restore/validate path and the AES-wrapping
+    encrypted-download accept unchanged.
+    """
+    from app.services import security_service
+
+    raw = dbsession.require_engine().raw_connection()
+    try:
+        con = raw.driver_connection
+        con.execute("PRAGMA busy_timeout=5000")
+        literal = security_service._sql_string_literal(str(dst))
+        con.execute(f"ATTACH DATABASE {literal} AS plaintext KEY ''")
+        con.execute("SELECT sqlcipher_export('plaintext')")
+        con.execute("DETACH DATABASE plaintext")
+    finally:
+        raw.close()  # returns the connection to the pool; does not dispose the engine
+
+
+def snapshot_database() -> Path:
+    """Return a path to a consistent point-in-time plaintext copy of the database.
+
+    On a plaintext install this uses SQLite's online backup API so the copy is valid
+    even with WAL writes in flight. On an at-rest-encrypted (SQLCipher) install it
+    decrypts into a plaintext snapshot via the active keyed connection, so downloads,
+    the encrypted-backup wrapper, and the retention safety-backup all work rather than
+    failing with "file is not a database". Caller deletes the temp file.
+    """
+    fd, tmp_name = tempfile.mkstemp(prefix="hafi-backup-", suffix=".db")
+    os.close(fd)
+    tmp = Path(tmp_name)
+    if _encryption_enabled():
+        _snapshot_encrypted(tmp)
+    else:
+        _snapshot_plaintext(settings.database_file, tmp)
     return tmp
 
 
@@ -93,6 +136,11 @@ def _quiesce_database(dest: Path) -> None:
     a busy_timeout) for any in-flight writer, then checkpoint the WAL into the
     main file so the copy we're about to replace is self-contained."""
     if not dest.exists():
+        return
+    if _encryption_enabled():
+        # The live file is SQLCipher-encrypted: stdlib sqlite3 can't open it to
+        # checkpoint, and it's about to be replaced wholesale anyway. Skip quietly
+        # instead of logging a misleading "file is not a database" warning.
         return
     try:
         con = sqlite3.connect(str(dest), timeout=10)
@@ -161,9 +209,37 @@ def restore_database(content: bytes) -> None:
         # Drop stale WAL/SHM so the restored file is authoritative.
         for suffix in ("-wal", "-shm"):
             Path(str(dest) + suffix).unlink(missing_ok=True)
+
+        _reconcile_encryption_after_restore()
         logger.info("Database restored from upload (%s bytes)", len(content))
     finally:
         tmp.unlink(missing_ok=True)
+
+
+def _reconcile_encryption_after_restore() -> None:
+    """Rebuild the engine (and clear the encryption marker) to match the restored file.
+
+    The restored candidate is always plaintext (``SQLITE_MAGIC`` + a stdlib-sqlite
+    integrity check gate ``restore_database``). If the install was at-rest encrypted,
+    the still-SQLCipher engine would now run ``PRAGMA key`` against a plaintext file
+    (HTTP 500), and the still-enabled ``encryption.json`` marker would make the app
+    lock itself over a perfectly valid DB on the next restart. So drop the marker /
+    stored key and reconfigure the engine to plaintext, mirroring how
+    ``disable_encryption`` calls ``dbsession.configure(None)`` after its own swap.
+
+    On a plaintext install this simply rebuilds a fresh plaintext engine instead of
+    leaning on the disposed one silently reconnecting.
+    """
+    from app.services import security_service
+
+    if security_service.read_marker() is not None:
+        security_service._delete_marker()
+        security_service.clear_stored_key()  # the auto-unlock key no longer opens anything
+        logger.info(
+            "Restored a plaintext database over an encrypted install; "
+            "at-rest encryption has been disabled to match the restored file."
+        )
+    dbsession.configure(None)
 
 
 # --- Safety backups + trim (backlog #78) ---
