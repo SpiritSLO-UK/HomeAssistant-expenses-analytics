@@ -632,6 +632,18 @@ private-mode):
   sidebar hides (👁️/🚫) and reorders (▲/▼) nav tabs per device
   (`get/setHiddenNavKeys` + `get/setNavOrder`); Dashboard + Settings stay locked
   from hiding. Owner/settings-manager only.
+- **Per-user grouped nav layout - backend/API groundwork (#531, UI ships later):**
+  a nullable `users.nav_layout` TEXT column (migration `a1c2e3d4f5b6`, current
+  head; `NULL` = the built-in default layout) holds each user's own grouped
+  sidebar layout as a JSON object, mirroring the existing per-user `blocked_nav`
+  JSON-column pattern. Unlike the per-device localStorage prefs above this is
+  **per user, server-side**. `GET /api/users/me` now returns `nav_layout` (the
+  parsed object or `null`); `PUT /api/users/me/nav-layout` is **self-service**
+  (any authenticated user sets their OWN layout - deliberately not owner- or
+  `can_manage_settings`-gated) and normalises the blob (each group needs a unique
+  non-blank id, items whose `path` isn't in a server-side allowlist are dropped,
+  group/item counts capped); `DELETE /api/users/me/nav-layout` resets to default
+  (204). The consuming grouped-nav UI lands in a later PR.
 - **Mine/Shared/All view** (`get/setDashboardView`) and **resizable table column
   widths** (`get/setColumnWidths`, per table) are also per-device.
 - **Dark mode (#103):** `getThemePref`/`setThemePref` + `theme.ts` apply

@@ -109,14 +109,22 @@ behave exactly as before.
 - **Last-owner guard.** The household's last active owner can't be demoted,
   disabled or deleted (you can never lock yourself out of administration).
 - **Optional MFA (TOTP).** Per user, off by default. When on, a 6-digit code is
-  required to open the app (a per-device session token, SHA-256-hashed in the DB,
-  12-hour TTL) and a recently-entered code (within a **10-minute step-up window**)
-  is required to confirm admin actions. The MFA secret/sessions live inside the
-  database, so the at-rest unlock (below) necessarily runs **first** and without
-  MFA - the order is always *passphrase → then code*, never a deadlock.
-  There are currently **no backup/recovery codes**: if you lose your authenticator,
-  another owner can disable/re-enrol MFA for you (and a sole owner restores from a
-  backup), so keep a backup.
+  required to open the app (a per-device session token, hashed in the DB -
+  HMAC-SHA256 keyed on the app key when one is set, otherwise plain SHA-256 -
+  with a 12-hour TTL) and a recently-entered code (within a **10-minute step-up
+  window**) is required to confirm admin actions. Stored sessions are **capped
+  per user** (oldest evicted) so repeated verifications can't grow the table
+  without bound. The TOTP secret itself is **app-layer-encrypted at rest**
+  (AES-256-GCM, keyed on `HAFI_DB_KEY`) whenever a key is set, falling back to
+  plaintext only when none is. The MFA secret/sessions live inside the database,
+  so the at-rest unlock (below) necessarily runs **first** and without MFA - the
+  order is always *passphrase → then code*, never a deadlock.
+- **MFA backup / recovery codes.** Enrolment issues a set of single-use backup
+  codes (shown once; only their hashes are stored). Any one of them opens the app
+  or disables MFA if you lose your authenticator - essential when MFA is
+  *required* - and each code is spent on first use so it can't be replayed. You
+  can regenerate the set at any time (which invalidates the old one). An owner can
+  still disable/re-enrol MFA for another user as a fallback.
 - **Failed-unlock visibility.** Because the DB is sealed during an unlock attempt,
   failures are recorded to a small file beside it and surfaced on the unlock
   screen and in the security-health panel.

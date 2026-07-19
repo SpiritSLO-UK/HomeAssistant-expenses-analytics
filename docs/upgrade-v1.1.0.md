@@ -2,8 +2,8 @@
 
 A short, practical checklist for moving an existing install from **v1.0.2** to
 **v1.1.0**, for both deployment paths (Home Assistant add-on and standalone
-Docker). Your data and config carry over; the only database change is additive
-and runs automatically on start. For the full list of what changed, see the
+Docker). Your data and config carry over; the database changes are additive
+and run automatically on start. For the full list of what changed, see the
 [CHANGELOG](../CHANGELOG.md).
 
 > Provided **"as is", without warranty**, and **not** financial advice. You are
@@ -23,15 +23,25 @@ Most of v1.1.0 is transparent - you update and carry on. Four items are worth
 reading before you upgrade; only the first two touch users at all, and only in
 specific setups.
 
-### 1. New database migration (automatic)
+### 1. New database migrations (automatic)
 
-v1.1.0 adds one migration, `d3e4f5a6b7c8` (**mfa_backup_codes**), which creates
-the storage for two-factor backup/recovery codes. It is **additive and
-non-destructive** - it adds new storage and touches none of your existing data.
+v1.1.0 adds **four** migrations, applied in order on top of v1.0.2:
 
-- **Add-on:** it runs automatically on start (the add-on runs `alembic upgrade
+1. `c5d6e7f8a9b0` (**tags case-insensitive unique index**) - a
+   case-insensitive uniqueness index on tags.
+2. `c6d7e8f9a0b1` (**import-profile date format**) - stores a per-profile date
+   format on saved import profiles.
+3. `d3e4f5a6b7c8` (**mfa_backup_codes**) - storage for two-factor
+   backup/recovery codes.
+4. `a1c2e3d4f5b6` (**per-user nav layout**) - per-user navigation-layout
+   storage.
+
+They are **additive and non-destructive** - they add new storage and touch none
+of your existing data.
+
+- **Add-on:** they run automatically on start (the add-on runs `alembic upgrade
   head` in `run.sh` before the app comes up). Nothing to do.
-- **Standalone:** the container applies pending migrations on boot, so it runs
+- **Standalone:** the container applies pending migrations on boot, so they run
   the first time you start the v1.1.0 image. Nothing to do.
 
 ### 2. One-time two-factor re-verify (only if at-rest encryption is on)
@@ -116,8 +126,8 @@ boot, so your data and config survive the upgrade.
 
 Your data lives in the `/data` volume (`finance_data` for standalone), separate
 from the image, so downgrading swaps the code and leaves your data in place. The
-v1.1.0 migration is **additive**, so a downgrade to v1.0.2 is low-risk: the older
-code simply ignores the new backup-codes storage.
+v1.1.0 migrations are **additive**, so a downgrade to v1.0.2 is low-risk: the older
+code simply ignores the new storage they added.
 
 - **Add-on:** reinstall / roll back to the previous version from the Supervisor,
   or restore the HA backup you took first.
