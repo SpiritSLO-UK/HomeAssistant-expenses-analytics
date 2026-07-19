@@ -279,6 +279,57 @@ def test_category_merge_repoints_category_equals_rule_conditions(db):
     assert matches.condition_value == str(eating.id)  # the category_equals condition (SR-4 fix)
 
 
+def test_category_merge_either_direction_preserves_all_links(db):
+    """Merge direction: the survivor is whichever category is passed as the target,
+    and every reference type re-points onto it in *both* directions (keep-A-remove-B
+    and keep-B-remove-A) with nothing dropped. Backs the frontend "Keep" toggle,
+    which merely swaps which id is source vs target."""
+    from decimal import Decimal
+
+    from app.models import Rule, Subscription, Vendor
+
+    def _link_all(cat_id: int) -> dict:
+        """Attach one of every re-pointed reference type to ``cat_id``."""
+        sub = Subscription(name=f"sub-{cat_id}", amount=Decimal("9.99"), category_id=cat_id)
+        vendor = Vendor(canonical_name=f"vend-{cat_id}", default_category_id=cat_id)
+        child = category_service.create_category(db, {"name": f"child-{cat_id}"})
+        child.parent_id = cat_id
+        sets = Rule(name=f"set-{cat_id}", condition_type="merchant_contains", condition_value="x",
+                    action_type="set_category", action_value=str(cat_id))
+        matches = Rule(name=f"match-{cat_id}", condition_type="category_equals",
+                       condition_value=str(cat_id), action_type="require_review", action_value=None)
+        db.add_all([sub, vendor, sets, matches])
+        db.commit()
+        return {"sub": sub, "vendor": vendor, "child": child, "sets": sets, "matches": matches}
+
+    def _assert_repointed(links: dict, survivor_id: int) -> None:
+        for obj in links.values():
+            db.refresh(obj)
+        assert links["sub"].category_id == survivor_id
+        assert links["vendor"].default_category_id == survivor_id
+        assert links["child"].parent_id == survivor_id
+        assert links["sets"].action_value == str(survivor_id)
+        assert links["matches"].condition_value == str(survivor_id)
+
+    # Direction 1: keep B, remove A (links live on the removed A).
+    a = category_service.create_category(db, {"name": "Alpha"})
+    b = category_service.create_category(db, {"name": "Beta"})
+    links_a = _link_all(a.id)
+    survivor = category_service.merge_category(db, a.id, b.id)
+    assert survivor.id == b.id
+    assert category_service.get_category(db, a.id) is None
+    _assert_repointed(links_a, b.id)
+
+    # Direction 2: keep C, remove D — same call, opposite survivor (links on removed D).
+    c = category_service.create_category(db, {"name": "Gamma"})
+    d = category_service.create_category(db, {"name": "Delta"})
+    links_d = _link_all(d.id)
+    survivor2 = category_service.merge_category(db, d.id, c.id)
+    assert survivor2.id == c.id
+    assert category_service.get_category(db, d.id) is None
+    _assert_repointed(links_d, c.id)
+
+
 def test_merge_vendor_repoints_txns_and_moves_dedupes_aliases(db):
     """SR-A3: merging re-points a transaction's ``merchant_id`` to the target,
     moves the source's aliases onto the target while dropping exact-duplicate
