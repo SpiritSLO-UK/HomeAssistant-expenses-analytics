@@ -79,6 +79,28 @@ class CloudBatchSendResult(BaseModel):
     rejected: int
 
 
+class CloudBatchSendAck(BaseModel):
+    """Acknowledgement of a non-blocking cloud batch send: how many approved
+    requests were queued for the background worker + how many were rejected."""
+
+    queued: int
+    rejected: int
+
+
+class CloudBatchStatus(BaseModel):
+    """Progress of a cloud batch, derived from the AIRequest rows (polled by the
+    FE). ``suggestions`` is populated only once ``done`` — the review stage."""
+
+    total: int
+    sent: int
+    pending: int
+    failed: int
+    rejected: int
+    done: bool
+    running: bool
+    suggestions: list[BatchSuggestion]
+
+
 class ApplyItem(BaseModel):
     transaction_id: int
     category_id: int

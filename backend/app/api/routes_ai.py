@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -18,8 +18,9 @@ from app.schemas.ai import (
     BatchResult,
     ClassifyResult,
     CloudBatchPreview,
+    CloudBatchSendAck,
     CloudBatchSendRequest,
-    CloudBatchSendResult,
+    CloudBatchStatus,
 )
 from app.services import ai_guard, ai_service, auth_service
 from app.services.ai_provider import AIError
@@ -216,16 +217,52 @@ def cloud_batch_prepare(
 
 @router.post(
     "/cloud-batch/send",
-    response_model=CloudBatchSendResult,
+    response_model=CloudBatchSendAck,
     dependencies=[Depends(_ai_guard)],
-    responses={400: {"description": "Bad request"}, 502: {"description": "Upstream error"}},
+    responses={400: {"description": "Bad request"}},
 )
-def cloud_batch_send(payload: CloudBatchSendRequest, db: Annotated[Session, Depends(get_db)]) -> dict:
-    """Stage 2 of a cloud batch: send the approved redacted requests, reject the
-    rest, and return suggestions to review (apply via /api/ai/apply)."""
+def cloud_batch_send(
+    payload: CloudBatchSendRequest,
+    background: BackgroundTasks,
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    """Stage 2 of a cloud batch, **non-blocking**: queue the approved redacted
+    requests for a BACKGROUND send and reject the rest, returning at once with how
+    many were queued. Poll ``GET /api/ai/cloud-batch/status?ids=…`` for progress;
+    once ``done`` it carries the suggestions to review + apply (/api/ai/apply)."""
     try:
-        return ai_service.cloud_batch_send(db, approve_ids=payload.approve_ids, reject_ids=payload.reject_ids)
+        result = ai_service.cloud_batch_start(
+            db, approve_ids=payload.approve_ids, reject_ids=payload.reject_ids
+        )
     except AIDisabled as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except AIError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    # Dispatch the queued ids in the background so the request returns immediately;
+    # the worker opens its own per-item session (never this request's). The
+    # response_model drops the internal "queue" key.
+    background.add_task(ai_service.run_cloud_batch, result["queue"])
+    return result
+
+
+def _parse_id_list(raw: str) -> list[int]:
+    """Parse a comma-separated id list from the query string, ignoring blank /
+    non-numeric parts and capping the count so a polling call stays cheap."""
+    out: list[int] = []
+    for part in raw.split(","):
+        token = part.strip()
+        if token.isdigit():
+            out.append(int(token))
+        if len(out) >= 500:
+            break
+    return out
+
+
+@router.get("/cloud-batch/status", response_model=CloudBatchStatus)
+def cloud_batch_status(
+    db: Annotated[Session, Depends(get_db)],
+    ids: Annotated[str, Query(description="Comma-separated AI request ids from the batch")] = "",
+) -> dict:
+    """Progress of the current cloud batch, derived from the AIRequest rows named
+    by ``ids`` (cheap COUNT queries — safe for the FE to poll). Dispatches no AI
+    call, so it's deliberately not behind the abuse guard. Carries the review
+    suggestions once ``done``."""
+    return ai_service.cloud_batch_status(db, _parse_id_list(ids))

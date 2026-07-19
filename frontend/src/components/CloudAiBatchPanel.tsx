@@ -1,9 +1,10 @@
-import { useState, type Dispatch, type SetStateAction } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   applyAiCategories,
   cloudBatchPrepare,
   cloudBatchSend,
+  cloudBatchStatus,
   type BatchSuggestion,
   type CloudBatchItem,
 } from "../api/client";
@@ -25,6 +26,9 @@ export default function CloudAiBatchPanel({ base, onClose }: Readonly<{ base: st
   const [toSend, setToSend] = useState<Set<number>>(new Set());
   const [suggestions, setSuggestions] = useState<BatchSuggestion[] | null>(null);
   const [picked, setPicked] = useState<Set<number>>(new Set());
+  // The ai_request_ids of the batch currently being sent in the background; while
+  // set we poll cloud-batch/status for progress and stop once it reports `done`.
+  const [batchIds, setBatchIds] = useState<number[] | null>(null);
   const [threshold, setThreshold] = useState(0.8);
   const [recheck, setRecheck] = useState(false);
   const [showPayload, setShowPayload] = useState<number | null>(null);
@@ -56,18 +60,42 @@ export default function CloudAiBatchPanel({ base, onClose }: Readonly<{ base: st
       const all = (items ?? []).map((i) => i.ai_request_id);
       const approve = all.filter((id) => toSend.has(id));
       const reject = all.filter((id) => !toSend.has(id));
-      return cloudBatchSend(approve, reject);
+      // Fire the non-blocking send; carry the approved ids through so onSuccess can
+      // start polling their progress.
+      return cloudBatchSend(approve, reject).then((ack) => ({ ack, approve }));
     },
-    onSuccess: (res) => {
-      setSuggestions(res.suggestions);
-      setPicked(new Set(res.suggestions.filter((s) => (s.confidence ?? 0) >= threshold).map((s) => s.transaction_id)));
-      setItems(null);
-      const failed = res.failed.length ? ` · ${res.failed.length} failed` : "";
-      setMsg(`Cloud returned ${res.count} suggestion(s)${failed}. Review and apply.`);
+    onSuccess: ({ ack, approve }) => {
+      // Don't await the whole batch — begin polling status for the approved ids.
+      setBatchIds(approve);
+      setMsg(`Queued ${ack.queued} for cloud send — sending in the background…`);
       setErr(null);
     },
     onError: (e) => setErr(String(e instanceof Error ? e.message : e)),
   });
+
+  // Poll batch progress while sending; refetch on an interval until `done`.
+  const statusQuery = useQuery({
+    queryKey: ["cloud-batch-status", batchIds],
+    queryFn: () => cloudBatchStatus(batchIds ?? []),
+    enabled: batchIds != null,
+    refetchInterval: (query) => (query.state.data?.done ? false : 1200),
+  });
+
+  // When the background send finishes, move to the review stage using the
+  // suggestions the status endpoint carries, and stop polling.
+  const status = statusQuery.data;
+  useEffect(() => {
+    if (batchIds == null || !status?.done) return;
+    setSuggestions(status.suggestions);
+    setPicked(
+      new Set(status.suggestions.filter((s) => (s.confidence ?? 0) >= threshold).map((s) => s.transaction_id)),
+    );
+    setItems(null);
+    setBatchIds(null); // stop polling
+    const failed = status.failed ? ` · ${status.failed} failed` : "";
+    setMsg(`Cloud returned ${status.suggestions.length} suggestion(s)${failed}. Review and apply.`);
+    setErr(null);
+  }, [batchIds, status, threshold]);
 
   const apply = useMutation({
     mutationFn: () => {
@@ -126,6 +154,11 @@ export default function CloudAiBatchPanel({ base, onClose }: Readonly<{ base: st
   };
 
   const scanLabel = recheck ? "Scan transactions" : "Scan uncategorised";
+
+  // A background send is in flight while we have batch ids to poll.
+  const sending = batchIds != null;
+  const failedSuffix = status?.failed ? ` · ${status.failed} failed` : "";
+  const progressLabel = status ? `Sent ${status.sent} / ${status.total}${failedSuffix}…` : "Starting send…";
 
   return (
     <div className="card" style={{ borderLeft: "3px solid #e0a800" }}>
@@ -203,15 +236,25 @@ export default function CloudAiBatchPanel({ base, onClose }: Readonly<{ base: st
           <div className="form-row" style={{ gap: 8, marginTop: 8, flexWrap: "wrap" }}>
             <button
               className="btn"
-              disabled={toSend.size === 0 || send.isPending}
+              disabled={toSend.size === 0 || send.isPending || sending}
               onClick={() => send.mutate()}
             >
-              {send.isPending ? "Sending…" : `Send ${toSend.size} to cloud →`}
+              {sending ? "Sending…" : `Send ${toSend.size} to cloud →`}
             </button>
-            <button className="btn btn--ghost" type="button" disabled={toSend.size === 0} onClick={exportWillSend}>
+            <button
+              className="btn btn--ghost"
+              type="button"
+              disabled={toSend.size === 0 || sending}
+              onClick={exportWillSend}
+            >
               Export CSV
             </button>
           </div>
+          {sending && (
+            <p className="status" aria-live="polite" style={{ marginTop: 8 }}>
+              {progressLabel}
+            </p>
+          )}
         </>
       )}
       {items?.length === 0 && <p className="muted">Nothing to send.</p>}
