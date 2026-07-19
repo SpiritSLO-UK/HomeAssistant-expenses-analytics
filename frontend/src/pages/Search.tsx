@@ -18,6 +18,12 @@ export default function Search() {
   const [term, setTerm] = useState(initial);
   const [debounced, setDebounced] = useState(initial);
   const [activeIndex, setActiveIndex] = useState(-1);
+  // Whether the user is actually driving the results with the keyboard. The
+  // visible highlight and the navigation hint are gated on this so mouse users
+  // never see a selected row (or clutter) they did not ask for. The ARIA
+  // attributes below stay wired up regardless, so screen-reader users are
+  // unaffected.
+  const [keyboardActive, setKeyboardActive] = useState(false);
 
   // Debounce typing, and keep ?q= in sync so the result is shareable/back-able.
   useEffect(() => {
@@ -56,7 +62,23 @@ export default function Search() {
   // Reset the highlight whenever the query (and therefore the result set) changes.
   useEffect(() => {
     setActiveIndex(-1);
+    setKeyboardActive(false);
   }, [debounced]);
+
+  // Once the keyboard has been used, any mouse activity hands control back to
+  // the mouse: the visible highlight and hint disappear so mouse users are not
+  // shown a selection they never asked for. Listeners are only attached while
+  // keyboard mode is on to avoid a permanent global handler.
+  useEffect(() => {
+    if (!keyboardActive) return;
+    const backToMouse = () => setKeyboardActive(false);
+    window.addEventListener("mousemove", backToMouse);
+    window.addEventListener("pointerdown", backToMouse);
+    return () => {
+      window.removeEventListener("mousemove", backToMouse);
+      window.removeEventListener("pointerdown", backToMouse);
+    };
+  }, [keyboardActive]);
 
   // Keep the highlighted result scrolled into view as the user arrows through.
   useEffect(() => {
@@ -68,11 +90,13 @@ export default function Search() {
     if (flat.length === 0) return;
     if (e.key === "ArrowDown") {
       e.preventDefault();
+      setKeyboardActive(true);
       setActiveIndex((i) => (i + 1) % flat.length);
       return;
     }
     if (e.key === "ArrowUp") {
       e.preventDefault();
+      setKeyboardActive(true);
       setActiveIndex((i) => (i <= 0 ? flat.length - 1 : i - 1));
       return;
     }
@@ -82,7 +106,8 @@ export default function Search() {
     }
   };
 
-  const styleFor = (domId: string): CSSProperties | undefined => (activeId === domId ? activeStyle : undefined);
+  const styleFor = (domId: string): CSSProperties | undefined =>
+    keyboardActive && activeId === domId ? activeStyle : undefined;
 
   return (
     <div className="page">
@@ -108,7 +133,7 @@ export default function Search() {
         {debounced.trim().length < 2 && (
           <p className="muted" style={{ marginBottom: 0 }}>Type at least two characters.</p>
         )}
-        {flat.length > 0 && (
+        {keyboardActive && flat.length > 0 && (
           <p className="muted" style={{ marginBottom: 0 }}>Use ↑ and ↓ to navigate, Enter to open.</p>
         )}
         <details style={{ marginTop: 8 }}>
