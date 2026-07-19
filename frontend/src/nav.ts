@@ -245,3 +245,50 @@ export function pathMatches(itemPath: string, currentPath: string): boolean {
   if (itemPath === "/") return currentPath === "/";
   return currentPath === itemPath;
 }
+
+// --- Nav editor helpers (grouped-nav PR3/4) ---
+//
+// Does a path pass the role/visibility gates for this user? The editor uses this
+// to filter the editable item pool so a user can never surface a page they can't
+// reach (e.g. an owner-only or settings-gated page). Unknown paths never pass.
+export function pathPassesGate(path: string, ctx: NavVisibilityCtx): boolean {
+  const item = ITEM_BY_PATH.get(path);
+  if (!item) return false;
+  return itemPassesGate(item, ctx, new Set(ctx.blockedNavKeys));
+}
+
+// The registry default label/icon for a path, used by the editor when a member
+// override is empty (so an empty rename field falls back to the default name).
+export function defaultLabelForPath(path: string): string {
+  return ITEM_BY_PATH.get(path)?.label ?? path;
+}
+
+export function defaultIconForPath(path: string): string {
+  return ITEM_BY_PATH.get(path)?.icon ?? "";
+}
+
+// Is this a user-created custom group (vs a built-in default group)? Custom groups
+// are the only ones the editor lets you delete; their ids are `custom:<random>`.
+export function isCustomGroupId(id: string): boolean {
+  return id.startsWith("custom:");
+}
+
+// Serialise the editor's working NavGroup[] into the persisted NavLayout blob the
+// PR1 API stores (dropping empty overrides so the saved blob stays lean). v=1
+// matches the backend's normalise_nav_layout / stored version.
+export function toNavLayout(groups: NavGroup[]): NavLayout {
+  return {
+    v: 1,
+    groups: groups.map((g) => ({
+      id: g.id,
+      ...(g.label ? { label: g.label } : {}),
+      ...(g.icon ? { icon: g.icon } : {}),
+      items: g.items.map((it) => ({
+        path: it.path,
+        ...(it.label ? { label: it.label } : {}),
+        ...(it.icon ? { icon: it.icon } : {}),
+        ...(it.hidden ? { hidden: true } : {}),
+      })),
+    })),
+  };
+}

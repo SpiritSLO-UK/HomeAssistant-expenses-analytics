@@ -256,6 +256,7 @@ function AppShell({
         role={role}
         canManageTabs={canManageTabs}
         blockedNavKeys={blockedNavKeys}
+        navLayout={navLayout}
         open={navOpen}
         onNavigate={() => setNavOpen(false)}
       />

@@ -1,7 +1,9 @@
+import { useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { pathMatches, visibleGroupItems, type NavGroup, type NavVisibilityCtx, type NavRenderItem } from "../nav";
-import { getAiStatus } from "../api/client";
+import { getAiStatus, type NavLayout } from "../api/client";
+import NavEditor from "./NavEditor";
 
 // Injected at build time from package.json (vite define) so it can't drift.
 const VERSION = __APP_VERSION__;
@@ -24,6 +26,7 @@ export default function Sidebar({
   role = "owner",
   canManageTabs = true,
   blockedNavKeys = [],
+  navLayout = null,
   open = false,
   onNavigate,
 }: Readonly<{
@@ -31,6 +34,7 @@ export default function Sidebar({
   role?: string;
   canManageTabs?: boolean; // owner or a granted member may see settings-gated pages (#28 RBAC)
   blockedNavKeys?: string[]; // pages the owner restricted for this user (#108)
+  navLayout?: NavLayout | null; // raw saved layout (null = default), for the editor
   open?: boolean; // drawer open on narrow screens
   onNavigate?: () => void; // close the drawer after picking a page (mobile)
 }>) {
@@ -38,6 +42,10 @@ export default function Sidebar({
   const badge = privacyBadge(ai.data);
   const location = useLocation();
   const ctx: NavVisibilityCtx = { role, canManageTabs, blockedNavKeys };
+  // Any approved non-child user may personalise their own nav (the server PUT is
+  // self-service) — decoupled from can_manage_settings / owner on purpose.
+  const canCustomise = role !== "child";
+  const [editing, setEditing] = useState(false);
 
   return (
     <aside className={"sidebar" + (open ? " sidebar--open" : "")}>
@@ -67,8 +75,14 @@ export default function Sidebar({
         })}
       </nav>
       <div className="sidebar__footer">
+        {canCustomise && (
+          <button type="button" className="sidebar__customise" onClick={() => setEditing(true)}>
+            ✏️ Customise navigation
+          </button>
+        )}
         <div title={badge.title}>{badge.label} · v{VERSION}</div>
       </div>
+      {editing && <NavEditor ctx={ctx} savedLayout={navLayout} onClose={() => setEditing(false)} />}
     </aside>
   );
 }
