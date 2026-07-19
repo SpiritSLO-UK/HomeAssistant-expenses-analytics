@@ -351,12 +351,17 @@ def monthly_total(db: Session, *, account_ids: set[int] | None = None) -> Decima
 
 
 def dashboard_summary(db: Session, *, account_ids: set[int] | None = None) -> dict:
-    items = [to_dict(s) for s in _active_visible(db, account_ids)]
+    # Compute the active-visible set ONCE and derive both the items and the monthly
+    # total from it (#27). Calling monthly_total() here would re-run _active_visible
+    # -> visible_subscription_ids (two DISTINCT scans + a full Subscription scan) a
+    # second time. Summing monthly_equivalent inline matches monthly_total exactly.
+    active = _active_visible(db, account_ids)
+    total = sum((monthly_equivalent(s.amount, s.frequency) for s in active), Decimal("0.00"))
     return {
         "currency": settings_service.get_base_currency(db),
-        "monthly_total": str(monthly_total(db, account_ids=account_ids)),
-        "count": len(items),
-        "subscriptions": items,
+        "monthly_total": str(total),
+        "count": len(active),
+        "subscriptions": [to_dict(s) for s in active],
     }
 
 

@@ -193,6 +193,25 @@ def test_delete_subscription(client):
     assert _subs(client) == []
 
 
+# --- PATCH category_id validation: unknown id -> 400, not IntegrityError 500 (#24) ---
+
+def test_patch_unknown_category_returns_400(client):
+    _import(client, _monthly("NETFLIX"), "netflix.csv")
+    sid = _subs(client)[0]["id"]
+    resp = client.patch(f"/api/subscriptions/{sid}", json={"category_id": 999999})
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Unknown category"
+
+
+def test_patch_valid_category_still_works(client):
+    _import(client, _monthly("NETFLIX"), "netflix.csv")
+    sid = _subs(client)[0]["id"]
+    cat_id = client.get("/api/categories").json()[0]["id"]
+    resp = client.patch(f"/api/subscriptions/{sid}", json={"category_id": cat_id})
+    assert resp.status_code == 200
+    assert resp.json()["category_id"] == cat_id
+
+
 # --- dashboard + MQTT ---
 
 def test_dashboard_subscriptions_total(client):
@@ -291,6 +310,38 @@ def test_detect_ignores_spend_far_outside_window(db):
 def test_detect_no_spend_returns_zero(db):
     result = subscription_service.detect(db)
     assert result == {"created": 0, "updated": 0, "total": 0}
+
+
+def test_dashboard_summary_computes_visible_set_once(db, monkeypatch):
+    # Two active subs backed by account A's transactions. For a non-admin (scoped)
+    # caller, dashboard_summary must compute the visible set exactly ONCE (#27) --
+    # previously it ran once for the items and again via monthly_total.
+    acct = Account(name="A")
+    db.add(acct)
+    db.flush()
+    _spend(db, account_id=acct.id, when=date(2026, 1, 5), amount="-9.99", merchant_raw="NETFLIX")
+    _spend(db, account_id=acct.id, when=date(2026, 1, 5), amount="-12.00", merchant_raw="DISNEY")
+    db.add_all([
+        Subscription(name="Netflix", amount=Decimal("9.99"), frequency="monthly", interval_days=30, status="active"),
+        Subscription(name="Disney", amount=Decimal("12.00"), frequency="monthly", interval_days=30, status="active"),
+    ])
+    db.commit()
+
+    calls = {"n": 0}
+    real = subscription_service.visible_subscription_ids
+
+    def counting(db_, account_ids):
+        calls["n"] += 1
+        return real(db_, account_ids)
+
+    monkeypatch.setattr(subscription_service, "visible_subscription_ids", counting)
+
+    summary = subscription_service.dashboard_summary(db, account_ids={acct.id})
+
+    assert calls["n"] == 1  # visibility computed exactly once, not twice
+    assert summary["count"] == 2
+    # 9.99 + 12.00, identical to summing monthly_total over the same active set.
+    assert Decimal(summary["monthly_total"]) == Decimal("21.99")
 
 
 def test_visible_subscription_ids_scoped_to_account(db):
