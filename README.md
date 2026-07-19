@@ -19,7 +19,8 @@ categories. All privacy-first, with **strict local mode as the default**.
 </p>
 
 Full design: [`ha_finance_intelligence_spec.md`](ha_finance_intelligence_spec.md)
-(the build-status section at the top tracks progress).
+(the build-status section at the top tracks progress). Where the project is
+heading: [**ROADMAP.md**](ROADMAP.md).
 
 ## 🏠 Install on Home Assistant (add-on)
 
