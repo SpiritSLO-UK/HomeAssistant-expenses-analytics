@@ -188,11 +188,12 @@ export default function Users() {
                     <td>{u.display_name}</td>
                     <td className="muted">{u.external_id}</td>
                     <td style={{ textAlign: "right" }}>
-                      <button className="btn btn--sm" onClick={() => doApprove(u.id)}>
+                      <button className="btn btn--sm" type="button" onClick={() => doApprove(u.id)}>
                         Approve
                       </button>{" "}
                       <button
                         className="link-btn"
+                        type="button"
                         onClick={async () => {
                           if (await confirm({ message: `Deny "${u.display_name}"? They won't get access.`, confirmLabel: "Deny", danger: true }))
                             doPatch(u.id, { status: "disabled" });
@@ -273,6 +274,7 @@ export default function Users() {
                           <span className="muted" title="Owners can reach every page">all</span>
                         ) : (
                           <button
+                            type="button"
                             className="link-btn"
                             title="Choose which pages this person can reach"
                             onClick={() => setRestricting(restricting === u.id ? null : u.id)}
@@ -301,6 +303,7 @@ export default function Users() {
                           <span className="muted" title="You can't delete your own account">—</span>
                         ) : (
                           <button
+                            type="button"
                             className="link-btn"
                             onClick={async () => {
                               if (await confirm({ message: `Remove "${u.display_name}"? They lose all access.`, confirmLabel: "Remove", danger: true }))
@@ -373,7 +376,7 @@ function RestrictPanel({ user, onToggle, onClose }: Readonly<{
         })}
       </div>
       <div style={{ marginTop: 10 }}>
-        <button className="btn btn--ghost" onClick={onClose}>Done</button>
+        <button className="btn btn--ghost" type="button" onClick={onClose}>Done</button>
       </div>
     </div>
   );

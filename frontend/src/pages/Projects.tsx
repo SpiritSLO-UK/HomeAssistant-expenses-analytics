@@ -141,15 +141,15 @@ function ProjectRow({
     <ListRow>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
         <div>
-          <button className="link-btn" onClick={onToggle} style={{ fontWeight: 600 }}>
+          <button className="link-btn" type="button" onClick={onToggle} style={{ fontWeight: 600 }}>
             {open ? "▾ " : "▸ "}{p.name}
           </button>{" "}
           <span className="tag">{p.status}</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span className="muted">{p.spent} {base} spent{p.budget ? ` / ${p.budget}` : ""}</span>
-          <button className="link-btn" onClick={onEdit} aria-expanded={editing}>{editing ? "close" : "edit"}</button>
-          <button className="link-btn" onClick={onDelete}>delete</button>
+          <button className="link-btn" type="button" onClick={onEdit} aria-expanded={editing}>{editing ? "close" : "edit"}</button>
+          <button className="link-btn" type="button" onClick={onDelete}>delete</button>
         </div>
       </div>
       {p.budget && pct != null && (
@@ -323,7 +323,7 @@ function NewProject({
           onChange={(e) => setBudget(e.target.value)}
           style={{ width: 170 }}
         />
-        <button className="btn" disabled={!name.trim() || create.isPending} onClick={submit}>
+        <button className="btn" type="button" disabled={!name.trim() || create.isPending} onClick={submit}>
           {create.isPending ? "Adding…" : "Add project"}
         </button>
       </div>
@@ -452,19 +452,19 @@ function EditProjectForm({
           style={{ minWidth: 260, flex: 1 }}
         />
         <label className="muted" style={{ display: "flex", flexDirection: "column", fontSize: "0.75rem", gap: 2 }}>
-          Start date
+          <span>Start date</span>
           <input type="date" aria-label="Project start date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
         </label>
         <label className="muted" style={{ display: "flex", flexDirection: "column", fontSize: "0.75rem", gap: 2 }}>
-          End date
+          <span>End date</span>
           <input type="date" aria-label="Project end date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
         </label>
       </div>
       <div className="form-row" style={{ gap: 8, marginTop: 10 }}>
-        <button className="btn" disabled={!name.trim() || save.isPending} onClick={submit}>
+        <button className="btn" type="button" disabled={!name.trim() || save.isPending} onClick={submit}>
           {save.isPending ? "Saving…" : "Save changes"}
         </button>
-        <button className="btn btn--ghost" onClick={onCancel} disabled={save.isPending}>Cancel</button>
+        <button className="btn btn--ghost" type="button" onClick={onCancel} disabled={save.isPending}>Cancel</button>
       </div>
     </div>
   );

@@ -55,6 +55,7 @@ function BudgetBar({ b, base, manage }: Readonly<{ b: ChildBudgetStatus; base: s
             />
             <span className="muted">{base}/mo</span>
             <button
+              type="button"
               className="btn btn--sm btn--ghost"
               disabled={manage.busy || amount === b.amount || !isAmount(amount)}
               onClick={() => { if (isAmount(amount)) manage.onSave(b.budget_id, amount); }}
@@ -62,6 +63,7 @@ function BudgetBar({ b, base, manage }: Readonly<{ b: ChildBudgetStatus; base: s
               Save
             </button>
             <button
+              type="button"
               className="link-btn"
               title="Remove this budget"
               onClick={async () => { if (await confirm({ message: `Remove the "${b.name}" budget?`, confirmLabel: "Remove", danger: true })) manage.onDelete(b.budget_id); }}
@@ -324,6 +326,7 @@ function ParentManager({ canManage }: Readonly<{ canManage: boolean }>) {
                 <span>
                   {it.amount} {it.currency}{" "}
                   <button
+                    type="button"
                     className="link-btn"
                     onClick={async () => { if (await confirm({ message: `Remove "${it.description ?? "this item"}"?`, confirmLabel: "Remove", danger: true })) removeItem.mutate(it.id); }}
                   >

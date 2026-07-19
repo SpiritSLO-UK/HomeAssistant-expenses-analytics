@@ -31,7 +31,7 @@ function TripCountry({ onSet, pending }: Readonly<{ onSet: (code: string) => voi
         style={{ minWidth: 130 }}
         title="Tag this trip's spend with a country for the spending-by-location map"
       />
-      <button className="btn btn--sm btn--ghost" disabled={!code || pending} onClick={() => code && onSet(code)}>
+      <button className="btn btn--sm btn--ghost" type="button" disabled={!code || pending} onClick={() => code && onSet(code)}>
         Set country
       </button>
     </span>
@@ -190,7 +190,7 @@ export default function Travel() {
                     <Fragment key={key}>
                       <tr>
                         <td style={{ whiteSpace: "nowrap" }}>
-                          <button className="link-btn" style={{ fontWeight: 600 }} onClick={() => setOpenTrip(open ? null : key)}>
+                          <button className="link-btn" type="button" style={{ fontWeight: 600 }} onClick={() => setOpenTrip(open ? null : key)}>
                             {open ? "▾ " : "▸ "}{fmtRange(trip.first, trip.last, dateFmt)}
                           </button>
                         </td>
@@ -204,6 +204,7 @@ export default function Travel() {
                               onSet={(code) => setCountry.mutate({ ids: trip.transaction_ids, country: code })}
                             />
                             <button
+                              type="button"
                               className="btn btn--sm"
                               disabled={makeProject.isPending}
                               onClick={() => createFor(trip)}

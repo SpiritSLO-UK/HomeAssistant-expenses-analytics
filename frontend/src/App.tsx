@@ -206,7 +206,7 @@ function AppError({ onRetry }: Readonly<{ onRetry: () => void }>) {
         <p className="muted">
           Something went wrong reaching the server. Check your connection and try again.
         </p>
-        <button className="btn" onClick={onRetry}>Retry</button>
+        <button className="btn" type="button" onClick={onRetry}>Retry</button>
       </div>
     </div>
   );
@@ -234,11 +234,11 @@ function AppShell({
         onNavigate={() => setNavOpen(false)}
       />
       {navOpen && (
-        <button className="nav-backdrop" aria-label="Close menu" onClick={() => setNavOpen(false)} />
+        <button className="nav-backdrop" type="button" aria-label="Close menu" onClick={() => setNavOpen(false)} />
       )}
       <div className="content-col">
         <div className="mobile-topbar">
-          <button className="hamburger" aria-label="Open menu" onClick={() => setNavOpen(true)}>
+          <button className="hamburger" type="button" aria-label="Open menu" onClick={() => setNavOpen(true)}>
             ☰
           </button>
           <span className="mobile-topbar__brand">💷 Finance</span>
@@ -281,7 +281,7 @@ function MfaSetupGate() {
         <h1>🔐 Two-factor required</h1>
         <p className="muted">Your administrator requires two-factor authentication for your account. Set it up to continue.</p>
         {!setup && (
-          <button className="btn" disabled={begin.isPending} onClick={() => begin.mutate()}>
+          <button className="btn" type="button" disabled={begin.isPending} onClick={() => begin.mutate()}>
             {begin.isPending ? "Preparing…" : "Set up two-factor"}
           </button>
         )}

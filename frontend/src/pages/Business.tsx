@@ -42,6 +42,7 @@ export default function Business() {
       <div className="page__head">
         <h1 className="page__title">Business expenses</h1>
         <button
+          type="button"
           className="btn btn--ghost"
           disabled={exportCsv.isPending || (s?.transaction_count ?? 0) === 0}
           title="Download business transactions as CSV (with VAT columns) for claiming"
@@ -147,6 +148,7 @@ export default function Business() {
                 <div className="form-row" style={{ gap: 4 }} title="Group business spend by">
                   {PERIODS.map((p) => (
                     <button
+                      type="button"
                       key={p.key}
                       className={"btn btn--sm" + (period === p.key ? "" : " btn--ghost")}
                       onClick={() => { setPeriod(p.key); setOpenPeriod(null); }}
@@ -169,7 +171,7 @@ export default function Business() {
                       <Fragment key={p.period}>
                         <tr>
                           <td>
-                            <button className="link-btn" style={{ fontWeight: 600 }} onClick={() => setOpenPeriod(open ? null : p.period)}>
+                            <button className="link-btn" type="button" style={{ fontWeight: 600 }} onClick={() => setOpenPeriod(open ? null : p.period)}>
                               {open ? "▾ " : "▸ "}{p.label}
                             </button>
                           </td>

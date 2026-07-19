@@ -81,7 +81,7 @@ export default function Savings() {
       <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
           <h2 className="card__title" style={{ margin: 0 }}>Savings accounts</h2>
-          <button className="btn btn--sm" onClick={() => setShowNew((v) => !v)}>
+          <button className="btn btn--sm" type="button" onClick={() => setShowNew((v) => !v)}>
             {showNew ? "Cancel" : "＋ New account"}
           </button>
         </div>
@@ -208,7 +208,7 @@ function AccountCard({
     <ListRow>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
         <div>
-          <button className="link-btn" style={{ fontWeight: 700 }} onClick={() => setOpen((v) => !v)}>
+          <button className="link-btn" type="button" style={{ fontWeight: 700 }} onClick={() => setOpen((v) => !v)}>
             {open ? "▾ " : "▸ "}{account.name}
           </button>{" "}
           {account.institution && <span className="muted">· {account.institution}</span>}
@@ -225,7 +225,7 @@ function AccountCard({
           {/* Edit account metadata (name, institution). Currency is read-only —
               stored balances are denominated in it. */}
           <div className="form-row" style={{ alignItems: "center", gap: 6 }}>
-            <button className="btn btn--sm btn--ghost" onClick={() => setEditingDetails((v) => !v)}>
+            <button className="btn btn--sm btn--ghost" type="button" onClick={() => setEditingDetails((v) => !v)}>
               {editingDetails ? "Cancel" : "✎ Edit details"}
             </button>
             <span className="muted" style={{ fontSize: "0.82rem" }}>Currency {account.currency} (fixed)</span>
@@ -253,10 +253,10 @@ function AccountCard({
               style={{ width: 120 }}
               onChange={(e) => setDelta(e.target.value)}
             />
-            <button className="btn btn--sm" disabled={!canAdjust || adjust.isPending} onClick={() => doAdjust("deposit")}>
+            <button className="btn btn--sm" type="button" disabled={!canAdjust || adjust.isPending} onClick={() => doAdjust("deposit")}>
               ＋ Deposit
             </button>
-            <button className="btn btn--sm btn--ghost" disabled={!canAdjust || adjust.isPending} onClick={() => doAdjust("withdraw")}>
+            <button className="btn btn--sm btn--ghost" type="button" disabled={!canAdjust || adjust.isPending} onClick={() => doAdjust("withdraw")}>
               － Withdraw
             </button>
           </div>
@@ -274,7 +274,7 @@ function AccountCard({
               />{" "}
               %
             </label>
-            <button className="btn btn--sm btn--ghost" disabled={(rate.trim() !== "" && !isAmount(rate)) || saveRate.isPending} onClick={() => saveRate.mutate()}>
+            <button className="btn btn--sm btn--ghost" type="button" disabled={(rate.trim() !== "" && !isAmount(rate)) || saveRate.isPending} onClick={() => saveRate.mutate()}>
               Save rate
             </button>
             {account.interest_rate && account.projected_annual_interest && (
@@ -402,6 +402,17 @@ type GoalFormValues = { name: string; target: string; targetDate: string; accoun
 
 const GOAL_STATUS_OPTIONS = ["active", "achieved", "archived"];
 
+// Shapes the create/update goal payload from the shared form values. Pure over its
+// argument (no component state), so it lives at module scope.
+function goalPayload(v: GoalFormValues): Record<string, unknown> {
+  return {
+    name: v.name,
+    target_amount: v.target,
+    target_date: v.targetDate || null,
+    account_id: v.accountId ? Number(v.accountId) : null,
+  };
+}
+
 function GoalForm({
   initial,
   accounts,
@@ -480,15 +491,6 @@ function GoalsCard({
   const dateFmt = useDateFormat();
   const [editingId, setEditingId] = useState<number | null>(null);
 
-  function goalPayload(v: GoalFormValues): Record<string, unknown> {
-    return {
-      name: v.name,
-      target_amount: v.target,
-      target_date: v.targetDate || null,
-      account_id: v.accountId ? Number(v.accountId) : null,
-    };
-  }
-
   const create = useMutation({
     mutationFn: (v: GoalFormValues) => createSavingsGoal(goalPayload(v)),
     onSuccess: () => onChange(),
@@ -538,6 +540,7 @@ function GoalsCard({
                     {" · "}
                     <button
                       className="link-btn"
+                      type="button"
                       onClick={async () => {
                         const v = await prompt({ title: "Update current amount", message: `Update current amount for "${g.name}" (${base})`, defaultValue: String(g.current_amount ?? ""), confirmLabel: "Update" });
                         const trimmed = v?.trim();
@@ -549,11 +552,11 @@ function GoalsCard({
                   </>
                 )}
                 {" · "}
-                <button className="link-btn" onClick={() => setEditingId((id) => (id === g.id ? null : g.id))}>
+                <button className="link-btn" type="button" onClick={() => setEditingId((id) => (id === g.id ? null : g.id))}>
                   {editingId === g.id ? "close" : "edit"}
                 </button>
                 {" · "}
-                <button className="link-btn" onClick={async () => { if (await confirm({ message: `Delete goal "${g.name}"?`, confirmLabel: "Delete", danger: true })) remove.mutate(g.id); }}>
+                <button className="link-btn" type="button" onClick={async () => { if (await confirm({ message: `Delete goal "${g.name}"?`, confirmLabel: "Delete", danger: true })) remove.mutate(g.id); }}>
                   delete
                 </button>
               </div>
