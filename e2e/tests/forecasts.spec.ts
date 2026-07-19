@@ -7,7 +7,7 @@ import { gotoPage } from "./helpers";
 test("budgets show the prorated pace signal (#435)", async ({ page }) => {
   await gotoPage(page, { route: "/budgets", heading: "Budgets" });
   await expect(
-    page.getByText(/on pace|ahead of pace|behind pace|on track|near limit/i).first(),
+    page.getByText(/on pace|over pace|under pace|on track|near limit/i).first(),
   ).toBeVisible();
 });
 
