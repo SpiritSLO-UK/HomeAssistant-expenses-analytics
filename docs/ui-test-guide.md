@@ -3,23 +3,25 @@
 A click-by-click pass to verify the user-visible changes on `main` before cutting
 the next release. It covers the recently-touched features: in-app modals,
 optimistic select-on-change, the budget/project/savings forecasts, MFA backup
-codes, global search, the AI batch panel, Rules clone and reorder, Categories
+codes, global search, the AI batch panels, Rules clone and reorder, Categories
 accessibility and bulk recolour, the Review Queue, CSV export, and a US-format
 CSV import. Budget ~20-30 minutes for the whole list.
 
 Each item has a short "What changed", numbered steps, and checkbox expected
-results. Tick as you go; anything that fails is a release blocker to note.
+results. Tick as you go; anything that fails is a release blocker to note (open
+issues go into the private backlog tracker).
 
 ## Setup
 
 1. Open the app at http://127.0.0.1:8099 (the local demo). The demo ships with
    sample transactions, categories, budgets, projects and savings, so most
    screens have data to work with already.
-2. AI features (the "AI categorise" panels and the per-row "suggest") need a
-   cloud AI key configured in **Settings -> AI**. If AI is off, skip the AI
-   steps or configure a key first.
+2. AI features (the "AI categorise" panels and the per-row "suggest") need an AI
+   key in **Settings -> AI** (env `HAFI_AI_API_KEY`, or set one from the UI on a
+   standalone instance). If AI is off, skip the AI steps or configure a key first.
 3. Note: the app is a single-page app. If a screen looks stale after an action,
-   it should refresh on its own; a manual reload should never be required.
+   it should refresh on its own; a manual reload should never be required. (After
+   an *update*, an open tab auto-reloads once to pick up new assets.)
 
 - [ ] App loads at http://127.0.0.1:8099 with sample data visible on the Dashboard.
 
@@ -41,62 +43,70 @@ iframe, which can suppress native dialogs).
 - [ ] The "add a tag" action shows an in-app text-entry modal with an input field.
 - [ ] No native browser dialog appears anywhere during the pass.
 
-## Transactions: optimistic select-on-change
+## Transactions: optimistic select-on-change and bulk edit
 
 **What changed:** the per-row selects (category, vendor, project, country) apply
-instantly instead of waiting for the server, and revert to the previous value if
-the save fails.
+instantly and revert if the save fails. Bulk value-changes (from the selection
+toolbar) now confirm "Apply ... to N transaction(s)?" before applying.
 
 1. Go to **Transactions**.
-2. On a row, change the **category** using its dropdown.
-3. Do the same for **vendor**, **project** and **country** on a couple of rows.
+2. On a row, change the **category**, then **vendor**, **project**, **country**.
+3. Tick several rows to open the bulk-actions bar; set a category/project/country
+   or mark business, and confirm the "Apply to N" dialog.
 
-- [ ] The new value appears immediately, with no visible "loading" gap.
-- [ ] The change sticks after the list refreshes (it was saved).
-- [ ] (Optional; hard to trigger manually - covered by unit tests) a failed save
-      snaps the field back to its previous value rather than showing a wrong value.
+- [ ] The new value appears immediately, with no visible "loading" gap, and sticks
+      after the list refreshes.
+- [ ] A bulk value-change asks "Apply ... to N transaction(s)?" before applying.
 
 ## Transactions: export filtered set to CSV
 
-**What changed:** an Export CSV button downloads the *filtered* set (not just the
-current page).
+**What changed:** the toolbar Export CSV button downloads the *filtered* set (not
+just the current page).
 
-1. On **Transactions**, apply a filter (for example a date quick-range or a
-   search term).
+1. On **Transactions**, apply a filter (a date quick-range or a search term).
 2. Click **Export CSV** (the down-arrow button near the top of the list).
 
-- [ ] A `transactions.csv` file downloads.
-- [ ] It contains the filtered rows, not only the visible page.
+- [ ] A `transactions.csv` file downloads containing the filtered rows (not only
+      the visible page).
 
 ## Transactions: tags (add, remove, bulk)
 
 **What changed:** tags are added and removed inline; a bulk "+ tag" applies a tag
 to every selected row.
 
-1. On a single row, add a tag via the tag control, then remove it by clicking its
-   remove (x) control.
-2. Tick the checkboxes on a few rows to open the bulk-actions bar, then use the
-   **+ tag** action and enter a tag name.
+1. On a single row, add a tag via the tag control, then remove it with its (x).
+2. Tick a few rows, use the **+ tag** action, and enter a tag name.
 
-- [ ] The tag appears on the row immediately and disappears when removed.
-- [ ] The bulk "+ tag" prompt is an in-app modal and applies the tag to all
-      selected rows.
+- [ ] The tag appears/disappears on the row immediately.
+- [ ] The bulk "+ tag" prompt is an in-app modal (with the selected count) and
+      applies the tag to all selected rows.
 
-## AI batch categorise panel (select-all + CSV export)
+## AI batch categorise panels
 
-**What changed:** the AI batch panel gained a header "select all" checkbox and an
-Export CSV of the suggestions. (Needs a cloud AI key.)
+**What changed:** there are **two** AI batch panels, and which one you see depends
+on your privacy mode (Settings -> AI). They differ by design:
 
-1. On **Transactions**, click **AI categorise...** (or **AI categorise (cloud)...**).
-2. When suggestions load, click the header checkbox to select all, then untick one
-   row (the header should go to an indeterminate state).
-3. Click **Export CSV**.
+- **Local** `✨ AI categorise…` (only in **`local_llm`** / on-device mode): a header
+  **"select all"** checkbox (with indeterminate state) + **Export CSV** of the
+  suggestions -> `ai-suggestions.csv` (Description, Suggested category, Confidence).
+- **Cloud** `☁️ AI categorise (cloud)…` (in **`cloud_manual` / `cloud_auto`**):
+  review the redacted "Will send" list -> **Send to cloud** -> suggestions
+  pre-ticked by a confidence threshold -> **Apply**. It also has **Export CSV**
+  (the will-send list -> `cloud-ai-will-send.csv`, and the suggestions once
+  returned).
 
-- [ ] The header checkbox selects/clears every suggestion at once.
-- [ ] With some but not all selected, the header checkbox shows an indeterminate
-      (dash) state.
-- [ ] Export CSV downloads `ai-suggestions.csv` with description, suggested
-      category and confidence columns.
+> The plain Transactions **toolbar** "Export CSV" is a THIRD, unrelated thing: it
+> exports your filtered **transactions**, not AI suggestions. Don't confuse it
+> with the panel exports.
+
+**Local panel** (set Settings -> AI to `local_llm`; click `✨ AI categorise…`):
+- [ ] The header checkbox selects/clears every suggestion (indeterminate when some).
+- [ ] Export CSV downloads `ai-suggestions.csv` (description, suggested category, confidence).
+
+**Cloud panel** (`cloud_manual`; click `☁️ AI categorise (cloud)…`):
+- [ ] The "Will send" list shows only a redacted description + amount per row.
+- [ ] Export CSV of the will-send list (and of the suggestions after Send) works.
+- [ ] Apply writes the ticked categories.
 
 ## Review Queue: bulk AI + resolve
 
@@ -104,96 +114,85 @@ Export CSV of the suggestions. (Needs a cloud AI key.)
 item can be resolved or ignored inline.
 
 1. Go to **Review Queue**.
-2. If items are present and AI is configured, use the bulk AI suggest/categorise
-   control.
-3. On an individual item, click **Resolve** (and try **Show resolved** to confirm
-   it moved).
+2. If items are present and AI is configured, use the bulk AI suggest/categorise.
+3. On an individual item, click **Resolve** (and try **Show resolved**).
 
-- [ ] Bulk AI categorises the open items (with a cloud key configured).
-- [ ] Resolve clears the item from the open list.
-- [ ] The **Show resolved** toggle reveals resolved items.
+- [ ] Bulk AI categorises the open items (with a key configured).
+- [ ] Resolve clears the item; **Show resolved** reveals resolved items.
 
 ## Budgets: pace signal
 
-**What changed:** each budget shows a prorated "pace" line (ahead of pace / on
-pace / behind pace) in addition to the over/near-limit/on-track status.
+**What changed:** each within-budget budget shows a prorated "pace" line (ahead of
+pace / on pace / behind pace) alongside the over/near-limit/on-track status.
+
+> By design, a budget that is already **over budget** hides the pace line (it
+> would be redundant) - so pace shows on some budgets and not others. That is
+> expected, not a bug.
 
 1. Go to **Budgets** (or the Budgets card on the Dashboard).
 2. Read the status and pace line on each budget.
 
-- [ ] Budgets show a pace label such as "on pace", "ahead of pace" or "behind pace".
-- [ ] A budget past 100% reads as "over budget".
+- [ ] Within-budget budgets show a pace label ("on pace" / "ahead of pace" / "behind pace").
+- [ ] A budget past 100% reads as "over budget" (and shows no pace line).
 
 ## Projects: burn-down forecast
 
 **What changed:** a project with a budget shows a forecast line: on track / over
 budget, a run-rate per day, a projected total, and an expected budget-spent date.
 
-1. Go to **Projects**.
-2. Find a project that has a budget set and read its forecast line.
+1. Go to **Projects**. Find a project with a budget and read its forecast line.
 
 - [ ] The forecast reads "on track" (green) or "over budget" (red).
 - [ ] Where applicable it shows a run-rate per day, a projected total, and/or the
-      date the budget is forecast to be spent.
+      forecast budget-spent date.
 
 ## Savings: deposit/withdraw and goal forecast
 
 **What changed:** deposit/withdraw is confirmed with the resulting balance, and
-each goal shows a deposit-rate / time-to-goal forecast.
+each goal shows a deposit-rate / time-to-goal forecast (with an interest-only
+projection when there's no deposit history, and a bounded state for very slow
+goals). A goal linked to an account in another currency is converted.
 
-1. Go to **Savings**.
-2. Enter a small deposit amount and confirm; read the confirmation showing the
-   resulting balance.
-3. Look at a savings goal and read its forecast line.
+1. Go to **Savings**. Enter a small deposit and confirm; read the resulting balance.
+2. Look at a savings goal (including a newly-created one) and read its forecast.
 
-- [ ] The deposit/withdraw confirmation modal states the resulting balance before
-      you apply it.
-- [ ] A goal shows a forecast (for example months remaining, or a "behind"
-      indicator when contributions are short).
+- [ ] The deposit/withdraw confirmation states the resulting balance before you apply.
+- [ ] A goal shows a forecast (or a clear "add deposits" state), and the savings
+      page never errors on a slow-progress goal.
 
 ## Rules: clone and drag-to-reorder
 
-**What changed:** a rule can be cloned, and rules can be reordered by dragging to
-change their priority.
+**What changed:** a rule can be cloned, and rules can be reordered by dragging.
 
-1. Go to **Rules**.
-2. Click **Clone** on a rule and confirm a copy appears (name suffixed).
-3. Drag a rule row to a new position to change its priority.
+1. Go to **Rules**. Click **Clone** on a rule; confirm a suffixed copy appears.
+2. Drag a rule row to a new position.
 
-- [ ] Clone creates a duplicate rule with the same condition/action and a
-      suffixed name.
-- [ ] Dragging reorders the rows and the new priority order persists after refresh.
+- [ ] Clone creates a duplicate with the same condition/action and a suffixed name.
+- [ ] Dragging reorders the rows and the new priority persists after refresh.
 
 ## Categories: accessibility, merge, bulk recolour
 
 **What changed:** category controls carry aria-labels; owners can merge one
-category into another; and several categories can be recoloured at once.
+category into another; several categories can be recoloured at once.
 
 1. Go to **Categories**.
-2. (Owner only) Pick a merge source and target and confirm the merge modal, which
-   names both categories.
-3. Tick several categories, pick a colour in the bulk-recolour control, and apply.
+2. (Owner only) Merge a source into a target and confirm the naming modal.
+3. Tick several categories, pick a bulk-recolour colour, and apply.
 
-- [ ] Delete / colour / select controls have descriptive labels (usable with a
-      screen reader or keyboard).
-- [ ] Merge re-points the source category's transactions onto the target and
-      removes the source.
-- [ ] Bulk recolour applies the chosen colour to every ticked category, and the
-      Dashboard swatches update to match.
+- [ ] Delete / colour / select controls have descriptive labels.
+- [ ] Merge re-points the source's transactions onto the target and removes the source.
+- [ ] Bulk recolour applies to every ticked category; Dashboard swatches update.
 
 ## Global search: keyboard navigation
 
 **What changed:** the global search is keyboard-navigable and its result groups
 show clickable category/vendor chips that deep-link into filtered transactions.
 
-1. Open **Search** (or the sidebar quick-search).
-2. Type at least two characters.
-3. Use the Down and Up arrow keys to move the highlight through the results, then
-   press Enter to open the highlighted one.
-4. Back on Search, click a category or vendor chip in the results.
+1. Open **Search**. Type at least two characters.
+2. Use Down/Up to move the highlight, then Enter to open the highlighted result.
+3. Back on Search, click a category or vendor chip.
 
-- [ ] Arrow keys move a visible highlight through the flattened result list.
-- [ ] Enter opens the highlighted result.
+- [ ] Arrow keys move a visible highlight; Enter opens the highlighted result.
 - [ ] A category/vendor chip navigates to Transactions filtered by that entity.
 
 ## Settings: MFA backup codes
@@ -201,39 +200,33 @@ show clickable category/vendor chips that deep-link into filtered transactions.
 **What changed:** with MFA enabled, Settings shows a backup-codes section to
 generate, copy and download one-time recovery codes.
 
-> To test this, first enable MFA for your user in **Settings -> Security**
-> (scan the TOTP QR with an authenticator app and confirm a code). The
-> backup-codes section only appears once MFA is enabled. If you are not testing
-> MFA this pass, skip this section.
+> To test this, first enable MFA for your user in **Settings -> Security** (scan
+> the TOTP QR with an authenticator app and confirm a code). The backup-codes
+> section only appears once MFA is enabled. Skip this section if not testing MFA.
 
-1. Go to **Settings**.
-2. Read the "N unused backup codes remaining" line.
-3. Generate a new set, then copy to clipboard and download the `.txt`.
+1. Go to **Settings**. Read the "N unused backup codes remaining" line.
+2. Generate a new set, then copy to clipboard and download the `.txt`.
 
 - [ ] The section reports how many unused backup codes remain.
-- [ ] Generating shows a fresh set with a "save them now, they won't be shown
-      again" warning.
+- [ ] Generating shows a fresh set with a "save them now" warning.
 - [ ] Copy-to-clipboard and download `hafi-backup-codes.txt` both work.
 
 ## Import: custom CSV column mapping and US-format dates
 
 **What changed:** a "Map columns (custom CSV)" panel imports any bank CSV, with a
-date-order selector that supports US month-first dates (for example 6/28/2026).
+date-order selector that supports US month-first dates (e.g. 6/28/2026).
 
 > A ready-made US-format sample lives at
 > [examples/sample-csv/us-chase-sample.csv](../examples/sample-csv/us-chase-sample.csv)
 > (month-first `M/D/YYYY` dates, single signed Amount column).
 
-1. Go to **Import**.
-2. Choose `us-chase-sample.csv`, then open **Map columns (custom CSV)**.
-3. Map the date, amount and description columns.
-4. Set the date order to **Month-first MM/DD**.
-5. Preview and confirm the import.
+1. Go to **Import**. Choose `us-chase-sample.csv`, open **Map columns (custom CSV)**.
+2. Map the date, amount and description columns; set date order to **Month-first MM/DD**.
+3. Preview and confirm the import.
 
-- [ ] The column-mapping panel lets you map each column from the file's headers.
+- [ ] The column-mapping panel maps each column from the file's headers.
 - [ ] The date-order selector offers Auto, Day-first DD/MM and Month-first MM/DD.
-- [ ] With Month-first selected, `6/28/2026` imports as 28 June 2026 (not rejected
-      or read as month 28).
+- [ ] With Month-first, `6/28/2026` imports as 28 June 2026 (not rejected or month 28).
 
 ## Docs and architecture (browser check)
 
