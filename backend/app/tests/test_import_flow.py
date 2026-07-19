@@ -215,6 +215,84 @@ def test_preloaded_categorise_context_loads_and_applies(client, samples_dir):
         db.close()
 
 
+def test_preloaded_default_category_uses_linked_vendor(db):
+    """#7 (preloaded path): _normalise_preloaded applies the LINKED vendor's default
+    category, not the freshly matched vendor's, when a rule already linked another
+    vendor — parity with the live normalise_transaction fix."""
+    from datetime import date
+    from decimal import Decimal
+
+    from app.models import Transaction
+    from app.services import category_service, vendor_service
+    from app.services import import_service as imp
+
+    cat_a = category_service.create_category(db, {"name": "PreCatA"})
+    cat_b = category_service.create_category(db, {"name": "PreCatB"})
+    vendor_service.create_vendor(
+        db, {"canonical_name": "PreA", "alias": "BETA", "match_type": "contains",
+             "default_category_id": cat_a.id},
+    )
+    vendor_b = vendor_service.create_vendor(
+        db, {"canonical_name": "PreB", "default_category_id": cat_b.id},
+    )
+    txn = Transaction(
+        description_raw="BETA SHOP 7", amount=Decimal("-2.00"), direction="debit",
+        currency="GBP", transaction_date=date(2026, 5, 15), merchant_id=vendor_b.id,
+    )
+    db.add(txn)
+    db.flush()
+
+    ctx = imp._load_categoriser_context(db)
+    imp._normalise_preloaded(db, txn, ctx.alias_pairs)
+    assert txn.merchant_id == vendor_b.id   # linked vendor preserved
+    assert txn.category_id == cat_b.id      # B's default, not A's (#7)
+
+
+def test_recategorise_loads_context_once(db, monkeypatch):
+    """#15: recategorise builds the categoriser context once and threads it through
+    every row, rather than re-querying rules + aliases per transaction (N+1)."""
+    from datetime import date
+    from decimal import Decimal
+
+    from sqlalchemy import select
+
+    from app.models import Account, Transaction
+    from app.services import category_service, vendor_service
+    from app.services import import_service as imp
+
+    category_service.import_library(db)
+    groceries = next(c for c in category_service.list_categories(db) if c.name == "Groceries")
+    vendor_service.create_vendor(
+        db, {"canonical_name": "Tesco", "alias": "TESCO", "match_type": "contains",
+             "default_category_id": groceries.id},
+    )
+    acct = Account(name="A", account_type="current_account", currency="GBP")
+    db.add(acct)
+    db.flush()
+    for i in range(5):
+        db.add(Transaction(
+            account_id=acct.id, transaction_date=date(2026, 5, 15),
+            description_raw=f"TESCO STORES {i}", amount=Decimal("-1.00"),
+            currency="GBP", direction="debit",
+        ))
+    db.commit()
+
+    calls = {"n": 0}
+    real = imp._load_categoriser_context
+
+    def _counting(db_arg):
+        calls["n"] += 1
+        return real(db_arg)
+
+    monkeypatch.setattr(imp, "_load_categoriser_context", _counting)
+
+    count = imp.recategorise(db, only_uncategorised=True)
+    assert count == 5          # every row newly categorised
+    assert calls["n"] == 1     # context built exactly once, not per row (N+1 -> 1)
+    rows = db.scalars(select(Transaction).where(Transaction.account_id == acct.id)).all()
+    assert all(r.category_id == groceries.id for r in rows)
+
+
 def test_statement_config_tolerates_malformed_notes():
     # confirm/delete read the parser config from statement.notes; a non-JSON or
     # non-dict value must degrade to {} rather than crash (SR-A1).

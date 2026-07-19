@@ -266,6 +266,104 @@ def test_merge_vendor_repoints_txns_and_moves_dedupes_aliases(db):
     assert aliases == {"tesco", "tesco metro"}
 
 
+def test_default_category_from_linked_vendor_not_matched(db):
+    """#7: when a rule has already linked vendor B but the description alias matches
+    vendor A, the txn keeps B and is categorised with B's default — never A's."""
+    from datetime import date
+    from decimal import Decimal
+
+    cat_a = category_service.create_category(db, {"name": "CatA"})
+    cat_b = category_service.create_category(db, {"name": "CatB"})
+    vendor_service.create_vendor(
+        db, {"canonical_name": "VendorA", "alias": "ALPHA", "match_type": "contains",
+             "default_category_id": cat_a.id},
+    )
+    vendor_b = vendor_service.create_vendor(
+        db, {"canonical_name": "VendorB", "default_category_id": cat_b.id},
+    )
+    # A rule ran first and linked vendor B; the description still matches A's alias.
+    txn = Transaction(
+        description_raw="ALPHA STORE 12", amount=Decimal("-5.00"), direction="debit",
+        currency="GBP", transaction_date=date(2026, 5, 15), merchant_id=vendor_b.id,
+    )
+    db.add(txn)
+    db.flush()
+
+    assert vendor_service.normalise_transaction(db, txn) is True
+    assert txn.merchant_id == vendor_b.id   # linked vendor preserved (not overwritten by A)
+    assert txn.category_id == cat_b.id      # B's default applied, not A's (#7)
+
+
+def test_default_category_from_matched_vendor_when_unlinked(db):
+    """Control for #7: with no vendor pre-linked, the matched vendor's own default is
+    applied as before (the fix only changes the pre-linked case)."""
+    from datetime import date
+    from decimal import Decimal
+
+    cat_a = category_service.create_category(db, {"name": "SoloCat"})
+    vendor_a = vendor_service.create_vendor(
+        db, {"canonical_name": "SoloVendor", "alias": "GAMMA", "match_type": "contains",
+             "default_category_id": cat_a.id},
+    )
+    txn = Transaction(
+        description_raw="GAMMA MART 9", amount=Decimal("-5.00"), direction="debit",
+        currency="GBP", transaction_date=date(2026, 5, 15),
+    )
+    db.add(txn)
+    db.flush()
+
+    assert vendor_service.normalise_transaction(db, txn) is True
+    assert txn.merchant_id == vendor_a.id
+    assert txn.category_id == cat_a.id
+
+
+def test_unknown_default_category_returns_400_not_500(client):
+    """#10: an unknown default_category_id is rejected with 400 (not an opaque 500
+    from the FK IntegrityError) on create, update and set-default-category."""
+    assert client.post(
+        "/api/vendors", json={"canonical_name": "V", "default_category_id": 999_999}
+    ).status_code == 400
+
+    vid = client.post("/api/vendors", json={"canonical_name": "W"}).json()["id"]
+    assert client.patch(
+        f"/api/vendors/{vid}", json={"default_category_id": 999_999}
+    ).status_code == 400
+    assert client.post(
+        f"/api/vendors/{vid}/set-default-category", json={"category_id": 999_999}
+    ).status_code == 400
+
+    # A valid category still succeeds; clearing to null is allowed.
+    cat = _category_id(client, "Groceries")
+    assert client.post(
+        f"/api/vendors/{vid}/set-default-category", json={"category_id": cat}
+    ).status_code == 200
+    assert client.post(
+        f"/api/vendors/{vid}/set-default-category", json={"category_id": None}
+    ).status_code == 200
+
+
+def test_merge_vendor_repoints_set_vendor_and_vendor_equals_rules(db):
+    """#13: merging re-points rules that reference the source vendor by id — a
+    ``set_vendor`` action and a ``vendor_equals`` condition — so they don't dangle
+    when the source is deleted (mirrors category_service.merge_category)."""
+    from app.models import Rule
+
+    source = vendor_service.create_vendor(db, {"canonical_name": "Src"})
+    target = vendor_service.create_vendor(db, {"canonical_name": "Tgt"})
+    sets = Rule(name="set", condition_type="merchant_contains", condition_value="x",
+                action_type="set_vendor", action_value=str(source.id))
+    matches = Rule(name="match", condition_type="vendor_equals", condition_value=str(source.id),
+                   action_type="require_review", action_value=None)
+    db.add_all([sets, matches])
+    db.commit()
+
+    vendor_service.merge_vendor(db, source.id, target.id)
+    db.refresh(sets)
+    db.refresh(matches)
+    assert sets.action_value == str(target.id)        # set_vendor action re-pointed
+    assert matches.condition_value == str(target.id)  # vendor_equals condition re-pointed
+
+
 def test_merge_vendor_folds_default_category_and_last_seen(db):
     """The target adopts the source's default category when it lacks one, and keeps
     the more recent ``last_seen_at``."""
