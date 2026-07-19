@@ -147,7 +147,7 @@ export default function Travel() {
                     <td className="num">{r.original_total} {r.currency}</td>
                     <td className="num">{r.base_total} {base}</td>
                     <td className="num">{r.count}</td>
-                    <td className="muted">{fmtRange(r.first, r.last)}</td>
+                    <td className="muted">{fmtRange(r.first, r.last, dateFmt)}</td>
                   </tr>
                 ))}
               </tbody>
