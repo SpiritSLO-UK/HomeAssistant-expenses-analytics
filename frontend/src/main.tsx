@@ -1,7 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { HashRouter } from "react-router-dom";
-import { QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ApiError } from "./api/client";
 import App from "./App";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -33,6 +33,14 @@ const queryClient = new QueryClient({
   queryCache: new QueryCache({
     onError: (error, query) => {
       globalThis.console?.error("Query failed:", query.queryKey, error);
+    },
+  }),
+  // Safety net for mutations that don't define their own onError: without this a
+  // rejected mutation is fully swallowed (no toast, no console). Mutations with
+  // their own onError still run it — this just guarantees nothing fails silently.
+  mutationCache: new MutationCache({
+    onError: (error, _vars, _ctx, mutation) => {
+      globalThis.console?.error("Mutation failed:", mutation.options.mutationKey, error);
     },
   }),
   defaultOptions: {
