@@ -40,10 +40,14 @@ test.describe("categories merge (self-cleaning)", () => {
     await addBtn.click();
     await expect(chip(catB)).toBeVisible();
 
-    // 2. Merge catA INTO catB. The target select filters out the chosen source,
-    // so pick the source first, then the target.
-    await page.getByLabel("Category to merge from").selectOption({ label: catA });
-    await page.getByLabel("Category to merge into").selectOption({ label: catB });
+    // 2. Merge catA and catB. Pick both (the second select filters out the chosen
+    // first category), then choose which to keep. The "Keep" choice defaults to the
+    // second ("into") category, so catB survives and catA is removed.
+    await page.getByLabel("First category to merge").selectOption({ label: catA });
+    await page.getByLabel("Second category to merge").selectOption({ label: catB });
+
+    // The Keep control appears and defaults to keeping catB (the second category).
+    await expect(page.getByRole("button", { name: catB, exact: true, pressed: true })).toBeVisible();
 
     await page.getByRole("button", { name: "Merge", exact: true }).click();
     await confirmDialog(page, "Merge");
