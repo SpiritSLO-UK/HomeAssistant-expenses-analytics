@@ -82,6 +82,51 @@ const blank = (v: string): string | undefined => v || undefined;
 const flag = (v: boolean): true | undefined => v || undefined;
 const numOrUndef = (v: string): number | undefined => (v ? Number(v) : undefined);
 
+// --- Undo for bulk value-changes -------------------------------------------
+// The bulk-actions bar can set a single field on every selected row at once.
+// For the value-setting actions (category / project / country / business flag)
+// we snapshot each row's prior value first, so the change can be reversed by
+// re-applying those prior values. Tag-add is additive with no bulk-remove, so
+// it is intentionally excluded from Undo.
+type UndoableField = "category_id" | "project_id" | "country" | "is_business";
+type PriorValue = number | string | boolean | null;
+
+// Read a row's current value for the field about to change (null == unset).
+function priorValueOf(t: Transaction, field: UndoableField): PriorValue {
+  if (field === "category_id") return t.category_id ?? null;
+  if (field === "project_id") return t.project_id ?? null;
+  if (field === "country") return t.country ?? null;
+  return t.is_business;
+}
+
+// Build the restore patch for one distinct prior value. A null country restores
+// to "cleared" ("" — matching the per-row control and the apply path).
+function restorePatch(field: UndoableField, value: PriorValue): BulkUpdate {
+  if (field === "category_id") return { category_id: value as number | null };
+  if (field === "project_id") return { project_id: value as number | null };
+  if (field === "country") return { country: (value as string | null) ?? "" };
+  return { is_business: value as boolean };
+}
+
+// Group affected ids by their captured prior value, so Undo issues one
+// bulkUpdate per distinct value instead of one call per row.
+function groupByPriorValue(priors: Map<number, PriorValue>): Map<PriorValue, number[]> {
+  const groups = new Map<PriorValue, number[]>();
+  for (const [id, value] of priors) {
+    const ids = groups.get(value);
+    if (ids) ids.push(id);
+    else groups.set(value, [id]);
+  }
+  return groups;
+}
+
+interface BulkUndo {
+  field: UndoableField;
+  label: string;
+  count: number;
+  priors: Map<number, PriorValue>;
+}
+
 export default function Transactions() {
   const qc = useQueryClient();
   const confirm = useConfirm();
@@ -125,6 +170,9 @@ export default function Transactions() {
   const [showAiBatch, setShowAiBatch] = useState(false);
   const [showCloudBatch, setShowCloudBatch] = useState(false);
   const [ruleMsg, setRuleMsg] = useState<string | null>(null);
+  // Undo affordance for the last bulk value-change (null when nothing to undo).
+  const [undo, setUndo] = useState<BulkUndo | null>(null);
+  const [undoError, setUndoError] = useState<string | null>(null);
 
   const filters: TransactionFilters = focusNum
     ? // Focused: ignore the page filters and fetch only the deep-linked row
@@ -418,28 +466,62 @@ export default function Transactions() {
   const projectSelect = useOptimisticSelect<number, number | null>(surfaceError);
   const countrySelect = useOptimisticSelect<number, string | null>(surfaceError);
 
+  // Refresh the transaction list and every summary a bulk edit can move. Shared
+  // by the bulk mutation and the Undo mutation so both stay in lockstep.
+  const invalidateAfterBulk = () => {
+    qc.invalidateQueries({ queryKey: ["transactions"] });
+    qc.invalidateQueries({ queryKey: ["vendors"] });
+    qc.invalidateQueries({ queryKey: ["dash-vendors"] });
+    qc.invalidateQueries({ queryKey: ["dashboard-projects"] });
+    qc.invalidateQueries({ queryKey: ["tags"] });
+  };
+
   // Multi-edit: apply one change to every selected transaction at once.
   const bulk = useMutation({
     mutationFn: (patch: BulkUpdate) => bulkUpdateTransactions([...selected], patch),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["transactions"] });
-      qc.invalidateQueries({ queryKey: ["vendors"] });
-      qc.invalidateQueries({ queryKey: ["dash-vendors"] });
-      qc.invalidateQueries({ queryKey: ["dashboard-projects"] });
-      qc.invalidateQueries({ queryKey: ["tags"] });
-    },
+    onSuccess: invalidateAfterBulk,
     onError: (e) => { alert({ message: String(e instanceof Error ? e.message : e) }); },
   });
 
+  // Undo a bulk value-change: group the affected ids by their captured prior
+  // value and re-apply each distinct value in one bulkUpdate call.
+  const undoBulk = useMutation({
+    mutationFn: async (u: BulkUndo) => {
+      for (const [value, ids] of groupByPriorValue(u.priors)) {
+        await bulkUpdateTransactions(ids, restorePatch(u.field, value));
+      }
+    },
+    onSuccess: () => { invalidateAfterBulk(); setUndo(null); setUndoError(null); },
+    onError: (e) => setUndoError(String(e instanceof Error ? e.message : e)),
+  });
+
+  // Keep the Undo affordance for a short window, then let it lapse.
+  useEffect(() => {
+    if (!undo) return;
+    const id = globalThis.setTimeout(() => setUndo(null), 12000);
+    return () => globalThis.clearTimeout(id);
+  }, [undo]);
+
   function applyBulk(patch: BulkUpdate, clearAfter = false) {
+    setUndo(null); // this action isn't undoable — drop any stale Undo
+    setUndoError(null);
     bulk.mutate(patch, { onSuccess: () => { if (clearAfter) setSelected(new Set()); } });
   }
 
   // Value-setting bulk actions apply to every selected row at once, so confirm
-  // first and show the count (destructive Archive/Delete confirm separately).
-  async function applyBulkConfirmed(patch: BulkUpdate, label: string, clearAfter = false) {
-    if (await confirm({ message: `Apply ${label} to ${selected.size} transaction(s)?`, confirmLabel: "Apply" }))
-      applyBulk(patch, clearAfter);
+  // first and show the count. We snapshot each selected row's prior value of the
+  // field beforehand so the change can be undone (destructive Archive/Delete
+  // confirm separately and are not undoable here).
+  async function applyBulkValueChange(field: UndoableField, patch: BulkUpdate, label: string) {
+    if (!(await confirm({ message: `Apply ${label} to ${selected.size} transaction(s)?`, confirmLabel: "Apply" }))) return;
+    const priors = new Map<number, PriorValue>();
+    for (const t of data?.items ?? []) {
+      if (selected.has(t.id)) priors.set(t.id, priorValueOf(t, field));
+    }
+    setUndoError(null);
+    bulk.mutate(patch, {
+      onSuccess: () => { if (priors.size > 0) setUndo({ field, label, count: priors.size, priors }); },
+    });
   }
 
   const toggleSelected = (id: number) =>
@@ -557,6 +639,21 @@ export default function Transactions() {
         <p className="muted">Re-categorised {recat.data.recategorised} transaction(s).</p>
       )}
       {ruleMsg && <p className="status status--ok">{ruleMsg}</p>}
+      {undo && (
+        <p className="status status--ok" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <span>Applied {undo.label} to {undo.count} transaction(s).</span>
+          <button
+            type="button"
+            className="link-btn"
+            disabled={undoBulk.isPending}
+            onClick={() => undoBulk.mutate(undo)}
+          >
+            {undoBulk.isPending ? "Undoing…" : "Undo"}
+          </button>
+          <button type="button" className="link-btn" onClick={() => setUndo(null)}>Dismiss</button>
+        </p>
+      )}
+      {undoError && <p className="status status--error">Couldn't undo: {undoError}</p>}
 
       {showAiBatch && <AiBatchPanel base={base} onClose={() => setShowAiBatch(false)} />}
       {showCloudBatch && <CloudAiBatchPanel base={base} onClose={() => setShowCloudBatch(false)} />}
@@ -700,7 +797,7 @@ export default function Transactions() {
                   title="Set category for selected"
                   onChange={(e) => {
                     const v = e.target.value;
-                    if (v) applyBulkConfirmed({ category_id: v === "__none" ? null : Number(v) }, v === "__none" ? "clear category" : "this category");
+                    if (v) applyBulkValueChange("category_id", { category_id: v === "__none" ? null : Number(v) }, v === "__none" ? "clear category" : "this category");
                   }}
                 >
                   <option value="">Set category…</option>
@@ -712,7 +809,7 @@ export default function Transactions() {
                   title="Set project for selected"
                   onChange={(e) => {
                     const v = e.target.value;
-                    if (v) applyBulkConfirmed({ project_id: v === "__none" ? null : Number(v) }, v === "__none" ? "clear project" : "this project");
+                    if (v) applyBulkValueChange("project_id", { project_id: v === "__none" ? null : Number(v) }, v === "__none" ? "clear project" : "this project");
                   }}
                 >
                   <option value="">Set project…</option>
@@ -721,7 +818,7 @@ export default function Transactions() {
                 </select>
                 <CountrySelect
                   value={null}
-                  onChange={(code) => { if (code) applyBulkConfirmed({ country: code }, "this country"); }}
+                  onChange={(code) => { if (code) applyBulkValueChange("country", { country: code }, "this country"); }}
                   title="Set the country of the selected transactions (spend-by-location map)"
                   style={{ minWidth: 150 }}
                 />
@@ -735,10 +832,10 @@ export default function Transactions() {
                 >
                   + tag
                 </button>
-                <button type="button" className="btn btn--sm btn--ghost" onClick={() => applyBulkConfirmed({ is_business: true }, "Business = yes")}>
+                <button type="button" className="btn btn--sm btn--ghost" onClick={() => applyBulkValueChange("is_business", { is_business: true }, "Business = yes")}>
                   Mark business
                 </button>
-                <button type="button" className="btn btn--sm btn--ghost" onClick={() => applyBulkConfirmed({ is_business: false }, "Business = no")}>
+                <button type="button" className="btn btn--sm btn--ghost" onClick={() => applyBulkValueChange("is_business", { is_business: false }, "Business = no")}>
                   Unmark
                 </button>
                 <button
