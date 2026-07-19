@@ -33,8 +33,18 @@ const COLOUR_PALETTE = [
   "#FFEE58", "#FFCA28", "#FFA726", "#FF8A65", "#8D6E63", "#78909C",
 ];
 
+// A category colour is purely cosmetic; use the platform CSPRNG anyway so the
+// linter's pseudo-random guard is satisfied without a disable comment.
+function randomInt(bound: number): number {
+  const buf = new Uint32Array(1);
+  globalThis.crypto.getRandomValues(buf);
+  return buf[0] % bound;
+}
+
 function randomHex(): string {
-  return "#" + Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, "0").toUpperCase();
+  const bytes = new Uint8Array(3);
+  globalThis.crypto.getRandomValues(bytes);
+  return "#" + Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("").toUpperCase();
 }
 
 // Pick a palette colour not already assigned to an existing category so a new
@@ -44,7 +54,7 @@ function pickUnusedColour(categories: readonly { colour: string | null }[]): str
   const used = new Set(categories.map((c) => (c.colour ?? "").toUpperCase()));
   const free = COLOUR_PALETTE.filter((c) => !used.has(c.toUpperCase()));
   if (free.length === 0) return randomHex();
-  return free[Math.floor(Math.random() * free.length)];
+  return free[randomInt(free.length)];
 }
 
 export default function Categories() {
