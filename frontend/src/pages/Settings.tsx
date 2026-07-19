@@ -1,4 +1,5 @@
 import { useRef, useState, type ReactNode } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { QRCodeSVG } from "qrcode.react";
 import {
@@ -166,6 +167,14 @@ function StatsCard() {
 // The Settings page is split into these tabbed sections (grouped-nav PR4).
 type SettingsSection = "general" | "ai" | "security" | "integrations" | "data";
 
+// Stable lowercase section keys, in tab order. Also the set of `?section=` values
+// the page deep-links to (Dashboard links target these, e.g. /settings?section=data).
+const SETTINGS_SECTIONS: readonly SettingsSection[] = ["general", "ai", "security", "integrations", "data"];
+
+function toSection(raw: string | null): SettingsSection {
+  return SETTINGS_SECTIONS.includes(raw as SettingsSection) ? (raw as SettingsSection) : "general";
+}
+
 export default function Settings() {
   const qc = useQueryClient();
   const confirm = useConfirm();
@@ -178,8 +187,17 @@ export default function Settings() {
   const [passphrase, setPassphrase] = useState("");
   // Which settings section is shown. The long page is split into tabbed sections
   // (grouped-nav PR4); each card below is gated on `active === <section>` so only
-  // one section's cards render at a time. Default "General".
-  const [section, setSection] = useState<SettingsSection>("general");
+  // one section's cards render at a time. The section is deep-linkable via the
+  // `?section=` query param (default "General"), so cross-links from the Dashboard
+  // (e.g. /settings?section=data) land on the right section. Switching a tab syncs
+  // the URL with { replace: true } so the browser Back button isn't spammed.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const section = toSection(searchParams.get("section"));
+  const setSection = (key: SettingsSection) => {
+    const next = new URLSearchParams(searchParams);
+    next.set("section", key);
+    setSearchParams(next, { replace: true });
+  };
 
   function ok(m: string) {
     setMsg(m);
