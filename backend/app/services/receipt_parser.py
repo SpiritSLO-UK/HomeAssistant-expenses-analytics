@@ -16,15 +16,24 @@ from decimal import Decimal, InvalidOperation
 # decimal places (12.34, 12,50, 45.5) — so EU comma-decimals and short decimals are
 # no longer dropped. Bare integers are deliberately not matched (avoids treating
 # quantities / years as money). _to_decimal works out which separator is the point.
-_AMOUNT = r"(?:[£$€]\s?)?(\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{1,2})?|\d+[.,]\d{1,2})"
+# The plain-decimal integer part is *bounded* (\d{1,15}, not \d+): a long separator-
+# free digit run previously made \d+ backtrack O(n^2) per start offset (ReDoS finding
+# #3); a 15-digit cap is far above any real amount yet keeps the scan linear.
+_AMOUNT = r"(?:[£$€]\s?)?(\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{1,2})?|\d{1,15}[.,]\d{1,2})"
 _AMOUNT_RE = re.compile(_AMOUNT)
+# DoS guard (finding #3): cap the per-line text handed to the money regexes so an
+# absurdly long OCR/PDF line (a separator-free digit run) can't force heavy scanning.
+# Mirrors redaction.py's bounded-input approach; real receipt lines are far shorter.
+_MAX_AMOUNT_LINE_CHARS = 4096
 # A currency-anchored WHOLE number (no decimals): "TOTAL £42", "TOTAL 42 EUR". Only
 # matched where a total is expected (detect_total), so bare quantities/years elsewhere
 # aren't mistaken for money. Requires a symbol/code so a stray "12" doesn't win.
 # Split into two simpler compiled patterns (symbol-prefixed / code-suffixed) built from
 # a shared whole-number sub-pattern, to keep each regex's complexity low. Each captures
 # the number in group 1; the two are tried in sequence (see _whole_amounts_on).
-_WHOLE_NUM = r"(\d{1,3}(?:,\d{3})*|\d+)"
+# Bounded integer part (\d{1,15}, not \d+) so the code-suffixed pattern below can't
+# backtrack O(n^2) on a long separator-free digit run before failing to find a code.
+_WHOLE_NUM = r"(\d{1,3}(?:,\d{3})*|\d{1,15})"
 _WHOLE_AMOUNT_RES = (
     re.compile(r"[£$€]\s?" + _WHOLE_NUM),
     re.compile(_WHOLE_NUM + r"\s?(?:GBP|USD|EUR)", re.I),
@@ -73,6 +82,7 @@ def _to_decimal(raw: str) -> Decimal | None:
 
 
 def _amounts_on(line: str) -> list[Decimal]:
+    line = line[:_MAX_AMOUNT_LINE_CHARS]  # bound regex work on pathological input (#3)
     out = []
     for m in _AMOUNT_RE.finditer(line):
         d = _to_decimal(m.group(1))
@@ -105,6 +115,7 @@ def detect_date(text: str) -> date | None:
 
 def _whole_amounts_on(line: str) -> list[Decimal]:
     """Currency-anchored whole numbers (no decimal part), e.g. "TOTAL £42"."""
+    line = line[:_MAX_AMOUNT_LINE_CHARS]  # bound regex work on pathological input (#3)
     out = []
     for pattern in _WHOLE_AMOUNT_RES:
         for m in pattern.finditer(line):
