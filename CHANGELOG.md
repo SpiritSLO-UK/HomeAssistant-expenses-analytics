@@ -129,7 +129,7 @@ start.
   MQTT isn't live.
 
 ### Testing & docs
-- **Over 1,000 backend tests**, plus a new **Playwright browser suite** (55+
+- **1,067 backend tests**, plus a new **Playwright browser suite** (55+
   tests: a render smoke of every page and end-to-end task flows) with an HTML
   report attached to CI runs and releases, and a step-by-step UI test
   walkthrough. CI additionally guards the non-root container, encryption
@@ -139,6 +139,37 @@ start.
   standalone trust model (including the proxy header-spoof caveat).
 - Docs now state plainly that the database is plaintext unless `HAFI_DB_KEY`
   at-rest encryption is enabled.
+
+### Fixes (from a pre-release code-review pass)
+A systematic critical review before release found and fixed 30 issues; the
+notable ones:
+- **Backups on encrypted databases** - downloading a database backup now works
+  when at-rest encryption is enabled (it previously failed), retention
+  safety-backups run on encrypted installs, and restoring a plaintext backup on
+  an encrypted install no longer leaves the app unable to start.
+- **Multi-user visibility** - a savings goal's balance can no longer leak to a
+  household member who cannot see its linked account; applying an AI category or
+  creating a transaction from a receipt now respects account visibility; and the
+  cloud AI batch re-checks the never-cloud and privacy-mode rules at send time.
+- **Hardening** - the stored auto-unlock key file is created with strict
+  permissions from the outset, a crafted receipt can no longer tie up OCR, the
+  image-extract endpoints are per-minute rate-limited, and a short `HAFI_DB_KEY`
+  no longer breaks saving an AI key or enrolling two-factor.
+- **Data integrity** - merging categories or vendors now keeps subscriptions and
+  rules pointed at the surviving record instead of silently dropping the link.
+- **Correctness** - the savings page no longer errors on a slow-progress goal; a
+  linked goal in a different currency to its account is converted; the live
+  energy offset respects a cumulative (lifetime-total) production sensor and its
+  history is split-aware; vendor default categories apply from the linked
+  vendor; re-teaching a description to a new category now takes effect; and
+  several endpoints return a clear "unknown category" message instead of a
+  server error.
+- **Performance** - fewer repeated queries on the dashboard, budgets, the
+  receipts list and re-categorise; receipt uploads are size-capped before
+  buffering.
+- **Usability** - the locked screen shows the real unlock error, more actions
+  surface a message if they fail instead of doing nothing silently, and the
+  in-app prompt field and split editor are more accessible.
 
 ### Upgrade notes
 - One new database migration (`mfa_backup_codes`) runs automatically on start.

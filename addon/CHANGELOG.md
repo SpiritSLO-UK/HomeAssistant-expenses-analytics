@@ -25,6 +25,9 @@ config carry over; database migrations run automatically on start.
   keyboard navigation of results.
 - **Tag housekeeping** - merge tags, see usage counts and clean up unused tags
   from Settings; vendors get a merge tool too.
+- **AI key from the UI** - set the AI provider key in Settings on a standalone
+  install; it's stored encrypted at rest (the `HAFI_AI_API_KEY` environment
+  variable still wins).
 - **Activity log** - search with actor and date filters, plus an owner-only
   CSV download.
 - **Nicer dialogs** - in-app modals replace browser confirm/prompt popups, and
@@ -35,8 +38,17 @@ config carry over; database migrations run automatically on start.
 - **More secure** - the container runs as a non-root user, AI calls are
   rate-limited and budget-capped, stronger security headers, and a broad
   hardening pass across the backend.
-- **Better tested** - 993 backend tests plus a browser test suite that clicks
+- **Better tested** - 1,067 backend tests plus a browser test suite that clicks
   through every page.
+
+### Fixes (from a pre-release review)
+A critical review before release found and fixed 30 issues. Highlights:
+database backups now work when at-rest encryption is enabled (previously they
+failed); several multi-user visibility gaps are closed; the savings page no
+longer errors on a slow-progress goal; the live energy offset respects a
+lifetime-total production sensor; merging categories or vendors keeps
+subscriptions and rules linked; a crafted receipt can no longer tie up OCR; and
+more actions surface an on-screen message when they fail.
 
 ### Upgrade notes
 - One new database migration (`mfa_backup_codes`) runs automatically on start.
