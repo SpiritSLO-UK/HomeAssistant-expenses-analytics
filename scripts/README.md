@@ -6,7 +6,7 @@ the virtualenv layout (`.venv/bin` on Linux/macOS/WSL, `.venv/Scripts` on
 Windows) and where `npm` lives.
 
 > Added for **backlog item #8** ("Write test/validation scripts I/you can run
-> during changes") from `things-to-add-change-consider.md`.
+> during changes") from `BACKLOG.md`.
 
 | Script | What it does |
 |--------|--------------|

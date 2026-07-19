@@ -8,7 +8,7 @@ This complements:
 - [`README.md`](../README.md) - how to run/develop/test.
 - [`docs/architecture.md`](architecture.md) - system / flow / data-model diagrams (Mermaid).
 - [`docs/privacy.md`](privacy.md) / [`docs/security.md`](security.md) - privacy & isolation model.
-- `things-to-add-change-consider.md` - the owner's backlog (kept local/untracked).
+- `BACKLOG.md` - the owner's backlog (kept local/untracked).
 
 > Keep this file current when a major decision is made or a stage lands.
 
@@ -60,7 +60,7 @@ HA integration holds no business logic (spec §9.4).
 
 ## Conventions & gotchas
 
-- **Never commit** `things-to-add-change-consider.md` (owner's backlog; excluded via `.git/info/exclude`). Update it with status + spec section after each major step.
+- **Never commit** `BACKLOG.md` (owner's backlog; excluded via `.git/info/exclude`). Update it with status + spec section after each major step.
 - Reference spec sections as clickable links in all comms/docs (backlog #20).
 - `sqlite3.connect(...)` in a `with` block commits but does **not close** - close explicitly or the file stays locked on Windows (bit us in backup snapshot).
 - Hit the running server at `http://127.0.0.1:8099`, not `localhost` (IPv6 `::1` vs IPv4 bind).
