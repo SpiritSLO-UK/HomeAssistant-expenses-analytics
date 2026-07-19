@@ -10,7 +10,8 @@ from decimal import Decimal
 import pytest
 
 from app.models import Asset, AssetLog, Category, EnergySnapshot, Transaction
-from app.services import energy_service, ha_service
+from app.services import energy_service, ha_service, split_service
+from app.services.split_service import SplitInput
 
 REF = date(2026, 6, 15)
 
@@ -317,6 +318,97 @@ def test_production_history_endpoint(client):
     body = r.json()
     assert body["period"] == "month" and len(body["buckets"]) == 3
     assert "semantics" in body and "produced_kwh" in body["buckets"][0]
+
+
+# --- cumulative-vs-interval live offset (finding #9) ------------------------
+
+
+def test_offset_cumulative_nets_month_start_baseline(db, monkeypatch):
+    """A cumulative (lifetime) counter must report the month's *rise*, not the whole
+    lifetime reading: month production = current reading - month-start baseline."""
+    energy_service.validate_and_save(db, {
+        "source": "ha_api", "production_semantics": "cumulative",
+        "tariff_per_kwh": "0.30", "production_entities": ["sensor.meter"],
+    })
+    # Last reading before June → June's baseline (a lifetime total of 1000 kWh).
+    db.add(EnergySnapshot(captured_at=datetime(2026, 5, 28, 12), produced=Decimal("1000"), source="ha_api"))
+    db.commit()
+    monkeypatch.setattr(ha_service, "read_states", lambda ids: {"sensor.meter": 1130.0})
+
+    out = energy_service.offset(db, REF)  # live read → 1130 lifetime kWh
+    assert Decimal(out["produced_kwh"]) == Decimal("130")  # 1130 - 1000, NOT 1130
+    assert Decimal(out["saving"]) == Decimal("39.00")  # 130 * 0.30
+
+
+def test_offset_interval_ignores_baseline(db, monkeypatch):
+    """An interval sensor's reading already is the period's production, so a baseline
+    snapshot must NOT be subtracted (behaviour unchanged)."""
+    energy_service.validate_and_save(db, {
+        "source": "ha_api", "production_semantics": "interval",
+        "tariff_per_kwh": "0.30", "production_entities": ["sensor.meter"],
+    })
+    db.add(EnergySnapshot(captured_at=datetime(2026, 5, 28, 12), produced=Decimal("1000"), source="ha_api"))
+    db.commit()
+    monkeypatch.setattr(ha_service, "read_states", lambda ids: {"sensor.meter": 42.0})
+
+    out = energy_service.offset(db, REF)
+    assert Decimal(out["produced_kwh"]) == Decimal("42.0")  # raw, no subtraction
+    assert Decimal(out["saving"]) == Decimal("12.60")  # 42 * 0.30
+
+
+def test_last_saving_cumulative_nets_month_start_baseline(db):
+    """The MQTT 'this month' sensor must match offset(): a cumulative reading is
+    netted against the month-start baseline, not published as the lifetime total."""
+    energy_service.validate_and_save(db, {
+        "source": "ha_api", "production_semantics": "cumulative", "tariff_per_kwh": "0.30"})
+    db.add(EnergySnapshot(captured_at=datetime(2026, 5, 28, 12), produced=Decimal("1000"), source="ha_api"))
+    db.add(EnergySnapshot(captured_at=datetime(2026, 6, 20, 12), produced=Decimal("1130"), source="ha_api"))
+    db.commit()
+    # Latest is June's 1130; baseline (last before June) is 1000 → month rise 130.
+    assert energy_service.last_saving(db) == Decimal("39.00")  # 130 * 0.30, not 1130 * 0.30
+
+
+def test_last_saving_interval_uses_raw_latest(db):
+    """An interval sensor's latest reading is the period's production as-is."""
+    energy_service.validate_and_save(db, {
+        "source": "ha_api", "production_semantics": "interval", "tariff_per_kwh": "0.30"})
+    db.add(EnergySnapshot(captured_at=datetime(2026, 5, 28, 12), produced=Decimal("1000"), source="ha_api"))
+    db.add(EnergySnapshot(captured_at=datetime(2026, 6, 20, 12), produced=Decimal("40"), source="ha_api"))
+    db.commit()
+    assert energy_service.last_saving(db) == Decimal("12.00")  # 40 * 0.30, no baseline
+
+
+# --- split-aware history matches the offset (finding #14) -------------------
+
+
+def test_offset_and_history_agree_on_split_energy_portion(db):
+    """A split transaction whose energy portion lives in a split (the parent sits in
+    no category) must be counted identically by the offset's current-month spend and
+    history()'s current-month bucket — both split-aware, spendable-filtered."""
+    energy = Category(name="Energy", colour="#facc15")
+    other = Category(name="Other", colour="#0ea5e9")
+    db.add_all([energy, other])
+    db.flush()
+    parent = Transaction(
+        description_raw="Combined utilities bill", amount=Decimal("-100.00"),
+        base_amount=Decimal("-100.00"), fx_rate=Decimal("1"), currency="GBP",
+        direction="debit", transaction_date=date(2026, 6, 10), category_id=None,
+    )
+    db.add(parent)
+    db.flush()
+    split_service.set_splits(db, parent, [
+        SplitInput(amount=Decimal("-40.00"), category_id=energy.id),  # the energy portion
+        SplitInput(amount=Decimal("-60.00"), category_id=other.id),
+    ])
+    energy_service.validate_and_save(db, {"energy_category_id": energy.id})
+
+    off_spend = Decimal(energy_service.offset(db, REF)["energy_spend"])
+    bucket_spend = Decimal(
+        energy_service.history(db, period="month", count=1, today=REF)["buckets"][-1]["spend"]
+    )
+    assert off_spend == Decimal("40")  # only the energy split part, not the whole 100
+    assert bucket_spend == Decimal("40")  # history agrees rather than reporting 0
+    assert off_spend == bucket_spend
 
 
 # --- RBAC -------------------------------------------------------------------
