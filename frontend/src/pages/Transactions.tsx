@@ -307,6 +307,7 @@ export default function Transactions() {
       qc.invalidateQueries({ queryKey: ["dash-categories"] });
       qc.invalidateQueries({ queryKey: ["dash-vendors"] });
     },
+    onError: (e) => { alert({ message: String(e instanceof Error ? e.message : e) }); },
   });
 
   const setBusiness = useMutation({
@@ -316,6 +317,7 @@ export default function Transactions() {
       qc.invalidateQueries({ queryKey: ["transactions"] });
       qc.invalidateQueries({ queryKey: ["business-summary"] });
     },
+    onError: (e) => { alert({ message: String(e instanceof Error ? e.message : e) }); },
   });
 
   const setVat = useMutation({
@@ -325,6 +327,7 @@ export default function Transactions() {
       qc.invalidateQueries({ queryKey: ["transactions"] });
       qc.invalidateQueries({ queryKey: ["business-summary"] });
     },
+    onError: (e) => { alert({ message: String(e instanceof Error ? e.message : e) }); },
   });
 
   // Prompt for a VAT amount (blank clears it).
@@ -435,6 +438,7 @@ export default function Transactions() {
       qc.invalidateQueries({ queryKey: ["transactions"] });
       qc.invalidateQueries({ queryKey: ["tags"] });
     },
+    onError: (e) => { alert({ message: String(e instanceof Error ? e.message : e) }); },
   });
 
   // Add a tag via a small prompt, then persist the new full set (spec §18.3).
@@ -455,8 +459,8 @@ export default function Transactions() {
     try {
       const s = await suggestForTransaction(t.id);
       if (!s) return;
-      if (s.categoryId != null) setCategory.mutate({ id: t.id, categoryId: s.categoryId });
-      if (s.country) setCountry.mutate({ id: t.id, country: s.country });
+      if (s.categoryId != null) setCategory.mutate({ id: t.id, categoryId: s.categoryId }, { onError: surfaceError });
+      if (s.country) setCountry.mutate({ id: t.id, country: s.country }, { onError: surfaceError });
       if (s.vendor && !t.merchant_id) createVendor.mutate({ id: t.id, name: s.vendor });
     } catch (e) {
       await alert({ message: String(e instanceof Error ? e.message : e) });
