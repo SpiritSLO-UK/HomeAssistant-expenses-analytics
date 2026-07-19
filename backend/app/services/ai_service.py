@@ -47,6 +47,18 @@ class AIDisabled(RuntimeError):
     """AI is off or not configured for this privacy mode."""
 
 
+class AIRateLimited(RuntimeError):
+    """The per-user AI rate limit is exceeded. Carries ``retry_after`` seconds so
+    the route can raise the same 429 (+Retry-After) the classify routes do (#29)."""
+
+    def __init__(self, retry_after: int) -> None:
+        self.retry_after = retry_after
+        super().__init__(
+            f"AI rate limit reached ({env_settings.ai_rate_limit_per_minute} requests/minute). "
+            f"Try again in about {retry_after} second(s)."
+        )
+
+
 def _resolve_api_key(db: Session) -> str | None:
     """The AI API key to use. The environment (``HAFI_AI_API_KEY``) WINS; else the
     key stored (encrypted at rest) via the UI on a standalone instance (backlog
@@ -312,27 +324,36 @@ def classify_transaction(db: Session, txn: Transaction, *, provider=None) -> dic
     return result
 
 
-def run_request(db: Session, ai_request: AIRequest, *, provider=None) -> dict:
-    """Approve and send a pending request (spec §22.5). Stores the response,
-    resolves its review item, and returns the suggestion."""
-    if ai_request.status != "pending":
-        raise AIDisabled("This AI request is not awaiting approval.")
-    # Re-validate against the CURRENT privacy mode — a payload staged earlier must
-    # not be flushed after the user changed mode, and the target category may have
-    # since been marked never-cloud (SR-D1).
+def _staged_request_block_reason(db: Session, ai_request: AIRequest) -> str | None:
+    """Re-validate a staged request against the CURRENT privacy mode at send time,
+    returning a block reason (or None to proceed).
+
+    A payload staged earlier must not be flushed after the user changed mode, and
+    the target category may since have been marked never-cloud (SR-D1). Shared by
+    the single-request send (:func:`run_request`) and the batch send
+    (:func:`_send_one_approved`) so both paths stay in lockstep (#19)."""
     mode = settings_service.get_privacy_mode(db)
     if mode in OFF_MODES:
-        raise AIDisabled(f"AI is disabled (privacy mode: {mode}); refusing to send this stored request.")
+        return f"AI is disabled (privacy mode: {mode}); refusing to send this stored request."
     if ai_request.privacy_mode in CLOUD_MODES and mode not in CLOUD_MODES:
-        raise AIDisabled(
+        return (
             "This request was prepared for a cloud mode, but the current privacy "
             "mode no longer permits cloud AI — refusing to send it."
         )
     if mode in CLOUD_MODES and ai_request.transaction_id is not None:
         txn = db.get(Transaction, ai_request.transaction_id)
-        reason = _never_cloud_category_reason(db, txn) if txn is not None else None
-        if reason:
-            raise AIDisabled(reason)
+        return _never_cloud_category_reason(db, txn) if txn is not None else None
+    return None
+
+
+def run_request(db: Session, ai_request: AIRequest, *, provider=None) -> dict:
+    """Approve and send a pending request (spec §22.5). Stores the response,
+    resolves its review item, and returns the suggestion."""
+    if ai_request.status != "pending":
+        raise AIDisabled("This AI request is not awaiting approval.")
+    reason = _staged_request_block_reason(db, ai_request)
+    if reason:
+        raise AIDisabled(reason)
     provider = provider or get_provider(db)
     if not provider.available():
         raise AIDisabled(_NO_AI_PROVIDER)
@@ -446,13 +467,19 @@ _RECEIPT_VISION_SYSTEM = (
 )
 
 
-def _require_vision(db: Session, *, approved: bool = False) -> tuple[AIProvider, str]:
+def _require_vision(db: Session, *, approved: bool = False, user_id: int | None = None) -> tuple[AIProvider, str]:
     mode = settings_service.get_privacy_mode(db)
     if mode in OFF_MODES:
         raise AIDisabled("AI is off — enable a local or cloud mode to extract images.")
     # The image-extract routes live outside routes_ai's abuse guard, so enforce
-    # the daily AI budget here too, before any provider dispatch (same style as
-    # the image-size cap below; see services/ai_guard.py).
+    # the same abuse guards here too, before any provider dispatch — EXCEPT the
+    # 100 KB payload cap, which would 413 a legitimate 15 MB image (that has its
+    # own separate 15 MB limit via _check_image_size). The per-user rate limit and
+    # the daily budget still apply (see services/ai_guard.py; #29).
+    if user_id is not None:
+        wait = ai_guard.rate_limit_wait_seconds(user_id)
+        if wait > 0:
+            raise AIRateLimited(wait)
     budget = ai_guard.daily_cap_reached(db)
     if budget is not None:
         raise AIDisabled(ai_guard.daily_budget_message(*budget))
@@ -519,14 +546,17 @@ def _run_image(db: Session, req: AIRequest, provider: AIProvider, content: bytes
     return result
 
 
-def extract_statement_image(db: Session, content: bytes, mime: str, *, approved: bool = False) -> list[dict]:
+def extract_statement_image(
+    db: Session, content: bytes, mime: str, *, approved: bool = False, user_id: int | None = None
+) -> list[dict]:
     """Vision-extract statement transactions from an image. Returns a list of
     ``{date, description, amount}`` dicts (the route turns them into an import).
 
     ``approved`` must be True to run under ``cloud_auto`` (the raw image can't be
-    redacted, so an automatic cloud send needs explicit per-request approval)."""
+    redacted, so an automatic cloud send needs explicit per-request approval).
+    ``user_id`` enforces the per-user AI rate limit (#29)."""
     _check_image_size(content)
-    provider, mode = _require_vision(db, approved=approved)
+    provider, mode = _require_vision(db, approved=approved, user_id=user_id)
     req = _audit_image(db, provider, mode, kind="statement", size=len(content))
     result = _run_image(db, req, provider, content, mime,
                         system=_STATEMENT_VISION_SYSTEM, instruction="Extract every transaction in this statement.")
@@ -537,7 +567,9 @@ def extract_statement_image(db: Session, content: bytes, mime: str, *, approved:
     return [t for t in txns if isinstance(t, dict)]
 
 
-def extract_receipt_image(db: Session, content: bytes, mime: str, *, approved: bool = False) -> dict:
+def extract_receipt_image(
+    db: Session, content: bytes, mime: str, *, approved: bool = False, user_id: int | None = None
+) -> dict:
     """Vision-extract a receipt's merchant/date/total/currency from an image, and —
     in the *same* call — a suggested category (backlog #110). The candidate
     category names are listed in the instruction; the returned name is resolved to
@@ -546,9 +578,10 @@ def extract_receipt_image(db: Session, content: bytes, mime: str, *, approved: b
     separate AI classification call.
 
     ``approved`` must be True to run under ``cloud_auto`` (see
-    :func:`extract_statement_image`)."""
+    :func:`extract_statement_image`). ``user_id`` enforces the per-user AI rate
+    limit (#29)."""
     _check_image_size(content)
-    provider, mode = _require_vision(db, approved=approved)
+    provider, mode = _require_vision(db, approved=approved, user_id=user_id)
     cats = _candidate_categories(db)
     names = ", ".join(c.name for c in cats)
     instruction = (
@@ -669,6 +702,16 @@ def _send_one_approved(
     req = db.get(AIRequest, rid)
     if req is None or req.status != "pending":
         return  # already sent/rejected, or unknown — skip defensively
+    # Re-validate at send time exactly as run_request does — a payload staged
+    # before the user turned AI off / left cloud mode, or whose category is now
+    # never-cloud, must be refused here too rather than dispatched (#19).
+    reason = _staged_request_block_reason(db, req)
+    if reason:
+        req.status = "failed"
+        req.error_message = reason
+        req.completed_at = datetime.now(UTC)
+        failed.append(rid)
+        return
     req.approval_status = "approved"
     payload = json.loads(req.redacted_payload or "{}")
     try:
@@ -720,14 +763,22 @@ def cloud_batch_send(
     return {"count": len(suggestions), "suggestions": suggestions, "failed": failed, "rejected": rejected}
 
 
-def apply_suggestions(db: Session, items: list[dict]) -> int:
+def apply_suggestions(db: Session, items: list[dict], *, account_ids: set[int] | None = None) -> int:
     """Apply user-approved AI category suggestions. Treated as a manual decision
-    (confidence 1.0) — the user signed off, so rules won't later override it."""
+    (confidence 1.0) — the user signed off, so rules won't later override it.
+
+    ``account_ids`` scopes the write to the caller's visible accounts (``None`` =
+    unrestricted owner/admin): a transaction in an out-of-scope account is skipped,
+    never written — the same visibility guard every sibling write path applies (#17)."""
     applied = 0
     for item in items:
         txn = db.get(Transaction, item["transaction_id"])
         category = db.get(Category, item["category_id"])
         if txn is None or category is None:
+            continue
+        # Out-of-scope account → skip (never write). Orphan rows (account_id None)
+        # are owner-only, matching account_scope_condition (SR-E7).
+        if account_ids is not None and txn.account_id is not None and txn.account_id not in account_ids:
             continue
         # Never overwrite a manual choice — even on a re-process (spec §15.1).
         if txn.confidence_score is not None and txn.confidence_score >= MANUAL_CONFIDENCE:

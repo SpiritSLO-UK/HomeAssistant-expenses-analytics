@@ -28,7 +28,7 @@ from app.schemas.receipts import (
 )
 from app.services import ai_service, audit_service, ocr_service, receipt_service
 from app.services.ai_provider import AIError
-from app.services.ai_service import AIDisabled
+from app.services.ai_service import AIDisabled, AIRateLimited
 from app.services.auth_service import get_current_user
 from app.services.household_service import get_or_create_account, get_or_create_default_household
 
@@ -201,7 +201,7 @@ def _receipt_image_for_ai(receipt: Receipt) -> tuple[bytes, str]:
     "/{receipt_id}/ai-extract",
     response_model=ReceiptOut,
     responses={400: {"description": "AI off / not an image"}, 404: {"description": "Not found"},
-               502: {"description": "AI error"}},
+               429: {"description": "AI rate limit reached"}, 502: {"description": "AI error"}},
 )
 def ai_extract_receipt(
     receipt_id: int,
@@ -215,7 +215,11 @@ def ai_extract_receipt(
     receipt = _get(db, receipt_id)
     content, send_mime = _receipt_image_for_ai(receipt)
     try:
-        fields = ai_service.extract_receipt_image(db, content, send_mime)
+        fields = ai_service.extract_receipt_image(db, content, send_mime, user_id=user.id)
+    except AIRateLimited as exc:
+        raise HTTPException(
+            status_code=429, detail=str(exc), headers={"Retry-After": str(exc.retry_after)}
+        ) from exc
     except AIDisabled as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except AIError as exc:

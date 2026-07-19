@@ -61,6 +61,17 @@ def _classify(txn_id, **kwargs):
         return ai_service.classify_transaction(db, txn, **kwargs)
 
 
+def _hdr(uid, name=None):
+    return {"X-Remote-User-Id": uid, "X-Remote-User-Display-Name": name or uid}
+
+
+def _approve_member(client, uid, name):
+    client.get("/api/users/me", headers=_hdr(uid, name))
+    row = next(u["id"] for u in client.get("/api/users").json() if u["external_id"] == uid)
+    client.patch(f"/api/users/{row}", json={"role": "member", "status": "approved"})
+    return row
+
+
 # --- gating ---
 
 def test_classify_returns_inferred_country(client):
@@ -294,6 +305,40 @@ def test_apply_suggestions_endpoint(client):
     r = client.post("/api/ai/apply", json={"items": [{"transaction_id": txn_id, "category_id": groceries}]})
     assert r.json()["applied"] == 1
     assert client.get(f"/api/transactions/{txn_id}").json()["category_id"] == groceries
+
+
+def test_apply_skips_txn_in_out_of_scope_account(client):
+    """#17 IDOR: a member cannot apply a category onto a transaction in an account
+    they can't see — it is skipped (never written); the owner is unrestricted."""
+    from datetime import date
+    from decimal import Decimal
+
+    from app.models import Account
+
+    client.get("/api/users/me")  # headerless → local owner
+    bob = _approve_member(client, "ha-bob", "Bob")
+    _approve_member(client, "ha-alice", "Alice")
+    groceries = next(c["id"] for c in client.get("/api/categories").json() if c["name"] == "Groceries")
+    with SessionLocal() as db:
+        priv = Account(name="Bob Private", account_type="current_account", currency="GBP",
+                       owner_user_id=bob, is_shared=False)
+        db.add(priv)
+        db.flush()
+        txn = Transaction(account_id=priv.id, transaction_date=date(2026, 5, 15),
+                          description_raw="BOB SECRET", amount=Decimal("-9.00"), currency="GBP",
+                          direction="debit", base_amount=Decimal("-9.00"), fx_rate=Decimal("1"))
+        db.add(txn)
+        db.commit()
+        txn_id = txn.id
+    body = {"items": [{"transaction_id": txn_id, "category_id": groceries}]}
+    # Alice (member) can't see Bob's private account → the write is skipped.
+    r = client.post("/api/ai/apply", json=body, headers=_hdr("ha-alice", "Alice"))
+    assert r.status_code == 200
+    assert r.json()["applied"] == 0
+    with SessionLocal() as db:
+        assert db.get(Transaction, txn_id).category_id is None
+    # Owner is unrestricted → the identical apply now writes it.
+    assert client.post("/api/ai/apply", json=body).json()["applied"] == 1
 
 
 def test_apply_suggestions_resolves_review_item(client):

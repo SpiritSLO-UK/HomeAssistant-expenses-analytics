@@ -127,6 +127,53 @@ def test_prepare_endpoint_refused_in_local_mode(client):
     assert client.post("/api/ai/cloud-batch/prepare").status_code == 400
 
 
+def test_send_refused_when_txn_category_now_never_cloud(client):
+    """#19: a request staged in a cloud mode is re-validated at send time, exactly
+    like run_request. If the txn's category has since been marked never-cloud, the
+    batch send refuses it (records it failed) instead of dispatching the payload."""
+    from app.models import Category
+
+    _two_uncategorised(client)
+    _set_mode(client, "cloud_manual")
+    fake = FakeProvider()
+    with SessionLocal() as db:
+        prepared = ai_service.cloud_batch_prepare(db, provider=fake)
+    ids = [i["ai_request_id"] for i in prepared["items"]]
+    # After staging, route the first request's txn into a never-cloud category.
+    with SessionLocal() as db:
+        req0 = db.get(AIRequest, ids[0])
+        never = Category(name="Therapy", privacy_sensitivity="never_cloud", is_active=True)
+        db.add(never)
+        db.flush()
+        db.get(Transaction, req0.transaction_id).category_id = never.id
+        db.commit()
+
+    with SessionLocal() as db:
+        res = ai_service.cloud_batch_send(db, approve_ids=ids, provider=fake)
+
+    assert ids[0] in res["failed"]
+    assert len(fake.calls) == 1  # only the still-safe request left the device
+    with SessionLocal() as db:
+        assert db.get(AIRequest, ids[0]).status == "failed"
+
+
+def test_send_refused_when_mode_now_off(client):
+    """#19: if AI is switched off after staging, no stored cloud request is sent."""
+    _two_uncategorised(client)
+    _set_mode(client, "cloud_manual")
+    fake = FakeProvider()
+    with SessionLocal() as db:
+        prepared = ai_service.cloud_batch_prepare(db, provider=fake)
+    ids = [i["ai_request_id"] for i in prepared["items"]]
+
+    _set_mode(client, "strict_local")  # AI turned off between staging and sending
+    with SessionLocal() as db:
+        res = ai_service.cloud_batch_send(db, approve_ids=ids, provider=fake)
+
+    assert fake.calls == []  # nothing dispatched
+    assert set(res["failed"]) == set(ids)
+
+
 def test_full_flow_applies_after_send(client):
     _two_uncategorised(client)
     _set_mode(client, "cloud_manual")
