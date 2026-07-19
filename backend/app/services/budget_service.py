@@ -25,7 +25,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.models import Budget, Transaction
 from app.services import settings_service, split_service
@@ -92,12 +92,17 @@ def _txn_contribution(txn: Transaction, budget: Budget) -> Decimal | None:
     return None
 
 
-def _spent(
-    db: Session, start: date, end: date, budget: Budget, *, account_ids: set[int] | None = None
-) -> Decimal:
-    """Spend (positive number) against this budget over [start, end)."""
-    txns = db.scalars(
-        select(Transaction).where(
+def _spendable_select(start: date, end: date, account_ids: set[int] | None):
+    """The windowed spendable-debit query shared by every budget calculation.
+
+    ``selectinload(Transaction.splits)`` eager-loads each transaction's splits in
+    ONE extra query instead of a lazy SELECT per split transaction (backlog #16
+    N+1), so split-aware allocation costs a constant number of round-trips.
+    """
+    return (
+        select(Transaction)
+        .options(selectinload(Transaction.splits))
+        .where(
             Transaction.transaction_date >= start,
             Transaction.transaction_date < end,
             Transaction.is_transfer.is_(False),
@@ -107,14 +112,33 @@ def _spent(
             *account_scope_condition(account_ids),
             *archived_condition(),
         )
-    ).all()
+    )
 
+
+def _spent_from_txns(
+    txns: list[Transaction], start: date, end: date, budget: Budget
+) -> Decimal:
+    """Spend (positive number) this budget draws from already-loaded ``txns``.
+
+    ``txns`` may span a wider range than [start, end) (``summary`` loads the union
+    window once), so we re-apply the same half-open date filter the SQL uses.
+    """
     total = Decimal("0.00")
     for txn in txns:
+        if txn.transaction_date < start or txn.transaction_date >= end:
+            continue
         contrib = _txn_contribution(txn, budget)
         if contrib is not None:
             total += contrib
     return total
+
+
+def _spent(
+    db: Session, start: date, end: date, budget: Budget, *, account_ids: set[int] | None = None
+) -> Decimal:
+    """Spend (positive number) against this budget over [start, end)."""
+    txns = db.scalars(_spendable_select(start, end, account_ids)).all()
+    return _spent_from_txns(list(txns), start, end, budget)
 
 
 def _txn_matches(txn: Transaction, budget: Budget) -> bool:
@@ -222,13 +246,10 @@ def _eval_window(budget: Budget, ref: date, annual: bool) -> tuple[date, date, D
     return start, end, Decimal(budget.amount)
 
 
-def status_for(
-    db: Session, budget: Budget, ref: date, *, account_ids: set[int] | None = None, annual: bool = False
+def _status_dict(
+    budget: Budget, start: date, end: date, amount: Decimal, spent: Decimal, ref: date, currency: str
 ) -> dict:
-    """Compute one budget's spend/remaining/percent/status for ``ref``'s period
-    (or the whole year when ``annual``, comparing against the annualised cap)."""
-    start, end, amount = _eval_window(budget, ref, annual)
-    spent = _spent(db, start, end, budget, account_ids=account_ids)
+    """Assemble one budget's summary row from an already-computed ``spent``."""
     remaining = amount - spent
     percent = float((spent / amount) * 100) if amount > 0 else 0.0
     return {
@@ -237,7 +258,7 @@ def status_for(
         "category_id": budget.category_id,
         "project_id": budget.project_id,
         "period": budget.period,
-        "currency": settings_service.get_base_currency(db),
+        "currency": currency,
         "amount": str(amount),
         "spent": str(spent),
         "remaining": str(remaining),
@@ -250,6 +271,17 @@ def status_for(
     }
 
 
+def status_for(
+    db: Session, budget: Budget, ref: date, *, account_ids: set[int] | None = None, annual: bool = False
+) -> dict:
+    """Compute one budget's spend/remaining/percent/status for ``ref``'s period
+    (or the whole year when ``annual``, comparing against the annualised cap)."""
+    start, end, amount = _eval_window(budget, ref, annual)
+    spent = _spent(db, start, end, budget, account_ids=account_ids)
+    currency = settings_service.get_base_currency(db)
+    return _status_dict(budget, start, end, amount, spent, ref, currency)
+
+
 def summary(
     db: Session, ref: date, *, account_ids: set[int] | None = None, annual: bool = False
 ) -> list[dict]:
@@ -257,11 +289,30 @@ def summary(
 
     Child-owned budgets (``owner_user_id`` set) are a kid's-allowance concern and
     are surfaced only on the child's allowance view, so they're excluded here.
+
+    The spendable transactions are fetched ONCE over the union of every budget's
+    window and filtered per budget in Python, instead of re-scanning the table
+    (and lazy-loading splits) once per budget (backlog #16 N+1). Each budget's own
+    window and category/project scope are still applied, so the numbers are
+    identical to calling :func:`status_for` per budget.
     """
     budgets = db.scalars(
         select(Budget).where(Budget.owner_user_id.is_(None)).order_by(Budget.name)
     ).all()
-    return [status_for(db, b, ref, account_ids=account_ids, annual=annual) for b in budgets]
+    if not budgets:
+        return []
+
+    windows = [_eval_window(b, ref, annual) for b in budgets]
+    union_start = min(start for start, _end, _amount in windows)
+    union_end = max(end for _start, end, _amount in windows)
+    txns = list(db.scalars(_spendable_select(union_start, union_end, account_ids)).all())
+    currency = settings_service.get_base_currency(db)
+
+    rows: list[dict] = []
+    for budget, (start, end, amount) in zip(budgets, windows, strict=True):
+        spent = _spent_from_txns(txns, start, end, budget)
+        rows.append(_status_dict(budget, start, end, amount, spent, ref, currency))
+    return rows
 
 
 def budget_transactions(
@@ -273,18 +324,9 @@ def budget_transactions(
     reports each transaction's *contributing* base amount (positive)."""
     start, end, _ = _eval_window(budget, ref, annual)
     txns = db.scalars(
-        select(Transaction)
-        .where(
-            Transaction.transaction_date >= start,
-            Transaction.transaction_date < end,
-            Transaction.is_transfer.is_(False),
-            Transaction.is_duplicate.is_(False),
-            Transaction.base_amount.is_not(None),
-            Transaction.base_amount < 0,
-            *account_scope_condition(account_ids),
-            *archived_condition(),
+        _spendable_select(start, end, account_ids).order_by(
+            Transaction.transaction_date.desc(), Transaction.id.desc()
         )
-        .order_by(Transaction.transaction_date.desc(), Transaction.id.desc())
     ).all()
 
     out: list[dict] = []
