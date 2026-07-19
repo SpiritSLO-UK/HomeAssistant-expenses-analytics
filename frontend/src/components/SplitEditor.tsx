@@ -147,11 +147,11 @@ export default function SplitEditor({ txnId, amount, currency, isSplit, categori
         </p>
         <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.75rem" }}>
           {isSplit && (
-            <button className="btn btn--ghost" disabled={clear.isPending} onClick={() => clear.mutate()}>
+            <button type="button" className="btn btn--ghost" disabled={clear.isPending} onClick={() => clear.mutate()}>
               {clear.isPending ? "Removing…" : "Remove split"}
             </button>
           )}
-          <button className="btn btn--ghost" onClick={onDone}>Close</button>
+          <button type="button" className="btn btn--ghost" onClick={onDone}>Close</button>
         </div>
       </div>
     );
@@ -198,6 +198,7 @@ export default function SplitEditor({ txnId, amount, currency, isSplit, categori
               </td>
               <td>
                 <button
+                  type="button"
                   className="link-btn"
                   disabled={rows.length <= 2}
                   title={rows.length <= 2 ? "A split needs at least two parts" : "Remove this part"}
@@ -212,8 +213,8 @@ export default function SplitEditor({ txnId, amount, currency, isSplit, categori
       </table>
 
       <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
-        <button className="link-btn" onClick={addRow}>+ Add part</button>
-        <button className="link-btn" onClick={splitEvenly} title="Divide the total equally across every part">
+        <button type="button" className="link-btn" onClick={addRow}>+ Add part</button>
+        <button type="button" className="link-btn" onClick={splitEvenly} title="Divide the total equally across every part">
           Split evenly
         </button>
         <span className={"muted"} style={{ marginLeft: "auto" }}>
@@ -228,15 +229,15 @@ export default function SplitEditor({ txnId, amount, currency, isSplit, categori
       {error && <p className="status status--error" style={{ marginTop: "0.5rem" }}>{error}</p>}
 
       <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.75rem" }}>
-        <button className="btn" disabled={save.isPending || !balanced} onClick={onSave}>
+        <button type="button" className="btn" disabled={save.isPending || !balanced} onClick={onSave}>
           {save.isPending ? "Saving…" : "Save split"}
         </button>
         {isSplit && (
-          <button className="btn btn--ghost" disabled={clear.isPending} onClick={() => clear.mutate()}>
+          <button type="button" className="btn btn--ghost" disabled={clear.isPending} onClick={() => clear.mutate()}>
             {clear.isPending ? "Removing…" : "Remove split"}
           </button>
         )}
-        <button className="btn btn--ghost" onClick={onDone}>Cancel</button>
+        <button type="button" className="btn btn--ghost" onClick={onDone}>Cancel</button>
       </div>
     </div>
   );

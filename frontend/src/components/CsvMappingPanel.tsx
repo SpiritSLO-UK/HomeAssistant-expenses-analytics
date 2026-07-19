@@ -148,9 +148,9 @@ export default function CsvMappingPanel({
           </label>
           {selected && (
             <>
-              <button className="btn btn--ghost" onClick={() => exportProfile(selected)} title="Download (anonymous — column names only)">⬇ Export</button>
-              <button className="btn btn--ghost" onClick={() => shareProfile(selected)} title="Open a prefilled GitHub issue">↗ Share</button>
-              <button className="btn btn--ghost" disabled={del.isPending} onClick={() => del.mutate(selected.id)} title="Delete this profile">🗑</button>
+              <button type="button" className="btn btn--ghost" onClick={() => exportProfile(selected)} title="Download (anonymous — column names only)">⬇ Export</button>
+              <button type="button" className="btn btn--ghost" onClick={() => shareProfile(selected)} title="Open a prefilled GitHub issue">↗ Share</button>
+              <button type="button" className="btn btn--ghost" disabled={del.isPending} onClick={() => del.mutate(selected.id)} title="Delete this profile">🗑</button>
             </>
           )}
         </div>
@@ -195,11 +195,12 @@ export default function CsvMappingPanel({
       )}
 
       <div className="form-row" style={{ flexWrap: "wrap", gap: 8 }}>
-        <button className="btn" disabled={!canPreview || preview.isPending} onClick={() => preview.mutate()}>
+        <button type="button" className="btn" disabled={!canPreview || preview.isPending} onClick={() => preview.mutate()}>
           {preview.isPending ? "Previewing…" : "Preview with this mapping"}
         </button>
         <input placeholder="Profile name" value={profileName} onChange={(e) => setProfileName(e.target.value)} />
         <button
+          type="button"
           className="btn btn--ghost"
           disabled={!canPreview || !profileName.trim() || save.isPending}
           onClick={() => save.mutate()}

@@ -45,7 +45,7 @@ export default function ReceiptPreview({
           </h2>
           <span style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
             <a className="link-btn" href={url} target="_blank" rel="noreferrer">Open in new tab ↗</a>
-            <button className="btn btn--ghost btn--sm" onClick={onClose}>Close ✕</button>
+            <button type="button" className="btn btn--ghost btn--sm" onClick={onClose}>Close ✕</button>
           </span>
         </div>
         <div style={{ marginTop: 10 }}>

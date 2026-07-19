@@ -102,7 +102,7 @@ export default function Tags() {
         {list.length > 1 && (
           <div className="form-row" style={{ flexWrap: "wrap", gap: 8, alignItems: "flex-end" }}>
             <label>
-              Merge
+              Merge{" "}
               <select value={sourceId} onChange={(e) => setSourceId(e.target.value)}>
                 <option value="">source tag…</option>
                 {list.map((t) => (
@@ -111,7 +111,7 @@ export default function Tags() {
               </select>
             </label>
             <label>
-              into
+              into{" "}
               <select value={targetId} onChange={(e) => setTargetId(e.target.value)}>
                 <option value="">target tag…</option>
                 {list.map((t) => (
@@ -119,13 +119,13 @@ export default function Tags() {
                 ))}
               </select>
             </label>
-            <button className="btn" disabled={!canMerge || merge.isPending} onClick={doMerge}>
+            <button type="button" className="btn" disabled={!canMerge || merge.isPending} onClick={doMerge}>
               {merge.isPending ? "Merging…" : "Merge"}
             </button>
           </div>
         )}
         <div style={{ marginTop: 12 }}>
-          <button className="btn btn--danger" disabled={prune.isPending} onClick={doPrune}>
+          <button type="button" className="btn btn--danger" disabled={prune.isPending} onClick={doPrune}>
             {prune.isPending ? "Removing…" : "Remove unused tags"}
           </button>
         </div>

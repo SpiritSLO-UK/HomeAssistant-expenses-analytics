@@ -170,7 +170,7 @@ export default function Rules() {
     <div className="page">
       <div className="page__head">
         <h1 className="page__title">Rules</h1>
-        <button className="btn btn--ghost" onClick={() => setHelp((v) => !v)}>
+        <button type="button" className="btn btn--ghost" onClick={() => setHelp((v) => !v)}>
           {help ? "Hide help" : "❔ How rules work"}
         </button>
       </div>
@@ -196,10 +196,11 @@ export default function Rules() {
           <label className="muted">prio <input type="number" style={{ width: 70 }} value={priority} onChange={(e) => setPriority(Number(e.target.value))} /></label>
         </div>
         <div className="form-row" style={{ marginTop: 8 }}>
-          <button className="btn btn--ghost" disabled={!conditionValue || runTest.isPending} onClick={() => runTest.mutate()}>
+          <button type="button" className="btn btn--ghost" disabled={!conditionValue || runTest.isPending} onClick={() => runTest.mutate()}>
             Test
           </button>
           <button
+            type="button"
             className="btn"
             disabled={!conditionValue || (!NO_VALUE_ACTIONS.has(actionType) && !actionValue) || create.isPending}
             onClick={() => create.mutate()}
@@ -244,10 +245,10 @@ export default function Rules() {
             />
           </div>
           <div className="form-row" style={{ marginTop: 8 }}>
-            <button className="btn" disabled={editSaveDisabled} onClick={() => update.mutate(editing.id)}>
+            <button type="button" className="btn" disabled={editSaveDisabled} onClick={() => update.mutate(editing.id)}>
               Save changes
             </button>
-            <button className="btn btn--ghost" onClick={() => setEditing(null)}>Cancel</button>
+            <button type="button" className="btn btn--ghost" onClick={() => setEditing(null)}>Cancel</button>
           </div>
         </div>
       )}
@@ -341,7 +342,6 @@ function RuleRow(props: RuleRowProps) {
       style={{ opacity }}
     >
       <td
-        aria-hidden="true"
         title="Drag to reorder priority"
         style={{ cursor: "grab", color: "var(--muted, #888)", userSelect: "none" }}
       >
@@ -359,9 +359,10 @@ function RuleRow(props: RuleRowProps) {
       <td>{describeAction(rule)}</td>
       <PriorityCell rule={rule} onCommit={props.onCommitPriority} />
       <td>
-        <button className="btn btn--ghost" onClick={props.onEdit}>Edit</button>
-        <button className="btn btn--ghost" onClick={props.onClone}>Clone</button>
+        <button type="button" className="btn btn--ghost" onClick={props.onEdit}>Edit</button>
+        <button type="button" className="btn btn--ghost" onClick={props.onClone}>Clone</button>
         <button
+          type="button"
           className="btn btn--ghost"
           onClick={async () => {
             if (await confirm({ message: `Delete the rule “${rule.name}”? This can't be undone (existing transactions keep their current categories).`, confirmLabel: "Delete", danger: true }))
