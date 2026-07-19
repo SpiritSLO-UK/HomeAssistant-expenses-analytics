@@ -20,14 +20,19 @@ on:
         description: "Image version tag to build (e.g. 1.0.0-rc1)"
         required: true
 
+# Least privilege at the workflow level; each job grants only the extra scope it
+# needs (build-push -> packages: write for GHCR, e2e-report -> contents: write
+# for the release asset).
 permissions:
   contents: read
-  packages: write
 
 jobs:
   build-push:
     name: Build & push ${{ matrix.ha_arch }} image
     runs-on: ubuntu-latest
+    permissions:
+      contents: read # checkout
+      packages: write # push the arch image to GHCR
     strategy:
       fail-fast: false
       matrix:
