@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createCategory,
@@ -22,12 +22,40 @@ const PRIVACY_OPTIONS: { value: string; label: string }[] = [
   { value: "never_cloud", label: "🔒 never cloud" },
 ];
 
+// A curated palette of distinct, readable swatches (Material 400/500 shades that
+// don't clash with the darker bundled-library colours). A new category with no
+// explicit colour defaults to a random palette entry that isn't already in use,
+// so the library stays visually varied. Kept in step with the backend fallback
+// in category_service.py.
+const COLOUR_PALETTE = [
+  "#EF5350", "#F06292", "#AB47BC", "#7E57C2", "#5C6BC0", "#42A5F5",
+  "#29B6F6", "#26C6DA", "#26A69A", "#66BB6A", "#9CCC65", "#D4E157",
+  "#FFEE58", "#FFCA28", "#FFA726", "#FF8A65", "#8D6E63", "#78909C",
+];
+
+function randomHex(): string {
+  return "#" + Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, "0").toUpperCase();
+}
+
+// Pick a palette colour not already assigned to an existing category so a new
+// category defaults to a distinct swatch; fall back to a generated hex once the
+// palette is exhausted. Comparison is case-insensitive.
+function pickUnusedColour(categories: readonly { colour: string | null }[]): string {
+  const used = new Set(categories.map((c) => (c.colour ?? "").toUpperCase()));
+  const free = COLOUR_PALETTE.filter((c) => !used.has(c.toUpperCase()));
+  if (free.length === 0) return randomHex();
+  return free[Math.floor(Math.random() * free.length)];
+}
+
 export default function Categories() {
   const qc = useQueryClient();
   const confirm = useConfirm();
   const { data, isLoading } = useQuery({ queryKey: ["categories"], queryFn: listCategories });
   const [name, setName] = useState("");
-  const [colour, setColour] = useState("#4CAF50");
+  // Seed the new-category colour picker with a random distinct swatch. It starts
+  // from an empty used-set and is reseeded from the real categories once they
+  // load (effect below) and re-randomised after each successful create.
+  const [colour, setColour] = useState(() => pickUnusedColour([]));
   const [mergeSource, setMergeSource] = useState("");
   const [mergeTarget, setMergeTarget] = useState("");
   const [advanced, setAdvanced] = useState(false);
@@ -79,10 +107,24 @@ export default function Categories() {
     onSuccess: () => {
       setErr(null);
       setName("");
+      // Re-randomise so the next new category gets a distinct default: exclude
+      // both the existing categories and the colour we just used.
+      setColour((prev) => pickUnusedColour([...(data ?? []), { colour: prev }]));
       qc.invalidateQueries({ queryKey: ["categories"] });
     },
     onError: fail,
   });
+
+  // Once the categories load, seed the picker with a swatch not already in use.
+  // Guarded so it runs a single time and never clobbers a colour the user picked
+  // by hand (later refetches must not reset their choice).
+  const seededColour = useRef(false);
+  useEffect(() => {
+    if (!seededColour.current && data) {
+      seededColour.current = true;
+      setColour(pickUnusedColour(data));
+    }
+  }, [data]);
 
   const remove = useMutation({
     mutationFn: (id: number) => deleteCategory(id),
