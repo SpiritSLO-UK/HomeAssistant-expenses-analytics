@@ -8,7 +8,11 @@ import {
   getBudgetSummary,
   getBudgetTransactions,
   getSettings,
+  listBudgets,
   listCategories,
+  listProjects,
+  updateBudget,
+  type Budget,
   type BudgetSummaryItem,
 } from "../api/client";
 import { useConfirm } from "../components/dialogs";
@@ -57,6 +61,7 @@ export default function Budgets() {
   const [err, setErr] = useState<string | null>(null);
 
   const categories = useQuery({ queryKey: ["categories"], queryFn: listCategories });
+  const projects = useQuery({ queryKey: ["projects"], queryFn: listProjects });
   const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
   const summary = useQuery({
     queryKey: ["budget-summary", month, annual],
@@ -67,13 +72,16 @@ export default function Budgets() {
   const catName = (id: number | null) =>
     id == null ? null : categories.data?.find((c) => c.id === id)?.name ?? `#${id}`;
 
+  // Create, edit and delete all touch the same summary + drill-down caches.
+  const invalidateBudgets = () => {
+    setErr(null);
+    qc.invalidateQueries({ queryKey: ["budget-summary"] });
+    qc.invalidateQueries({ queryKey: ["budget-txns"] });
+  };
+
   const remove = useMutation({
     mutationFn: (id: number) => deleteBudget(id),
-    onSuccess: () => {
-      setErr(null);
-      qc.invalidateQueries({ queryKey: ["budget-summary"] });
-      qc.invalidateQueries({ queryKey: ["budget-txns"] });
-    },
+    onSuccess: invalidateBudgets,
     onError: (e) => setErr(String(e)),
   });
 
@@ -105,11 +113,7 @@ export default function Budgets() {
         base={base}
         categories={categories.data ?? []}
         onError={setErr}
-        onCreated={() => {
-          setErr(null);
-          qc.invalidateQueries({ queryKey: ["budget-summary"] });
-          qc.invalidateQueries({ queryKey: ["budget-txns"] });
-        }}
+        onCreated={invalidateBudgets}
       />
 
       <div className="card">
@@ -127,6 +131,10 @@ export default function Budgets() {
               month={`${month}-01`}
               annual={annual}
               categoryName={catName(b.category_id)}
+              categories={categories.data ?? []}
+              projects={projects.data ?? []}
+              onError={setErr}
+              onSaved={invalidateBudgets}
               onDelete={async () => {
                 if (await confirm({ message: `Delete budget "${b.name}"?`, confirmLabel: "Delete", danger: true })) remove.mutate(b.budget_id);
               }}
@@ -144,6 +152,10 @@ function BudgetRow({
   month,
   annual,
   categoryName,
+  categories,
+  projects,
+  onError,
+  onSaved,
   onDelete,
 }: Readonly<{
   b: BudgetSummaryItem;
@@ -151,9 +163,14 @@ function BudgetRow({
   month: string;
   annual: boolean;
   categoryName: string | null;
+  categories: { id: number; name: string }[];
+  projects: { id: number; name: string }[];
+  onError: (e: string) => void;
+  onSaved: () => void;
   onDelete: () => void;
 }>) {
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
   const colour = STATUS_COLOUR[b.status] ?? "#3a9b5c";
   const noCategoryScope = b.project_id == null ? "All spending" : "Project";
   const scope = b.category_id == null ? noCategoryScope : (categoryName ?? "Category");
@@ -183,6 +200,9 @@ function BudgetRow({
           <span className="tag" style={{ background: colour, color: "#fff" }}>
             {statusLabel}
           </span>
+          <button className="link-btn" onClick={() => setEditing((v) => !v)}>
+            {editing ? "close" : "edit"}
+          </button>
           <button className="link-btn" onClick={onDelete}>delete</button>
         </div>
       </div>
@@ -195,6 +215,20 @@ function BudgetRow({
         <div className="muted" style={{ marginTop: 2, fontSize: "0.8rem" }}>
           {paceLabel}
         </div>
+      )}
+      {editing && (
+        <EditBudget
+          budgetId={b.budget_id}
+          fallback={b}
+          base={base}
+          categories={categories}
+          projects={projects}
+          onError={onError}
+          onSaved={() => {
+            setEditing(false);
+            onSaved();
+          }}
+        />
       )}
       {open && (
         <div style={{ marginTop: 8, paddingLeft: 12 }}>
@@ -306,6 +340,171 @@ function NewBudget({
         </label>
         <button className="btn" disabled={!valid || create.isPending} onClick={() => create.mutate()}>
           {create.isPending ? "Adding…" : "Add budget"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Loads the budget's full record (start/end/rollover aren't on the summary item)
+// and, once available, renders the pre-filled edit form. Keyed by budget id so the
+// form state is fresh per budget.
+function EditBudget({
+  budgetId,
+  fallback,
+  base,
+  categories,
+  projects,
+  onError,
+  onSaved,
+}: Readonly<{
+  budgetId: number;
+  fallback: BudgetSummaryItem;
+  base: string;
+  categories: { id: number; name: string }[];
+  projects: { id: number; name: string }[];
+  onError: (e: string) => void;
+  onSaved: () => void;
+}>) {
+  const budgets = useQuery({ queryKey: ["budgets"], queryFn: listBudgets });
+  const full = budgets.data?.find((x) => x.id === budgetId);
+  if (budgets.isError) {
+    return (
+      <p className="status status--error" style={{ marginTop: 8 }}>
+        Couldn’t load budget details: {String(budgets.error)}
+      </p>
+    );
+  }
+  if (!full) {
+    return <p className="muted" style={{ marginTop: 8 }}>Loading…</p>;
+  }
+  return (
+    <EditBudgetForm
+      key={budgetId}
+      budget={full}
+      fallback={fallback}
+      base={base}
+      categories={categories}
+      projects={projects}
+      onError={onError}
+      onSaved={onSaved}
+    />
+  );
+}
+
+function EditBudgetForm({
+  budget,
+  fallback,
+  base,
+  categories,
+  projects,
+  onError,
+  onSaved,
+}: Readonly<{
+  budget: Budget;
+  fallback: BudgetSummaryItem;
+  base: string;
+  categories: { id: number; name: string }[];
+  projects: { id: number; name: string }[];
+  onError: (e: string) => void;
+  onSaved: () => void;
+}>) {
+  const [name, setName] = useState(budget.name);
+  const [amount, setAmount] = useState(budget.amount);
+  const [period, setPeriod] = useState(budget.period);
+  const [categoryId, setCategoryId] = useState(budget.category_id != null ? String(budget.category_id) : "");
+  const [projectId, setProjectId] = useState(budget.project_id != null ? String(budget.project_id) : "");
+  const [currency, setCurrency] = useState(budget.currency || fallback.currency || base);
+  const [startDate, setStartDate] = useState(budget.start_date ?? "");
+  const [endDate, setEndDate] = useState(budget.end_date ?? "");
+  const [rollover, setRollover] = useState(budget.rollover_enabled);
+  const [threshold, setThreshold] = useState(
+    budget.alert_threshold_percent != null ? String(budget.alert_threshold_percent) : "",
+  );
+
+  const save = useMutation({
+    mutationFn: () =>
+      updateBudget(budget.id, {
+        name,
+        amount,
+        period,
+        category_id: categoryId ? Number(categoryId) : null,
+        project_id: projectId ? Number(projectId) : null,
+        currency: currency.trim() || base,
+        start_date: startDate || null,
+        end_date: endDate || null,
+        rollover_enabled: rollover,
+        alert_threshold_percent: threshold ? Number(threshold) : null,
+      }),
+    onSuccess: onSaved,
+    onError: (e) => onError(String(e)),
+  });
+
+  const valid = name.trim() && Number(amount) > 0;
+
+  return (
+    <div className="card" style={{ marginTop: 8 }}>
+      <h3 className="card__title" style={{ fontSize: "0.95rem" }}>Edit budget</h3>
+      <div className="form-row" style={{ flexWrap: "wrap", gap: 8 }}>
+        <input aria-label="Name" autoComplete="off" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} style={{ minWidth: 160 }} />
+        <input
+          aria-label="Amount"
+          type="number" step="0.01" min="0"
+          placeholder={`Amount (${base})`}
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          style={{ width: 140 }}
+        />
+        <input
+          aria-label="Currency"
+          value={currency}
+          onChange={(e) => setCurrency(e.target.value.toUpperCase())}
+          maxLength={3}
+          style={{ width: 72 }}
+        />
+        <select aria-label="Category" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+          <option value="">All spending (total)</option>
+          {categories.map((c) => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </select>
+        <select aria-label="Project" value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+          <option value="">No project</option>
+          {projects.map((p) => (
+            <option key={p.id} value={p.id}>{p.name}</option>
+          ))}
+        </select>
+        <select aria-label="Period" value={period} onChange={(e) => setPeriod(e.target.value)}>
+          {BUDGET_PERIODS.map((p) => (
+            <option key={p} value={p}>{p}</option>
+          ))}
+        </select>
+      </div>
+      <div className="form-row" style={{ flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+        <label className="muted">
+          Start{" "}
+          <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+        </label>
+        <label className="muted">
+          End{" "}
+          <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+        </label>
+        <label className="muted">
+          Alert at{" "}
+          <input
+            type="number" min="0" max="100"
+            value={threshold}
+            onChange={(e) => setThreshold(e.target.value)}
+            style={{ width: 64 }}
+          />{" "}
+          %
+        </label>
+        <label className="muted" style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <input type="checkbox" checked={rollover} onChange={(e) => setRollover(e.target.checked)} />
+          Roll over unused
+        </label>
+        <button className="btn" disabled={!valid || save.isPending} onClick={() => save.mutate()}>
+          {save.isPending ? "Saving…" : "Save changes"}
         </button>
       </div>
     </div>
