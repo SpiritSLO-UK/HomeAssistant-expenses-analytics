@@ -1154,7 +1154,7 @@ function SecurityBanner() {
     <div className="card" style={{ borderLeft: "3px solid #e0a800" }}>
       <p className="status status--warn" style={{ margin: 0 }}>
         ⚠️ {active} security recommendation{active > 1 ? "s" : ""}.{" "}
-        <Link to="/settings">Review in Settings →</Link>
+        <Link to="/settings?section=security">Review in Settings →</Link>
       </p>
     </div>
   );
@@ -1180,7 +1180,7 @@ function DemoStalenessBanner() {
       <p className="muted" style={{ margin: 0, display: "flex", gap: 12, alignItems: "baseline", flexWrap: "wrap" }}>
         <span>
           ℹ️ Demo data was loaded {ageDays} day{ageDays === 1 ? "" : "s"} ago - its dates may look out
-          of date. Reload it from <Link to="/settings">Settings</Link>, or remove demo data there.
+          of date. Reload it from <Link to="/settings?section=data">Settings</Link>, or remove demo data there.
         </span>
         <button type="button" className="link-btn" onClick={() => setDismissed(true)}>Dismiss</button>
       </p>
