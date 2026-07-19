@@ -217,7 +217,11 @@ export default function SplitEditor({ txnId, amount, currency, isSplit, categori
         Split <strong>{amount} {currency}</strong> across categories. Parts must add up to the total.
       </p>
 
-      <div className="form-row" style={{ gap: 4, alignItems: "center", marginBottom: "0.5rem" }} role="group" aria-label="Enter parts by">
+      <fieldset
+        className="form-row"
+        style={{ gap: 4, alignItems: "center", marginBottom: "0.5rem", border: 0, marginInline: 0, padding: 0, minInlineSize: 0 }}
+        aria-label="Enter parts by"
+      >
         <span className="muted" style={{ marginRight: 4 }}>Enter by:</span>
         <button
           type="button"
@@ -235,7 +239,7 @@ export default function SplitEditor({ txnId, amount, currency, isSplit, categori
         >
           %
         </button>
-      </div>
+      </fieldset>
 
       <table className="table" style={{ marginBottom: "0.5rem" }}>
         <thead>

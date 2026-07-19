@@ -138,7 +138,10 @@ body {
   cursor: pointer;
 }
 .sidebar__customise:hover {
-  background: rgba(255, 255, 255, 0.06);
+  /* Opaque equivalent of a 6% white overlay on the (always-dark) sidebar — keeps
+     the subtle highlight while giving the contrast checker a real dark surface to
+     measure #fff against (WCAG AA). */
+  background: #2c333c;
   color: #fff;
 }
 

@@ -56,9 +56,12 @@ export default function ReceiptPreview({
           >
             {filename ?? "Receipt original"}
           </h2>
-          <span style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
             {canTransform && (
-              <span style={{ display: "flex", gap: 4, alignItems: "center" }} role="group" aria-label="Image view controls">
+              <fieldset
+                style={{ display: "flex", gap: 4, alignItems: "center", border: 0, margin: 0, padding: 0, minInlineSize: 0 }}
+                aria-label="Image view controls"
+              >
                 <button
                   type="button"
                   className="btn btn--ghost btn--sm"
@@ -86,11 +89,11 @@ export default function ReceiptPreview({
                   aria-label="Rotate 90 degrees"
                   onClick={() => setRotation((r) => (r + 90) % 360)}
                 >⟳</button>
-              </span>
+              </fieldset>
             )}
             <a className="link-btn" href={url} target="_blank" rel="noreferrer">Open in new tab ↗</a>
             <button type="button" className="btn btn--ghost btn--sm" onClick={onClose}>Close ✕</button>
-          </span>
+          </div>
         </div>
         <div style={{ marginTop: 10 }}>
           {isPdf ? (
