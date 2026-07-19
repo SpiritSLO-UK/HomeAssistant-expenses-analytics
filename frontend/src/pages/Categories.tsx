@@ -57,6 +57,18 @@ function pickUnusedColour(categories: readonly { colour: string | null }[]): str
   return free[randomInt(free.length)];
 }
 
+// When merging two categories the user picks which one survives (keeps its name,
+// colour, icon); the other is removed and its transactions + rule/vendor/
+// subscription links move onto the survivor. Default the choice sensibly: prefer
+// keeping a built-in over a custom one, otherwise keep the "into" category (b) —
+// matching the previous fixed source→target behaviour. Returns the survivor's id
+// as a string (matching the select values).
+function pickDefaultSurvivor(a: Category | undefined, b: Category | undefined, fallbackId: string): string {
+  if (!a || !b) return fallbackId;
+  if (a.is_system !== b.is_system) return a.is_system ? String(a.id) : String(b.id);
+  return String(b.id);
+}
+
 export default function Categories() {
   const qc = useQueryClient();
   const confirm = useConfirm();
@@ -68,6 +80,10 @@ export default function Categories() {
   const [colour, setColour] = useState(() => pickUnusedColour([]));
   const [mergeSource, setMergeSource] = useState("");
   const [mergeTarget, setMergeTarget] = useState("");
+  // Which of the two selected categories the user chose to keep (the survivor).
+  // Empty = fall back to the sensible default (pickDefaultSurvivor). Reset whenever
+  // either selection changes so the default re-derives for the new pair.
+  const [keptId, setKeptId] = useState("");
   const [advanced, setAdvanced] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const fail = (e: unknown) => setErr(String(e));
@@ -155,6 +171,7 @@ export default function Categories() {
       setErr(null);
       setMergeSource("");
       setMergeTarget("");
+      setKeptId("");
       qc.invalidateQueries({ queryKey: ["categories"] });
       qc.invalidateQueries({ queryKey: ["transactions"] });
       qc.invalidateQueries({ queryKey: ["dash-categories"] });
@@ -221,17 +238,31 @@ export default function Categories() {
     if (await confirm({ message: msg, confirmLabel: "Delete", danger: true })) remove.mutate(c.id);
   }
 
+  // The two chosen categories and the resolved survivor. survivorId is the user's
+  // explicit "Keep" pick when set, otherwise the sensible default; the other of the
+  // pair is the one removed. Only meaningful once two distinct categories are picked.
+  const bothChosen = Boolean(mergeSource && mergeTarget && mergeSource !== mergeTarget);
+  const survivorId = bothChosen
+    ? keptId || pickDefaultSurvivor(
+        cats.find((c) => String(c.id) === mergeSource),
+        cats.find((c) => String(c.id) === mergeTarget),
+        mergeTarget,
+      )
+    : "";
+
   async function confirmMerge() {
-    if (!mergeSource || !mergeTarget || mergeSource === mergeTarget) return;
+    if (!survivorId) return;
+    const removed = survivorId === mergeSource ? mergeTarget : mergeSource;
     if (
       await confirm({
         message:
-          `Merge "${nameOf(mergeSource)}" into "${nameOf(mergeTarget)}"? ` +
-          `Everything in the first moves to the second, then the first is removed.`,
+          `Merge "${nameOf(removed)}" into "${nameOf(survivorId)}"? ` +
+          `Everything in "${nameOf(removed)}" moves to "${nameOf(survivorId)}", ` +
+          `which is kept; "${nameOf(removed)}" is then removed.`,
         confirmLabel: "Merge",
       })
     ) {
-      merge.mutate({ source: Number(mergeSource), target: Number(mergeTarget) });
+      merge.mutate({ source: Number(removed), target: Number(survivorId) });
     }
   }
 
@@ -382,18 +413,33 @@ export default function Categories() {
       <div className="card">
         <h2 className="card__title">Merge categories</h2>
         <p className="muted" style={{ marginTop: 0, fontSize: "0.85rem" }}>
-          Move everything from one category into another, then remove the first — handy for folding
-          duplicates or a built-in you don't use into one you do.
+          Pick two categories, then choose which one to <strong>keep</strong>. Everything from the other
+          moves onto the kept category before it's removed — handy for folding duplicates or a built-in you
+          don't use into one you do. The kept category keeps its own name, colour and icon.
         </p>
         <div className="form-row" style={{ alignItems: "center", flexWrap: "wrap" }}>
-          <select aria-label="Category to merge from" value={mergeSource} onChange={(e) => setMergeSource(e.target.value)}>
+          <select
+            aria-label="First category to merge"
+            value={mergeSource}
+            onChange={(e) => {
+              setMergeSource(e.target.value);
+              setKeptId("");
+            }}
+          >
             <option value="">Merge…</option>
             {cats.map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </select>
-          <span className="muted">into</span>
-          <select aria-label="Category to merge into" value={mergeTarget} onChange={(e) => setMergeTarget(e.target.value)}>
+          <span className="muted">with</span>
+          <select
+            aria-label="Second category to merge"
+            value={mergeTarget}
+            onChange={(e) => {
+              setMergeTarget(e.target.value);
+              setKeptId("");
+            }}
+          >
             <option value="">…another category</option>
             {cats.filter((c) => String(c.id) !== mergeSource).map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
@@ -402,12 +448,32 @@ export default function Categories() {
           <button
             type="button"
             className="btn"
-            disabled={!mergeSource || !mergeTarget || mergeSource === mergeTarget || merge.isPending}
+            disabled={!bothChosen || merge.isPending}
             onClick={confirmMerge}
           >
             {merge.isPending ? "Merging…" : "Merge"}
           </button>
         </div>
+        {bothChosen && (
+          <div className="form-row" style={{ alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
+            <span className="muted">Keep:</span>
+            {[mergeSource, mergeTarget].map((id) => (
+              <button
+                type="button"
+                key={id}
+                className={"btn btn--sm" + (survivorId === id ? "" : " btn--ghost")}
+                aria-pressed={survivorId === id}
+                title={`Keep "${nameOf(id)}" and remove the other`}
+                onClick={() => setKeptId(id)}
+              >
+                {nameOf(id)}
+              </button>
+            ))}
+            <span className="muted" style={{ fontSize: "0.8rem" }}>
+              — the other is removed
+            </span>
+          </div>
+        )}
       </div>
       )}
     </div>
