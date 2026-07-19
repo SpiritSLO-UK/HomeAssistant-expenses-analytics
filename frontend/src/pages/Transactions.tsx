@@ -38,6 +38,14 @@ import { useOptimisticSelect } from "../hooks/useOptimisticSelect";
 
 const PAGE_SIZE = 50;
 
+// The country the backend inferred for a row (txn -> vendor -> default -> currency,
+// geo.country_for) when it has no stored `country`. Shown as the picker's default so
+// a base-currency row (e.g. GBP -> GB) resolves instead of showing "—". Never persisted;
+// picking a country still writes `country` on explicit change only.
+function resolvedCountry(t: Transaction): string | null {
+  return (t as Transaction & { resolved_country?: string | null }).resolved_country ?? null;
+}
+
 // Transactions table columns, in render order (backlog: resizable columns). The
 // select checkbox is fixed-width; the rest can be dragged and persist per device.
 const COLUMNS: ColumnDef[] = [
@@ -929,7 +937,7 @@ export default function Transactions() {
                             <div className="txn-detail__field">
                               <span>Country</span>
                               <CountrySelect
-                                value={countrySelect.valueFor(t.id, t.country ?? null)}
+                                value={countrySelect.valueFor(t.id, t.country ?? resolvedCountry(t))}
                                 onChange={(code) =>
                                   countrySelect.choose(t.id, code, () =>
                                     setCountry.mutateAsync({ id: t.id, country: code ?? "" }),

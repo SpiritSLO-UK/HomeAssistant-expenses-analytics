@@ -138,6 +138,36 @@ def test_country_breakdown_uses_default_vendor_country(db):
 # --- API: vendor country setter + endpoint ---
 
 
+def test_list_transactions_exposes_resolved_country(client, db):
+    """The transactions list surfaces the inferred ``resolved_country``
+    (geo.country_for) so the per-row picker has a default. A base-currency (GBP)
+    row with no stored country resolves to GB; a stored country wins and the
+    persisted ``country`` is never overwritten (#79)."""
+    db.add_all([
+        Transaction(
+            transaction_date=date(2026, 5, 15), description_raw="gbp no country",
+            amount=Decimal("-10"), base_amount=Decimal("-10"), currency="GBP", direction="debit",
+        ),
+        Transaction(
+            transaction_date=date(2026, 5, 16), description_raw="eur tagged es",
+            amount=Decimal("-20"), base_amount=Decimal("-20"), currency="EUR", direction="debit",
+            country="ES",
+        ),
+    ])
+    db.commit()
+
+    items = client.get("/api/transactions").json()["items"]
+    by_desc = {i["description_raw"]: i for i in items}
+
+    gbp = by_desc["gbp no country"]
+    assert gbp["country"] is None            # nothing persisted
+    assert gbp["resolved_country"] == "GB"   # inferred from the GBP currency (was "—")
+
+    tagged = by_desc["eur tagged es"]
+    assert tagged["country"] == "ES"          # stored country untouched
+    assert tagged["resolved_country"] == "ES"  # and it wins over the EUR currency guess
+
+
 def test_set_vendor_country_and_endpoint(client):
     vid = client.post("/api/vendors", json={"canonical_name": "Tesco"}).json()["id"]
     patched = client.patch(f"/api/vendors/{vid}", json={"country": "GB"}).json()
