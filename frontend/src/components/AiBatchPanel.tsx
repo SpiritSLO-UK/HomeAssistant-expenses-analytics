@@ -2,34 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { applyAiCategories, classifyBatch, type BatchSuggestion } from "../api/client";
 import { money } from "../lib/money";
-
-// Escape one CSV cell: quote if it holds a comma/quote/newline and double any
-// internal quotes (RFC-4180). Kept module-level so the panel stays simple.
-function csvCell(value: string): string {
-  return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
-}
-
-// Serialise the suggestions to CSV (description, suggested category, confidence).
-function suggestionsToCsv(rows: BatchSuggestion[]): string {
-  const header = ["Description", "Suggested category", "Confidence"].join(",");
-  const lines = rows.map((s) =>
-    [csvCell(s.description), csvCell(s.category_name), s.confidence == null ? "" : String(s.confidence)].join(","),
-  );
-  return [header, ...lines].join("\r\n");
-}
-
-// Client-side blob download — no lib CSV helper exists (the api/client one fetches
-// a server endpoint), so a small inline anchor click does the job.
-function downloadCsvFile(filename: string, csv: string): void {
-  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
-}
+import { downloadCsvFile, suggestionsToCsv } from "../lib/csv";
 
 // Header "select all" checkbox. React has no `indeterminate` prop, so the DOM
 // property is set imperatively via a ref: unchecked when none are selected,

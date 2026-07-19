@@ -7,6 +7,7 @@ import {
   type BatchSuggestion,
   type CloudBatchItem,
 } from "../api/client";
+import { cloudItemsToCsv, downloadCsvFile, suggestionsToCsv } from "../lib/csv";
 
 /**
  * Batch AI categorise for **cloud** providers (backlog #154). Unlike the local
@@ -109,6 +110,21 @@ export default function CloudAiBatchPanel({ base, onClose }: Readonly<{ base: st
     }
   }
 
+  // Stage 1: export the redacted rows that would actually be sent (the ticked
+  // ones) so the user can audit exactly what leaves the device.
+  const exportWillSend = () => {
+    const rows = (items ?? []).filter((it) => toSend.has(it.ai_request_id));
+    if (rows.length === 0) return;
+    downloadCsvFile("cloud-ai-will-send.csv", cloudItemsToCsv(rows));
+  };
+
+  // Stage 2: export the returned suggestions — same columns as the local panel.
+  const exportSuggestions = () => {
+    const rows = suggestions ?? [];
+    if (rows.length === 0) return;
+    downloadCsvFile("ai-suggestions.csv", suggestionsToCsv(rows));
+  };
+
   const scanLabel = recheck ? "Scan transactions" : "Scan uncategorised";
 
   return (
@@ -184,14 +200,18 @@ export default function CloudAiBatchPanel({ base, onClose }: Readonly<{ base: st
               </tbody>
             </table>
           </div>
-          <button
-            className="btn"
-            style={{ marginTop: 8 }}
-            disabled={toSend.size === 0 || send.isPending}
-            onClick={() => send.mutate()}
-          >
-            {send.isPending ? "Sending…" : `Send ${toSend.size} to cloud →`}
-          </button>
+          <div className="form-row" style={{ gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+            <button
+              className="btn"
+              disabled={toSend.size === 0 || send.isPending}
+              onClick={() => send.mutate()}
+            >
+              {send.isPending ? "Sending…" : `Send ${toSend.size} to cloud →`}
+            </button>
+            <button className="btn btn--ghost" type="button" disabled={toSend.size === 0} onClick={exportWillSend}>
+              Export CSV
+            </button>
+          </div>
         </>
       )}
       {items?.length === 0 && <p className="muted">Nothing to send.</p>}
@@ -227,9 +247,14 @@ export default function CloudAiBatchPanel({ base, onClose }: Readonly<{ base: st
               </tbody>
             </table>
           </div>
-          <button className="btn" style={{ marginTop: 8 }} disabled={picked.size === 0 || apply.isPending} onClick={() => apply.mutate()}>
-            {apply.isPending ? "Applying…" : `Apply ${picked.size} selected`}
-          </button>
+          <div className="form-row" style={{ gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+            <button className="btn" disabled={picked.size === 0 || apply.isPending} onClick={() => apply.mutate()}>
+              {apply.isPending ? "Applying…" : `Apply ${picked.size} selected`}
+            </button>
+            <button className="btn btn--ghost" type="button" onClick={exportSuggestions}>
+              Export CSV
+            </button>
+          </div>
         </>
       )}
       {suggestions?.length === 0 && <p className="muted">The cloud returned no usable suggestions.</p>}
