@@ -10,8 +10,10 @@ import {
   listVendors,
   testRule,
   updateRule,
+  type Category,
   type Rule,
   type RuleTestResult,
+  type Vendor,
 } from "../api/client";
 import { useServerState } from "../lib/useServerState";
 import { useConfirm } from "../components/dialogs";
@@ -38,6 +40,14 @@ export default function Rules() {
   const [test, setTest] = useState<RuleTestResult | null>(null);
   const [help, setHelp] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
+
+  // Inline edit-in-place state for an existing rule (null = not editing).
+  const [editing, setEditing] = useState<Rule | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editConditionType, setEditConditionType] = useState("description_contains");
+  const [editConditionValue, setEditConditionValue] = useState("");
+  const [editActionType, setEditActionType] = useState("set_category");
+  const [editActionValue, setEditActionValue] = useState("");
 
   const [err, setErr] = useState<string | null>(null);
   const fail = (e: unknown) => setErr(String(e));
@@ -77,6 +87,22 @@ export default function Rules() {
     onError: fail,
   });
   const remove = useMutation({ mutationFn: (id: number) => deleteRule(id), onSuccess: invalidate, onError: fail });
+  // Edit an existing rule's name/condition/action in place, reusing PATCH /rules/{id}.
+  const update = useMutation({
+    mutationFn: (id: number) =>
+      updateRule(id, {
+        name: editName,
+        condition_type: editConditionType,
+        condition_value: editConditionValue,
+        action_type: editActionType,
+        action_value: NO_VALUE_ACTIONS.has(editActionType) ? null : editActionValue || null,
+      }),
+    onSuccess: () => {
+      setEditing(null);
+      invalidate();
+    },
+    onError: fail,
+  });
   // Clone reuses the create-rule API: same condition/action, name suffixed and
   // priority nudged up by 1 so the copy lands just above its original.
   const clone = useMutation({
@@ -125,6 +151,21 @@ export default function Rules() {
     changes.forEach((c) => setPrio.mutate(c));
   }
 
+  // Load a rule's current values into the edit form and reveal it.
+  function startEdit(r: Rule) {
+    setEditing(r);
+    setEditName(r.name);
+    setEditConditionType(r.condition_type);
+    setEditConditionValue(r.condition_value);
+    setEditActionType(r.action_type);
+    setEditActionValue(r.action_value ?? "");
+  }
+
+  const editSaveDisabled =
+    !editConditionValue ||
+    (!NO_VALUE_ACTIONS.has(editActionType) && !editActionValue) ||
+    update.isPending;
+
   return (
     <div className="page">
       <div className="page__head">
@@ -140,49 +181,18 @@ export default function Rules() {
       <div className="card">
         <h2 className="card__title">New rule</h2>
         <div className="form-row">
-          <span className="muted">If</span>
-          <select value={conditionType} onChange={(e) => setConditionType(e.target.value)}>
-            {RULE_CONDITION_TYPES.map((c) => (
-              <option key={c} value={c}>{c.replace(/_/g, " ")}</option>
-            ))}
-          </select>
-          <input
-            placeholder={conditionType === "amount_between" ? "lo,hi (e.g. -100,-10)" : "value"}
-            value={conditionValue}
-            onChange={(e) => setConditionValue(e.target.value)}
+          <RuleFields
+            conditionType={conditionType}
+            onConditionType={setConditionType}
+            conditionValue={conditionValue}
+            onConditionValue={setConditionValue}
+            actionType={actionType}
+            onActionType={setActionType}
+            actionValue={actionValue}
+            onActionValue={setActionValue}
+            categories={categories.data}
+            vendors={vendors.data}
           />
-          <span className="muted">then</span>
-          <select value={actionType} onChange={(e) => { setActionType(e.target.value); setActionValue(""); }}>
-            {RULE_ACTION_TYPES.map((a) => (
-              <option key={a} value={a}>{a.replace(/_/g, " ")}</option>
-            ))}
-          </select>
-          {actionType === "set_category" && (
-            <select value={actionValue} onChange={(e) => setActionValue(e.target.value)}>
-              <option value="">choose category…</option>
-              {categories.data?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          )}
-          {actionType === "set_vendor" && (
-            <select value={actionValue} onChange={(e) => setActionValue(e.target.value)}>
-              <option value="">choose vendor…</option>
-              {vendors.data?.map((v) => <option key={v.id} value={v.id}>{v.canonical_name}</option>)}
-            </select>
-          )}
-          {actionType === "set_country" && (
-            <input
-              style={{ width: 90 }}
-              placeholder="ES, GB, US…"
-              value={actionValue}
-              onChange={(e) => setActionValue(e.target.value.toUpperCase().slice(0, 2))}
-            />
-          )}
-          {!NO_VALUE_ACTIONS.has(actionType) &&
-            actionType !== "set_category" &&
-            actionType !== "set_vendor" &&
-            actionType !== "set_country" && (
-              <input placeholder="value" value={actionValue} onChange={(e) => setActionValue(e.target.value)} />
-            )}
           <label className="muted">prio <input type="number" style={{ width: 70 }} value={priority} onChange={(e) => setPriority(Number(e.target.value))} /></label>
         </div>
         <div className="form-row" style={{ marginTop: 8 }}>
@@ -209,6 +219,39 @@ export default function Rules() {
         </p>
       </div>
 
+      {editing && (
+        <div className="card" style={{ borderLeft: "3px solid var(--sidebar-active, #3b82f6)" }}>
+          <h2 className="card__title">Edit rule</h2>
+          <div className="form-row">
+            <input
+              placeholder="rule name"
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+            />
+          </div>
+          <div className="form-row" style={{ marginTop: 8 }}>
+            <RuleFields
+              conditionType={editConditionType}
+              onConditionType={setEditConditionType}
+              conditionValue={editConditionValue}
+              onConditionValue={setEditConditionValue}
+              actionType={editActionType}
+              onActionType={setEditActionType}
+              actionValue={editActionValue}
+              onActionValue={setEditActionValue}
+              categories={categories.data}
+              vendors={vendors.data}
+            />
+          </div>
+          <div className="form-row" style={{ marginTop: 8 }}>
+            <button className="btn" disabled={editSaveDisabled} onClick={() => update.mutate(editing.id)}>
+              Save changes
+            </button>
+            <button className="btn btn--ghost" onClick={() => setEditing(null)}>Cancel</button>
+          </div>
+        </div>
+      )}
+
       <div className="card">
         <h2 className="card__title">Rules ({rules.data?.length ?? 0})</h2>
         {rules.data?.length === 0 && (
@@ -232,6 +275,7 @@ export default function Rules() {
                     onDropRow={() => handleDrop(i)}
                     onToggle={(enabled) => toggle.mutate({ id: r.id, enabled })}
                     onCommitPriority={(priority) => setPrio.mutate({ id: r.id, priority })}
+                    onEdit={() => startEdit(r)}
                     onClone={() => clone.mutate(r)}
                     onDelete={() => remove.mutate(r.id)}
                   />
@@ -276,6 +320,7 @@ interface RuleRowProps {
   onDropRow: () => void;
   onToggle: (enabled: boolean) => void;
   onCommitPriority: (priority: number) => void;
+  onEdit: () => void;
   onClone: () => void;
   onDelete: () => void;
 }
@@ -314,6 +359,7 @@ function RuleRow(props: RuleRowProps) {
       <td>{describeAction(rule)}</td>
       <PriorityCell rule={rule} onCommit={props.onCommitPriority} />
       <td>
+        <button className="btn btn--ghost" onClick={props.onEdit}>Edit</button>
         <button className="btn btn--ghost" onClick={props.onClone}>Clone</button>
         <button
           className="btn btn--ghost"
@@ -343,6 +389,74 @@ function PriorityCell({ rule, onCommit }: { rule: Rule; onCommit: (priority: num
         onBlur={() => { if (priority !== rule.priority) onCommit(priority); }}
       />
     </td>
+  );
+}
+
+interface RuleFieldsProps {
+  conditionType: string;
+  onConditionType: (v: string) => void;
+  conditionValue: string;
+  onConditionValue: (v: string) => void;
+  actionType: string;
+  onActionType: (v: string) => void;
+  actionValue: string;
+  onActionValue: (v: string) => void;
+  categories: Category[] | undefined;
+  vendors: Vendor[] | undefined;
+}
+
+// Shared "If <condition> then <action>" selectors + value inputs, used by both the
+// create-rule form and the edit-rule form so the two stay in lockstep.
+function RuleFields(props: RuleFieldsProps) {
+  const { conditionType, actionType, actionValue, categories, vendors } = props;
+  const showFreeValue =
+    !NO_VALUE_ACTIONS.has(actionType) &&
+    actionType !== "set_category" &&
+    actionType !== "set_vendor" &&
+    actionType !== "set_country";
+  return (
+    <>
+      <span className="muted">If</span>
+      <select value={conditionType} onChange={(e) => props.onConditionType(e.target.value)}>
+        {RULE_CONDITION_TYPES.map((c) => (
+          <option key={c} value={c}>{c.replace(/_/g, " ")}</option>
+        ))}
+      </select>
+      <input
+        placeholder={conditionType === "amount_between" ? "lo,hi (e.g. -100,-10)" : "value"}
+        value={props.conditionValue}
+        onChange={(e) => props.onConditionValue(e.target.value)}
+      />
+      <span className="muted">then</span>
+      <select value={actionType} onChange={(e) => { props.onActionType(e.target.value); props.onActionValue(""); }}>
+        {RULE_ACTION_TYPES.map((a) => (
+          <option key={a} value={a}>{a.replace(/_/g, " ")}</option>
+        ))}
+      </select>
+      {actionType === "set_category" && (
+        <select value={actionValue} onChange={(e) => props.onActionValue(e.target.value)}>
+          <option value="">choose category…</option>
+          {categories?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+      )}
+      {actionType === "set_vendor" && (
+        <select value={actionValue} onChange={(e) => props.onActionValue(e.target.value)}>
+          <option value="">choose vendor…</option>
+          {vendors?.map((v) => <option key={v.id} value={v.id}>{v.canonical_name}</option>)}
+        </select>
+      )}
+      {actionType === "set_country" && (
+        <input
+          style={{ width: 90 }}
+          placeholder="ES, GB, US…"
+          value={actionValue}
+          onChange={(e) => props.onActionValue(e.target.value.toUpperCase().slice(0, 2))}
+        />
+      )}
+      {showFreeValue && (
+        <input placeholder="value" value={actionValue} onChange={(e) => props.onActionValue(e.target.value)} />
+      )}
+    </>
   );
 }
 
