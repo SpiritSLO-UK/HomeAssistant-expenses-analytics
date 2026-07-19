@@ -185,19 +185,11 @@ class OpenAICompatibleProvider(AIProvider):
         Transient upstream failures (HTTP 429/5xx, timeouts, connect drops —
         e.g. a cold-starting local model) are retried a few times with a short
         backoff; a non-transient error surfaces immediately.
+
+        SSRF guard (CR-SEC-3): in cloud modes the connect pins the endpoint's
+        validated public IP (see :meth:`_post_pinned`), which also refuses a
+        non-public / rebinding host before any socket opens.
         """
-        from app.services import net_guard
-
-        # SSRF guard (CR-SEC-3): in cloud modes refuse a non-public endpoint
-        # before sending anything — so the bearer API key never leaves for an
-        # internal/attacker host and the server can't be used as an SSRF proxy.
-        if self.require_public_host and not net_guard.url_is_public(self.base_url):
-            raise AIError(
-                "AI endpoint must be a public host in a cloud privacy mode "
-                "(the configured URL resolves to a private/loopback/unresolvable "
-                "address) — refusing to send the request."
-            )
-
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
@@ -224,7 +216,10 @@ class OpenAICompatibleProvider(AIProvider):
             # follow_redirects stays False (httpx default, set explicitly) so a
             # redirect can't bounce the request — and the API key — to another host.
             with httpx.Client(timeout=self.timeout, follow_redirects=False) as client:
-                resp = client.post(url, headers=headers, json=body)
+                if self.require_public_host:
+                    resp = self._post_pinned(client, url, headers, body)
+                else:
+                    resp = client.post(url, headers=headers, json=body)
         except httpx.TransportError as exc:  # timeouts, connect/read drops
             raise _TransientAIError(f"AI request failed: {exc}") from exc
         except httpx.HTTPError as exc:
@@ -235,6 +230,40 @@ class OpenAICompatibleProvider(AIProvider):
         if resp.status_code >= 400:
             raise AIError(f"AI request failed: HTTP {resp.status_code}")
         return _content_from_response(resp)
+
+    def _post_pinned(self, client, url: str, headers: dict, body: dict):
+        """Cloud-mode POST that closes the DNS-rebind TOCTOU gap: resolve and
+        validate the endpoint's address ONCE, then dial that pinned IP directly
+        instead of letting httpx re-resolve the hostname at connect time.
+
+        The socket connects to the validated public IP, but the ORIGINAL hostname
+        is preserved for TLS — the ``sni_hostname`` extension drives both the SNI
+        and the certificate-verification hostname (httpcore's ``server_hostname``),
+        so cert validation stays enabled against the real name — and for the
+        ``Host`` header, so the server still routes the request. A host that no
+        longer resolves to only-public addresses (a rebind) yields no pin and is
+        refused before any socket opens.
+        """
+        import httpx
+
+        from app.services import net_guard
+
+        pinned_ip = net_guard.pinned_ip_for_url(url)
+        if pinned_ip is None:
+            raise AIError(
+                "AI endpoint must be a public host in a cloud privacy mode "
+                "(the configured URL resolves to a private/loopback/unresolvable "
+                "address) — refusing to send the request."
+            )
+        original = httpx.URL(url)
+        connect_url = original.copy_with(host=pinned_ip)
+        pinned_headers = {**headers, "Host": original.netloc.decode("ascii")}
+        return client.post(
+            connect_url,
+            headers=pinned_headers,
+            json=body,
+            extensions={"sni_hostname": original.raw_host.decode("ascii")},
+        )
 
     def _chat(self, system: str, user: str) -> str:
         return self._complete(
