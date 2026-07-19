@@ -12,6 +12,7 @@ from __future__ import annotations
 import ipaddress
 import socket
 
+import httpx
 import pytest
 
 from app.services import ai_service, net_guard, settings_service
@@ -86,6 +87,82 @@ def test_pin_rejects_unresolvable_host(monkeypatch):
     monkeypatch.setattr(socket, "getaddrinfo", _boom)
     assert net_guard.resolve_pinned_ip("nope.example.test") is None
     assert net_guard.url_is_public("https://nope.example.test/v1") is False
+
+
+def _mock_client_factory(monkeypatch, handler):
+    """Patch ``httpx.Client`` so the provider's real client routes through a
+    ``MockTransport`` (no socket, no TLS) while every other client behaviour —
+    header/extension assembly, URL rewriting — runs for real."""
+    real_client = httpx.Client
+
+    def _factory(**kwargs):
+        return real_client(transport=httpx.MockTransport(handler), **kwargs)
+
+    monkeypatch.setattr(httpx, "Client", _factory)
+
+
+def _ok_completion(_request: httpx.Request) -> httpx.Response:
+    return httpx.Response(200, json={"choices": [{"message": {"content": "{}"}}]})
+
+
+def test_cloud_provider_dials_pinned_ip_preserving_host_and_sni(monkeypatch):
+    """The cloud connect must target the validated pinned IP while the ORIGINAL
+    hostname is kept for the TLS SNI/cert-verification (``sni_hostname``) and the
+    ``Host`` header — closing the residual DNS-rebind TOCTOU gap."""
+    monkeypatch.setattr(socket, "getaddrinfo", _fake_getaddrinfo(_PUBLIC))
+    seen: dict[str, str | None] = {}
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        seen["dialed_host"] = request.url.host
+        seen["host_header"] = request.headers.get("Host")
+        seen["sni"] = request.extensions.get("sni_hostname")
+        return _ok_completion(request)
+
+    _mock_client_factory(monkeypatch, _handler)
+    provider = OpenAICompatibleProvider(
+        base_url="https://api.example.test/v1", model="m", api_key="secret", require_public_host=True
+    )
+    provider.classify_transaction("x", "1", "GBP", ["Groceries"])
+
+    assert seen["dialed_host"] == _PUBLIC          # socket dials the pinned IP
+    assert seen["host_header"] == "api.example.test"  # original Host preserved
+    assert seen["sni"] == "api.example.test"          # SNI / cert host preserved
+
+
+def test_cloud_provider_refuses_rebind_without_connecting(monkeypatch):
+    """A host that resolves to a public AND a private address (fast rebind) must
+    be refused at the provider layer BEFORE any socket is opened."""
+    monkeypatch.setattr(socket, "getaddrinfo", _fake_getaddrinfo(_PUBLIC, _PRIVATE))
+
+    def _handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover
+        raise AssertionError("must not connect when the host fails the pin check")
+
+    _mock_client_factory(monkeypatch, _handler)
+    provider = OpenAICompatibleProvider(
+        base_url="https://rebind.example.test/v1", model="m", api_key="secret", require_public_host=True
+    )
+    with pytest.raises(AIError, match="public host"):
+        provider.classify_transaction("x", "1", "GBP", ["Groceries"])
+
+
+def test_local_provider_does_not_pin(monkeypatch):
+    """local_llm must connect by hostname (no IP pin, no SNI override) so an
+    Ollama name on localhost/LAN keeps working."""
+    seen: dict[str, str | None] = {}
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        seen["dialed_host"] = request.url.host
+        seen["sni"] = request.extensions.get("sni_hostname")
+        return _ok_completion(request)
+
+    _mock_client_factory(monkeypatch, _handler)
+    provider = OpenAICompatibleProvider(
+        base_url="http://ollama.local/v1", model="m", require_public_host=False
+    )
+    provider.classify_transaction("x", "1", "GBP", ["Groceries"])
+
+    assert seen["dialed_host"] == "ollama.local"  # hostname kept, not rewritten
+    assert seen["sni"] is None                     # no SNI override for local
 
 
 def test_cloud_provider_refuses_private_host_without_network():
