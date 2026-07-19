@@ -80,7 +80,7 @@ export default function Receipts() {
           }}
         />
         <div className="form-row" style={{ gap: 8, flexWrap: "wrap" }}>
-          <button className="btn" disabled={upload.isPending} onClick={() => fileInput.current?.click()}>
+          <button type="button" className="btn" disabled={upload.isPending} onClick={() => fileInput.current?.click()}>
             {upload.isPending ? "Uploading…" : "⬆ Upload receipt"}
           </button>
           <CameraCaptureButton onCapture={(f) => upload.mutate(f)} disabled={upload.isPending} />
@@ -160,6 +160,7 @@ function PaperlessCard({ onError }: Readonly<{ onError: (e: unknown) => void }>)
             <li key={d.id}>
               <span>{d.title}{d.created && <span className="muted"> · {formatDate(d.created, dateFmt)}</span>}</span>
               <button
+                type="button"
                 className="btn btn--sm btn--ghost"
                 disabled={importDoc.isPending}
                 onClick={() => importDoc.mutate(d.id)}
@@ -288,6 +289,7 @@ function ReceiptCard({ r, onError, focused = false }: Readonly<{ r: Receipt; onE
         <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
           {r.has_file && (
             <button
+              type="button"
               className="link-btn"
               title="Preview the uploaded image/PDF in a popup"
               onClick={() => setPreview(true)}
@@ -305,12 +307,13 @@ function ReceiptCard({ r, onError, focused = false }: Readonly<{ r: Receipt; onE
         <input placeholder="Merchant" value={merchant} onChange={(e) => setMerchant(e.target.value)} style={{ minWidth: 160 }} />
         <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
         <input placeholder="Total" type="number" step="0.01" min="0" value={total} onChange={(e) => setTotal(e.target.value)} style={{ width: 110 }} />
-        <button className="btn btn--ghost" disabled={save.isPending} onClick={() => save.mutate()}>Save</button>
-        <button className="btn" disabled={!total || match.isPending} onClick={() => match.mutate()}>
+        <button type="button" className="btn btn--ghost" disabled={save.isPending} onClick={() => save.mutate()}>Save</button>
+        <button type="button" className="btn" disabled={!total || match.isPending} onClick={() => match.mutate()}>
           {match.isPending ? "Matching…" : "Find match"}
         </button>
         {aiStatus.data?.enabled && (
           <button
+            type="button"
             className="btn btn--ghost"
             disabled={aiExtract.isPending}
             title="Read the merchant, date and total from the image with AI"
@@ -319,7 +322,7 @@ function ReceiptCard({ r, onError, focused = false }: Readonly<{ r: Receipt; onE
             {aiExtract.isPending ? "Asking AI…" : "✨ Extract with AI"}
           </button>
         )}
-        <button className="link-btn" onClick={async () => { if (await confirmDialog({ message: "Delete this receipt?", confirmLabel: "Delete", danger: true })) remove.mutate(); }}>delete</button>
+        <button type="button" className="link-btn" onClick={async () => { if (await confirmDialog({ message: "Delete this receipt?", confirmLabel: "Delete", danger: true })) remove.mutate(); }}>delete</button>
       </div>
 
       {showAiWarn && (
@@ -362,7 +365,7 @@ function ReceiptCard({ r, onError, focused = false }: Readonly<{ r: Receipt; onE
                     <td>{c.description}</td>
                     <td className="num">{c.amount}</td>
                     <td className="num" title={JSON.stringify(c.breakdown)}>{c.score}</td>
-                    <td><button className="btn btn--ghost" disabled={confirm.isPending} onClick={() => confirm.mutate(c.transaction_id)}>Confirm</button></td>
+                    <td><button type="button" className="btn btn--ghost" disabled={confirm.isPending} onClick={() => confirm.mutate(c.transaction_id)}>Confirm</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -401,6 +404,7 @@ function ReceiptCard({ r, onError, focused = false }: Readonly<{ r: Receipt; onE
               {accounts.data?.map((a) => <option key={a.id} value={String(a.id)}>{a.name}</option>)}
             </select>
             <button
+              type="button"
               className={rec ? "btn" : "btn btn--ghost"}
               disabled={!total || createTxn.isPending}
               title={total ? "Create a transaction from this receipt's merchant, date and total" : "Set the total first"}

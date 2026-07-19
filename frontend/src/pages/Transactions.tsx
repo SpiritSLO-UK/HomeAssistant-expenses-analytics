@@ -523,19 +523,20 @@ export default function Transactions() {
         <h1 className="page__title">Transactions</h1>
         <div style={{ display: "flex", gap: 8 }}>
           {aiStatus.data?.enabled && aiStatus.data?.privacy_mode === "local_llm" && (
-            <button className="btn btn--ghost" onClick={() => setShowAiBatch((v) => !v)}>
+            <button type="button" className="btn btn--ghost" onClick={() => setShowAiBatch((v) => !v)}>
               {showAiBatch ? "Hide AI categorise" : "✨ AI categorise…"}
             </button>
           )}
           {aiStatus.data?.enabled && aiStatus.data?.is_cloud && (
-            <button className="btn btn--ghost" onClick={() => setShowCloudBatch((v) => !v)}>
+            <button type="button" className="btn btn--ghost" onClick={() => setShowCloudBatch((v) => !v)}>
               {showCloudBatch ? "Hide cloud AI" : "☁️ AI categorise (cloud)…"}
             </button>
           )}
-          <button className="btn btn--ghost" disabled={recat.isPending} onClick={() => recat.mutate()}>
+          <button type="button" className="btn btn--ghost" disabled={recat.isPending} onClick={() => recat.mutate()}>
             {recat.isPending ? "Re-categorising…" : "Re-categorise uncategorised"}
           </button>
           <button
+            type="button"
             className="btn btn--ghost"
             disabled={exportCsv.isPending || (data?.total ?? 0) === 0}
             title={exportTitle}
@@ -563,7 +564,7 @@ export default function Transactions() {
       {focusId && (
         <div className="card focus-banner">
           <span>🔎 Showing one transaction (<strong>#{focusId}</strong>) — opened from a link elsewhere in the app.</span>
-          <button className="btn btn--ghost" onClick={() => setSearchParams({})}>← Show all transactions</button>
+          <button type="button" className="btn btn--ghost" onClick={() => setSearchParams({})}>← Show all transactions</button>
         </div>
       )}
 
@@ -589,6 +590,7 @@ export default function Transactions() {
             ].map(([key, label]) => (
               <button
                 key={key}
+                type="button"
                 className="link-btn"
                 onClick={() => { const [f, t] = presetRange(key); setDateFrom(f); setDateTo(t); setPage(0); }}
               >
@@ -596,7 +598,7 @@ export default function Transactions() {
               </button>
             ))}
             {(dateFrom || dateTo) && (
-              <button className="link-btn" onClick={() => { setDateFrom(""); setDateTo(""); setPage(0); }}>Clear</button>
+              <button type="button" className="link-btn" onClick={() => { setDateFrom(""); setDateTo(""); setPage(0); }}>Clear</button>
             )}
           </span>
           <label>Category{" "}
@@ -622,7 +624,7 @@ export default function Transactions() {
           {countryFilter && (
             <span className="chip-toggle" title="Filtered to one country (from the spend-by-location map)">
               <span>📍 {countryFilter}</span>
-              <button className="link-btn" onClick={() => { setCountryFilter(""); setPage(0); }}>✕</button>
+              <button type="button" className="link-btn" onClick={() => { setCountryFilter(""); setPage(0); }}>✕</button>
             </span>
           )}
           {(members.data?.length ?? 0) > 1 && (
@@ -656,7 +658,7 @@ export default function Transactions() {
           {anyFilterActive && (
             <>
               <span className="filter-toggles__sep" aria-hidden="true" />
-              <button className="link-btn" onClick={clearAllFilters}>✕ Clear all filters</button>
+              <button type="button" className="link-btn" onClick={clearAllFilters}>✕ Clear all filters</button>
             </>
           )}
         </div>
@@ -664,7 +666,7 @@ export default function Transactions() {
           <p className="muted filter-hint">
             Nothing is flagged for review. Looking for transactions without a category?
             {" "}
-            <button className="link-btn" onClick={() => { setNeedsReview(false); setUncategorisedOnly(true); setPage(0); }}>
+            <button type="button" className="link-btn" onClick={() => { setNeedsReview(false); setUncategorisedOnly(true); setPage(0); }}>
               Show uncategorised
             </button>
             {" "}instead.
@@ -680,7 +682,7 @@ export default function Transactions() {
           focusId ? (
             <p className="muted">
               Transaction #{focusId} wasn't found — it may have been deleted or isn't visible to you.{" "}
-              <button className="link-btn" onClick={() => setSearchParams({})}>Show all transactions</button>.
+              <button type="button" className="link-btn" onClick={() => setSearchParams({})}>Show all transactions</button>.
             </p>
           ) : (
             <p className="muted">
@@ -724,6 +726,7 @@ export default function Transactions() {
                   style={{ minWidth: 150 }}
                 />
                 <button
+                  type="button"
                   className="btn btn--sm btn--ghost"
                   onClick={async () => {
                     const t = (await prompt({ title: "Add a tag", message: `Add a tag to the ${selected.size} selected transactions:`, confirmLabel: "Add" }))?.trim();
@@ -732,13 +735,14 @@ export default function Transactions() {
                 >
                   + tag
                 </button>
-                <button className="btn btn--sm btn--ghost" onClick={() => applyBulkConfirmed({ is_business: true }, "Business = yes")}>
+                <button type="button" className="btn btn--sm btn--ghost" onClick={() => applyBulkConfirmed({ is_business: true }, "Business = yes")}>
                   Mark business
                 </button>
-                <button className="btn btn--sm btn--ghost" onClick={() => applyBulkConfirmed({ is_business: false }, "Business = no")}>
+                <button type="button" className="btn btn--sm btn--ghost" onClick={() => applyBulkConfirmed({ is_business: false }, "Business = no")}>
                   Unmark
                 </button>
                 <button
+                  type="button"
                   className="btn btn--sm btn--ghost"
                   onClick={async () => {
                     if (await confirm({ message: `Archive ${selected.size} transaction(s)? They're hidden from totals (reversible).`, confirmLabel: "Archive" }))
@@ -748,6 +752,7 @@ export default function Transactions() {
                   Archive
                 </button>
                 <button
+                  type="button"
                   className="btn btn--sm btn--ghost"
                   onClick={async () => {
                     if (await confirm({ message: `Permanently delete ${selected.size} transaction(s)? This can't be undone.`, confirmLabel: "Delete", danger: true }))
@@ -756,11 +761,11 @@ export default function Transactions() {
                 >
                   Delete
                 </button>
-                <button className="link-btn" onClick={() => setSelected(new Set())}>Clear</button>
+                <button type="button" className="link-btn" onClick={() => setSelected(new Set())}>Clear</button>
               </div>
             )}
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 4 }}>
-              <button className="link-btn" onClick={cols.reset} title="Reset column widths to default">
+              <button type="button" className="link-btn" onClick={cols.reset} title="Reset column widths to default">
                 ↔ Reset columns
               </button>
             </div>
@@ -814,6 +819,7 @@ export default function Transactions() {
                       <td>{formatDate(t.transaction_date, dateFmt)}</td>
                       <td>
                         <button
+                          type="button"
                           className="link-btn txn-row__toggle"
                           title="Show details / edit this transaction"
                           onClick={() => setOpenId(isOpen ? null : t.id)}
@@ -840,6 +846,7 @@ export default function Transactions() {
                         {catName ?? "— uncategorised —"}
                         {!catName && aiStatus.data?.enabled && (
                           <button
+                            type="button"
                             className="link-btn"
                             style={{ marginLeft: 6 }}
                             title="Ask the AI assistant to suggest a category"
@@ -895,6 +902,7 @@ export default function Transactions() {
                                   </select>
                                   {t.category_id !== null && (
                                     <button
+                                      type="button"
                                       className="link-btn"
                                       title="Create a rule so similar transactions auto-categorise"
                                       onClick={() => makeRule.mutate({ id: t.id, categoryId: t.category_id! })}
@@ -904,6 +912,7 @@ export default function Transactions() {
                                   )}
                                   {t.category_id === null && aiStatus.data?.enabled && (
                                     <button
+                                      type="button"
                                       className="link-btn"
                                       title="Ask the AI assistant to suggest a category"
                                       onClick={() => suggestAi(t)}
@@ -991,7 +1000,7 @@ export default function Transactions() {
                                     {tag.name} ✕
                                   </button>
                                 ))}
-                                <button className="link-btn" onClick={() => addTag(t)}>+ tag</button>
+                                <button type="button" className="link-btn" onClick={() => addTag(t)}>+ tag</button>
                               </span>
                             </div>
                             <div className="txn-detail__field">
@@ -1006,6 +1015,7 @@ export default function Transactions() {
                               <span>Actions</span>
                               <span className="txn-detail__row">
                                 <button
+                                  type="button"
                                   className="link-btn"
                                   onClick={() => setSplitId(splitId === t.id ? null : t.id)}
                                 >
@@ -1014,6 +1024,7 @@ export default function Transactions() {
                                 <AssignToChildButton txn={t} base={base} />
                                 {t.archived_at && (
                                   <button
+                                    type="button"
                                     className="link-btn"
                                     disabled={unarchive.isPending}
                                     onClick={() => unarchive.mutate(t.id)}
@@ -1052,11 +1063,11 @@ export default function Transactions() {
             </div>
             {!focusId && (
               <div className="pager">
-                <button className="btn btn--ghost" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
+                <button type="button" className="btn btn--ghost" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
                   ← Prev
                 </button>
                 <span className="muted">{total} total · page {page + 1} of {maxPage + 1}</span>
-                <button className="btn btn--ghost" disabled={page >= maxPage} onClick={() => setPage((p) => p + 1)}>
+                <button type="button" className="btn btn--ghost" disabled={page >= maxPage} onClick={() => setPage((p) => p + 1)}>
                   Next →
                 </button>
               </div>
@@ -1132,6 +1143,7 @@ function BusinessField({
   return (
     <span className="txn-detail__row">
       <button
+        type="button"
         className="link-btn"
         title={t.is_business ? "Unmark as business" : "Mark as a business expense"}
         onClick={onToggle}
@@ -1139,7 +1151,7 @@ function BusinessField({
         {t.is_business ? "✓ business" : "mark business"}
       </button>
       {t.is_business && (
-        <button className="link-btn" onClick={onEditVat}>
+        <button type="button" className="link-btn" onClick={onEditVat}>
           {t.vat_amount ? `VAT ${t.vat_amount}` : "set VAT"}
         </button>
       )}
@@ -1169,7 +1181,7 @@ function ReceiptsField({ txnId }: Readonly<{ txnId: number }>) {
       {receipts.map((r) => (
         <span key={r.id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {r.has_file ? (
-            <button className="link-btn" title="Preview in a popup" onClick={() => setPreview({ id: r.id, name: r.source_filename })}>
+            <button type="button" className="link-btn" title="Preview in a popup" onClick={() => setPreview({ id: r.id, name: r.source_filename })}>
               🧾 {r.source_filename || `receipt #${r.id}`}
             </button>
           ) : (

@@ -74,24 +74,26 @@ export default function ReviewQueue() {
 
       <div className="form-row" style={{ gap: 6, marginBottom: 4, flexWrap: "wrap", alignItems: "center" }}>
         <button
+          type="button"
           className={"btn btn--sm" + (tab === "review" ? "" : " btn--ghost")}
           onClick={() => setTab("review")}
         >
           To review{reviewCount.data ? ` (${reviewCount.data.open})` : ""}
         </button>
         <button
+          type="button"
           className={"btn btn--sm" + (tab === "uncategorised" ? "" : " btn--ghost")}
           onClick={() => setTab("uncategorised")}
         >
           Uncategorised{uncatCount.data ? ` (${uncatCount.data.total})` : ""}
         </button>
         {aiOn && aiStatus.data?.privacy_mode === "local_llm" && (
-          <button className="btn btn--sm btn--ghost" style={{ marginLeft: "auto" }} onClick={() => setShowAiBatch((v) => !v)}>
+          <button type="button" className="btn btn--sm btn--ghost" style={{ marginLeft: "auto" }} onClick={() => setShowAiBatch((v) => !v)}>
             {showAiBatch ? "Hide AI categorise" : "✨ Suggest + categorise all…"}
           </button>
         )}
         {aiOn && aiStatus.data?.is_cloud && (
-          <button className="btn btn--sm btn--ghost" style={{ marginLeft: "auto" }} onClick={() => setShowCloudBatch((v) => !v)}>
+          <button type="button" className="btn btn--sm btn--ghost" style={{ marginLeft: "auto" }} onClick={() => setShowCloudBatch((v) => !v)}>
             {showCloudBatch ? "Hide cloud AI" : "☁️ Suggest + categorise all (cloud)…"}
           </button>
         )}
@@ -275,7 +277,7 @@ function ReviewRow({
               {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
             {aiEnabled && (
-              <button className="link-btn" disabled={pending} title="Ask the AI assistant to suggest a category" onClick={onSuggest}>
+              <button type="button" className="link-btn" disabled={pending} title="Ask the AI assistant to suggest a category" onClick={onSuggest}>
                 ✨ suggest
               </button>
             )}
@@ -291,6 +293,7 @@ function ReviewRow({
             / find a match / edit fields. */}
         {isReceipt && rec && !showResolved && (
           <button
+            type="button"
             className="btn"
             disabled={addTxn.isPending}
             title={`Add ${rec.merchant} ${rec.amount} ${rec.currency} to a "Cash & receipts" account`}
@@ -306,8 +309,8 @@ function ReviewRow({
         )}
         {!showResolved && (
           <>
-            <button className="btn btn--ghost" disabled={pending} onClick={() => update.mutate("resolved")}>Resolve</button>
-            <button className="link-btn" disabled={pending} onClick={() => update.mutate("ignored")}>Ignore</button>
+            <button type="button" className="btn btn--ghost" disabled={pending} onClick={() => update.mutate("resolved")}>Resolve</button>
+            <button type="button" className="link-btn" disabled={pending} onClick={() => update.mutate("ignored")}>Ignore</button>
           </>
         )}
       </div>
@@ -365,9 +368,9 @@ function UncategorisedTab() {
         ))}
         {total > PAGE && (
           <div className="form-row" style={{ justifyContent: "space-between", alignItems: "center", marginTop: 10 }}>
-            <button className="btn btn--sm btn--ghost" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))}>← Prev</button>
+            <button type="button" className="btn btn--sm btn--ghost" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))}>← Prev</button>
             <span className="muted">{offset + 1}–{Math.min(offset + PAGE, total)} of {total}</span>
-            <button className="btn btn--sm btn--ghost" disabled={offset + PAGE >= total} onClick={() => setOffset(offset + PAGE)}>Next →</button>
+            <button type="button" className="btn btn--sm btn--ghost" disabled={offset + PAGE >= total} onClick={() => setOffset(offset + PAGE)}>Next →</button>
           </div>
         )}
       </div>
@@ -433,7 +436,7 @@ function UncategorisedRow({
           {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
         {aiEnabled && (
-          <button className="link-btn" disabled={set.isPending} title="Ask the AI assistant to suggest a category" onClick={onSuggest}>
+          <button type="button" className="link-btn" disabled={set.isPending} title="Ask the AI assistant to suggest a category" onClick={onSuggest}>
             ✨ suggest
           </button>
         )}

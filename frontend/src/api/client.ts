@@ -2600,7 +2600,8 @@ export function exportTransactionsCsv(
   const params = new URLSearchParams(toQuery(rest));
   for (const id of ids ?? []) params.append("ids", String(id));
   const qs = params.toString();
-  return downloadCsv(`api/export/transactions.csv${qs ? `?${qs}` : ""}`, "transactions.csv");
+  const suffix = qs ? `?${qs}` : "";
+  return downloadCsv(`api/export/transactions.csv${suffix}`, "transactions.csv");
 }
 
 export function exportCategoriesCsv(month?: string): Promise<void> {
