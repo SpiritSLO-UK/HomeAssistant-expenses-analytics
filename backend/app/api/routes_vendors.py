@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.models import User
+from app.models import Category, User
 from app.schemas.vendors import (
     AliasCreate,
     AliasOut,
@@ -26,6 +26,15 @@ router = APIRouter(prefix="/vendors", tags=["vendors"])
 _NOT_FOUND = "Vendor not found"
 
 
+def _validate_category(db: Session, category_id: int | None) -> None:
+    """Reject an unknown ``default_category_id`` with a 400 before it reaches the FK.
+
+    Without this the blind assignment raises an IntegrityError on commit -> opaque
+    HTTP 500 (#10). Mirrors the transactions/budgets validators."""
+    if category_id is not None and db.get(Category, category_id) is None:
+        raise HTTPException(status_code=400, detail="Unknown category")
+
+
 @router.get("", response_model=list[VendorWithStats])
 def list_vendors(db: Annotated[Session, Depends(get_db)]) -> list[dict]:
     vendors = vendor_service.list_vendors(db)
@@ -40,7 +49,9 @@ def list_vendors(db: Annotated[Session, Depends(get_db)]) -> list[dict]:
 
 @router.post("", response_model=VendorOut, status_code=201)
 def create_vendor(payload: VendorCreate, db: Annotated[Session, Depends(get_db)]):
-    return vendor_service.create_vendor(db, payload.model_dump(exclude_unset=True))
+    data = payload.model_dump(exclude_unset=True)
+    _validate_category(db, data.get("default_category_id"))
+    return vendor_service.create_vendor(db, data)
 
 
 @router.get("/{vendor_id}", response_model=VendorWithStats, responses={404: {"description": "Not found"}})
@@ -55,7 +66,10 @@ def get_vendor(vendor_id: int, db: Annotated[Session, Depends(get_db)]) -> dict:
 
 @router.patch("/{vendor_id}", response_model=VendorOut, responses={404: {"description": "Not found"}})
 def update_vendor(vendor_id: int, payload: VendorUpdate, db: Annotated[Session, Depends(get_db)]):
-    vendor = vendor_service.update_vendor(db, vendor_id, payload.model_dump(exclude_unset=True))
+    data = payload.model_dump(exclude_unset=True)
+    if "default_category_id" in data:
+        _validate_category(db, data["default_category_id"])
+    vendor = vendor_service.update_vendor(db, vendor_id, data)
     if vendor is None:
         raise HTTPException(status_code=404, detail=_NOT_FOUND)
     return vendor
@@ -75,6 +89,7 @@ def add_alias(vendor_id: int, payload: AliasCreate, db: Annotated[Session, Depen
     "/{vendor_id}/set-default-category", response_model=VendorOut, responses={404: {"description": "Not found"}}
 )
 def set_default_category(vendor_id: int, payload: SetDefaultCategory, db: Annotated[Session, Depends(get_db)]):
+    _validate_category(db, payload.category_id)
     vendor = vendor_service.set_default_category(db, vendor_id, payload.category_id)
     if vendor is None:
         raise HTTPException(status_code=404, detail=_NOT_FOUND)

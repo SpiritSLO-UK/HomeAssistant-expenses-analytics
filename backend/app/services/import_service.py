@@ -628,10 +628,13 @@ def recategorise(db: Session, only_uncategorised: bool = True) -> int:
     stmt = select(Transaction)
     if only_uncategorised:
         stmt = stmt.where(Transaction.category_id.is_(None))
+    # Load the rule set + vendor aliases once, then thread the snapshot through every
+    # row instead of re-querying them per transaction (#15, N+1 -> 1).
+    categoriser = _load_categoriser_context(db)
     count = 0
     for txn in db.scalars(stmt).all():
         had_category = txn.category_id is not None
-        auto_categorise(db, txn)
+        auto_categorise(db, txn, categoriser)
         if not had_category and txn.category_id is not None:
             count += 1
     db.commit()
@@ -650,7 +653,9 @@ def _apply_rules_preloaded(db: Session, txn: Transaction, rules: list[Rule]) -> 
             used_actions.add(rule.action_type)
 
 
-def _normalise_preloaded(txn: Transaction, alias_pairs: list[tuple[VendorAlias, Vendor]]) -> None:
+def _normalise_preloaded(
+    db: Session, txn: Transaction, alias_pairs: list[tuple[VendorAlias, Vendor]]
+) -> None:
     """Vendor match + apply against preloaded aliases — mirrors
     ``vendor_service.match_vendor`` + ``normalise_transaction`` (same precedence /
     specificity tie-break and confidence), scanning the in-memory alias list rather
@@ -668,8 +673,15 @@ def _normalise_preloaded(txn: Transaction, alias_pairs: list[tuple[VendorAlias, 
     if txn.merchant_id is None:
         txn.merchant_id = vendor.id
     vendor.last_seen_at = datetime.now(UTC)
-    if txn.category_id is None and vendor.default_category_id is not None:
-        txn.category_id = vendor.default_category_id
+    # Default category comes from the vendor the txn is actually LINKED to, not the
+    # matched one: a rule may have linked a different vendor first (#7).
+    linked_vendor = vendor if txn.merchant_id == vendor.id else db.get(Vendor, txn.merchant_id)
+    if (
+        linked_vendor is not None
+        and txn.category_id is None
+        and linked_vendor.default_category_id is not None
+    ):
+        txn.category_id = linked_vendor.default_category_id
         txn.confidence_score = vendor_service._MATCH_CONFIDENCE.get(match_type or "contains", 0.90)
 
 
@@ -692,7 +704,7 @@ def auto_categorise(
         vendor_service.normalise_transaction(db, txn)
     else:
         _apply_rules_preloaded(db, txn, ctx.rules)
-        _normalise_preloaded(txn, ctx.alias_pairs)
+        _normalise_preloaded(db, txn, ctx.alias_pairs)
     if txn.category_id is not None:
         return True
     # 3. Category-library keyword fallback.

@@ -15,7 +15,7 @@ from sqlalchemy import func, literal, select, update
 from sqlalchemy.orm import Session
 
 from app.logging import get_logger
-from app.models import Receipt, Subscription, Transaction, Vendor, VendorAlias
+from app.models import Receipt, Rule, Subscription, Transaction, Vendor, VendorAlias
 from app.services.household_service import get_or_create_default_household
 
 logger = get_logger(__name__)
@@ -140,8 +140,17 @@ def normalise_transaction(db: Session, txn: Transaction) -> bool:
     if txn.merchant_id is None:
         txn.merchant_id = vendor.id
     vendor.last_seen_at = datetime.now(UTC)
-    if txn.category_id is None and vendor.default_category_id is not None:
-        txn.category_id = vendor.default_category_id
+    # Apply the default category from the vendor the txn is actually LINKED to, not
+    # the freshly matched one (#7): during import a rule can link vendor B before
+    # normalisation runs while the description alias matches vendor A — categorising
+    # with A's default would mis-file a row that belongs to B.
+    linked_vendor = vendor if txn.merchant_id == vendor.id else db.get(Vendor, txn.merchant_id)
+    if (
+        linked_vendor is not None
+        and txn.category_id is None
+        and linked_vendor.default_category_id is not None
+    ):
+        txn.category_id = linked_vendor.default_category_id
         txn.confidence_score = _MATCH_CONFIDENCE.get(match_type or "contains", 0.90)
     return True
 
@@ -289,6 +298,18 @@ def merge_vendor(db: Session, source_id: int, target_id: int) -> Vendor | None:
             update(model).where(model.vendor_id == source_id)
             .values(vendor_id=target_id).execution_options(**opts)
         )
+    # Rules reference a vendor by id-as-string: a ``set_vendor`` action stores it in
+    # ``action_value``, a ``vendor_equals`` condition in ``condition_value``. Re-point
+    # both, or the rule would silently break once the source vendor is deleted (#13,
+    # mirrors category_service.merge_category).
+    db.execute(
+        update(Rule).where(Rule.action_type == "set_vendor", Rule.action_value == str(source_id))
+        .values(action_value=str(target_id)).execution_options(**opts)
+    )
+    db.execute(
+        update(Rule).where(Rule.condition_type == "vendor_equals", Rule.condition_value == str(source_id))
+        .values(condition_value=str(target_id)).execution_options(**opts)
+    )
 
     _move_aliases(db, source, target)
 
