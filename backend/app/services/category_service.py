@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+import secrets
 from functools import cache, lru_cache
 from pathlib import Path
 
@@ -41,6 +42,34 @@ KEYWORD_CONFIDENCE = 0.70
 # globally); sensitive = extra-redact before any cloud send; never_cloud = never
 # sent to a cloud provider at all. User-selectable per category.
 PRIVACY_LEVELS = ("normal", "sensitive", "never_cloud")
+
+# A curated palette of distinct, readable category swatches (kept in step with
+# the frontend's COLOUR_PALETTE in Categories.tsx). A category created without an
+# explicit colour is given a random palette entry not already in use, so API
+# callers that omit a colour still get a sensible, non-repeating one.
+DEFAULT_COLOUR_PALETTE = (
+    "#EF5350", "#F06292", "#AB47BC", "#7E57C2", "#5C6BC0", "#42A5F5",
+    "#29B6F6", "#26C6DA", "#26A69A", "#66BB6A", "#9CCC65", "#D4E157",
+    "#FFEE58", "#FFCA28", "#FFA726", "#FF8A65", "#8D6E63", "#78909C",
+)
+
+
+def pick_unused_colour(db: Session) -> str:
+    """Choose a palette colour not already assigned to an existing category.
+
+    Comparison is case-insensitive. Falls back to a random generated hex once
+    every palette colour is in use, so the result is always non-null and, where
+    possible, distinct from the household's existing categories.
+    """
+    used = {
+        c.upper()
+        for c in db.scalars(select(Category.colour).where(Category.colour.is_not(None))).all()
+        if c
+    }
+    available = [c for c in DEFAULT_COLOUR_PALETTE if c.upper() not in used]
+    if available:
+        return secrets.choice(available)
+    return f"#{secrets.randbelow(0x1000000):06X}"
 
 
 @lru_cache
@@ -179,7 +208,9 @@ def create_category(db: Session, data: dict) -> Category:
         parent_id=data.get("parent_id"),
         description=data.get("description"),
         icon=data.get("icon"),
-        colour=data.get("colour"),
+        # No colour supplied → default to a random palette colour not already used
+        # by an existing category, so a create still yields a distinct swatch.
+        colour=data.get("colour") or pick_unused_colour(db),
         is_budgetable=data.get("is_budgetable", True),
         # New categories inherit the household default unless one is given.
         privacy_sensitivity=data.get("privacy_sensitivity") or get_privacy_default(db),

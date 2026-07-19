@@ -6,6 +6,7 @@ aliases work, and the dashboard groups by category.
 
 from __future__ import annotations
 
+import re
 from datetime import date
 
 import pytest
@@ -158,6 +159,41 @@ def test_category_crud(client):
 
     assert client.delete(f"/api/categories/{cid}").status_code == 204
     assert client.get(f"/api/categories/{cid}").status_code == 404
+
+
+def test_create_without_colour_gets_unused_palette_colour(db):
+    """A create with no colour still yields a non-null colour that isn't already
+    used by an existing category (backlog: random non-repeating colour)."""
+    existing = {"#EF5350", "#42A5F5", "#66BB6A"}
+    for i, hexval in enumerate(existing):
+        category_service.create_category(db, {"name": f"Seed{i}", "colour": hexval})
+
+    created = category_service.create_category(db, {"name": "NoColour"})
+    assert created.colour is not None
+    assert created.colour != ""
+    # Distinct from every colour already assigned (case-insensitive).
+    used = {c.upper() for c in existing}
+    assert created.colour.upper() not in used
+    # And it came from the shared palette (palette not yet exhausted here).
+    assert created.colour in category_service.DEFAULT_COLOUR_PALETTE
+
+
+def test_create_without_colour_falls_back_when_palette_exhausted(db):
+    """Once every palette colour is taken, a create still gets a non-null,
+    well-formed hex rather than a repeat or a null."""
+    for i, hexval in enumerate(category_service.DEFAULT_COLOUR_PALETTE):
+        category_service.create_category(db, {"name": f"Pal{i}", "colour": hexval})
+
+    created = category_service.create_category(db, {"name": "Overflow"})
+    assert created.colour is not None
+    assert re.fullmatch(r"#[0-9A-Fa-f]{6}", created.colour)
+
+
+def test_create_with_empty_colour_string_gets_default(db):
+    """An explicit empty-string colour is treated as 'no colour' and defaulted."""
+    created = category_service.create_category(db, {"name": "Blank", "colour": ""})
+    assert created.colour
+    assert re.fullmatch(r"#[0-9A-Fa-f]{6}", created.colour)
 
 
 def test_system_category_can_be_deleted(client):
