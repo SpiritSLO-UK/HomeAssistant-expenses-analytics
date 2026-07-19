@@ -122,67 +122,58 @@ body {
   color: #6b7686;
 }
 
-/* Customise (show/hide tabs) — the edit toggle + the per-tab edit rows. */
-.sidebar__customise {
-  display: block;
-  width: 100%;
-  margin-bottom: 8px;
-  padding: 7px 10px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 6px;
-  color: var(--sidebar-fg);
-  font-size: 0.85rem;
-  cursor: pointer;
+/* A multi-item group's header row links to its first member; its members appear
+   as page sub-tabs. Slightly emphasised over a plain link (grouped-nav PR2). */
+.sidebar__group {
+  font-weight: 600;
 }
 
-.sidebar__customise:hover {
-  color: #fff;
+/* Page sub-tabs: the horizontal strip shown above a grouped page's content, one
+   tab per visible group member. Also reusable for in-page section switches. */
+.subtabs {
+  display: flex;
+  gap: 4px;
+  align-items: stretch;
+  overflow-x: auto;
+  padding: 8px 32px 0;
+  border-bottom: 1px solid var(--border);
 }
 
-.sidebar__hint {
-  margin: 0 0 8px;
-  font-size: 0.72rem;
-  line-height: 1.3;
-}
-
-/* A nav row rendered as a button (Customise mode). Reset native button styling
-   so it matches the <a> rows. */
-button.sidebar__link {
-  width: 100%;
-  background: none;
+.subtabs__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
   border: none;
-  border-left: 3px solid transparent;
-  font: inherit;
-  cursor: pointer;
-}
-
-.sidebar__link--off {
-  opacity: 0.5;
-}
-
-button.sidebar__link:disabled {
-  cursor: default;
-}
-
-/* Small inline buttons inside an edit row: reorder ▲/▼ and the show/hide toggle. */
-.sidebar__navbtn {
   background: none;
-  border: none;
-  color: inherit;
-  cursor: pointer;
+  color: var(--muted);
   font: inherit;
-  font-size: 0.8rem;
-  line-height: 1;
-  padding: 2px 4px;
-  border-radius: 4px;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
 }
-.sidebar__navbtn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.12);
+
+.subtabs__tab:hover {
+  color: var(--text);
 }
-.sidebar__navbtn:disabled {
-  opacity: 0.3;
-  cursor: default;
+
+.subtabs__tab--active {
+  color: var(--sidebar-active);
+  border-bottom-color: var(--sidebar-active);
+  font-weight: 600;
+}
+
+.subtabs__icon {
+  font-size: 0.95em;
+}
+
+@media (max-width: 768px) {
+  .subtabs {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
 }
 
 /* --- Content --- */
