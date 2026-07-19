@@ -1081,6 +1081,16 @@ function apiKeyLabel(source: AIStatus["key_source"]): string {
   return "Not configured";
 }
 
+// Suffix appended to the Test-connection result so a failure makes clear WHICH
+// key was tried — an expired env override masking a valid stored key is a common
+// gotcha (#user). Derived from the already-fetched AI status key_source.
+function keySourceHint(source: AIStatus["key_source"] | undefined): string {
+  if (source === "env") return " (using environment key HAFI_AI_API_KEY)";
+  if (source === "stored") return " (using stored key)";
+  if (source === "none") return " (no key configured)";
+  return "";
+}
+
 function AiCard({
   onMessage,
   onError,
@@ -1125,8 +1135,8 @@ function AiCard({
   const test = useMutation({
     mutationFn: testAiConnection,
     onSuccess: (r) =>
-      setTestMsg({ ok: r.ok, text: r.message + (r.ok && r.sample_category ? ` (sample → ${r.sample_category})` : "") }),
-    onError: (e) => setTestMsg({ ok: false, text: String(e) }),
+      setTestMsg({ ok: r.ok, text: r.message + (r.ok && r.sample_category ? ` (sample → ${r.sample_category})` : "") + keySourceHint(status.data?.key_source) }),
+    onError: (e) => setTestMsg({ ok: false, text: String(e) + keySourceHint(status.data?.key_source) }),
   });
 
   // Gate the first switch to a cloud mode behind a one-time disclaimer (#42).

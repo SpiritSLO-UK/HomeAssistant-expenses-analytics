@@ -424,6 +424,13 @@ export default function Transactions() {
     bulk.mutate(patch, { onSuccess: () => { if (clearAfter) setSelected(new Set()); } });
   }
 
+  // Value-setting bulk actions apply to every selected row at once, so confirm
+  // first and show the count (destructive Archive/Delete confirm separately).
+  async function applyBulkConfirmed(patch: BulkUpdate, label: string, clearAfter = false) {
+    if (await confirm({ message: `Apply ${label} to ${selected.size} transaction(s)?`, confirmLabel: "Apply" }))
+      applyBulk(patch, clearAfter);
+  }
+
   const toggleSelected = (id: number) =>
     setSelected((prev) => {
       const next = new Set(prev);
@@ -671,7 +678,7 @@ export default function Transactions() {
                   title="Set category for selected"
                   onChange={(e) => {
                     const v = e.target.value;
-                    if (v) applyBulk({ category_id: v === "__none" ? null : Number(v) });
+                    if (v) applyBulkConfirmed({ category_id: v === "__none" ? null : Number(v) }, v === "__none" ? "clear category" : "this category");
                   }}
                 >
                   <option value="">Set category…</option>
@@ -683,7 +690,7 @@ export default function Transactions() {
                   title="Set project for selected"
                   onChange={(e) => {
                     const v = e.target.value;
-                    if (v) applyBulk({ project_id: v === "__none" ? null : Number(v) });
+                    if (v) applyBulkConfirmed({ project_id: v === "__none" ? null : Number(v) }, v === "__none" ? "clear project" : "this project");
                   }}
                 >
                   <option value="">Set project…</option>
@@ -692,23 +699,23 @@ export default function Transactions() {
                 </select>
                 <CountrySelect
                   value={null}
-                  onChange={(code) => { if (code) applyBulk({ country: code }); }}
+                  onChange={(code) => { if (code) applyBulkConfirmed({ country: code }, "this country"); }}
                   title="Set the country of the selected transactions (spend-by-location map)"
                   style={{ minWidth: 150 }}
                 />
                 <button
                   className="btn btn--sm btn--ghost"
                   onClick={async () => {
-                    const t = (await prompt({ title: "Add a tag", message: "Add a tag to the selected transactions:", confirmLabel: "Add" }))?.trim();
+                    const t = (await prompt({ title: "Add a tag", message: `Add a tag to the ${selected.size} selected transactions:`, confirmLabel: "Add" }))?.trim();
                     if (t) applyBulk({ add_tag: t });
                   }}
                 >
                   + tag
                 </button>
-                <button className="btn btn--sm btn--ghost" onClick={() => applyBulk({ is_business: true })}>
+                <button className="btn btn--sm btn--ghost" onClick={() => applyBulkConfirmed({ is_business: true }, "Business = yes")}>
                   Mark business
                 </button>
-                <button className="btn btn--sm btn--ghost" onClick={() => applyBulk({ is_business: false })}>
+                <button className="btn btn--sm btn--ghost" onClick={() => applyBulkConfirmed({ is_business: false }, "Business = no")}>
                   Unmark
                 </button>
                 <button
