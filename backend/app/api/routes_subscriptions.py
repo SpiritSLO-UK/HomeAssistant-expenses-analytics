@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.models import Subscription
+from app.models import Category, Subscription
 from app.schemas.subscriptions import (
     FREQUENCIES,
     STATUSES,
@@ -62,6 +62,10 @@ def update_subscription(
         raise HTTPException(status_code=400, detail=f"Unknown status. One of: {sorted(STATUSES)}")
     if data.get("frequency") is not None and data["frequency"] not in FREQUENCIES:
         raise HTTPException(status_code=400, detail=f"Unknown frequency. One of: {sorted(FREQUENCIES)}")
+    # category_id is an enforced FK — reject an unknown id up front so it's a clean
+    # 400, not an IntegrityError 500 on commit (#24). Mirrors transactions/budgets.
+    if data.get("category_id") is not None and db.get(Category, data["category_id"]) is None:
+        raise HTTPException(status_code=400, detail="Unknown category")
     for field, value in data.items():
         setattr(sub, field, value)
     db.commit()
