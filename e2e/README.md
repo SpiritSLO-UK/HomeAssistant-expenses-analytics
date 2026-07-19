@@ -31,6 +31,15 @@ Render checks:
 - `forecasts.spec.ts` - budget pace, project burn-down forecast, savings sparkline + goals.
 - `transactions.spec.ts` - filters, CSV export, range switching.
 - `import.spec.ts` - a US-format CSV previews with month-first dates parsed correctly.
+- `savings-deposit.spec.ts` - the deposit confirm modal states the resulting balance before applying (opens + cancels; non-destructive).
+- `search-keyboard.spec.ts` - the global-search keyboard nav (no highlight for mouse users until an arrow key; arrows move the active descendant; Enter opens) and a category chip deep-linking into filtered Transactions.
+- `import-mapping.spec.ts` - the "Map columns (custom CSV)" panel maps columns from the file headers, the date-order selector offers Auto/Day-first/Month-first, and Month-first parses `6/28/2026` as `2026-06-28` (preview only; non-destructive).
+- `architecture-doc.spec.ts` - `docs/architecture.html` renders its inline-SVG diagrams over `file://` with no off-origin requests.
+
+These automate the release UI-test walkthrough (`docs/ui-test-guide.md`). The AI batch
+panels, Review Queue bulk-AI, and MFA backup codes need a live AI key / TOTP secret and
+are not automated here; the opt-in security-event MQTT publish is an env/add-on option with
+no runtime UI toggle and is covered by `backend/app/tests/test_mqtt.py`.
 
 Task flows (really doing things; every mutating flow is **self-cleaning**, so the
 database ends each run exactly as it started):
