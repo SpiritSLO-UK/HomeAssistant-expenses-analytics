@@ -100,6 +100,7 @@ export default function SplitEditor({ txnId, amount, currency, isSplit, categori
       qc.invalidateQueries({ queryKey: ["dashboard"] });
       onDone();
     },
+    onError: (e) => setError(String(e instanceof Error ? e.message : e)),
   });
 
   function updateRow(i: number, field: keyof Row, value: string) {
