@@ -170,7 +170,14 @@ def mfa_lockout_seconds(user_id: int) -> int:
 def record_mfa_failure(user_id: int) -> int:
     """Note a failed MFA code check; returns the recent-failure count."""
     _failed_mfa_attempts.setdefault(user_id, []).append(_now())
-    return len(_recent_mfa_failures(user_id))
+    count = len(_recent_mfa_failures(user_id))
+    # Opt-in HA notification (best-effort). Only the type + recent count leave the
+    # process — never the TOTP code, and no user id / PII in the payload. Lazy
+    # import avoids an import cycle and keeps auth independent of MQTT importing.
+    from app.services import mqtt_service
+
+    mqtt_service.publish_security_event_safe("failed_mfa", count)
+    return count
 
 
 def clear_mfa_failures(user_id: int) -> None:
