@@ -13,6 +13,14 @@ addon/run.sh text eol=lf
 Dockerfile text eol=lf
 *.dockerfile text eol=lf
 
+# index.html carries an inline theme <script> whose sha256 is pinned in the
+# backend Content-Security-Policy (main.py). A Windows checkout that rewrites it
+# to CRLF changes the hash, so a locally-built image serves a script the CSP
+# rejects (a stale open tab then shows a scary CSP error after a rebuild).
+# Browsers normalise CRLF->LF so a fresh load is fine, but lock it to LF anyway
+# to match the Linux/prod build the hash is computed against.
+frontend/index.html text eol=lf
+
 # Binary assets — never normalise line endings (would corrupt them).
 *.png binary
 *.jpg binary

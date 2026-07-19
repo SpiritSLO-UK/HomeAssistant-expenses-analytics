@@ -2,10 +2,12 @@
 
 A click-by-click pass to verify the user-visible changes on `main` before cutting
 the next release. It covers the recently-touched features: in-app modals,
-optimistic select-on-change, the budget/project/savings forecasts, MFA backup
-codes, global search, the AI batch panels, Rules clone and reorder, Categories
-accessibility and bulk recolour, the Review Queue, CSV export, and a US-format
-CSV import. Budget ~20-30 minutes for the whole list.
+optimistic select-on-change, the budget/project/savings forecasts, edit-after-
+creation, MFA backup codes, global search, the AI batch panels (incl. background
+cloud send), Rules clone and reorder, Categories accessibility and bulk recolour,
+the dedicated Tags page, the app-wide date format, opt-in security-event MQTT
+notifications, the Review Queue, CSV export (filtered + selected), and a US-format
+CSV import. Budget ~25-35 minutes for the whole list.
 
 Each item has a short "What changed", numbered steps, and checkbox expected
 results. Tick as you go; anything that fails is a release blocker to note (open
@@ -58,16 +60,19 @@ toolbar) now confirm "Apply ... to N transaction(s)?" before applying.
       after the list refreshes.
 - [ ] A bulk value-change asks "Apply ... to N transaction(s)?" before applying.
 
-## Transactions: export filtered set to CSV
+## Transactions: export filtered set / selected rows to CSV
 
 **What changed:** the toolbar Export CSV button downloads the *filtered* set (not
-just the current page).
+just the current page); if you have rows ticked, it exports **only the selected
+rows** instead.
 
-1. On **Transactions**, apply a filter (a date quick-range or a search term).
-2. Click **Export CSV** (the down-arrow button near the top of the list).
+1. On **Transactions**, apply a filter (a date quick-range or a search term) with
+   nothing ticked, and click **Export CSV** (the down-arrow button near the top).
+2. Now tick a few specific rows and click **Export CSV** again.
 
-- [ ] A `transactions.csv` file downloads containing the filtered rows (not only
-      the visible page).
+- [ ] With nothing selected, `transactions.csv` contains all filtered rows (not
+      only the visible page).
+- [ ] With rows ticked, the export contains exactly those selected rows.
 
 ## Transactions: tags (add, remove, bulk)
 
@@ -106,6 +111,9 @@ on your privacy mode (Settings -> AI). They differ by design:
 **Cloud panel** (`cloud_manual`; click `☁️ AI categorise (cloud)…`):
 - [ ] The "Will send" list shows only a redacted description + amount per row.
 - [ ] Export CSV of the will-send list (and of the suggestions after Send) works.
+- [ ] **Send to cloud** returns immediately and the panel shows live "Sent X / N"
+      progress that climbs as items complete (the send runs in the background - the
+      UI is not frozen while it works). Pressing Send twice does not double-send.
 - [ ] Apply writes the ticked categories.
 
 ## Review Queue: bulk AI + resolve
@@ -122,18 +130,18 @@ item can be resolved or ignored inline.
 
 ## Budgets: pace signal
 
-**What changed:** each within-budget budget shows a prorated "pace" line (ahead of
-pace / on pace / behind pace) alongside the over/near-limit/on-track status.
-
-> By design, a budget that is already **over budget** hides the pace line (it
-> would be redundant) - so pace shows on some budgets and not others. That is
-> expected, not a bug.
+**What changed:** every budget shows one clear prorated "pace" line - **over pace**
+(spending faster than the period has elapsed), **under pace** (slower) or **on
+pace** - alongside the over/near-limit/on-track status. (Earlier builds hid the
+line on over-budget rows and used confusing "ahead/behind" wording; it now shows
+on all budgets with direction-explicit labels.)
 
 1. Go to **Budgets** (or the Budgets card on the Dashboard).
 2. Read the status and pace line on each budget.
 
-- [ ] Within-budget budgets show a pace label ("on pace" / "ahead of pace" / "behind pace").
-- [ ] A budget past 100% reads as "over budget" (and shows no pace line).
+- [ ] Every budget shows a single pace label: "over pace" / "under pace" / "on pace".
+- [ ] An over-budget budget reads e.g. "over budget · over pace" with no contradictory wording,
+      and the pace line is present (no longer hidden).
 
 ## Projects: burn-down forecast
 
@@ -178,21 +186,26 @@ category into another; several categories can be recoloured at once.
 1. Go to **Categories**.
 2. (Owner only) Merge a source into a target and confirm the naming modal.
 3. Tick several categories, pick a bulk-recolour colour, and apply.
+4. Add a new category and note the colour it is pre-filled with.
 
 - [ ] Delete / colour / select controls have descriptive labels.
 - [ ] Merge re-points the source's transactions onto the target and removes the source.
 - [ ] Bulk recolour applies to every ticked category; Dashboard swatches update.
+- [ ] A new category defaults to an unused colour (not a clash with an existing one).
 
 ## Global search: keyboard navigation
 
 **What changed:** the global search is keyboard-navigable and its result groups
 show clickable category/vendor chips that deep-link into filtered transactions.
+The keyboard highlight/hint now stays hidden until you actually press an arrow
+key, so mouse users are not distracted by it.
 
-1. Open **Search**. Type at least two characters.
-2. Use Down/Up to move the highlight, then Enter to open the highlighted result.
+1. Open **Search**. Type at least two characters and use the mouse only.
+2. Now press Down/Up to move the highlight, then Enter to open the highlighted result.
 3. Back on Search, click a category or vendor chip.
 
-- [ ] Arrow keys move a visible highlight; Enter opens the highlighted result.
+- [ ] Before any arrow key, there is no distracting highlight/hint for mouse users.
+- [ ] Arrow keys reveal and move a visible highlight; Enter opens the highlighted result.
 - [ ] A category/vendor chip navigates to Transactions filtered by that entity.
 
 ## Settings: MFA backup codes
@@ -210,6 +223,60 @@ generate, copy and download one-time recovery codes.
 - [ ] The section reports how many unused backup codes remain.
 - [ ] Generating shows a fresh set with a "save them now" warning.
 - [ ] Copy-to-clipboard and download `hafi-backup-codes.txt` both work.
+
+## Edit after creation (projects, budgets, rules, savings goals)
+
+**What changed:** projects, budgets, rules and savings goals can now be **edited**
+after they are created (previously delete-and-recreate); a savings account's
+name/institution can also be edited (its currency stays read-only).
+
+1. Go to **Projects**, open a project, and edit a field (e.g. its budget or name); save.
+2. Go to **Budgets**, edit an existing budget's limit/period; save.
+3. Go to **Rules**, edit an existing rule's condition or action; save.
+4. Go to **Savings**, edit a goal's target/date, and edit an account's
+   name/institution; save.
+
+- [ ] Each of projects, budgets, rules and savings goals has an edit affordance
+      and the change persists after refresh.
+- [ ] A savings account's name/institution can be edited; its currency cannot.
+
+## Tags: dedicated page
+
+**What changed:** tag management moved out of Settings into its own **Tags** page
+in the sidebar (with its own icon); "Manage tags" links point there.
+
+1. Click **Tags** in the sidebar (or a "Manage tags" link).
+
+- [ ] Tags open on their own `/tags` page (not a Settings card), showing usage
+      counts, merge and cleanup of unused tags.
+
+## Settings: app-wide date format
+
+**What changed:** a Settings toggle picks how dates are shown everywhere - ISO
+(`2026-07-18`), US (`07/18/2026`) or UK (`18/07/2026`).
+
+1. Go to **Settings**, find the date-format toggle, and switch it (e.g. to US).
+2. Visit **Transactions** and a couple of other pages (Dashboard, Travel).
+
+- [ ] Changing the format updates displayed dates consistently across pages.
+- [ ] The choice persists after a reload.
+
+## Settings: security-event MQTT notifications
+
+**What changed:** an opt-in setting publishes security events (failed unlock,
+failed two-factor, wrong passphrase) to MQTT so Home Assistant can alert on them.
+Off by default.
+
+> Only meaningful with MQTT configured (the Home Assistant add-on, or a broker on
+> a standalone install). If MQTT isn't set up, just confirm the toggle exists and
+> defaults to off; skip the publish check.
+
+1. Go to **Settings** and find the security-event MQTT toggle.
+2. (With MQTT configured) enable it, then trigger a failed unlock or wrong-passphrase.
+
+- [ ] The toggle exists and is **off** by default.
+- [ ] (With MQTT) enabling it publishes a security event on the next failed
+      unlock / failed MFA / wrong passphrase.
 
 ## Import: custom CSV column mapping and US-format dates
 
