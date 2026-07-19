@@ -47,7 +47,7 @@ def list_vendors(db: Annotated[Session, Depends(get_db)]) -> list[dict]:
     return result
 
 
-@router.post("", response_model=VendorOut, status_code=201)
+@router.post("", response_model=VendorOut, status_code=201, responses={400: {"description": "Unknown category"}})
 def create_vendor(payload: VendorCreate, db: Annotated[Session, Depends(get_db)]):
     data = payload.model_dump(exclude_unset=True)
     _validate_category(db, data.get("default_category_id"))
@@ -64,7 +64,11 @@ def get_vendor(vendor_id: int, db: Annotated[Session, Depends(get_db)]) -> dict:
     return item
 
 
-@router.patch("/{vendor_id}", response_model=VendorOut, responses={404: {"description": "Not found"}})
+@router.patch(
+    "/{vendor_id}",
+    response_model=VendorOut,
+    responses={400: {"description": "Unknown category"}, 404: {"description": "Not found"}},
+)
 def update_vendor(vendor_id: int, payload: VendorUpdate, db: Annotated[Session, Depends(get_db)]):
     data = payload.model_dump(exclude_unset=True)
     if "default_category_id" in data:
@@ -86,7 +90,9 @@ def add_alias(vendor_id: int, payload: AliasCreate, db: Annotated[Session, Depen
 
 
 @router.post(
-    "/{vendor_id}/set-default-category", response_model=VendorOut, responses={404: {"description": "Not found"}}
+    "/{vendor_id}/set-default-category",
+    response_model=VendorOut,
+    responses={400: {"description": "Unknown category"}, 404: {"description": "Not found"}},
 )
 def set_default_category(vendor_id: int, payload: SetDefaultCategory, db: Annotated[Session, Depends(get_db)]):
     _validate_category(db, payload.category_id)

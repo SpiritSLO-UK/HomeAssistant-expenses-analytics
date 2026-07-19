@@ -37,5 +37,6 @@ def test_pdf_page_cap_rejects_oversized(monkeypatch):
     writer.add_blank_page(width=72, height=72)
     buf = io.BytesIO()
     writer.write(buf)
+    data = buf.getvalue()
     with pytest.raises(base.ParseError, match="too many pages"):
-        generic_pdf.GenericPdfParser._extract_text(buf.getvalue())
+        generic_pdf.GenericPdfParser._extract_text(data)

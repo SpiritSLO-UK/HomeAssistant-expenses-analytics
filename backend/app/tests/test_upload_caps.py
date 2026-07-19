@@ -29,15 +29,17 @@ def test_read_capped_allows_within_limit():
 
 def test_read_capped_rejects_via_bounded_read():
     # Size not declared → the chunked read must catch it.
+    coro = uploads.read_capped(_upload(b"x" * 500), 100)
     with pytest.raises(HTTPException) as ei:
-        asyncio.run(uploads.read_capped(_upload(b"x" * 500), 100))
+        asyncio.run(coro)
     assert ei.value.status_code == 413
 
 
 def test_read_capped_rejects_via_declared_size():
     # Declared (Content-Length) size over the cap → fast reject, no read.
+    coro = uploads.read_capped(_upload(b"x" * 10, size=10_000), 100)
     with pytest.raises(HTTPException) as ei:
-        asyncio.run(uploads.read_capped(_upload(b"x" * 10, size=10_000), 100))
+        asyncio.run(coro)
     assert ei.value.status_code == 413
 
 

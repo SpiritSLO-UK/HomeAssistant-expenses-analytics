@@ -495,8 +495,9 @@ def test_restore_leaves_original_db_intact_on_validation_failure(tmp_path, monke
     c2.commit()
     c2.close()
 
+    candidate_bytes = candidate.read_bytes()
     with pytest.raises(backup_service.RestoreError):
-        backup_service.restore_database(candidate.read_bytes())
+        backup_service.restore_database(candidate_bytes)
 
     # Live DB is byte-for-byte unchanged; nothing was staged or backed up.
     assert live.read_bytes() == original

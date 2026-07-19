@@ -58,7 +58,7 @@ def test_cors_uses_explicit_method_and_header_allowlists():
     from app import main
 
     assert "*" not in main._CORS_METHODS and "*" not in main._CORS_HEADERS
-    assert {"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"} == set(main._CORS_METHODS)
+    assert set(main._CORS_METHODS) == {"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
     assert "Content-Type" in main._CORS_HEADERS and "X-HAFI-Session" in main._CORS_HEADERS
 
 

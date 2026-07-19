@@ -91,10 +91,10 @@ def save_stored_key(passphrase: str) -> None:
     # any pre-existing file and O_CREAT|O_EXCL a fresh one with mode 0o600, so the
     # key is never on disk with perms wider than 0600.
     path.unlink(missing_ok=True)
-    # NOSONAR(python:S2083): the path is the FIXED ".db_key" filename joined to the
-    # app's own operator-configured data dir (settings.database_file.parent). It is
-    # not request/attacker-controlled, and mirrors the existing encryption.json marker
-    # write. Flagged as a path-injection false positive.
+    # Rationale for the inline suppression below (python:S2083): the path is the FIXED
+    # ".db_key" filename joined to the app's own operator-configured data dir
+    # (settings.database_file.parent). It is not request/attacker-controlled, and mirrors
+    # the existing encryption.json marker write. Flagged as a path-injection false positive.
     fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)  # NOSONAR
     try:
         os.write(fd, passphrase.encode("utf-8"))
@@ -339,9 +339,8 @@ def _migrate_after_unlock() -> None:
     try:
         run_migrations()
     except Exception:
-        logger.error(
+        logger.exception(
             "Migration after unlock failed; re-locking to avoid serving inconsistent data.",
-            exc_info=True,
         )
         dbsession.lock()
         raise

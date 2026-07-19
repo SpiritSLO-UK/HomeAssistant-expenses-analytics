@@ -356,8 +356,10 @@ def test_project_balance_rejects_unknown_frequency():
 
     from app.services import savings_service
 
+    acct = _acct("4.5")
+    principal = Decimal("1000")
     with pytest.raises(ValueError, match="frequency"):
-        savings_service.project_balance(_acct("4.5"), 12, principal=Decimal("1000"), frequency="daily")
+        savings_service.project_balance(acct, 12, principal=principal, frequency="daily")
 
 
 # --- Clearable goal fields ---------------------------------------------------

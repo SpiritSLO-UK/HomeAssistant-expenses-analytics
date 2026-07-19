@@ -89,8 +89,9 @@ def test_split_evenly_accepts_string_and_float():
 
 
 def test_split_evenly_rejects_fewer_than_two_parts():
+    total = Decimal("10.00")
     with pytest.raises(split_service.SplitError):
-        split_service.split_evenly(Decimal("10.00"), 1)
+        split_service.split_evenly(total, 1)
 
 
 # --- pure helper: split_by_percentages penny-exactness (SR-A5) ---
@@ -170,18 +171,24 @@ def test_split_by_percentages_within_rounding_tolerance():
 
 
 def test_split_by_percentages_rejects_bad_sum():
+    total = Decimal("100.00")
+    parts = [_pct("50"), _pct("30")]
     with pytest.raises(split_service.SplitError, match="not 100"):
-        split_service.split_by_percentages(Decimal("100.00"), [_pct("50"), _pct("30")])
+        split_service.split_by_percentages(total, parts)
 
 
 def test_split_by_percentages_rejects_non_positive_percent():
+    total = Decimal("100.00")
+    parts = [_pct("120"), _pct("-20")]
     with pytest.raises(split_service.SplitError, match="greater than zero"):
-        split_service.split_by_percentages(Decimal("100.00"), [_pct("120"), _pct("-20")])
+        split_service.split_by_percentages(total, parts)
 
 
 def test_split_by_percentages_rejects_fewer_than_two_parts():
+    total = Decimal("100.00")
+    parts = [_pct("100")]
     with pytest.raises(split_service.SplitError):
-        split_service.split_by_percentages(Decimal("100.00"), [_pct("100")])
+        split_service.split_by_percentages(total, parts)
 
 
 def _curve(rows: list[tuple[str, str, str]]) -> bytes:

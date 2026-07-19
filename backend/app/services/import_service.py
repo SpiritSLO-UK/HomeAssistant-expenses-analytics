@@ -171,6 +171,30 @@ def _existing_hashes_for(
     return found
 
 
+def _classify_preview_row(
+    h: str,
+    existing_hashes: set[str],
+    seen: set[str],
+    match: curve_link_service.CrossMatch | None,
+    *,
+    file_already_imported: bool,
+) -> tuple[bool, str | None, str | None]:
+    """Decide one parsed row's ``(is_dup, dup_reason, warning)`` (spec §12.7).
+
+    ``seen`` holds the hashes of earlier rows in this batch; the caller adds ``h``
+    only after this returns, so a same-batch repeat is caught without treating the
+    current row as its own duplicate. Pure classification, split out of
+    :func:`_build_preview` to keep that walk's cognitive complexity low."""
+    same_dup = h in existing_hashes or h in seen
+    cross_skip = match is not None and match.confidence == "high"
+    is_dup = same_dup or cross_skip or file_already_imported
+    dup_reason = match.reason if cross_skip else None
+    if file_already_imported and dup_reason is None:
+        dup_reason = "File already imported"
+    warning = match.reason if (match is not None and not cross_skip and not same_dup) else None
+    return is_dup, dup_reason, warning
+
+
 def _build_preview(
     parsed: list[StandardTransaction],
     account_id: int,
@@ -193,19 +217,15 @@ def _build_preview(
     preview: list[dict] = []
     for idx, txn in enumerate(parsed):
         h = source_hash(account_id, txn)
-        same_dup = h in existing_hashes or h in seen
-        seen.add(h)
         match = cross.get(idx)
-        cross_skip = match is not None and match.confidence == "high"
-        is_dup = same_dup or cross_skip or file_already_imported
+        is_dup, dup_reason, warning = _classify_preview_row(
+            h, existing_hashes, seen, match, file_already_imported=file_already_imported
+        )
+        seen.add(h)
         if is_dup:
             dup_count += 1
         else:
             new_count += 1
-        dup_reason = match.reason if cross_skip else None
-        if file_already_imported and dup_reason is None:
-            dup_reason = "File already imported"
-        warning = match.reason if (match is not None and not cross_skip and not same_dup) else None
         if len(preview) < preview_limit:
             preview.append(_preview_row(txn, is_dup, dup_reason=dup_reason, warning=warning))
     return new_count, dup_count, preview
