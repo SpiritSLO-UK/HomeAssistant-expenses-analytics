@@ -30,6 +30,10 @@ class SavingsAccountOut(BaseModel):
 
 
 class SavingsAccountUpdate(BaseModel):
+    # Currency is deliberately absent: stored balances are denominated in it, so
+    # changing it would misread the whole history. It stays read-only.
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    institution: str | None = None
     interest_rate: Decimal | None = None
 
 

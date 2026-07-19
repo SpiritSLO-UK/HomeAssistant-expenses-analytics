@@ -1442,7 +1442,7 @@ export function adjustSavingsBalance(
 // Edit a savings account (currently the interest rate; null clears it).
 export function updateSavingsAccount(
   accountId: number,
-  data: { interest_rate?: string | null },
+  data: { interest_rate?: string | null; name?: string; institution?: string | null },
 ): Promise<SavingsAccount> {
   return fetchJson(`api/savings/accounts/${accountId}`, {
     method: "PATCH",

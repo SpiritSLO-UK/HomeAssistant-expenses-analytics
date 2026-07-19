@@ -69,13 +69,12 @@ def create_account(payload: SavingsAccountCreate, db: Annotated[Session, Depends
 def update_account(
     account_id: int, payload: SavingsAccountUpdate, request: Request, db: Annotated[Session, Depends(get_db)]
 ) -> dict:
-    """Edit a savings account (currently the interest rate)."""
+    """Edit a savings account's name, institution, or interest rate. Currency is
+    read-only (stored balances are denominated in it)."""
     _require_visible(request, db, account_id)
     fields = payload.model_dump(exclude_unset=True)
     try:
-        if "interest_rate" in fields:
-            savings_service.set_interest_rate(db, account_id, fields["interest_rate"])
-        account = savings_service.get_savings_account(db, account_id)
+        account = savings_service.update_account(db, account_id, fields=fields)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return savings_service.account_to_dict(db, account)
