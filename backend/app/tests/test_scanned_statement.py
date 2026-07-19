@@ -160,6 +160,28 @@ def test_looks_like_digital_text_threshold():
     assert not ocr_service._looks_like_digital_text("Page 1 of 3 header footer x y z")  # no money
 
 
+def test_money_regex_survives_pathological_text():
+    """A long separator-free digit run must not blow up the money probe (ReDoS
+    finding #3): the bounded pattern + scan cap return 'no amount' fast. The old
+    ``\\d[\\d,]*`` shape backtracked O(n^2) on such input."""
+    import time
+
+    blob = "9" * 300_000  # no valid ".dd" -> no match, must stay quick
+    start = time.perf_counter()
+    assert ocr_service._MONEY_RE.search(blob) is None
+    assert ocr_service._looks_like_digital_text(blob) is False
+    assert time.perf_counter() - start < 5.0  # generous ceiling; the fix runs in ms
+    assert ocr_service._MAX_MONEY_SCAN_CHARS <= 65_536
+
+
+def test_money_regex_still_matches_real_amounts():
+    """The hardened money probe still fires on the amounts a real receipt carries."""
+    assert ocr_service._MONEY_RE.search("Order total 12,345.67")
+    assert ocr_service._MONEY_RE.search("Amount 42.18")
+    assert ocr_service._MONEY_RE.search("Big ungrouped 12345.67")  # bounded \\d{1,15}
+    assert not ocr_service._MONEY_RE.search("Dated 01.05.2026")  # a date, not money
+
+
 # --- decompression-bomb guard (no engine needed) -------------------------
 
 def test_ocr_image_refuses_decompression_bomb(monkeypatch):

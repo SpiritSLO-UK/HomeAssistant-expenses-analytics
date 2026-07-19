@@ -47,7 +47,17 @@ _MAX_RENDER_PIXELS = 40_000_000
 # real digital statement when it contains one — otherwise a stray text layer on an
 # image-only PDF (a page number / watermark) would block the rasterise+OCR fallback.
 # The trailing (?!\.\d) rejects a dotted-date fragment like 01.05.2026 ("01.05" → no).
-_MONEY_RE = re.compile(r"\d[\d,]*\.\d{2}\b(?!\.\d)")
+# Non-backtracking shape (mirrors generic_pdf._MONEY): a *bounded* integer part —
+# 1-3 digits + comma groups, OR up to 15 plain digits — then ".dd". The old
+# ``\d[\d,]*`` gobbled a long separator-free digit run then backtracked one char at a
+# time at every start offset (O(n^2) ReDoS on OCR/PDF text); the bounded parts can't.
+_MONEY_RE = re.compile(r"(?:\d{1,3}(?:,\d{3})*|\d{1,15})\.\d{2}\b(?!\.\d)")
+
+# DoS guard (finding #3): cap the text handed to the money regex to tens of KB
+# (mirrors redaction.py's bounded-input approach) so per-parse work stays bounded even
+# on a pathological input. A genuine digital receipt/invoice carries an amount well
+# within the first chunk; the word-count check below still runs on the full text.
+_MAX_MONEY_SCAN_CHARS = 65_536
 
 # Beyond a money amount, a genuine digital statement/receipt has a real text layer —
 # not just a lone watermark that happens to look like "£9.99". Require a minimum word
@@ -59,7 +69,7 @@ def _looks_like_digital_text(text: str) -> bool:
     """True when embedded PDF text is substantial enough to trust as a digital
     statement (a money amount *and* a real body of words) rather than a stray text
     scrap on an image-only PDF that should fall through to the OCR fallback."""
-    if not _MONEY_RE.search(text):
+    if not _MONEY_RE.search(text[:_MAX_MONEY_SCAN_CHARS]):
         return False
     return len(text.split()) >= _MIN_TEXT_WORDS
 

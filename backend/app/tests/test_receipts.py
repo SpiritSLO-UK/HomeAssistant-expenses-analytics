@@ -97,6 +97,35 @@ def test_parser_vat_is_the_smaller_tax_figure():
     assert receipt_parser.detect_vat("VAT £4.18") == Decimal("4.18")
 
 
+def test_amount_regex_survives_pathological_line(monkeypatch):
+    """A long separator-free digit run must not blow up the amount regexes (ReDoS
+    finding #3): the bounded patterns + per-line cap yield no amount, fast. The old
+    ``\\d+``/``\\d[\\d,]*`` shapes backtracked O(n^2) (measured ~76s at 160k chars)."""
+    import time
+
+    pathological = "1" * 200_000  # no valid decimal -> nothing to match, must stay quick
+    start = time.perf_counter()
+    assert receipt_parser._amounts_on(pathological) == []
+    assert receipt_parser._whole_amounts_on(pathological) == []
+    assert receipt_parser.detect_total(pathological) is None
+    assert receipt_parser.detect_vat("VAT " + pathological) is None
+    assert time.perf_counter() - start < 5.0  # generous ceiling; the fix runs in ms
+
+    # The per-line cap really bounds the scanned text.
+    assert receipt_parser._MAX_AMOUNT_LINE_CHARS <= 65_536
+
+
+def test_amount_regex_still_parses_real_amounts():
+    """The ReDoS-hardened patterns still match the amounts receipts legitimately carry."""
+    assert receipt_parser._amounts_on("Coffee 12.00") == [Decimal("12.00")]
+    assert receipt_parser._amounts_on("Total 1,234.56") == [Decimal("1234.56")]
+    assert receipt_parser._amounts_on("EU 1.234,56") == [Decimal("1234.56")]
+    assert receipt_parser._amounts_on("Short 45.5") == [Decimal("45.50")]
+    # An ungrouped multi-digit integer part (no thousands separator) still parses.
+    assert receipt_parser._amounts_on("Big 12345.67") == [Decimal("12345.67")]
+    assert receipt_parser.detect_total("TOTAL £42") == Decimal("42.00")
+
+
 # Real card-payment slip a user uploaded — OCR collapsed it to one long line of
 # terminal/transaction boilerplate. The merchant heuristic must NOT dump that into
 # the merchant field (backlog: receipt-OCR merchant gibberish, 2026-06-06).
