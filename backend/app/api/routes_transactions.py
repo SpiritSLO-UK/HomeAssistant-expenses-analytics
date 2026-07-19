@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.api import uploads
 from app.db.session import get_db
 from app.models import Category, Project, Transaction, User, Vendor
 from app.schemas.receipts import ReceiptOut
@@ -444,11 +445,11 @@ async def attach_transaction_receipt(
     """Upload a receipt image/PDF and attach it to this transaction. The original
     is kept (so it can be viewed); OCR runs best-effort to fill in fields."""
     txn = _get_visible_txn(request, db, transaction_id)
-    content = await file.read()
+    # Cap the upload (413) via a declared-size pre-reject + bounded chunked read so an
+    # oversized body is never fully buffered in memory before the check (#25).
+    content = await uploads.read_capped(file, uploads.RECEIPT_MAX, label="Receipt")
     if not content:
         raise HTTPException(status_code=400, detail="Empty file")
-    if len(content) > 15 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="File too large (max 15 MB)")
     receipt, created = receipt_service.store_upload(db, file.filename or "receipt", content)
     if created:
         # Best-effort OCR for the extracted fields, but don't auto-match elsewhere —

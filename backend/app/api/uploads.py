@@ -19,6 +19,7 @@ MB = 1024 * 1024
 # is tiny.
 IMPORT_MAX = 25 * MB        # statement CSV / PDF / image
 AI_IMAGE_MAX = 15 * MB      # vision-AI statement image (matches the receipt cap)
+RECEIPT_MAX = 15 * MB       # uploaded receipt image / PDF
 RESTORE_MAX = 500 * MB      # uploaded SQLite DB backup
 CONFIG_MAX = 10 * MB        # settings/library JSON export
 

@@ -10,11 +10,12 @@ from pathlib import Path
 from typing import Annotated
 
 import anyio.to_thread
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api import uploads
 from app.db.session import get_db
 from app.models import Receipt, User
 from app.schemas.receipts import (
@@ -29,7 +30,7 @@ from app.schemas.receipts import (
 from app.services import ai_service, audit_service, ocr_service, receipt_service
 from app.services.ai_provider import AIError
 from app.services.ai_service import AIDisabled, AIRateLimited
-from app.services.auth_service import get_current_user
+from app.services.auth_service import get_current_user, visible_account_scope
 from app.services.household_service import get_or_create_account, get_or_create_default_household
 
 router = APIRouter(prefix="/receipts", tags=["receipts"])
@@ -37,8 +38,6 @@ router = APIRouter(prefix="/receipts", tags=["receipts"])
 # Dedicated account for transactions materialised from receipts (cash / un-imported
 # purchases), when the user doesn't want to attribute them to a real bank account.
 CASH_RECEIPTS_ACCOUNT = "Cash & receipts"
-
-MAX_BYTES = 15 * 1024 * 1024  # 15 MB upload cap
 
 
 @router.get("/status")
@@ -49,8 +48,11 @@ def ocr_status() -> dict:
 
 @router.get("", response_model=list[ReceiptOut])
 def list_receipts(db: Annotated[Session, Depends(get_db)]) -> list[dict]:
-    receipts = db.scalars(select(Receipt).order_by(Receipt.created_at.desc())).all()
-    return [receipt_service.to_dict(db, r) for r in receipts]
+    receipts = list(db.scalars(select(Receipt).order_by(Receipt.created_at.desc())).all())
+    # Eager-load every listed receipt's matches in ONE query instead of a SELECT
+    # per receipt (the N+1 in #26); each to_dict is handed its own pre-fetched set.
+    by_receipt = receipt_service.matches_by_receipt(db, [r.id for r in receipts])
+    return [receipt_service.to_dict(db, r, matches=by_receipt.get(r.id, [])) for r in receipts]
 
 
 @router.post(
@@ -60,11 +62,11 @@ def list_receipts(db: Annotated[Session, Depends(get_db)]) -> list[dict]:
     responses={400: {"description": "Bad request"}, 413: {"description": "Payload too large"}},
 )
 async def upload_receipt(file: Annotated[UploadFile, File()], db: Annotated[Session, Depends(get_db)]) -> dict:
-    content = await file.read()
+    # Cap the upload (413) via a declared-size pre-reject + bounded chunked read so an
+    # oversized body is never fully buffered in memory before the check (#25).
+    content = await uploads.read_capped(file, uploads.RECEIPT_MAX, label="Receipt")
     if not content:
         raise HTTPException(status_code=400, detail="Empty file")
-    if len(content) > MAX_BYTES:
-        raise HTTPException(status_code=413, detail="File too large (max 15 MB)")
 
     receipt, created = receipt_service.store_upload(db, file.filename or "receipt", content)
     if created:
@@ -277,7 +279,10 @@ def confirm_match(receipt_id: int, payload: ConfirmMatchRequest, db: Annotated[S
     responses={400: {"description": "Bad request"}, 404: {"description": "Not found"}},
 )
 def create_transaction(
-    receipt_id: int, payload: CreateTransactionRequest, db: Annotated[Session, Depends(get_db)]
+    receipt_id: int,
+    payload: CreateTransactionRequest,
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
 ) -> dict:
     """Materialise a transaction from an unmatched receipt. Either pick an existing
     account or set ``new_account`` to use/create a dedicated 'Cash & receipts' one."""
@@ -287,6 +292,13 @@ def create_transaction(
         account_id = get_or_create_account(db, household, CASH_RECEIPTS_ACCOUNT).id
     elif payload.account_id is not None:
         account_id = payload.account_id
+        # IDOR guard (#18): reject a chosen account the caller can't see BEFORE
+        # writing, so a member can't inject a transaction into another member's
+        # private account. Mirrors the transactions router's visibility filter;
+        # scope=None (owner/admin) is unrestricted. 404 to avoid leaking existence.
+        scope = visible_account_scope(request, db)
+        if scope is not None and account_id not in scope:
+            raise HTTPException(status_code=404, detail="Account not found")
     else:
         raise HTTPException(status_code=400, detail="Choose an account or create a dedicated one.")
     try:
