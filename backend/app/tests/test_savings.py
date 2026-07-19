@@ -110,6 +110,67 @@ def test_interest_rate_and_projection(client):
     assert acct["projected_annual_interest"] is None
 
 
+def test_update_account_name_and_institution_persist(client):
+    aid = _account(client, "ISA")
+    patched = client.patch(
+        f"/api/savings/accounts/{aid}",
+        json={"name": "Cash ISA", "institution": "Barclays"},
+    )
+    assert patched.status_code == 200
+    assert patched.json()["name"] == "Cash ISA"
+    assert patched.json()["institution"] == "Barclays"
+
+    acct = next(a for a in client.get("/api/savings/summary").json()["accounts"] if a["id"] == aid)
+    assert acct["name"] == "Cash ISA"
+    assert acct["institution"] == "Barclays"
+
+    # Institution can be cleared with an explicit null; name/rate stay untouched.
+    cleared = client.patch(f"/api/savings/accounts/{aid}", json={"institution": None})
+    assert cleared.json()["institution"] is None
+    assert cleared.json()["name"] == "Cash ISA"
+
+
+def test_update_account_cannot_change_currency(client):
+    """Currency is read-only (balances are denominated in it) — an attempt to change
+    it via PATCH is ignored, not applied."""
+    aid = _account(client, "ISA")
+    original = next(
+        a for a in client.get("/api/savings/summary").json()["accounts"] if a["id"] == aid
+    )["currency"]
+    other = "USD" if original != "USD" else "EUR"
+
+    patched = client.patch(
+        f"/api/savings/accounts/{aid}", json={"name": "Renamed", "currency": other}
+    )
+    assert patched.status_code == 200
+    assert patched.json()["name"] == "Renamed"          # the allowed edit applied...
+    assert patched.json()["currency"] == original       # ...but currency is unchanged
+
+
+def test_goal_update_round_trips_all_fields(client):
+    aid = _account(client, "Linked")
+    gid = client.post("/api/savings/goals", json={"name": "Car", "target_amount": "5000"}).json()["id"]
+
+    patched = client.patch(
+        f"/api/savings/goals/{gid}",
+        json={
+            "name": "New Car",
+            "target_amount": "8000",
+            "target_date": "2027-06-30",
+            "account_id": aid,
+            "status": "archived",
+        },
+    )
+    assert patched.status_code == 200
+
+    goal = next(g for g in client.get("/api/savings/goals").json() if g["id"] == gid)
+    assert goal["name"] == "New Car"
+    assert Decimal(goal["target_amount"]) == Decimal("8000")
+    assert goal["target_date"] == "2027-06-30"
+    assert goal["account_id"] == aid
+    assert goal["status"] == "archived"
+
+
 def test_goal_linked_to_account_tracks_balance(client):
     aid = _account(client)
     _add_balance(client, aid, "2026-01-31", "500")

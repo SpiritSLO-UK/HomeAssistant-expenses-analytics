@@ -83,11 +83,30 @@ def adjust_balance(db: Session, account_id: int, *, delta: Decimal,
     return record_balance(db, account_id, as_of=date.today(), balance=new_balance, note=note)
 
 
+def _quantize_rate(rate: Decimal | None) -> Decimal | None:
+    return Decimal(rate).quantize(Decimal("0.001")) if rate is not None else None
+
+
 def set_interest_rate(db: Session, account_id: int, rate: Decimal | None) -> Account:
     account = get_savings_account(db, account_id)
-    account.interest_rate = (
-        Decimal(rate).quantize(Decimal("0.001")) if rate is not None else None
-    )
+    account.interest_rate = _quantize_rate(rate)
+    db.commit()
+    db.refresh(account)
+    return account
+
+
+# Editable account metadata. Currency is intentionally excluded — stored balances
+# are denominated in it, so changing it would misread the account's history; it is
+# read-only. ``fields`` carries only client-supplied keys (route exclude_unset), so
+# an explicit ``institution: None`` clears it while an omitted key is left untouched.
+def update_account(db: Session, account_id: int, *, fields: dict) -> Account:
+    account = get_savings_account(db, account_id)
+    if fields.get("name") is not None:
+        account.name = fields["name"].strip()
+    if "institution" in fields:
+        account.institution = (fields["institution"] or None)
+    if "interest_rate" in fields:
+        account.interest_rate = _quantize_rate(fields["interest_rate"])
     db.commit()
     db.refresh(account)
     return account

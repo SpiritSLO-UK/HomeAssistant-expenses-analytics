@@ -140,6 +140,10 @@ function AccountCard({
   const [amount, setAmount] = useState("");   // absolute "set balance" (from statement)
   const [delta, setDelta] = useState("");     // deposit / withdraw amount
   const [rate, setRate] = useServerState(account.interest_rate ?? "");
+  // Editable metadata (currency stays read-only — balances are denominated in it).
+  const [editingDetails, setEditingDetails] = useState(false);
+  const [editName, setEditName] = useServerState(account.name);
+  const [editInstitution, setEditInstitution] = useServerState(account.institution ?? "");
 
   const refresh = () => {
     onChange();
@@ -160,6 +164,16 @@ function AccountCard({
     mutationFn: () =>
       updateSavingsAccount(account.id, { interest_rate: rate.trim() === "" ? null : rate.trim() }),
     onSuccess: () => refresh(),
+    onError,
+  });
+  const saveDetails = useMutation({
+    mutationFn: () => {
+      // Built as a variable so the extra name/institution keys reach the PATCH
+      // (client.ts's updateSavingsAccount signature is intentionally left as-is).
+      const payload = { name: editName.trim(), institution: editInstitution.trim() || null };
+      return updateSavingsAccount(account.id, payload);
+    },
+    onSuccess: () => { setEditingDetails(false); refresh(); },
     onError,
   });
 
@@ -206,6 +220,28 @@ function AccountCard({
 
       {open && (
         <div style={{ marginTop: 8 }}>
+          {/* Edit account metadata (name, institution). Currency is read-only —
+              stored balances are denominated in it. */}
+          <div className="form-row" style={{ alignItems: "center", gap: 6 }}>
+            <button className="btn btn--sm btn--ghost" onClick={() => setEditingDetails((v) => !v)}>
+              {editingDetails ? "Cancel" : "✎ Edit details"}
+            </button>
+            <span className="muted" style={{ fontSize: "0.82rem" }}>Currency {account.currency} (fixed)</span>
+          </div>
+          {editingDetails && (
+            <form
+              className="form-row"
+              style={{ marginTop: 6 }}
+              onSubmit={(e) => { e.preventDefault(); if (editName.trim()) saveDetails.mutate(); }}
+            >
+              <input name="edit-account-name" autoComplete="off" placeholder="Account name" value={editName} onChange={(e) => setEditName(e.target.value)} />
+              <input name="edit-account-institution" autoComplete="off" placeholder="Institution (optional)" value={editInstitution} onChange={(e) => setEditInstitution(e.target.value)} />
+              <button className="btn btn--sm" type="submit" disabled={!editName.trim() || saveDetails.isPending}>
+                {saveDetails.isPending ? "Saving…" : "Save details"}
+              </button>
+            </form>
+          )}
+
           {/* Deposit / withdraw — adjusts the latest balance (confirmed). */}
           <div className="form-row" style={{ alignItems: "center", gap: 6 }}>
             <input
@@ -358,6 +394,72 @@ function GoalForecastLine({ forecast, base }: Readonly<{ forecast?: GoalForecast
   );
 }
 
+// Editable goal fields, shared by the create + edit forms so the edit form is the
+// create UI pre-filled. Status is optional (create defaults it server-side).
+type GoalFormValues = { name: string; target: string; targetDate: string; accountId: string; status: string };
+
+const GOAL_STATUS_OPTIONS = ["active", "achieved", "archived"];
+
+function GoalForm({
+  initial,
+  accounts,
+  base,
+  submitLabel,
+  showStatus,
+  pending,
+  onSubmit,
+  onCancel,
+}: Readonly<{
+  initial: GoalFormValues;
+  accounts: SavingsAccount[];
+  base: string;
+  submitLabel: string;
+  showStatus?: boolean;
+  pending: boolean;
+  onSubmit: (v: GoalFormValues) => void;
+  onCancel?: () => void;
+}>) {
+  const [name, setName] = useState(initial.name);
+  const [target, setTarget] = useState(initial.target);
+  const [targetDate, setTargetDate] = useState(initial.targetDate);
+  const [accountId, setAccountId] = useState(initial.accountId);
+  const [status, setStatus] = useState(initial.status);
+
+  const canSubmit = Boolean(name.trim()) && isAmount(target) && !pending;
+  const submit = () => onSubmit({ name: name.trim(), target, targetDate, accountId, status });
+
+  return (
+    <form
+      className="form-row"
+      style={{ marginTop: 14, flexWrap: "wrap" }}
+      onSubmit={(e) => { e.preventDefault(); if (canSubmit) submit(); }}
+    >
+      <input placeholder="Goal name" value={name} onChange={(e) => setName(e.target.value)} />
+      <input placeholder={`Target (${base})`} value={target} style={{ width: 120 }} onChange={(e) => setTarget(e.target.value)} />
+      <input type="date" value={targetDate} onChange={(e) => setTargetDate(e.target.value)} title="Target date (optional)" />
+      <select value={accountId} onChange={(e) => setAccountId(e.target.value)} title="Link to a savings account (optional)">
+        <option value="">Track manually</option>
+        {accounts.map((a) => (
+          <option key={a.id} value={a.id}>Link: {a.name}</option>
+        ))}
+      </select>
+      {showStatus && (
+        <select value={status} onChange={(e) => setStatus(e.target.value)} title="Goal status">
+          {GOAL_STATUS_OPTIONS.map((s) => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+        </select>
+      )}
+      <button className="btn" type="submit" disabled={!canSubmit}>
+        {pending ? "Saving…" : submitLabel}
+      </button>
+      {onCancel && (
+        <button className="btn btn--ghost" type="button" onClick={onCancel}>Cancel</button>
+      )}
+    </form>
+  );
+}
+
 function GoalsCard({
   goals,
   accounts,
@@ -373,20 +475,26 @@ function GoalsCard({
 }>) {
   const confirm = useConfirm();
   const prompt = usePrompt();
-  const [name, setName] = useState("");
-  const [target, setTarget] = useState("");
-  const [targetDate, setTargetDate] = useState("");
-  const [accountId, setAccountId] = useState("");
+  const [editingId, setEditingId] = useState<number | null>(null);
+
+  function goalPayload(v: GoalFormValues): Record<string, unknown> {
+    return {
+      name: v.name,
+      target_amount: v.target,
+      target_date: v.targetDate || null,
+      account_id: v.accountId ? Number(v.accountId) : null,
+    };
+  }
 
   const create = useMutation({
-    mutationFn: () =>
-      createSavingsGoal({
-        name,
-        target_amount: target,
-        target_date: targetDate || null,
-        account_id: accountId ? Number(accountId) : null,
-      }),
-    onSuccess: () => { setName(""); setTarget(""); setTargetDate(""); setAccountId(""); onChange(); },
+    mutationFn: (v: GoalFormValues) => createSavingsGoal(goalPayload(v)),
+    onSuccess: () => onChange(),
+    onError,
+  });
+  const update = useMutation({
+    mutationFn: (v: { id: number; values: GoalFormValues }) =>
+      updateSavingsGoal(v.id, { ...goalPayload(v.values), status: v.values.status }),
+    onSuccess: () => { setEditingId(null); onChange(); },
     onError,
   });
   const setCurrent = useMutation({
@@ -438,34 +546,48 @@ function GoalsCard({
                   </>
                 )}
                 {" · "}
+                <button className="link-btn" onClick={() => setEditingId((id) => (id === g.id ? null : g.id))}>
+                  {editingId === g.id ? "close" : "edit"}
+                </button>
+                {" · "}
                 <button className="link-btn" onClick={async () => { if (await confirm({ message: `Delete goal "${g.name}"?`, confirmLabel: "Delete", danger: true })) remove.mutate(g.id); }}>
                   delete
                 </button>
               </div>
               <GoalForecastLine forecast={goalForecast(g)} base={base} />
+              {editingId === g.id && (
+                <GoalForm
+                  initial={{
+                    name: g.name,
+                    target: g.target_amount,
+                    targetDate: g.target_date ?? "",
+                    accountId: g.account_id ? String(g.account_id) : "",
+                    status: g.status,
+                  }}
+                  accounts={accounts}
+                  base={base}
+                  submitLabel="Save goal"
+                  showStatus
+                  pending={update.isPending}
+                  onSubmit={(values) => update.mutate({ id: g.id, values })}
+                  onCancel={() => setEditingId(null)}
+                />
+              )}
             </li>
           );
         })}
       </ul>
 
-      <form
-        className="form-row"
-        style={{ marginTop: 14, flexWrap: "wrap" }}
-        onSubmit={(e) => { e.preventDefault(); if (name && target) create.mutate(); }}
-      >
-        <input placeholder="Goal name" value={name} onChange={(e) => setName(e.target.value)} />
-        <input placeholder={`Target (${base})`} value={target} style={{ width: 120 }} onChange={(e) => setTarget(e.target.value)} />
-        <input type="date" value={targetDate} onChange={(e) => setTargetDate(e.target.value)} title="Target date (optional)" />
-        <select value={accountId} onChange={(e) => setAccountId(e.target.value)} title="Link to a savings account (optional)">
-          <option value="">Track manually</option>
-          {accounts.map((a) => (
-            <option key={a.id} value={a.id}>Link: {a.name}</option>
-          ))}
-        </select>
-        <button className="btn" type="submit" disabled={!name || !target || create.isPending}>
-          {create.isPending ? "Adding…" : "Add goal"}
-        </button>
-      </form>
+      <GoalForm
+        // Remounts (clearing inputs) after each create, since the list length changes.
+        key={`create-${goals.length}`}
+        initial={{ name: "", target: "", targetDate: "", accountId: "", status: "active" }}
+        accounts={accounts}
+        base={base}
+        submitLabel="Add goal"
+        pending={create.isPending}
+        onSubmit={(values) => create.mutate(values)}
+      />
     </div>
   );
 }
