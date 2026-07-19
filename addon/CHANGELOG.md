@@ -48,6 +48,9 @@ config carry over; database migrations run automatically on start.
   CSV download.
 - **Nicer dialogs** - in-app modals replace browser confirm/prompt popups, and
   dropdowns apply instantly (rolling back if a save fails).
+- **More polish** - undo a bulk transaction edit; choose which category is kept
+  when merging; a split editor amount/percentage toggle; zoom/rotate in the
+  receipt viewer; and an "all history" range on the over-time charts.
 - **Faster and steadier** - quicker dashboard and analytics queries, a bigger
   database connection pool, and fewer transient errors after the app has sat
   idle.
@@ -55,8 +58,8 @@ config carry over; database migrations run automatically on start.
   rate-limited and budget-capped, the SSRF guard on outbound URLs now resists
   DNS rebinding, stronger security headers, and a broad hardening pass across
   the backend.
-- **Better tested** - 1,067 backend tests plus a browser test suite that clicks
-  through every page.
+- **Better tested** - 1,169 backend tests plus an 80+ test browser suite that
+  clicks through every page (incl. the two-factor backup-codes flow).
 
 ### Fixes (from a pre-release review)
 A critical review before release found and fixed 30 issues. Highlights:

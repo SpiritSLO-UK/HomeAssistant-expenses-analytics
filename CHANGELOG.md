@@ -9,15 +9,15 @@ human-readable entries; versions follow semantic versioning.
 
 ### Highlights
 
-A wide-ranging hardening, insight and polish release on top of v1.0.2 - roughly
-250 pull requests. Two-factor gains single-use **backup/recovery codes**; the
+A wide-ranging hardening, insight and polish release on top of v1.0.2 - over 250
+pull requests. Two-factor gains single-use **backup/recovery codes**; the
 container now runs as a **non-root user**; budgets, projects and savings goals
 get **forecasts** (pace, burn-down, time-to-goal) and can be **edited after
-creation**; US bank statements import correctly; dates display in your chosen
-format app-wide; native browser popups are replaced by an **in-app modal
-system**; and a systematic correctness-and-performance review swept roughly 30
-backend services. Data and config carry over; database migrations run
-automatically on start.
+creation**; the sidebar becomes a **customisable grouped navigation**; US bank
+statements import correctly; dates display in your chosen format app-wide; native
+browser popups are replaced by an **in-app modal system**; and a systematic
+correctness-and-performance review swept roughly 30 backend services. Data and
+config carry over; database migrations run automatically on start.
 
 ### Security & hardening
 - **MFA backup/recovery codes** - generate single-use codes from a new Settings
@@ -110,7 +110,8 @@ automatically on start.
   between its members. A "Customise navigation" editor lets any (non-child) user
   rename, show/hide, reorder, move pages between groups, and create their own
   groups - saved per user. The long **Settings** page is likewise split into
-  General / AI & privacy / Security / Integrations / Data sub-tabs.
+  General / AI & privacy / Security / Integrations / Data sub-tabs, each
+  shareable/deep-linkable via a `?section=` URL.
 - **Tag management** - merge tags, see usage counts and clean up unused tags
   from a dedicated **Tags** page in the sidebar.
 - **Edit after creation** - projects, budgets, rules and savings goals can be
@@ -121,13 +122,19 @@ automatically on start.
 - **Export what you see** - the Transactions CSV export honours your ticked
   selection, and can export the whole filtered set rather than just the current
   page.
+- **Undo a bulk edit** - after applying a category / project / country / business
+  change to many transactions at once, an **Undo** restores each row's previous
+  value.
 - **Activity log** - server-side search with actor and date-range filters, and
   an owner-only audit-log CSV export.
-- **Quality-of-life** - a vendor merge UI, clone + drag-to-reorder for rules, a
-  penny-exact percentage split helper, bulk recolour of categories with a new
-  category defaulting to an unused colour, AI-batch select-all + CSV export, and
-  heads-up dashboard alerts you can enable, disable or clear. Search keyboard
-  navigation now stays out of the way until you actually press an arrow key.
+- **Quality-of-life** - a vendor merge UI plus a category merge where you choose
+  which one is **kept**, clone + drag-to-reorder for rules, a split editor with a
+  penny-exact **amount/percentage** toggle, bulk recolour of categories with a new
+  category defaulting to an unused colour, AI-batch select-all + CSV export, a
+  receipt viewer with **zoom / rotate**, an **"all history"** option on the
+  over-time charts, and heads-up dashboard alerts you can enable, disable or clear.
+  Search keyboard navigation now stays out of the way until you actually press an
+  arrow key.
 - **Cloud AI batch runs in the background** - sending a cloud AI categorisation
   batch no longer blocks; it runs in the background with live
   sent/received progress you can watch.
@@ -159,11 +166,13 @@ automatically on start.
   MQTT isn't live.
 
 ### Testing & docs
-- **1,100+ backend tests**, plus a new **Playwright browser suite** (50+
-  tests: a render smoke of every page and end-to-end task flows) with an HTML
+- **1,169 backend tests**, plus a new **Playwright browser suite** (80+
+  tests across 24 specs: a render smoke of every page and end-to-end task flows,
+  including the MFA backup-codes flow with the TOTP computed in-test) with an HTML
   report attached to CI runs and releases, and a step-by-step UI test
   walkthrough. CI additionally guards the non-root container, encryption
-  restart, and Content-Security-Policy hash drift.
+  restart, and Content-Security-Policy hash drift. A public **ROADMAP.md** shows
+  where the project is heading.
 - Distinct per-package READMEs for the add-on vs standalone, an AI-gateway and
   privacy-gate data-flow diagram, refreshed architecture docs, and a documented
   standalone trust model (including the proxy header-spoof caveat).
