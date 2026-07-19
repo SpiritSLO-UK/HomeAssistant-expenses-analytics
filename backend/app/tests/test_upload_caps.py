@@ -49,3 +49,32 @@ def test_import_upload_rejects_oversized(client, monkeypatch):
         files={"file": ("big.csv", b"x" * 500, "text/csv")},
     )
     assert r.status_code == 413
+
+
+def test_receipt_upload_rejects_oversized(client, monkeypatch):
+    """The receipt upload endpoint caps via read_capped (413) instead of buffering the
+    whole body then checking length (#25)."""
+    monkeypatch.setattr(uploads, "RECEIPT_MAX", 50)
+    r = client.post(
+        "/api/receipts/upload",
+        files={"file": ("big.png", b"x" * 500, "image/png")},
+    )
+    assert r.status_code == 413
+
+
+def test_transaction_receipt_attach_rejects_oversized(client, monkeypatch):
+    """The per-transaction receipt attach endpoint honours the same receipt cap (#25)."""
+    up = client.post(
+        "/api/imports/upload",
+        files={"file": ("s.csv", b"Date,Description,Amount,Currency,Card,Category\n2026-05-02,SHOP,-1.00,GBP,Visa,\n", "text/csv")},
+        data={"parser_id": "curve_csv"},
+    ).json()
+    client.post(f"/api/imports/{up['import_id']}/confirm")
+    txn_id = client.get("/api/transactions").json()["items"][0]["id"]
+
+    monkeypatch.setattr(uploads, "RECEIPT_MAX", 50)
+    r = client.post(
+        f"/api/transactions/{txn_id}/receipts",
+        files={"file": ("big.png", b"x" * 500, "image/png")},
+    )
+    assert r.status_code == 413

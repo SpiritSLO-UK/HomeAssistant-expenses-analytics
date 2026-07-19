@@ -11,10 +11,11 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from sqlalchemy import select
 
 from app.db.session import SessionLocal
-from app.models import Category, Household, Receipt, Transaction
-from app.services import receipt_parser, receipt_service, settings_service
+from app.models import Account, Category, Household, Receipt, ReviewItem, Transaction
+from app.services import receipt_parser, receipt_service, review_service, settings_service
 from app.services.household_service import get_or_create_default_household
 
 SAMPLE = """TESCO STORES
@@ -615,3 +616,120 @@ def test_confirm_match_still_drops_original_when_enabled(db):
     db.refresh(receipt)
     assert receipt.storage_path is None
     assert not Path(path).exists()
+
+
+# --- #23: an auto-match must clear the low-confidence review item too ---
+
+
+def _open_receipt_reasons(db, receipt_id: int) -> set[str]:
+    return set(
+        db.scalars(
+            select(ReviewItem.reason).where(
+                ReviewItem.item_type == "receipt",
+                ReviewItem.item_id == receipt_id,
+                ReviewItem.status == "open",
+            )
+        ).all()
+    )
+
+
+def test_auto_match_resolves_low_confidence_review_item(db):
+    """A low-OCR-confidence receipt (needs_review + a 'low_confidence' item) that is
+    then auto-matched must have BOTH review reasons resolved, so it stops counting in
+    the Review Queue — previously only 'receipt_unmatched' was cleared (#23)."""
+    receipt = _seed_receipt(db)
+    # Simulate the low-confidence OCR outcome: flagged for review with an open item.
+    receipt.needs_review = True
+    receipt_service._flag(db, receipt, "low_confidence", "Low OCR confidence — check details.")
+    db.commit()
+    assert _open_receipt_reasons(db, receipt.id) == {"low_confidence"}
+    before = review_service.open_count(db)
+
+    _make_txn(db, household_id=receipt.household_id)  # exact amount + same day + vendor = 90
+    result = receipt_service.match(db, receipt, mode="auto")
+    db.refresh(receipt)
+
+    assert result["status"] == "auto_confirmed"
+    assert receipt.needs_review is False
+    # No open review item of any reason remains for this receipt (flag + queue consistent).
+    assert _open_receipt_reasons(db, receipt.id) == set()
+    assert review_service.open_count(db) == before - 1
+
+
+# --- #18: create-transaction must reject an out-of-scope (other member's private) account ---
+
+
+def _member(client, uid: str, name: str) -> int:
+    client.get("/api/users/me", headers={"X-Remote-User-Id": uid, "X-Remote-User-Display-Name": name})
+    row = next(u["id"] for u in client.get("/api/users").json() if u["external_id"] == uid)
+    client.patch(f"/api/users/{row}", json={"role": "member", "status": "approved"})
+    return row
+
+
+def test_create_transaction_rejects_out_of_scope_account(client):
+    """A member must not inject a receipt transaction into another member's PRIVATE
+    account (IDOR write, #18): the chosen account is validated against the caller's
+    visible scope BEFORE any write; an out-of-scope id is rejected and nothing lands."""
+    client.get("/api/users/me")  # owner bootstrap
+    _member(client, "ha-alice", "Alice")
+    bob = _member(client, "ha-bob", "Bob")
+    with SessionLocal() as db:
+        bob_priv = Account(name="Bob Private", account_type="current_account", currency="GBP",
+                           owner_user_id=bob, is_shared=False)
+        db.add(bob_priv)
+        db.commit()
+        bob_priv_id = bob_priv.id
+
+    alice = {"X-Remote-User-Id": "ha-alice", "X-Remote-User-Display-Name": "Alice"}
+    rid = client.post(
+        "/api/receipts/upload", files={"file": ("r.png", b"idor-receipt-bytes", "image/png")}, headers=alice
+    ).json()["id"]
+    client.patch(f"/api/receipts/{rid}", json={"merchant_raw": "SHOP", "total_amount": "5.00"}, headers=alice)
+
+    res = client.post(
+        f"/api/receipts/{rid}/create-transaction", json={"account_id": bob_priv_id}, headers=alice
+    )
+    assert res.status_code == 404
+    # Nothing was written into Bob's private account, and the receipt stays unmatched.
+    with SessionLocal() as db:
+        assert db.scalars(select(Transaction).where(Transaction.account_id == bob_priv_id)).first() is None
+        assert receipt_service._existing_matches(db, rid) == []
+
+
+def test_owner_create_transaction_into_any_account_still_works(client):
+    """Regression guard for #18: the owner (unrestricted scope) can still target any
+    existing account, so the guard only narrows members, never the owner."""
+    _import(client, _curve([("2026-05-02", "SEED", "-1.00")]))
+    account_id = client.get("/api/accounts").json()[0]["id"]
+    rid = _upload(client).json()["id"]
+    client.patch(f"/api/receipts/{rid}", json={"merchant_raw": "SHOP", "total_amount": "5.00"})
+    res = client.post(f"/api/receipts/{rid}/create-transaction", json={"account_id": account_id})
+    assert res.status_code == 200, res.text
+    assert _by_id(client, res.json()["transaction_id"])["account_id"] == account_id
+
+
+# --- #26: the receipts list loads matches in one query, not one-per-receipt ---
+
+
+def test_list_receipts_batches_match_lookups(client, monkeypatch):
+    """The list view must not run an ``_existing_matches`` SELECT per receipt (N+1,
+    #26): it eager-loads every listed receipt's matches in a single grouped query and
+    hands each ``to_dict`` its own pre-fetched set. Same data, bounded query count."""
+    for i in range(4):
+        rid = _upload(client, content=f"receipt-{i}".encode(), name=f"r{i}.png").json()["id"]
+        client.patch(f"/api/receipts/{rid}", json={"merchant_raw": f"SHOP {i}", "total_amount": "5.00"})
+
+    calls = {"n": 0}
+    real = receipt_service._existing_matches
+
+    def _counting(db, receipt_id):
+        calls["n"] += 1
+        return real(db, receipt_id)
+
+    monkeypatch.setattr(receipt_service, "_existing_matches", _counting)
+    listed = client.get("/api/receipts").json()
+    assert len(listed) == 4
+    # The batch helper supplies matches, so the per-receipt lookup is never hit here.
+    assert calls["n"] == 0
+    # Shape is unchanged: matches + recommended_transaction still present per receipt.
+    assert all("matches" in r and "recommended_transaction" in r for r in listed)

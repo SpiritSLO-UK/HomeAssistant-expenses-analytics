@@ -360,7 +360,13 @@ def _record_best_match(db: Session, receipt: Receipt, best_score: int, best_txn:
     )
     if auto:
         receipt.needs_review = False
+        # Clear the flag consistently: resolve BOTH the unmatched item AND any open
+        # low-confidence item raised by OCR. Previously only 'receipt_unmatched' was
+        # resolved, orphaning a 'low_confidence' item so it kept counting in the
+        # Review Queue even though needs_review was cleared (mirrors confirm_match,
+        # which resolves both) (#23).
         review_service.resolve_for(db, item_type="receipt", item_id=receipt.id, reason="receipt_unmatched")
+        review_service.resolve_for(db, item_type="receipt", item_id=receipt.id, reason="low_confidence")
         _propagate_vat(best_txn, receipt)
         # NOTE: deliberately do NOT drop the original here. This is a purely
         # automatic score-≥90 match that no human has confirmed; a single OCR
@@ -493,7 +499,36 @@ def recommend_transaction(db: Session, receipt: Receipt) -> dict | None:
     }
 
 
-def to_dict(db: Session, receipt: Receipt) -> dict:
+def matches_by_receipt(
+    db: Session, receipt_ids: list[int]
+) -> dict[int, list[TransactionReceiptMatch]]:
+    """Load the matches for a batch of receipts in ONE query, grouped by receipt id.
+
+    Lets a list view (``list_receipts``) avoid an ``_existing_matches`` SELECT per
+    receipt (the N+1 in #26). Receipts with no matches are simply absent from the map.
+    """
+    grouped: dict[int, list[TransactionReceiptMatch]] = {}
+    if not receipt_ids:
+        return grouped
+    rows = db.scalars(
+        select(TransactionReceiptMatch).where(
+            TransactionReceiptMatch.receipt_id.in_(receipt_ids)
+        )
+    ).all()
+    for m in rows:
+        grouped.setdefault(m.receipt_id, []).append(m)
+    return grouped
+
+
+def to_dict(
+    db: Session,
+    receipt: Receipt,
+    *,
+    matches: list[TransactionReceiptMatch] | None = None,
+) -> dict:
+    """Serialise a receipt. Pass ``matches`` (pre-fetched via
+    :func:`matches_by_receipt`) to skip the per-receipt matches query on list views."""
+    match_rows = _existing_matches(db, receipt.id) if matches is None else matches
     matches = [
         {
             "transaction_id": m.transaction_id,
@@ -501,7 +536,7 @@ def to_dict(db: Session, receipt: Receipt) -> dict:
             "match_status": m.match_status,
             "matched_by": m.matched_by,
         }
-        for m in _existing_matches(db, receipt.id)
+        for m in match_rows
     ]
     # Recommend a transaction only when nothing matched at all (a suggested or
     # confirmed match means the user should review that first).
