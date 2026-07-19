@@ -10,8 +10,9 @@ import {
 
 interface Row {
   key: string; // stable React key — rows are added/removed, so index keys break input focus
-  amount: string; // absolute magnitude, e.g. "40.00"
+  amount: string; // absolute magnitude, e.g. "40.00" — always the source of truth
   categoryId: string;
+  pct: string; // percent-of-total the user typed in % mode (display/edit only)
 }
 
 interface Props {
@@ -28,12 +29,42 @@ interface Props {
 // Accept European-style comma decimals ("12,50") by normalising the separator to
 // a dot before parsing — otherwise Number() yields NaN and the value silently
 // collapsed to 0.
-const toCents = (v: string): number => Math.round((Number(String(v).replace(",", ".")) || 0) * 100);
+const parseNum = (v: string): number => Number(String(v).replace(",", ".")) || 0;
+const toCents = (v: string): number => Math.round(parseNum(v) * 100);
 const fromCents = (c: number): string => (c / 100).toFixed(2);
+
+// Percentages summing to (near) 100 — a millionth of a point of slack so typed
+// values like 33.33/33.33/33.34 count as "whole" despite float noise.
+const PCT_FULL_EPSILON = 1e-6;
+
+// Apportion `total` cents across parts weighted by `pcts` (which sum to ~100), so
+// the parts sum to exactly `total`. Each part rounds to its share; the leftover
+// cent(s) land on the largest part — deterministic, and mirrors the penny-exact
+// "split evenly" behaviour.
+function apportionCents(pcts: number[], total: number): number[] {
+  const cents = pcts.map((p) => Math.round((p / 100) * total));
+  const diff = total - cents.reduce((acc, c) => acc + c, 0);
+  if (diff !== 0 && cents.length > 0) {
+    let maxI = 0;
+    for (let i = 1; i < cents.length; i++) if (cents[i] > cents[maxI]) maxI = i;
+    cents[maxI] += diff;
+  }
+  return cents;
+}
+
+// Derive each part's amount (in cents) from the typed percentages. When the
+// percentages add up to 100 we force a penny-exact total (apportionCents);
+// otherwise we honour the literal percentages and let "Remaining" show the gap.
+function centsFromPercents(pctStrs: string[], total: number): number[] {
+  const pcts = pctStrs.map(parseNum);
+  const pctSum = pcts.reduce((acc, p) => acc + p, 0);
+  if (Math.abs(pctSum - 100) < PCT_FULL_EPSILON) return apportionCents(pcts, total);
+  return pcts.map((p) => Math.round((p / 100) * total));
+}
 
 // Monotonic source of stable row keys (unique within the editor's lifetime).
 let _rowSeq = 0;
-const newRow = (amount = "", categoryId = ""): Row => ({ key: String(_rowSeq++), amount, categoryId });
+const newRow = (amount = "", categoryId = "", pct = ""): Row => ({ key: String(_rowSeq++), amount, categoryId, pct });
 
 export default function SplitEditor({ txnId, amount, currency, isSplit, categories, onDone }: Readonly<Props>) {
   const qc = useQueryClient();
@@ -42,6 +73,10 @@ export default function SplitEditor({ txnId, amount, currency, isSplit, categori
 
   const [rows, setRows] = useState<Row[]>([newRow(), newRow()]);
   const [error, setError] = useState<string | null>(null);
+  // "amount" (default) = user types absolute amounts; "percent" = user types a % of
+  // the total and we derive penny-exact amounts. Amount is always the source of
+  // truth stored on each row, so toggling modes preserves the current split.
+  const [mode, setMode] = useState<"amount" | "percent">("amount");
 
   // Prefill from existing splits when editing an already-split transaction.
   // Fetch in the query, but seed the rows in an effect that runs ONCE (ref guard)
@@ -103,8 +138,27 @@ export default function SplitEditor({ txnId, amount, currency, isSplit, categori
     onError: (e) => setError(String(e instanceof Error ? e.message : e)),
   });
 
+  // Percent-of-total for a given amount (cents), for seeding the % inputs.
+  const pctFromCents = (c: number): string => (totalCents > 0 ? ((c / totalCents) * 100).toFixed(2) : "0");
+
   function updateRow(i: number, field: keyof Row, value: string) {
     setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, [field]: value } : r)));
+  }
+  // In % mode the user edits percentages; amounts (the source of truth) are
+  // recomputed from every row's percentage so the parts stay penny-exact.
+  function updatePercent(i: number, pct: string) {
+    setRows((rs) => {
+      const next = rs.map((r, idx) => (idx === i ? { ...r, pct } : r));
+      const cents = centsFromPercents(next.map((r) => r.pct), totalCents);
+      return next.map((r, idx) => ({ ...r, amount: fromCents(cents[idx]) }));
+    });
+  }
+  // Switch input mode. Amounts are always the stored value, so the current split
+  // is preserved; entering % mode just seeds each row's % from its amount.
+  function switchMode(next: "amount" | "percent") {
+    if (next === mode) return;
+    setMode(next);
+    if (next === "percent") setRows((rs) => rs.map((r) => ({ ...r, pct: pctFromCents(toCents(r.amount)) })));
   }
   function addRow() {
     setRows((rs) => [...rs, newRow()]);
@@ -124,7 +178,7 @@ export default function SplitEditor({ txnId, amount, currency, isSplit, categori
       return rs.map((r) => {
         const cents = base + (extra > 0 ? 1 : 0);
         if (extra > 0) extra -= 1;
-        return { ...r, amount: fromCents(cents) };
+        return { ...r, amount: fromCents(cents), pct: pctFromCents(cents) };
       });
     });
   }
@@ -163,10 +217,30 @@ export default function SplitEditor({ txnId, amount, currency, isSplit, categori
         Split <strong>{amount} {currency}</strong> across categories. Parts must add up to the total.
       </p>
 
+      <div className="form-row" style={{ gap: 4, alignItems: "center", marginBottom: "0.5rem" }} role="group" aria-label="Enter parts by">
+        <span className="muted" style={{ marginRight: 4 }}>Enter by:</span>
+        <button
+          type="button"
+          aria-pressed={mode === "amount"}
+          className={"btn btn--sm" + (mode === "amount" ? "" : " btn--ghost")}
+          onClick={() => switchMode("amount")}
+        >
+          Amount
+        </button>
+        <button
+          type="button"
+          aria-pressed={mode === "percent"}
+          className={"btn btn--sm" + (mode === "percent" ? "" : " btn--ghost")}
+          onClick={() => switchMode("percent")}
+        >
+          %
+        </button>
+      </div>
+
       <table className="table" style={{ marginBottom: "0.5rem" }}>
         <thead>
           <tr>
-            <th className="num">Amount ({currency})</th>
+            <th className="num">{mode === "percent" ? "Share (%)" : `Amount (${currency})`}</th>
             <th>Category</th>
             <th></th>
           </tr>
@@ -175,14 +249,34 @@ export default function SplitEditor({ txnId, amount, currency, isSplit, categori
           {rows.map((r, i) => (
             <tr key={r.key}>
               <td className="num">
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={r.amount}
-                  style={{ width: "7rem", textAlign: "right" }}
-                  onChange={(e) => updateRow(i, "amount", e.target.value)}
-                />
+                {mode === "percent" ? (
+                  <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "flex-end", gap: 6 }}>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="100"
+                      value={r.pct}
+                      aria-label="Percentage of total"
+                      style={{ width: "5rem", textAlign: "right" }}
+                      onChange={(e) => updatePercent(i, e.target.value)}
+                    />
+                    <span aria-hidden="true">%</span>
+                    <span className="muted" style={{ minWidth: "6rem", textAlign: "right" }}>
+                      = {fromCents(toCents(r.amount))} {currency}
+                    </span>
+                  </span>
+                ) : (
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={r.amount}
+                    aria-label={`Amount (${currency})`}
+                    style={{ width: "7rem", textAlign: "right" }}
+                    onChange={(e) => updateRow(i, "amount", e.target.value)}
+                  />
+                )}
               </td>
               <td>
                 <select
