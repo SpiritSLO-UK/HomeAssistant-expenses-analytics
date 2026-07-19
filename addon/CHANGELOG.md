@@ -6,7 +6,7 @@
 All notable changes to HA Finance Intelligence. This project uses date-stamped,
 human-readable entries; versions follow semantic versioning.
 
-## v1.1.0 - Unreleased
+## v1.1.0 - 2026-07-19
 
 A wide-ranging hardening, insight and polish release on top of v1.0.2. Data and
 config carry over; database migrations run automatically on start.

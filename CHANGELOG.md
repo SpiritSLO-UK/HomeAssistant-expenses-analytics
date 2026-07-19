@@ -3,7 +3,7 @@
 All notable changes to HA Finance Intelligence. This project uses date-stamped,
 human-readable entries; versions follow semantic versioning.
 
-## v1.1.0 - Unreleased
+## v1.1.0 - 2026-07-19
 
 > Provided "as is", no warranty, not financial advice - keep your own backups.
 
