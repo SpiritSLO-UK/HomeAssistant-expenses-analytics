@@ -148,7 +148,7 @@ export default function Vendors() {
         <div className="form-row">
           <input aria-label="Canonical vendor name" placeholder="Canonical name (e.g. Tesco)" value={name} onChange={(e) => setName(e.target.value)} />
           <input aria-label="Alias to match" placeholder="Alias to match (e.g. TESCO)" value={alias} onChange={(e) => setAlias(e.target.value)} />
-          <button className="btn" disabled={!name || create.isPending} onClick={() => create.mutate()}>
+          <button className="btn" type="button" disabled={!name || create.isPending} onClick={() => create.mutate()}>
             Add vendor
           </button>
         </div>
@@ -190,6 +190,7 @@ export default function Vendors() {
                 ))}
             </select>
             <button
+              type="button"
               className="btn"
               disabled={!mergeSource || !mergeTarget || mergeSource === mergeTarget || merge.isPending}
               onClick={confirmMerge}
@@ -283,7 +284,7 @@ export default function Vendors() {
                     </td>
                     <td className="num">{money(Math.abs(Number(v.total_amount)))}</td>
                     <td>
-                      <button className="btn btn--ghost" onClick={() => confirmDelete(v)}>
+                      <button className="btn btn--ghost" type="button" onClick={() => confirmDelete(v)}>
                         Delete
                       </button>
                     </td>
@@ -303,7 +304,7 @@ function AliasAdder({ onAdd }: Readonly<{ onAdd: (alias: string) => void }>) {
   const [value, setValue] = useState("");
   if (!open) {
     return (
-      <button className="link-btn" onClick={() => setOpen(true)}>
+      <button className="link-btn" type="button" onClick={() => setOpen(true)}>
         + alias
       </button>
     );

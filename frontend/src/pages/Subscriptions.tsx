@@ -113,7 +113,7 @@ export default function Subscriptions() {
     <div className="page">
       <div className="page__head">
         <h1 className="page__title">Subscriptions</h1>
-        <button className="btn btn--ghost" disabled={detect.isPending} onClick={() => detect.mutate()}>
+        <button className="btn btn--ghost" type="button" disabled={detect.isPending} onClick={() => detect.mutate()}>
           {detect.isPending ? "Detecting…" : "Detect now"}
         </button>
       </div>
@@ -222,7 +222,7 @@ export default function Subscriptions() {
                         </select>
                       </td>
                       <td>
-                        <button className="link-btn" onClick={async () => { if (await confirm({ message: `Delete "${s.name}"?`, confirmLabel: "Delete", danger: true })) remove.mutate(s.id); }}>
+                        <button className="link-btn" type="button" onClick={async () => { if (await confirm({ message: `Delete "${s.name}"?`, confirmLabel: "Delete", danger: true })) remove.mutate(s.id); }}>
                           delete
                         </button>
                       </td>

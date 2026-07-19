@@ -92,8 +92,8 @@ export default function Budgets() {
         <h1 className="page__title">Budgets</h1>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <div className="form-row" style={{ gap: 4 }} title="Evaluate the budget's own period, or the whole year vs an annualised cap">
-            <button className={"btn btn--sm" + (annual ? " btn--ghost" : "")} onClick={() => setAnnual(false)}>This period</button>
-            <button className={"btn btn--sm" + (annual ? "" : " btn--ghost")} onClick={() => setAnnual(true)}>This year</button>
+            <button type="button" className={"btn btn--sm" + (annual ? " btn--ghost" : "")} onClick={() => setAnnual(false)}>This period</button>
+            <button type="button" className={"btn btn--sm" + (annual ? "" : " btn--ghost")} onClick={() => setAnnual(true)}>This year</button>
           </div>
           <label className="muted">
             {annual ? "Year " : "Month "}
@@ -193,7 +193,7 @@ function BudgetRow({
     <ListRow className="budget-row">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
         <div>
-          <button className="link-btn" style={{ fontWeight: 700 }} onClick={() => setOpen((v) => !v)}>
+          <button className="link-btn" type="button" style={{ fontWeight: 700 }} onClick={() => setOpen((v) => !v)}>
             {open ? "▾ " : "▸ "}{b.name}
           </button>{" "}
           <span className="muted">· {scope} · {annual ? "yearly" : b.period}</span>
@@ -202,10 +202,10 @@ function BudgetRow({
           <span className="tag" style={{ background: colour, color: "#fff" }}>
             {statusLabel}
           </span>
-          <button className="link-btn" onClick={() => setEditing((v) => !v)}>
+          <button className="link-btn" type="button" onClick={() => setEditing((v) => !v)}>
             {editing ? "close" : "edit"}
           </button>
-          <button className="link-btn" onClick={onDelete}>delete</button>
+          <button className="link-btn" type="button" onClick={onDelete}>delete</button>
         </div>
       </div>
       <ProgressBar percent={b.percent} color={colour} title={`${b.percent}%`} />
@@ -340,7 +340,7 @@ function NewBudget({
           />{" "}
           %
         </label>
-        <button className="btn" disabled={!valid || create.isPending} onClick={() => create.mutate()}>
+        <button className="btn" type="button" disabled={!valid || create.isPending} onClick={() => create.mutate()}>
           {create.isPending ? "Adding…" : "Add budget"}
         </button>
       </div>
@@ -503,9 +503,9 @@ function EditBudgetForm({
         </label>
         <label className="muted" style={{ display: "flex", alignItems: "center", gap: 4 }}>
           <input type="checkbox" checked={rollover} onChange={(e) => setRollover(e.target.checked)} />
-          Roll over unused
+          <span>Roll over unused</span>
         </label>
-        <button className="btn" disabled={!valid || save.isPending} onClick={() => save.mutate()}>
+        <button className="btn" type="button" disabled={!valid || save.isPending} onClick={() => save.mutate()}>
           {save.isPending ? "Saving…" : "Save changes"}
         </button>
       </div>

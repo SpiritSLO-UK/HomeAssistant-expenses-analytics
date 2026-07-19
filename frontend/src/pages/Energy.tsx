@@ -47,7 +47,7 @@ export default function Energy() {
     <div className="page">
       <div className="page__head">
         <h1 className="page__title">⚡ Energy cost offset</h1>
-        <button className="btn" onClick={() => offset.refetch()} disabled={offset.isFetching}>
+        <button className="btn" type="button" onClick={() => offset.refetch()} disabled={offset.isFetching}>
           {offset.isFetching ? "Refreshing…" : "Refresh"}
         </button>
       </div>
@@ -123,6 +123,7 @@ function EnergyHistoryCard({ currency }: Readonly<{ currency: string }>) {
         <div style={{ display: "flex", gap: 6 }}>
           {HISTORY_RANGES.map((r) => (
             <button
+              type="button"
               key={r.period}
               className={"btn btn--sm" + (range.period === r.period ? "" : " btn--ghost")}
               onClick={() => setRange(r)}
@@ -168,6 +169,7 @@ function ProductionTrendCard({ currency }: Readonly<{ currency: string }>) {
         <div style={{ display: "flex", gap: 6 }}>
           {HISTORY_RANGES.map((r) => (
             <button
+              type="button"
               key={r.period}
               className={"btn btn--sm" + (range.period === r.period ? "" : " btn--ghost")}
               onClick={() => setRange(r)}
@@ -332,7 +334,7 @@ function EnergyConfigCard() {
       </label>
 
       <div style={{ marginTop: 10 }}>
-        <button className="btn" onClick={() => save.mutate()} disabled={save.isPending}>
+        <button className="btn" type="button" onClick={() => save.mutate()} disabled={save.isPending}>
           {save.isPending ? "Saving…" : "Save"}
         </button>
         {msg && <span className="muted" style={{ marginLeft: 10 }}>{msg}</span>}

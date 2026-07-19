@@ -145,7 +145,7 @@ export default function Sidebar({
       </nav>
       <div className="sidebar__footer">
         {!isChild && canManageTabs && (
-          <button className="sidebar__customise" onClick={() => setEditing((v) => !v)}>
+          <button className="sidebar__customise" type="button" onClick={() => setEditing((v) => !v)}>
             {editing ? "✓ Done" : "✏️ Customise tabs"}
           </button>
         )}

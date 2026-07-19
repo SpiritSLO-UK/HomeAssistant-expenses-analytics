@@ -42,7 +42,7 @@ export default function Assets() {
     <div className="page">
       <div className="page__head">
         <h1 className="page__title">Cars &amp; assets</h1>
-        <button className="btn btn--sm" onClick={() => setShowNew((v) => !v)}>
+        <button className="btn btn--sm" type="button" onClick={() => setShowNew((v) => !v)}>
           {showNew ? "Cancel" : "＋ New asset"}
         </button>
       </div>
@@ -132,7 +132,7 @@ function AssetCard({ asset, onChange, onError }: Readonly<{ asset: Asset; onChan
     <div className="card">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
         <div>
-          <button className="link-btn" style={{ fontWeight: 700, fontSize: "1.05rem" }} onClick={() => setOpen((v) => !v)}>
+          <button className="link-btn" type="button" style={{ fontWeight: 700, fontSize: "1.05rem" }} onClick={() => setOpen((v) => !v)}>
             {open ? "▾ " : "▸ "}{KIND_ICON[asset.kind] ?? "📦"} {asset.name}
           </button>
           {asset.identifier && <span className="muted"> · {asset.identifier}</span>}
@@ -144,6 +144,7 @@ function AssetCard({ asset, onChange, onError }: Readonly<{ asset: Asset; onChan
         </div>
         <button
           className="link-btn"
+          type="button"
           onClick={async () => { if (await confirm({ message: `Delete "${asset.name}" and all its logs?`, confirmLabel: "Delete", danger: true })) remove.mutate(); }}
         >
           ✕
@@ -404,7 +405,7 @@ function LogHistory({ asset, logs, onChange, onError }: Readonly<{
                 </td>
                 <td style={{ whiteSpace: "nowrap" }}>{lg.cost == null ? "—" : money(lg.cost)}</td>
                 <td>
-                  <button className="link-btn" onClick={async () => { if (await confirm({ message: "Delete this entry?", confirmLabel: "Delete", danger: true })) remove.mutate(lg.id); }}>✕</button>
+                  <button className="link-btn" type="button" onClick={async () => { if (await confirm({ message: "Delete this entry?", confirmLabel: "Delete", danger: true })) remove.mutate(lg.id); }}>✕</button>
                 </td>
               </tr>
             );

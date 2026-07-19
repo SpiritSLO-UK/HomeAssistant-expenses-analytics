@@ -56,7 +56,7 @@ export default function AssignToChildButton({ txn, base }: Readonly<{ txn: Trans
   if (children.length === 0) return null;
   if (!open) {
     return (
-      <button className="link-btn" style={{ marginLeft: 6 }} title="Show this on a child's allowance" onClick={() => setOpen(true)}>
+      <button className="link-btn" type="button" style={{ marginLeft: 6 }} title="Show this on a child's allowance" onClick={() => setOpen(true)}>
         → child
       </button>
     );
@@ -78,10 +78,10 @@ export default function AssignToChildButton({ txn, base }: Readonly<{ txn: Trans
         title="Leave blank to assign the whole purchase"
         onChange={(e) => setAmount(e.target.value)}
       />
-      <button className="btn btn--sm" disabled={assign.isPending || !amountOk} onClick={() => assign.mutate()}>
+      <button className="btn btn--sm" type="button" disabled={assign.isPending || !amountOk} onClick={() => assign.mutate()}>
         {assign.isPending ? "…" : "assign"}
       </button>
-      <button className="link-btn" onClick={() => setOpen(false)}>×</button>
+      <button className="link-btn" type="button" onClick={() => setOpen(false)}>×</button>
     </span>
   );
 }

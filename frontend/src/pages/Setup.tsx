@@ -60,7 +60,7 @@ export default function Setup() {
 
 function ShapeCard({ icon, title, detail, onPick }: Readonly<{ icon: string; title: string; detail: string; onPick: () => void }>) {
   return (
-    <button className="card setup-shape" onClick={onPick} style={{ textAlign: "left", cursor: "pointer" }}>
+    <button className="card setup-shape" type="button" onClick={onPick} style={{ textAlign: "left", cursor: "pointer" }}>
       <div style={{ fontSize: "1.6rem" }}>{icon}</div>
       <h2 className="card__title" style={{ marginBottom: 4 }}>{title}</h2>
       <p className="muted" style={{ margin: 0, fontSize: "0.85rem" }}>{detail}</p>
@@ -124,7 +124,7 @@ function SoloSetup({ onBack }: Readonly<{ onBack: () => void }>) {
         </li>
       </ol>
       <div style={{ display: "flex", justifyContent: "space-between", marginTop: 12 }}>
-        <button className="btn btn--ghost" onClick={onBack}>← Back</button>
+        <button className="btn btn--ghost" type="button" onClick={onBack}>← Back</button>
         <Link className="btn" to="/">Go to the dashboard</Link>
       </div>
     </div>
@@ -145,7 +145,7 @@ function SharedIntro({ onBack }: Readonly<{ onBack: () => void }>) {
         <li><strong>Kids' allowance</strong> — give children a pocket-money budget (skip if none).</li>
       </ol>
       <div style={{ display: "flex", justifyContent: "space-between", marginTop: 12 }}>
-        <button className="btn btn--ghost" onClick={onBack}>← Back</button>
+        <button className="btn btn--ghost" type="button" onClick={onBack}>← Back</button>
         <Link className="btn" to="/family-setup">Continue to family setup →</Link>
       </div>
     </div>

@@ -160,6 +160,7 @@ function ActivityCard({ includeArchived, authorized }: Readonly<{ includeArchive
         <h2 className="card__title" style={{ margin: 0 }}>Activity</h2>
         <div className="form-row" style={{ gap: 8 }}>
           <button
+            type="button"
             className={"btn btn--sm" + (action === "decision" ? "" : " btn--ghost")}
             title="Show only important AI / cloud / privacy decisions"
             onClick={() => setAction(action === "decision" ? "" : "decision")}
@@ -198,10 +199,11 @@ function ActivityCard({ includeArchived, authorized }: Readonly<{ includeArchive
               <option key={n} value={n}>last {n}</option>
             ))}
           </select>
-          <button className="btn btn--sm" onClick={() => log.refetch()} disabled={log.isFetching}>
+          <button className="btn btn--sm" type="button" onClick={() => log.refetch()} disabled={log.isFetching}>
             {log.isFetching ? "…" : "Refresh"}
           </button>
           <button
+            type="button"
             className="btn btn--sm btn--ghost"
             title="Download the activity log as CSV (honours all the filters above)"
             onClick={() => downloadOrAlert(exportAuditLogCsv(filters))}

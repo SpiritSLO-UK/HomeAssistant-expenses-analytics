@@ -84,7 +84,7 @@ export default class ErrorBoundary extends Component<Props, State> {
           <p className="muted">
             The page hit an unexpected error. Your data is safe — reloading usually fixes it.
           </p>
-          <button className="btn" onClick={() => globalThis.location.reload()}>
+          <button className="btn" type="button" onClick={() => globalThis.location.reload()}>
             Reload
           </button>
         </div>

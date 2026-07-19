@@ -150,7 +150,7 @@ export default function Investments() {
       <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
           <h2 className="card__title" style={{ margin: 0 }}>Accounts</h2>
-          <button className="btn btn--sm" onClick={() => setShowNew((v) => !v)}>
+          <button className="btn btn--sm" type="button" onClick={() => setShowNew((v) => !v)}>
             {showNew ? "Cancel" : "＋ New account"}
           </button>
         </div>
@@ -256,7 +256,7 @@ function PricesCard({ onSynced, onError }: Readonly<{ onSynced: () => void; onEr
             ))}
           </select>
         </label>
-        <button className="btn btn--sm" disabled={!ready || sync.isPending} onClick={() => sync.mutate()}>
+        <button className="btn btn--sm" type="button" disabled={!ready || sync.isPending} onClick={() => sync.mutate()}>
           {sync.isPending ? "Syncing…" : "Sync prices now"}
         </button>
       </div>
@@ -297,7 +297,7 @@ function AccountCard({
     <div style={{ borderTop: "1px solid #2a2a2a", padding: "12px 0" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
         <div>
-          <button className="link-btn" style={{ fontWeight: 700 }} onClick={() => setOpen((v) => !v)}>
+          <button className="link-btn" type="button" style={{ fontWeight: 700 }} onClick={() => setOpen((v) => !v)}>
             {open ? "▾ " : "▸ "}{account.name}
           </button>{" "}
           <span className="tag">{account.account_type}</span>
@@ -452,11 +452,12 @@ function HoldingRow({
           : <Gain value={holding.gain} pct={holding.gain_pct} currency={holding.currency} />}
       </td>
       <td style={{ whiteSpace: "nowrap" }}>
-        <button className="btn btn--sm btn--ghost" disabled={!dirty || save.isPending} onClick={() => save.mutate()}>
+        <button className="btn btn--sm btn--ghost" type="button" disabled={!dirty || save.isPending} onClick={() => save.mutate()}>
           Save
         </button>{" "}
         <button
           className="link-btn"
+          type="button"
           onClick={async () => { if (await confirm({ message: `Remove holding ${holding.symbol}?`, confirmLabel: "Remove", danger: true })) remove.mutate(); }}
         >
           ✕
@@ -526,10 +527,10 @@ function ValueSection({
 
       <div className="form-row" style={{ alignItems: "center", gap: 6 }}>
         <input inputMode="decimal" placeholder={`Amount (${base})`} value={delta} style={{ width: 120 }} onChange={(e) => setDelta(e.target.value)} />
-        <button className="btn btn--sm" disabled={!isAmount(delta) || adjust.isPending} onClick={() => doAdjust("contribution")}>
+        <button className="btn btn--sm" type="button" disabled={!isAmount(delta) || adjust.isPending} onClick={() => doAdjust("contribution")}>
           ＋ Contribution
         </button>
-        <button className="btn btn--sm btn--ghost" disabled={!isAmount(delta) || adjust.isPending} onClick={() => doAdjust("withdrawal")}>
+        <button className="btn btn--sm btn--ghost" type="button" disabled={!isAmount(delta) || adjust.isPending} onClick={() => doAdjust("withdrawal")}>
           － Withdrawal
         </button>
       </div>

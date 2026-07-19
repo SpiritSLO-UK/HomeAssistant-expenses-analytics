@@ -136,8 +136,8 @@ export default function FamilySetup() {
                     <td>
                       {u.status === "pending" && (
                         <>
-                          <button className="btn btn--sm" onClick={() => approve.mutate(u.id)}>Approve</button>{" "}
-                          <button className="link-btn" onClick={() => deny.mutate(u.id)}>deny</button>
+                          <button className="btn btn--sm" type="button" onClick={() => approve.mutate(u.id)}>Approve</button>{" "}
+                          <button className="link-btn" type="button" onClick={() => deny.mutate(u.id)}>deny</button>
                         </>
                       )}
                     </td>
@@ -234,9 +234,9 @@ export default function FamilySetup() {
       )}
 
       <div style={{ display: "flex", justifyContent: "space-between", marginTop: 14 }}>
-        <button className="btn btn--ghost" disabled={step === 0} onClick={() => setStep((s) => s - 1)}>← Back</button>
+        <button className="btn btn--ghost" type="button" disabled={step === 0} onClick={() => setStep((s) => s - 1)}>← Back</button>
         {step < STEPS.length - 1 && (
-          <button className="btn" onClick={() => setStep((s) => s + 1)}>
+          <button className="btn" type="button" onClick={() => setStep((s) => s + 1)}>
             {step === STEPS.length - 2 ? "Finish" : "Next →"}
           </button>
         )}
@@ -274,7 +274,7 @@ function KidRow({ child, onError, onDone }: Readonly<{ child: User; onError: (e:
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
         />
-        <button className="btn btn--sm" disabled={!amount || set.isPending} onClick={() => set.mutate()}>
+        <button className="btn btn--sm" type="button" disabled={!amount || set.isPending} onClick={() => set.mutate()}>
           {existing ? "Update budget" : "Set pocket money"}
         </button>
       </span>

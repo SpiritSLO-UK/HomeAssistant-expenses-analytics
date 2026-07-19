@@ -103,7 +103,7 @@ function NewAccountCard({ isAdmin, fail, clearErr }: Readonly<{ isAdmin: boolean
   if (!open) {
     return (
       <div style={{ margin: "8px 0" }}>
-        <button className="btn" onClick={() => setOpen(true)}>➕ New account</button>
+        <button className="btn" type="button" onClick={() => setOpen(true)}>➕ New account</button>
       </div>
     );
   }
@@ -122,10 +122,10 @@ function NewAccountCard({ isAdmin, fail, clearErr }: Readonly<{ isAdmin: boolean
           onChange={(e) => setCurrency(e.target.value.toUpperCase())}
           style={{ width: 150 }}
         />
-        <button className="btn" disabled={!name.trim() || create.isPending} onClick={() => create.mutate()}>
+        <button className="btn" type="button" disabled={!name.trim() || create.isPending} onClick={() => create.mutate()}>
           {create.isPending ? "Adding…" : "Add account"}
         </button>
-        <button className="btn btn--ghost" onClick={() => setOpen(false)}>Cancel</button>
+        <button className="btn btn--ghost" type="button" onClick={() => setOpen(false)}>Cancel</button>
       </div>
       <p className="muted" style={{ fontSize: "0.85rem", marginBottom: 0 }}>
         {isAdmin
@@ -182,8 +182,8 @@ function AccountRow({ account, isAdmin, meId, users, accounts, fail, clearErr }:
         {renaming ? (
           <span className="form-row" style={{ gap: 6, alignItems: "center" }}>
             <input value={newName} onChange={(e) => setNewName(e.target.value)} autoFocus />
-            <button className="btn" disabled={!newName.trim() || patch.isPending} onClick={() => patch.mutate({ name: newName.trim() })}>Save</button>
-            <button className="btn btn--ghost" onClick={() => { setRenaming(false); setNewName(account.name); }}>Cancel</button>
+            <button className="btn" type="button" disabled={!newName.trim() || patch.isPending} onClick={() => patch.mutate({ name: newName.trim() })}>Save</button>
+            <button className="btn btn--ghost" type="button" onClick={() => { setRenaming(false); setNewName(account.name); }}>Cancel</button>
           </span>
         ) : (
           <>
@@ -196,7 +196,7 @@ function AccountRow({ account, isAdmin, meId, users, accounts, fail, clearErr }:
 
       <div className="form-row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         {canEdit && !renaming && (
-          <button className="btn btn--ghost" onClick={() => { setNewName(account.name); setRenaming(true); }}>Rename</button>
+          <button className="btn btn--ghost" type="button" onClick={() => { setNewName(account.name); setRenaming(true); }}>Rename</button>
         )}
         {isAdmin && (
           <label className="muted">
@@ -249,6 +249,7 @@ function AccountAdminControls({ account, accounts, fail, clearErr }: Readonly<{ 
   if (!account.in_use) {
     return (
       <button
+        type="button"
         className="btn btn--ghost"
         disabled={del.isPending}
         onClick={async () => {
@@ -271,6 +272,7 @@ function AccountAdminControls({ account, accounts, fail, clearErr }: Readonly<{ 
         {others.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
       </select>
       <button
+        type="button"
         className="btn btn--ghost"
         disabled={mergeTarget === "" || merge.isPending}
         onClick={async () => {
