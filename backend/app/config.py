@@ -93,6 +93,12 @@ class Settings(BaseSettings):
     # that flags a long-stopped add-on; the shared availability topic + LWT give the
     # fast "add-on dropped" signal. 0 disables expire_after. Default: 24 hours.
     mqtt_expire_after_seconds: int = 86400
+    # Opt-in security-event notifications (default OFF, strict-local). When BOTH
+    # this and ``mqtt_enabled`` are true, a failed unlock / failed MFA / wrong
+    # passphrase is published as a Home Assistant MQTT ``event`` entity so HA can
+    # automate on it. The payload carries only the event TYPE, a UTC timestamp and
+    # a recent-failure counter — never a passphrase/code or any PII (HAFI_MQTT_SECURITY_EVENTS).
+    mqtt_security_events: bool = False
 
     # --- AI gateway (spec §22). Off by default; opt-in via privacy_mode. ---
     # The API key for a cloud (or auth'd local) LLM is a secret. This env var

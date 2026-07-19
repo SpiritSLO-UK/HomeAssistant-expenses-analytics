@@ -284,6 +284,9 @@ def disable_encryption(passphrase: str) -> None:
         # through to the verifier and surface as a generic decryption failure.
         raise ValueError("A passphrase is required.")
     if not verify_passphrase(passphrase):
+        # A wrong current passphrase on the disable path — opt-in HA notification
+        # (best-effort, no secret in the payload) before surfacing the 400.
+        _notify_security_event("wrong_passphrase")
         raise ValueError("Wrong passphrase.")
 
     import sqlcipher3  # pyright: ignore[reportMissingImports]  -- optional 'encryption' extra
@@ -419,6 +422,14 @@ def _now() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
+def _notify_security_event(event_type: str, recent_failures: int | None = None) -> None:
+    """Publish a security event to MQTT (opt-in, best-effort). Lazy import avoids an
+    import cycle and keeps the auth path independent of MQTT being importable."""
+    from app.services import mqtt_service  # lazy: avoid import cycle
+
+    mqtt_service.publish_security_event_safe(event_type, recent_failures)
+
+
 def record_failed_unlock() -> int:
     """Record a failed unlock; returns the number of failures in the recent window."""
     with _events_lock:  # the whole read-modify-write is serialised (SR-7)
@@ -429,6 +440,8 @@ def record_failed_unlock() -> int:
         _write_events(events)
     recent = failed_unlock_summary()["recent"]
     logger.warning("Failed database unlock attempt (%d recent).", recent)
+    # Opt-in HA notification. No secret is passed — only the type + recent count.
+    _notify_security_event("failed_unlock", recent)
     return recent
 
 

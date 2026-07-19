@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import date
+from datetime import UTC, date, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -361,19 +361,23 @@ def _safe_wait_for_publish(info, timeout: float) -> None:
         pass
 
 
-def _publish(client, topic: str, payload: str, *, wait: float = 0.0) -> bool:
-    """Publish one retained message; return ``True`` only if the broker accepted it.
+def _publish(client, topic: str, payload: str, *, wait: float = 0.0, retain: bool = True) -> bool:
+    """Publish one message; return ``True`` only if the broker accepted it.
 
     paho's ``publish()`` returns an ``MQTTMessageInfo`` whose ``rc`` is non-zero
     when the message was dropped (e.g. the client isn't connected). Checking it
     stops a dropped message being reported as a success. A fake/``None`` result
     (used by tests) has no ``rc`` and counts as success.
 
+    ``retain`` is True for sensor state/discovery (HA needs the latest value on
+    reconnect); a momentary security *event* is published non-retained so it isn't
+    re-delivered as a stale alert.
+
     When ``wait`` is set and the message was accepted, block up to ``wait`` seconds
     for the network loop to flush it, so a publish isn't lost when the connection
     is torn down immediately afterwards.
     """
-    info = client.publish(topic, payload, retain=True)
+    info = client.publish(topic, payload, retain=retain)
     ok = getattr(info, "rc", 0) == 0
     if ok and wait:
         _safe_wait_for_publish(info, wait)
@@ -456,6 +460,122 @@ def publish_safe(db: Session, ref: date | None = None) -> None:
         )
     except Exception as exc:
         logger.warning("MQTT publish failed (non-fatal): %s", exc)
+
+
+# --- Security-event publishing (opt-in; backlog "MQTT security notifications") ---
+#
+# When ``mqtt_security_events`` is enabled AND MQTT is enabled, an auth/unlock
+# failure is surfaced to Home Assistant as an MQTT ``event`` entity so HA can
+# automate on it (notify, flash a light, ...). We deliberately publish an *event*
+# entity (not a sensor) so each occurrence fires an HA trigger.
+#
+# The payload NEVER contains a secret: only the event TYPE, a UTC timestamp and a
+# recent-failure counter. No passphrase, no TOTP code, no user id / display name /
+# other PII is ever included.
+
+SECURITY_EVENT_TYPES: tuple[str, ...] = ("failed_unlock", "failed_mfa", "wrong_passphrase")
+
+_SECURITY_EVENT_OBJECT_ID = "finance_security_event"
+_SECURITY_EVENT_KEY = "security_event"
+
+
+def _security_events_enabled() -> bool:
+    """Both switches must be on: MQTT itself, and the security-event opt-in."""
+    return settings.mqtt_enabled and settings.mqtt_security_events
+
+
+def _security_event_state_topic() -> str:
+    return f"{settings.mqtt_base_topic}/event/{_SECURITY_EVENT_KEY}"
+
+
+def _security_event_discovery_topic() -> str:
+    return f"{settings.mqtt_discovery_prefix}/event/finance/{_SECURITY_EVENT_OBJECT_ID}/config"
+
+
+def build_security_event_payload(event_type: str, recent_failures: int | None = None) -> dict:
+    """The (secret-free) JSON payload for one security event.
+
+    ``event_type`` must be one of :data:`SECURITY_EVENT_TYPES`. The ``event_type``
+    key is what HA's MQTT event platform matches against ``event_types``.
+    """
+    if event_type not in SECURITY_EVENT_TYPES:
+        raise ValueError(f"unknown security event type: {event_type!r}")
+    payload: dict = {
+        "event_type": event_type,
+        "timestamp": datetime.now(UTC).isoformat(),
+    }
+    if recent_failures is not None:
+        payload["recent_failures"] = int(recent_failures)
+    return payload
+
+
+def build_security_event_discovery() -> dict:
+    """The retained ``{topic, config}`` MQTT discovery message for the event entity."""
+    config = {
+        "name": "Finance Security Event",
+        "unique_id": _SECURITY_EVENT_OBJECT_ID,
+        "state_topic": _security_event_state_topic(),
+        "event_types": list(SECURITY_EVENT_TYPES),
+        "device": DEVICE,
+        "availability_topic": _availability_topic(),
+        "payload_available": AVAILABILITY_ONLINE,
+        "payload_not_available": AVAILABILITY_OFFLINE,
+        "icon": "mdi:shield-alert",
+    }
+    return {"topic": _security_event_discovery_topic(), "config": config}
+
+
+def publish_security_event(
+    event_type: str, recent_failures: int | None = None, *, connect=None
+) -> bool:
+    """Best-effort publish of one security event; returns ``True`` if accepted.
+
+    No-op (returns ``False``) unless BOTH ``mqtt_enabled`` and
+    ``mqtt_security_events`` are on. Never raises: a broker/connect problem must
+    never break the auth/unlock flow that called it. ``connect`` is injectable for
+    tests (a factory returning a client with ``publish``/``disconnect``).
+    """
+    if not _security_events_enabled():
+        return False
+    try:
+        payload = build_security_event_payload(event_type, recent_failures)
+    except ValueError:
+        logger.warning("MQTT security event: unknown type %r (not published)", event_type)
+        return False
+    try:
+        client = (connect or _default_connect)()
+    except Exception as exc:  # broker/connect problems must never raise here
+        logger.warning("MQTT security event connect failed (non-fatal): %s", exc)
+        return False
+    _safe_loop_start(client)
+    try:
+        _publish_online(client)
+        disc = build_security_event_discovery()
+        _publish(client, disc["topic"], json.dumps(disc["config"]), wait=_PUBLISH_TIMEOUT)
+        # The event itself is momentary → published non-retained so a reconnecting
+        # HA never replays a stale alert.
+        return _publish(
+            client, _security_event_state_topic(), json.dumps(payload),
+            wait=_PUBLISH_TIMEOUT, retain=False,
+        )
+    except Exception as exc:  # pragma: no cover - best effort
+        logger.warning("MQTT security event publish failed (non-fatal): %s", exc)
+        return False
+    finally:
+        _safe_loop_stop(client)
+        _safe_disconnect(client)
+
+
+def publish_security_event_safe(event_type: str, recent_failures: int | None = None) -> None:
+    """Fire-and-forget wrapper: publish a security event, swallowing everything.
+
+    The single call site helper the recording functions use, so an MQTT hiccup can
+    never propagate into a failed-unlock / failed-MFA path.
+    """
+    try:
+        publish_security_event(event_type, recent_failures)
+    except Exception as exc:  # pragma: no cover - defence in depth
+        logger.warning("MQTT security event failed (non-fatal): %s", exc)
 
 
 def read_topics(topics: list[str], *, connect=None, timeout: float = 2.0) -> dict[str, str]:
