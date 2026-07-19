@@ -224,6 +224,8 @@ function DialogHost({
   };
 
   const titleId = `dialog-title-${id}`;
+  const messageId = `dialog-message-${id}`;
+  const promptLabel = opts.title ?? DEFAULT_TITLE[kind];
   const confirmClass = opts.danger ? "btn btn--danger" : "btn";
 
   return (
@@ -243,7 +245,7 @@ function DialogHost({
           {opts.title ?? DEFAULT_TITLE[kind]}
         </h2>
         {opts.message != null && (
-          <p className="muted" style={{ marginTop: 0, whiteSpace: "pre-wrap" }}>
+          <p id={messageId} className="muted" style={{ marginTop: 0, whiteSpace: "pre-wrap" }}>
             {opts.message}
           </p>
         )}
@@ -259,6 +261,8 @@ function DialogHost({
                 ref={inputRef}
                 value={value}
                 placeholder={opts.placeholder}
+                aria-label={promptLabel}
+                aria-describedby={opts.message != null ? messageId : undefined}
                 onChange={(e) => setValue(e.target.value)}
               />
             </div>
