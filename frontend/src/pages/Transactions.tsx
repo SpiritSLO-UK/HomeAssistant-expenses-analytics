@@ -357,10 +357,11 @@ export default function Transactions() {
     setVat.mutate({ id: t.id, value: trimmed });
   }
 
-  // Export the *filtered* set (the client drops limit/offset so it's not just
-  // the current page).
+  // Export the ticked selection when some rows are selected, else the whole
+  // *filtered* set (the client drops limit/offset so it's not just the page).
   const exportCsv = useMutation({
-    mutationFn: () => exportTransactionsCsv(filters),
+    mutationFn: () =>
+      exportTransactionsCsv(filters, selected.size > 0 ? [...selected] : undefined),
     onError: (e) => { alert({ message: String(e instanceof Error ? e.message : e) }); },
   });
 
@@ -496,6 +497,15 @@ export default function Transactions() {
   const pageAllSelected = pageCount > 0 && selectedOnPage === pageCount;
   const pageSomeSelected = selectedOnPage > 0 && selectedOnPage < pageCount;
 
+  // Export button copy: mid-export, "Export N selected" when rows are ticked,
+  // else "Export all (filtered)". Precomputed so the JSX stays a single ternary.
+  const exportIdle = selected.size > 0 ? `⬇ Export ${selected.size} selected` : "⬇ Export CSV";
+  const exportLabel = exportCsv.isPending ? "Exporting…" : exportIdle;
+  const exportTitle =
+    selected.size > 0
+      ? "Download the selected transactions as CSV"
+      : "Download these transactions as CSV (honours the filters below)";
+
   // Select/clear every row on the current page (indeterminate → select-all).
   const toggleAllOnPage = (checked: boolean) =>
     setSelected((prev) => {
@@ -528,10 +538,10 @@ export default function Transactions() {
           <button
             className="btn btn--ghost"
             disabled={exportCsv.isPending || (data?.total ?? 0) === 0}
-            title="Download these transactions as CSV (honours the filters below)"
+            title={exportTitle}
             onClick={() => exportCsv.mutate()}
           >
-            {exportCsv.isPending ? "Exporting…" : "⬇ Export CSV"}
+            {exportLabel}
           </button>
           <Link
             className="btn btn--ghost"

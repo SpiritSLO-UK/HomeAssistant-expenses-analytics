@@ -52,9 +52,19 @@ def export_transactions(
     amount_max: Decimal | None = None,
     search: str | None = None,
     include_archived: Annotated[bool, Query(description="Include archived (aged-out) transactions")] = False,
+    ids: Annotated[
+        list[int] | None,
+        Query(description="Restrict export to these transaction ids (the ticked selection)"),
+    ] = None,
 ) -> Response:
-    """Export transactions as CSV, honouring the same filters as the list view."""
+    """Export transactions as CSV, honouring the same filters as the list view.
+
+    When ``ids`` is supplied the export is narrowed to that selection (still
+    intersected with the caller's account scope); without it, all filtered rows
+    are exported as before."""
     scope = auth_service.resolved_account_scope(db, auth_service.get_current_user(request, db), member_id=member_id)
+    # Bound the selection so a hand-crafted request can't build an oversized query.
+    selected_ids = ids[: export_service.MAX_EXPORT_IDS] if ids else None
     conditions = export_service.build_transaction_filters(
         date_from=date_from,
         date_to=date_to,
@@ -71,6 +81,7 @@ def export_transactions(
         search=search,
         account_ids=scope,
         include_archived=include_archived,
+        ids=selected_ids,
     )
     return _csv_response(export_service.transactions_csv(db, conditions), "transactions")
 

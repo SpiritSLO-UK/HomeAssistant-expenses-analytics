@@ -26,6 +26,10 @@ from app.services.scope import account_scope_condition, archived_condition
 # export can't exhaust memory.
 MAX_EXPORT_ROWS = 100_000
 
+# When exporting an explicit selection (ticked rows), bound the id list so a
+# hand-crafted request can't build an oversized ``IN (...)`` query.
+MAX_EXPORT_IDS = 5_000
+
 TRANSACTION_HEADERS = [
     "date",
     "posted_date",
@@ -192,14 +196,21 @@ def build_transaction_filters(
     account_ids: set[int] | None = None,
     include_archived: bool = False,
     default_country: str | None = None,
+    ids: list[int] | None = None,
 ) -> list:
     """Build the SQLAlchemy filter list shared by the transactions list endpoint
     and the CSV export, so "export" always matches "what you see".
 
     ``account_ids`` is the visibility scope (None = unrestricted); it is applied
     in addition to the explicit ``account_id`` UI filter. Archived (aged-out)
-    transactions are excluded unless ``include_archived`` (backlog #78)."""
+    transactions are excluded unless ``include_archived`` (backlog #78).
+
+    ``ids`` restricts the export to an explicit selection of ticked rows; it is
+    ANDed with the visibility scope above, so a selection can never reach a row
+    the caller isn't allowed to see."""
     conditions: list = [*account_scope_condition(account_ids), *archived_condition(include_archived)]
+    if ids:
+        conditions.append(Transaction.id.in_(ids))
     conditions.extend(
         _equality_conditions(
             transaction_id=transaction_id,

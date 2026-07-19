@@ -121,6 +121,57 @@ def test_date_to_boundary_is_inclusive_whole_day(db):
     assert "day-after" not in descriptions  # the next day → excluded
 
 
+def test_transactions_csv_export_with_ids_returns_only_selected(client):
+    """Passing ``ids`` narrows the export to that ticked selection (and no other
+    rows), while omitting it exports the whole filtered set unchanged."""
+    client.post("/api/backup/demo")
+    items = client.get("/api/transactions", params={"limit": 500}).json()["items"]
+    full_count = len(_rows(client.get("/api/export/transactions.csv"))) - 1
+    assert full_count == len(items)  # sanity: no-ids export is the full set
+
+    chosen = items[:3]
+    chosen_ids = [t["id"] for t in chosen]
+    rows = _rows(client.get("/api/export/transactions.csv", params={"ids": chosen_ids}))
+
+    assert len(rows) - 1 == len(chosen_ids)  # only the selected rows, plus header
+    assert len(chosen_ids) < full_count  # and it is a strict subset
+    exported_descs = sorted(r[2] for r in rows[1:])
+    assert exported_descs == sorted(t["description_raw"] or "" for t in chosen)
+
+
+def test_transactions_csv_export_ids_cannot_bypass_scope(db):
+    """An ``ids`` selection is ANDed with the account scope, so it can never
+    surface a row outside the caller's visibility (defence in depth: the id list
+    comes straight from the client)."""
+    from app.models import Account, Transaction
+    from app.services import export_service
+
+    def _mk(account_id: int, desc: str) -> Transaction:
+        return Transaction(
+            account_id=account_id, transaction_date=date(2026, 5, 15),
+            description_raw=desc, amount=Decimal("10.00"), currency="GBP",
+            direction="debit", base_amount=Decimal("10.00"), fx_rate=Decimal("1"),
+        )
+
+    a1 = Account(name="A1", account_type="current_account", currency="GBP")
+    a2 = Account(name="A2", account_type="current_account", currency="GBP")
+    db.add_all([a1, a2])
+    db.flush()
+    in_scope = _mk(a1.id, "IN_SCOPE")
+    out_scope = _mk(a2.id, "OUT_OF_SCOPE")
+    db.add_all([in_scope, out_scope])
+    db.commit()
+
+    # Select BOTH rows by id, but restrict visibility to account a1 only.
+    conditions = export_service.build_transaction_filters(
+        ids=[in_scope.id, out_scope.id], account_ids={a1.id}
+    )
+    rows = list(csv.reader(io.StringIO(export_service.transactions_csv(db, conditions))))
+    descriptions = [r[2] for r in rows[1:]]
+
+    assert descriptions == ["IN_SCOPE"]  # the out-of-scope id is filtered out
+
+
 def test_categories_csv_export(client):
     client.post("/api/backup/demo")
     resp = client.get("/api/export/categories.csv")

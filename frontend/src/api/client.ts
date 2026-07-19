@@ -2569,11 +2569,19 @@ function exportParams(filters: Record<string, unknown>): string {
   return qs ? `?${qs}` : "";
 }
 
-export function exportTransactionsCsv(filters: TransactionFilters = {}): Promise<void> {
+// Export the filtered rows, or — when `ids` is given (the ticked selection) —
+// just those rows. `ids` is sent as repeated `ids=` query params.
+export function exportTransactionsCsv(
+  filters: TransactionFilters = {},
+  ids?: number[],
+): Promise<void> {
   const rest: Record<string, unknown> = { ...filters };
   delete rest.limit; // export all matching rows, not just the page
   delete rest.offset;
-  return downloadCsv(`api/export/transactions.csv${exportParams(rest)}`, "transactions.csv");
+  const params = new URLSearchParams(toQuery(rest));
+  for (const id of ids ?? []) params.append("ids", String(id));
+  const qs = params.toString();
+  return downloadCsv(`api/export/transactions.csv${qs ? `?${qs}` : ""}`, "transactions.csv");
 }
 
 export function exportCategoriesCsv(month?: string): Promise<void> {
