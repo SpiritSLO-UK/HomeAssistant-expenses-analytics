@@ -1,9 +1,7 @@
-import { useState } from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { NAV_ITEMS, navKey } from "../nav";
+import { pathMatches, visibleGroupItems, type NavGroup, type NavVisibilityCtx, type NavRenderItem } from "../nav";
 import { getAiStatus } from "../api/client";
-import { getHiddenNavKeys, getNavOrder, setHiddenNavKeys, setNavOrder } from "../prefs";
 
 // Injected at build time from package.json (vite define) so it can't drift.
 const VERSION = __APP_VERSION__;
@@ -21,85 +19,25 @@ function privacyBadge(ai?: { enabled: boolean; is_cloud: boolean }): { label: st
   return { label: "🔒 Local-first · local AI", title: "A local (on-device) AI model is in use — nothing leaves this device." };
 }
 
-// Core pages that can never be hidden — you always need a way home and a way
-// back to Settings (and Customise itself lives in the sidebar regardless). They
-// can still be re-ordered; only hiding is locked.
-const ALWAYS_SHOWN = new Set(["/", "/settings"]);
-
-const ALL_PATHS = NAV_ITEMS.map((i) => i.path);
-
-// Saved order may be stale across releases: keep known paths in their saved
-// position, then append any nav items added since (or never ordered) at the end.
-function mergeNavOrder(saved: string[]): string[] {
-  const known = new Set(ALL_PATHS);
-  const kept = saved.filter((p) => known.has(p));
-  const keptSet = new Set(kept);
-  return [...kept, ...ALL_PATHS.filter((p) => !keptSet.has(p))];
-}
-
 export default function Sidebar({
+  groups,
   role = "owner",
   canManageTabs = true,
   blockedNavKeys = [],
   open = false,
   onNavigate,
 }: Readonly<{
+  groups: NavGroup[]; // resolved layout (default or the user's saved layout)
   role?: string;
-  canManageTabs?: boolean; // owner or a granted member may customise the nav tabs (#28 RBAC)
+  canManageTabs?: boolean; // owner or a granted member may see settings-gated pages (#28 RBAC)
   blockedNavKeys?: string[]; // pages the owner restricted for this user (#108)
   open?: boolean; // drawer open on narrow screens
   onNavigate?: () => void; // close the drawer after picking a page (mobile)
 }>) {
-  const isAdmin = role === "owner";
-  const isChild = role === "child";
   const ai = useQuery({ queryKey: ["ai-status"], queryFn: getAiStatus, staleTime: 60_000 });
   const badge = privacyBadge(ai.data);
-  const [hidden, setHidden] = useState<Set<string>>(() => getHiddenNavKeys());
-  const [order, setOrder] = useState<string[]>(() => mergeNavOrder(getNavOrder()));
-  const [editing, setEditing] = useState(false);
-
-  // Role visibility (child → allowance only; ownerOnly → admin), then drop any
-  // pages the owner has restricted for this user (#108 — the API enforces it too).
-  const blocked = new Set(blockedNavKeys);
-  const roleItems = NAV_ITEMS.filter((item) => {
-    if (isChild) return item.childVisible;
-    if (!item.ownerOnly && blocked.has(navKey(item.path))) return false;
-    // Settings-manager-only pages (e.g. Tags) follow the same grant as the
-    // "Customise tabs" control — canManageTabs === can_manage_settings (#28).
-    if (item.manageSettingsOnly && !canManageTabs) return false;
-    return !item.ownerOnly || isAdmin;
-  });
-
-  // Apply the per-device order to the role-visible items.
-  const orderedRoleItems = [...roleItems].sort((a, b) => order.indexOf(a.path) - order.indexOf(b.path));
-
-  const toggle = (path: string) =>
-    setHidden((prev) => {
-      const next = new Set(prev);
-      if (next.has(path)) next.delete(path);
-      else next.add(path);
-      setHiddenNavKeys(next);
-      return next;
-    });
-
-  // Move a tab up/down within the visible list, then persist the full order
-  // (role-hidden paths, if any, are preserved at the end).
-  const move = (path: string, dir: -1 | 1) => {
-    const visible = orderedRoleItems.map((i) => i.path);
-    const i = visible.indexOf(path);
-    const j = i + dir;
-    if (i < 0 || j < 0 || j >= visible.length) return;
-    [visible[i], visible[j]] = [visible[j], visible[i]];
-    const visibleSet = new Set(visible);
-    const next = [...visible, ...order.filter((p) => !visibleSet.has(p))];
-    setOrder(next);
-    setNavOrder(next);
-  };
-
-  // Normal mode drops hidden tabs; edit mode shows them all so they can be
-  // re-enabled / re-ordered. The child role never customises (its one page).
-  const items =
-    isChild || editing ? orderedRoleItems : orderedRoleItems.filter((i) => !hidden.has(i.path));
+  const location = useLocation();
+  const ctx: NavVisibilityCtx = { role, canManageTabs, blockedNavKeys };
 
   return (
     <aside className={"sidebar" + (open ? " sidebar--open" : "")}>
@@ -108,91 +46,74 @@ export default function Sidebar({
         <span className="sidebar__brand-text">Finance</span>
       </div>
       <nav className="sidebar__nav">
-        {items.map((item) =>
-          editing ? (
-            // canUp/canDown must reason about the tab's position in the FULL
-            // ordered role list (what `move` operates on), not the rendered
-            // list — otherwise hidden tabs would skew the enable/disable state.
-            <EditRow
-              key={item.path}
-              item={item}
-              shown={!hidden.has(item.path)}
-              locked={ALWAYS_SHOWN.has(item.path)}
-              canUp={orderedRoleItems.findIndex((i) => i.path === item.path) > 0}
-              canDown={
-                orderedRoleItems.findIndex((i) => i.path === item.path) <
-                orderedRoleItems.length - 1
-              }
-              onToggle={() => toggle(item.path)}
-              onMoveUp={() => move(item.path, -1)}
-              onMoveDown={() => move(item.path, 1)}
+        {groups.map((group) => {
+          const members = visibleGroupItems(group, ctx);
+          if (members.length === 0) return null; // whole group hidden (no visible members)
+          // A single visible member (a standalone group, or a group gated down to
+          // one) renders as a plain link to that page. Multiple members render as
+          // a group header; the members themselves appear as page sub-tabs.
+          if (members.length === 1) {
+            return <MemberLink key={group.id} member={members[0]} onNavigate={onNavigate} />;
+          }
+          return (
+            <GroupHeader
+              key={group.id}
+              group={group}
+              members={members}
+              currentPath={location.pathname}
+              onNavigate={onNavigate}
             />
-          ) : (
-            <NavLink
-              key={item.path}
-              to={item.path}
-              end={item.path === "/"}
-              onClick={() => onNavigate?.()}
-              className={({ isActive }) =>
-                "sidebar__link" + (isActive ? " sidebar__link--active" : "")
-              }
-            >
-              <span className="sidebar__link-icon">{item.icon}</span>
-              <span>{item.label}</span>
-            </NavLink>
-          ),
-        )}
+          );
+        })}
       </nav>
       <div className="sidebar__footer">
-        {!isChild && canManageTabs && (
-          <button className="sidebar__customise" type="button" onClick={() => setEditing((v) => !v)}>
-            {editing ? "✓ Done" : "✏️ Customise tabs"}
-          </button>
-        )}
-        {editing && (
-          <p className="sidebar__hint">Use ▲ ▼ to reorder; 👁️ shows/hides. Hidden tabs stay reachable by URL.</p>
-        )}
         <div title={badge.title}>{badge.label} · v{VERSION}</div>
       </div>
     </aside>
   );
 }
 
-function EditRow({
-  item,
-  shown,
-  locked,
-  canUp,
-  canDown,
-  onToggle,
-  onMoveUp,
-  onMoveDown,
-}: Readonly<{
-  item: { path: string; label: string; icon: string };
-  shown: boolean;
-  locked: boolean;
-  canUp: boolean;
-  canDown: boolean;
-  onToggle: () => void;
-  onMoveUp: () => void;
-  onMoveDown: () => void;
-}>) {
-  const stateTitle = shown ? "Hide this tab" : "Show this tab";
-  const toggleTitle = locked ? "Always shown" : stateTitle;
-  const stateIcon = shown ? "👁️" : "🚫";
+// A plain sidebar link to a single page (standalone group / single visible member).
+function MemberLink({ member, onNavigate }: Readonly<{ member: NavRenderItem; onNavigate?: () => void }>) {
   return (
-    <div className={"sidebar__link sidebar__link--edit" + (shown ? "" : " sidebar__link--off")}>
-      <span className="sidebar__link-icon">{item.icon}</span>
-      <span style={{ flex: 1, textAlign: "left" }}>{item.label}</span>
-      <button type="button" className="sidebar__navbtn" disabled={!canUp} onClick={onMoveUp} title="Move up" aria-label={`Move ${item.label} up`}>
-        ▲
-      </button>
-      <button type="button" className="sidebar__navbtn" disabled={!canDown} onClick={onMoveDown} title="Move down" aria-label={`Move ${item.label} down`}>
-        ▼
-      </button>
-      <button type="button" className="sidebar__navbtn" disabled={locked} onClick={onToggle} title={toggleTitle} aria-label={toggleTitle}>
-        {locked ? "🔒" : stateIcon}
-      </button>
-    </div>
+    <NavLink
+      to={member.path}
+      end={member.path === "/"}
+      onClick={() => onNavigate?.()}
+      className={({ isActive }) => "sidebar__link" + (isActive ? " sidebar__link--active" : "")}
+    >
+      <span className="sidebar__link-icon">{member.icon}</span>
+      <span>{member.label}</span>
+    </NavLink>
+  );
+}
+
+// A multi-item group: one header row linking to its first visible member, marked
+// active whenever the current route is any of the group's members (its sub-tabs
+// switch between them on the page itself).
+function GroupHeader({
+  group,
+  members,
+  currentPath,
+  onNavigate,
+}: Readonly<{
+  group: NavGroup;
+  members: NavRenderItem[];
+  currentPath: string;
+  onNavigate?: () => void;
+}>) {
+  const first = members[0];
+  const active = members.some((m) => pathMatches(m.path, currentPath));
+  const icon = group.icon ?? first.icon;
+  const label = group.label ?? first.label;
+  return (
+    <NavLink
+      to={first.path}
+      onClick={() => onNavigate?.()}
+      className={"sidebar__link sidebar__group" + (active ? " sidebar__link--active" : "")}
+    >
+      <span className="sidebar__link-icon">{icon}</span>
+      <span>{label}</span>
+    </NavLink>
   );
 }

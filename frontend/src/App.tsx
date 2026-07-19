@@ -1,5 +1,5 @@
-import { lazy, Suspense, useState, type ReactNode } from "react";
-import { Route, Routes } from "react-router-dom";
+import { lazy, Suspense, useMemo, useState, type ReactNode } from "react";
+import { Route, Routes, useLocation } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { QRCodeSVG } from "qrcode.react";
 import Sidebar from "./components/Sidebar";
@@ -33,9 +33,10 @@ const Users = lazy(() => import("./pages/Users"));
 const FamilySetup = lazy(() => import("./pages/FamilySetup"));
 const Setup = lazy(() => import("./pages/Setup"));
 const Logs = lazy(() => import("./pages/Logs"));
-import { ApiError, getMe, getSecurityStatus, getSettings, mfaEnable, mfaSetup, mfaVerify, unlockDatabase, type Me, type SecurityStatus } from "./api/client";
+import { ApiError, getMe, getSecurityStatus, getSettings, mfaEnable, mfaSetup, mfaVerify, unlockDatabase, type Me, type NavLayout, type SecurityStatus } from "./api/client";
 import { setDisplayCurrency } from "./lib/money";
-import { NAV_ITEMS } from "./nav";
+import { NAV_ITEMS, pathMatches, resolveLayout, visibleGroupItems, type NavGroup, type NavVisibilityCtx } from "./nav";
+import SubTabs, { type RouterSubTab } from "./components/SubTabs";
 import { DialogProvider } from "./components/dialogs";
 
 // Mount the in-app dialog system once, above everything — every gate, shell and
@@ -87,7 +88,7 @@ function AppRoutes() {
     const childPages: Record<string, ReactNode> = { "/allowance": <Allowance /> };
     const childItems = NAV_ITEMS.filter((i) => i.childVisible && childPages[i.path]);
     return (
-      <AppShell role="child">
+      <AppShell role="child" navLayout={me.data?.nav_layout ?? null}>
         <Suspense fallback={<RouteFallback />}>
           <Routes>
             {childItems.map((i) => <Route key={i.path} path={i.path} element={childPages[i.path]} />)}
@@ -103,6 +104,7 @@ function AppRoutes() {
       role={me.data?.role ?? "owner"}
       canManageTabs={me.data?.can_manage_settings ?? false}
       blockedNavKeys={me.data?.blocked_nav_keys ?? []}
+      navLayout={me.data?.nav_layout ?? null}
     >
       <Suspense fallback={<RouteFallback />}>
         <Routes>
@@ -212,21 +214,45 @@ function AppError({ onRetry }: Readonly<{ onRetry: () => void }>) {
   );
 }
 
+// The sub-tabs for the multi-item group the current page belongs to, or null on a
+// standalone page (or a group with a single visible member). Computed in the
+// shared shell so the sub-tabs appear automatically — no page file is edited.
+function useGroupSubTabs(groups: NavGroup[], ctx: NavVisibilityCtx): RouterSubTab[] | null {
+  const { pathname } = useLocation();
+  for (const group of groups) {
+    const members = visibleGroupItems(group, ctx);
+    if (members.length < 2) continue; // standalone / single member → no sub-tabs
+    if (members.some((m) => pathMatches(m.path, pathname))) {
+      return members.map((m) => ({ key: m.path, label: m.label, to: m.path, icon: m.icon }));
+    }
+  }
+  return null;
+}
+
 function AppShell({
   role,
   canManageTabs = false,
   blockedNavKeys = [],
+  navLayout = null,
   children,
 }: Readonly<{
   role: string;
   canManageTabs?: boolean;
   blockedNavKeys?: string[];
+  navLayout?: NavLayout | null;
   children: ReactNode;
 }>) {
   const [navOpen, setNavOpen] = useState(false);
+  const groups = useMemo(() => resolveLayout(navLayout), [navLayout]);
+  const ctx = useMemo<NavVisibilityCtx>(
+    () => ({ role, canManageTabs, blockedNavKeys }),
+    [role, canManageTabs, blockedNavKeys],
+  );
+  const subTabs = useGroupSubTabs(groups, ctx);
   return (
     <div className="layout">
       <Sidebar
+        groups={groups}
         role={role}
         canManageTabs={canManageTabs}
         blockedNavKeys={blockedNavKeys}
@@ -243,6 +269,7 @@ function AppShell({
           </button>
           <span className="mobile-topbar__brand">💷 Finance</span>
         </div>
+        {subTabs && <SubTabs tabs={subTabs} ariaLabel="Section" onNavigate={() => setNavOpen(false)} />}
         <main className="content">{children}</main>
       </div>
     </div>
