@@ -127,6 +127,122 @@ def test_amount_regex_still_parses_real_amounts():
     assert receipt_parser.detect_total("TOTAL £42") == Decimal("42.00")
 
 
+# --- characterisation of the _AMOUNT regex (Sonar S5843 simplification guard) ---
+# These pin the EXACT current behaviour of _AMOUNT / _amounts_on so the regex can be
+# simplified for SonarCloud rule S5843 (regex complexity) without silently changing
+# which amounts a receipt yields. Every row below is real ground-truth: _to_decimal
+# picks the separator, so 12,50 -> 12.50 (comma decimal) while 12,345 -> 12345.00
+# (comma grouping), and bare integers / rate-only tokens deliberately match nothing.
+
+_AMOUNTS_ON_CASES = [
+    # UK/US and EU grouped-with-decimal, either separator as the point.
+    ("1,234.56", ["1234.56"]),
+    ("1.234,56", ["1234.56"]),
+    ("1,234,567.89", ["1234567.89"]),
+    ("1.234.567,89", ["1234567.89"]),
+    ("£1,234.56", ["1234.56"]),
+    ("€1.299,00", ["1299.00"]),
+    ("1,234.5", ["1234.50"]),
+    # Grouped, no decimal tail.
+    ("1,234", ["1234.00"]),
+    ("1.234", ["1234.00"]),
+    ("12,345", ["12345.00"]),
+    ("123,456,789", ["123456789.00"]),
+    # Plain decimals with either separator, incl. short (single-digit) decimals.
+    ("12.34", ["12.34"]),
+    ("12,50", ["12.50"]),
+    ("45.5", ["45.50"]),
+    ("12.3", ["12.30"]),
+    ("1.5", ["1.50"]),
+    ("0.99", ["0.99"]),
+    ("$0.99", ["0.99"]),
+    ("100.00", ["100.00"]),
+    ("12345.67", ["12345.67"]),
+    ("1,23", ["1.23"]),  # 1–2 digit run after the sep is the decimal, not grouping
+    # Signs / parentheses / currency are stripped from the captured group(1).
+    ("-5.00", ["5.00"]),
+    ("-£5.00", ["5.00"]),
+    ("(£5.00)", ["5.00"]),
+    ("£12.34", ["12.34"]),
+    # A space between the currency symbol and the digits is tolerated; the amount is
+    # still captured (this is the one superset the simplified prefix relies on).
+    ("£ 12.34", ["12.34"]),
+    ("$ 5.00", ["5.00"]),
+    # Embedded in text / multiple amounts on one line, left-to-right.
+    ("Coffee 12.00 and tea 3.50", ["12.00", "3.50"]),
+    ("Total: 1,234.56 GBP", ["1234.56"]),
+    # Greedy/ordered-alternation quirks that MUST be preserved verbatim.
+    ("1234,567", ["1234.56"]),  # comma read as decimal -> 1234.56, trailing 7 dropped
+    ("1,2345", ["1234.00"]),    # only the grouped 1,234 matches; stray 5 is not decimal
+    ("3.5.5", ["3.50"]),        # matches the first plain decimal 3.5 only
+    # No-match cases: bare integers, currency-only, malformed, empty.
+    ("1234", []),
+    ("5", []),
+    ("50", []),
+    ("500", []),
+    ("5000", []),
+    ("£5", []),
+    ("5 EUR", []),
+    ("1..2", []),
+    ("12.", []),
+    (".50", []),
+    ("abc", []),
+    ("", []),
+]
+
+
+@pytest.mark.parametrize("text, expected", _AMOUNTS_ON_CASES)
+def test_amounts_on_characterisation(text, expected):
+    assert receipt_parser._amounts_on(text) == [Decimal(e) for e in expected]
+
+
+@pytest.mark.parametrize(
+    "text, expected_group",
+    [
+        ("12.34", "12.34"),
+        ("£12.34", "12.34"),      # currency symbol is outside group 1
+        ("£ 12.34", "12.34"),     # symbol + space still fully matches an amount line
+        ("$ 5.00", "5.00"),
+        ("1,234.56", "1,234.56"),
+        ("abc", None),
+        ("5", None),              # bare integer is not a money amount
+        ("12", None),
+        ("-5.00", None),          # the sign breaks a *full* match (finditer still finds 5.00)
+    ],
+)
+def test_amount_regex_fullmatch_characterisation(text, expected_group):
+    m = receipt_parser._AMOUNT_RE.fullmatch(text)
+    assert (m.group(1) if m else None) == expected_group
+
+
+def test_amount_regex_group_one_index_is_the_number():
+    """Downstream reads group(1); the currency/space prefix must never be captured."""
+    m = receipt_parser._AMOUNT_RE.search("Paid £ 1,234.56 today")
+    assert m is not None
+    assert m.group(1) == "1,234.56"
+
+
+@pytest.mark.parametrize(
+    "line, expected",
+    [
+        ("TOTAL £ 42.18", "42.18"),   # currency symbol + space before the amount
+        ("TOTAL $ 5.00", "5.00"),
+        ("TOTAL 12,50", "12.50"),
+        ("TOTAL 45.5", "45.50"),
+        ("TOTAL 1.234,56", "1234.56"),
+        ("TOTAL 1,234.56", "1234.56"),
+        ("TOTAL €1.299,00", "1299.00"),
+    ],
+)
+def test_detect_total_characterisation(line, expected):
+    assert receipt_parser.detect_total(line) == Decimal(expected)
+
+
+def test_detect_vat_tolerates_symbol_space():
+    assert receipt_parser.detect_vat("VAT £ 4.18") == Decimal("4.18")
+    assert receipt_parser.detect_vat("Net 38.00 VAT 4.18") == Decimal("4.18")
+
+
 # Real card-payment slip a user uploaded — OCR collapsed it to one long line of
 # terminal/transaction boilerplate. The merchant heuristic must NOT dump that into
 # the merchant field (backlog: receipt-OCR merchant gibberish, 2026-06-06).
