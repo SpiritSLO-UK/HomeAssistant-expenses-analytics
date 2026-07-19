@@ -46,16 +46,14 @@ def _run_startup_migrations() -> None:
         run_migrations()
     except Exception:
         if os.environ.get("HAFI_ALLOW_MIGRATION_FAILURE") == "1":
-            logger.error(
+            logger.exception(
                 "Database migration failed, but HAFI_ALLOW_MIGRATION_FAILURE=1 is set: "
                 "continuing in recovery mode. The database may be inconsistent.",
-                exc_info=True,
             )
             return
-        logger.error(
+        logger.exception(
             "Database migration failed; refusing to start to avoid serving inconsistent "
             "data. Restart with HAFI_ALLOW_MIGRATION_FAILURE=1 to override for recovery.",
-            exc_info=True,
         )
         raise
 

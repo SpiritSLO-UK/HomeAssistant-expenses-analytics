@@ -198,8 +198,10 @@ def test_never_cloud_category_blocks_cloud(client):
         cat.privacy_sensitivity = "never_cloud"
         txn.category_id = cat.id
         db.commit()
+        fresh = db.get(Transaction, txn_id)
+        provider = FakeProvider()
         with pytest.raises(AIDisabled):
-            ai_service.classify_transaction(db, db.get(Transaction, txn_id), provider=FakeProvider())
+            ai_service.classify_transaction(db, fresh, provider=provider)
 
 
 def test_run_request_refuses_when_cloud_mode_revoked(client):

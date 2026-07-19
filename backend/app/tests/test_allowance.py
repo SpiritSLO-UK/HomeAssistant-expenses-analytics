@@ -140,8 +140,9 @@ def test_zero_amount_allocation_is_rejected(client):
     """A zero (or effectively-zero) manual amount is refused before ``abs`` (SR-C7)."""
     kid = _make_child(client)
     with SessionLocal() as db:
+        amount = Decimal("0")
         with pytest.raises(ValueError):
-            allowance_service.create_allocation(db, child_id=kid, amount=Decimal("0"))
+            allowance_service.create_allocation(db, child_id=kid, amount=amount)
 
 
 def test_txn_outside_child_household_is_rejected(client):

@@ -30,6 +30,9 @@ HUNDRED = Decimal("100")
 # still makes the parts sum to the parent to the cent regardless.
 PERCENT_TOLERANCE = Decimal("0.5")
 
+# One part is just the transaction itself, so a real split needs at least two.
+_MIN_PARTS_MSG = "A split needs at least two parts."
+
 
 class SplitError(ValueError):
     """A proposed set of splits is invalid (spec error ``split_invalid``, §36)."""
@@ -78,7 +81,7 @@ def split_evenly(total: Decimal | str | float | int, n: int) -> list[Decimal]:
     Raises :class:`SplitError` if ``n < 2`` (a split needs at least two parts).
     """
     if n < 2:
-        raise SplitError("A split needs at least two parts.")
+        raise SplitError(_MIN_PARTS_MSG)
     # Quantise to the penny then work in signed integer cents to stay exact.
     total_cents = int((_q(total) * 100).to_integral_value())
     sign = -1 if total_cents < 0 else 1
@@ -131,7 +134,7 @@ def split_by_percentages(
     percentage, or a percentage sum that misses 100 by more than the tolerance.
     """
     if len(parts) < 2:
-        raise SplitError("A split needs at least two parts.")
+        raise SplitError(_MIN_PARTS_MSG)
     percents = [Decimal(str(p.percent)) for p in parts]
     if any(p <= 0 for p in percents):
         raise SplitError("Each percentage must be greater than zero.")
@@ -190,7 +193,7 @@ def validate(db: Session, txn: Transaction, parts: list[SplitInput]) -> list[Spl
         raise SplitError("Cannot split a transfer transaction.")
 
     if len(parts) < 2:
-        raise SplitError("A split needs at least two parts.")
+        raise SplitError(_MIN_PARTS_MSG)
 
     txn_total = _q(txn.amount)
     if txn_total == 0:

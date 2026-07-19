@@ -107,16 +107,18 @@ def test_extract_json_raises_when_absent():
 
 def test_error_payload_on_200_raises_clear_error(monkeypatch, no_sleep):
     _patch_httpx(monkeypatch, [_FakeResponse(200, {"error": {"message": "bad model"}})])
+    provider = _provider()
     with pytest.raises(AIError) as exc:
-        _provider()._complete([{"role": "user", "content": "hi"}])
+        provider._complete([{"role": "user", "content": "hi"}])
     assert "bad model" in str(exc.value)
     assert "choices" not in str(exc.value)  # no leaked KeyError
 
 
 def test_missing_choices_raises_clear_error(monkeypatch, no_sleep):
     _patch_httpx(monkeypatch, [_FakeResponse(200, {"unexpected": True})])
+    provider = _provider()
     with pytest.raises(AIError) as exc:
-        _provider()._complete([{"role": "user", "content": "hi"}])
+        provider._complete([{"role": "user", "content": "hi"}])
     assert "no message content" in str(exc.value)
 
 
@@ -154,8 +156,9 @@ def test_retries_transient_connect_error(monkeypatch, no_sleep):
 
 def test_gives_up_after_max_attempts(monkeypatch, no_sleep):
     calls = _patch_httpx(monkeypatch, [_FakeResponse(503) for _ in range(3)])
+    provider = _provider()
     with pytest.raises(AIError) as exc:
-        _provider()._complete([{"role": "user", "content": "hi"}])
+        provider._complete([{"role": "user", "content": "hi"}])
     assert "after 3 attempts" in str(exc.value)
     assert len(calls) == 3
 
@@ -163,8 +166,9 @@ def test_gives_up_after_max_attempts(monkeypatch, no_sleep):
 def test_non_transient_status_not_retried(monkeypatch, no_sleep):
     # A 400 is a client error — surface immediately, don't waste retries.
     calls = _patch_httpx(monkeypatch, [_FakeResponse(400)])
+    provider = _provider()
     with pytest.raises(AIError):
-        _provider()._complete([{"role": "user", "content": "hi"}])
+        provider._complete([{"role": "user", "content": "hi"}])
     assert len(calls) == 1
     assert no_sleep == []
 

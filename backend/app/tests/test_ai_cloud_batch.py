@@ -132,8 +132,10 @@ def test_prepare_payload_is_redacted(client):
 def test_prepare_refused_outside_cloud_modes(client):
     _two_uncategorised(client)
     _set_mode(client, "local_llm")
-    with SessionLocal() as db, pytest.raises(AIDisabled):
-        ai_service.cloud_batch_prepare(db, provider=FakeProvider())
+    provider = FakeProvider()
+    with SessionLocal() as db:
+        with pytest.raises(AIDisabled):
+            ai_service.cloud_batch_prepare(db, provider=provider)
 
 
 def test_prepare_endpoint_refused_in_local_mode(client):

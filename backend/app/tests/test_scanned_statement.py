@@ -43,14 +43,16 @@ def test_image_parser_clear_error_without_engine(monkeypatch):
         raise ocr_service.OcrUnavailable("no tesseract")
 
     monkeypatch.setattr(ocr_service, "extract_text", _raise)
+    parser = ImageStatementParser()
     with pytest.raises(ParseError, match="OCR"):
-        ImageStatementParser().parse("statement.png", b"fake-bytes")
+        parser.parse("statement.png", b"fake-bytes")
 
 
 def test_image_parser_no_rows(monkeypatch):
     monkeypatch.setattr(ocr_service, "extract_text", lambda path: ("just a blurry header", 0.3))
+    parser = ImageStatementParser()
     with pytest.raises(ParseError, match="No transactions recognised"):
-        ImageStatementParser().parse("statement.png", b"fake-bytes")
+        parser.parse("statement.png", b"fake-bytes")
 
 
 # --- detection ------------------------------------------------------------

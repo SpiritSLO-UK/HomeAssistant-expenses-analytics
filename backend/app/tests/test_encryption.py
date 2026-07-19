@@ -29,8 +29,9 @@ def test_wrong_passphrase_fails():
 def test_tampered_blob_fails():
     blob = bytearray(crypto_service.encrypt(b"data", "passphrase"))
     blob[-1] ^= 0xFF  # flip a ciphertext bit
+    tampered = bytes(blob)
     with pytest.raises(DecryptError):
-        crypto_service.decrypt(bytes(blob), "passphrase")
+        crypto_service.decrypt(tampered, "passphrase")
 
 
 def test_non_encrypted_input_rejected():

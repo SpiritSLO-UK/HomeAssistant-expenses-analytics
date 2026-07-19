@@ -131,7 +131,13 @@ def _require_stepped_up_session(request: Request, db: Session, user: User) -> No
         raise HTTPException(status_code=403, detail="step_up_required")
 
 
-@router.post("/backup-codes", responses={403: {"description": "Step-up required"}})
+@router.post(
+    "/backup-codes",
+    responses={
+        400: {"description": "MFA is not enabled"},
+        403: {"description": "Step-up required"},
+    },
+)
 def generate_backup_codes(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
