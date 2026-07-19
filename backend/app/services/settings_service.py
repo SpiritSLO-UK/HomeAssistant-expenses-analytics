@@ -20,6 +20,9 @@ from app.services import crypto_service
 
 # Known keys and their defaults.
 BASE_CURRENCY = "base_currency"
+# App-wide DATE DISPLAY format (spec §38). Display-only: it never changes how dates
+# are stored or parsed on import — only how they render across the UI. Default iso.
+DATE_FORMAT = "date_format"  # iso (YYYY-MM-DD) | us (MM/DD/YYYY) | uk (DD/MM/YYYY)
 FX_MODE = "fx_mode"  # manual | frankfurter
 RECEIPT_MATCH_MODE = "receipt_match_mode"  # suggest | auto
 # AI (spec §7, §22). Off by default — strict local, no external calls.
@@ -86,6 +89,7 @@ ENERGY_CATEGORY_ID = "energy_category_id"  # int string, "" = none
 ENERGY_PRODUCTION_SEMANTICS = "energy_production_semantics"  # cumulative | interval
 
 FX_MODES = {"manual", "frankfurter"}
+DATE_FORMATS = {"iso", "us", "uk"}
 ENERGY_SOURCES = {"off", "ha_api", "mqtt"}
 ENERGY_SEMANTICS = {"cumulative", "interval"}
 INVESTMENT_PRICE_SOURCES = {"manual", "stooq", "alphavantage"}
@@ -118,6 +122,7 @@ _BACKUP_TRIM_DEFAULTS = {"max_age_days": 90, "max_total_mb": 500, "min_keep": 3}
 
 # Defaults that never vary at runtime — built once, not per call.
 _STATIC_DEFAULTS: dict[str, str] = {
+    DATE_FORMAT: "iso",
     FX_MODE: "manual",
     RECEIPT_MATCH_MODE: "suggest",
     AI_PROVIDER: "none",
@@ -385,6 +390,7 @@ def _imp_country(value: str) -> str | None:
 
 
 IMPORTABLE_SETTINGS = {
+    DATE_FORMAT: _imp_choice(DATE_FORMATS),
     FX_MODE: _imp_choice(FX_MODES),
     RECEIPT_MATCH_MODE: _imp_choice(RECEIPT_MATCH_MODES),
     INVESTMENT_PRICE_SOURCE: _imp_choice(INVESTMENT_PRICE_SOURCES),
@@ -423,6 +429,13 @@ def apply_imported_settings(db: Session, entries: list[dict]) -> dict:
 
 def get_base_currency(db: Session) -> str:
     return (get(db, BASE_CURRENCY) or env_settings.currency).upper()
+
+
+def get_date_format(db: Session) -> str:
+    """The app-wide date display format (spec §38). Display-only; defaults to
+    ``iso``. An unknown stored value falls back to ``iso``."""
+    fmt = get(db, DATE_FORMAT) or "iso"
+    return fmt if fmt in DATE_FORMATS else "iso"
 
 
 def get_fx_mode(db: Session) -> str:

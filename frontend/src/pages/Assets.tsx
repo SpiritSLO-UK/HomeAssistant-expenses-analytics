@@ -12,6 +12,7 @@ import {
 } from "../api/client";
 import { money } from "../lib/money";
 import { isAmount, roundStr } from "../lib/num";
+import { formatDate, useDateFormat } from "../lib/date";
 import { useConfirm } from "../components/dialogs";
 
 function today(): string {
@@ -352,6 +353,7 @@ function LogHistory({ asset, logs, onChange, onError }: Readonly<{
   asset: Asset; logs: AssetLog[]; onChange: () => void; onError: (e: unknown) => void;
 }>) {
   const confirm = useConfirm();
+  const dateFmt = useDateFormat();
   const remove = useMutation({
     mutationFn: (id: number) => deleteAssetLog(id),
     onSuccess: onChange,
@@ -387,7 +389,7 @@ function LogHistory({ asset, logs, onChange, onError }: Readonly<{
               );
             return (
               <tr key={lg.id}>
-                <td style={{ whiteSpace: "nowrap" }}>{lg.log_date}</td>
+                <td style={{ whiteSpace: "nowrap" }}>{formatDate(lg.log_date, dateFmt)}</td>
                 <td>{lg.kind}</td>
                 <td>
                   {lg.kind === "refuel" ? (

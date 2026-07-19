@@ -17,6 +17,7 @@ import {
   type ReviewItem,
   type Transaction,
 } from "../api/client";
+import { formatDate, useDateFormat } from "../lib/date";
 import AiBatchPanel from "../components/AiBatchPanel";
 import CloudAiBatchPanel from "../components/CloudAiBatchPanel";
 import { suggestForTransaction } from "../lib/aiSuggest";
@@ -158,6 +159,7 @@ function ReviewRow({
   aiEnabled: boolean;
 }>) {
   const qc = useQueryClient();
+  const dateFmt = useDateFormat();
   const isTxn = item.item_type === "transaction" && item.item_id != null;
   const isReceipt = item.item_type === "receipt" && item.item_id != null;
   const [err, setErr] = useState<string | null>(null);
@@ -249,7 +251,7 @@ function ReviewRow({
         {item.suggested_action && <div style={{ marginTop: 4 }}>{item.suggested_action}</div>}
         {isReceipt && rec && (
           <div className="muted" style={{ marginTop: 4, fontSize: "0.85rem" }}>
-            💡 Recommended: <strong>{rec.merchant}</strong> · {rec.transaction_date} ·{" "}
+            💡 Recommended: <strong>{rec.merchant}</strong> · {formatDate(rec.transaction_date, dateFmt)} ·{" "}
             <span className="amt--neg">{rec.amount} {rec.currency}</span>
             {rec.category_name ? ` · ${rec.category_name}` : ""}
           </div>
@@ -379,6 +381,7 @@ function UncategorisedRow({
   aiEnabled,
   onDone,
 }: Readonly<{ txn: Transaction; categories: { id: number; name: string }[]; aiEnabled: boolean; onDone: () => void }>) {
+  const dateFmt = useDateFormat();
   const [err, setErr] = useState<string | null>(null);
   const fail = (e: unknown) => setErr(String(e instanceof Error ? e.message : e));
   // Optimistic overlay for the "Categorise…" picker (FE-8): show the choice at
@@ -412,7 +415,7 @@ function UncategorisedRow({
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", padding: "10px 0", borderBottom: "1px solid rgba(127,127,127,0.2)" }}>
       <div style={{ minWidth: 0 }}>
-        <span className="muted">{txn.transaction_date}</span>{" "}
+        <span className="muted">{formatDate(txn.transaction_date, dateFmt)}</span>{" "}
         <Link to={`/transactions?focus=${txn.id}`}>{txn.description_raw}</Link>
       </div>
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>

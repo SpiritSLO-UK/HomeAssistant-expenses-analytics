@@ -16,6 +16,7 @@ import {
   type BudgetSummaryItem,
 } from "../api/client";
 import { useConfirm } from "../components/dialogs";
+import { formatDate, useDateFormat } from "../lib/date";
 import ListRow from "../components/ListRow";
 import ProgressBar from "../components/ProgressBar";
 
@@ -169,6 +170,7 @@ function BudgetRow({
   onSaved: () => void;
   onDelete: () => void;
 }>) {
+  const dateFmt = useDateFormat();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const colour = STATUS_COLOUR[b.status] ?? "#3a9b5c";
@@ -248,7 +250,7 @@ function BudgetRow({
               {txns.data.map((t) => (
                 <li key={t.id}>
                   <span>
-                    <span className="muted">{t.transaction_date}</span> ·{" "}
+                    <span className="muted">{formatDate(t.transaction_date, dateFmt)}</span> ·{" "}
                     <Link to={`/transactions?focus=${t.id}`} title="Open this transaction">
                       {t.description}
                     </Link>

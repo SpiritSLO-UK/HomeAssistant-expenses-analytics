@@ -58,6 +58,7 @@ import {
   type BackupTrim,
 } from "../api/client";
 import { useServerState } from "../lib/useServerState";
+import { DATE_FORMATS, formatDate, normaliseDateFormat, useDateFormat } from "../lib/date";
 import { clearAllPrefs, getThemePref, isCloudAiAcknowledged, setCloudAiAcknowledged } from "../prefs";
 import { setTheme, type ThemePref } from "../theme";
 import CloudAiDisclaimerDialog from "../components/CloudAiDisclaimerDialog";
@@ -752,6 +753,7 @@ function CurrencyFx({
 
   const base = settings.data?.base_currency ?? "GBP";
   const mode = settings.data?.fx_mode ?? "manual";
+  const dateFmt = normaliseDateFormat(settings.data?.date_format);
 
   // Curated list, plus the current base if it's somehow not in the list (so the
   // dropdown always shows the actual value and never silently changes it).
@@ -775,7 +777,7 @@ function CurrencyFx({
 
   return (
     <div className="card">
-      <h2 className="card__title">Currency &amp; exchange rates</h2>
+      <h2 className="card__title">Currency &amp; dates</h2>
       <div className="form-row">
         <label>
           Base currency{" "}
@@ -788,7 +790,22 @@ function CurrencyFx({
             ))}
           </select>
         </label>
+        <label>
+          Date format{" "}
+          <select
+            value={dateFmt}
+            aria-label="Date format"
+            onChange={(e) => save.mutate({ date_format: e.target.value })}
+          >
+            {DATE_FORMATS.map((f) => (
+              <option key={f.value} value={f.value}>
+                {f.label} — {f.example}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
+      <p className="muted">Dates render app-wide in this format. Display only — how dates are stored and imported is unchanged.</p>
       <p className="muted">
         Amounts are stored in their original currency and converted to your base currency. Existing
         conversions are never rewritten — only missing ones are filled.
@@ -854,7 +871,7 @@ function CurrencyFx({
             <tbody>
               {rates.data.slice(0, 20).map((r) => (
                 <tr key={r.id}>
-                  <td>{r.rate_date}</td>
+                  <td>{formatDate(r.rate_date, dateFmt)}</td>
                   <td>{r.quote}</td>
                   <td>{r.base}</td>
                   <td className="num">{r.rate}</td>
@@ -1536,6 +1553,7 @@ function LoggingCard({
 
 function SecurityHealthCard({ onError }: Readonly<{ onError: (e: unknown) => void }>) {
   const qc = useQueryClient();
+  const dateFmt = useDateFormat();
   const me = useQuery({ queryKey: ["me"], queryFn: getMe });
   const isAdmin = me.data?.is_admin === true;
   const health = useQuery({
@@ -1590,7 +1608,7 @@ function SecurityHealthCard({ onError }: Readonly<{ onError: (e: unknown) => voi
                 <strong>{icon(c.severity)} {c.title}</strong>
                 {c.dismissed && (
                   <span className="muted">
-                    {" "}· {c.snoozed_until ? `snoozed until ${c.snoozed_until.slice(0, 10)}` : "dismissed"}
+                    {" "}· {c.snoozed_until ? `snoozed until ${formatDate(c.snoozed_until, dateFmt)}` : "dismissed"}
                   </span>
                 )}
               </div>

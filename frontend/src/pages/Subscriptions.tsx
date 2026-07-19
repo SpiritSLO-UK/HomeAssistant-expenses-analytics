@@ -12,6 +12,7 @@ import {
   type Subscription,
 } from "../api/client";
 import { useConfirm } from "../components/dialogs";
+import { formatDate, normaliseDateFormat } from "../lib/date";
 
 // "due in null day(s)" guard: days_until can be null when the next date is
 // unknown — show a soft label instead.
@@ -55,6 +56,7 @@ export default function Subscriptions() {
   const alerts = useQuery({ queryKey: ["subscription-alerts"], queryFn: () => getSubscriptionAlerts(7) });
   const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
   const base = settings.data?.base_currency ?? "GBP";
+  const dateFmt = normaliseDateFormat(settings.data?.date_format);
 
   // Client-side filter + sort over the already-loaded list (keeps it simple —
   // no extra requests). The annualized total reflects what's shown.
@@ -148,7 +150,7 @@ export default function Subscriptions() {
                 🔔 <strong>{s.name}</strong>{" "}
                 <span className="muted">
                   {dueLabel(s.days_until)}
-                  {" "}({s.next_expected_date}) — {s.amount} {base}
+                  {" "}({formatDate(s.next_expected_date, dateFmt)}) — {s.amount} {base}
                 </span>
               </li>
             ))}
@@ -210,7 +212,7 @@ export default function Subscriptions() {
                       <td className="num">{s.amount} {s.currency === base ? "" : s.currency}</td>
                       <td>{s.frequency}</td>
                       <td className="num">{s.monthly_amount} {base}</td>
-                      <td>{s.next_expected_date ?? "—"}</td>
+                      <td>{s.next_expected_date ? formatDate(s.next_expected_date, dateFmt) : "—"}</td>
                       <td>{s.confidence_score == null ? "—" : `${Math.round(s.confidence_score * 100)}%`}</td>
                       <td>
                         <select value={s.status} onChange={(e) => setStatus.mutate({ id: s.id, status: e.target.value })}>

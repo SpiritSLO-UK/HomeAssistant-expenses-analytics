@@ -15,6 +15,7 @@ import {
 } from "../api/client";
 import { isAmount } from "../lib/num";
 import { useServerState } from "../lib/useServerState";
+import { formatDate, useDateFormat } from "../lib/date";
 import { useConfirm } from "../components/dialogs";
 
 function today(): string {
@@ -92,6 +93,7 @@ function BudgetBars({ budgets, base, manage }: Readonly<{ budgets: ChildBudgetSt
 }
 
 function AllowanceView({ data, base, manage }: Readonly<{ data: AllowanceSummary; base: string; manage?: BudgetManage }>) {
+  const dateFmt = useDateFormat();
   return (
     <>
       <div className="card">
@@ -119,7 +121,7 @@ function AllowanceView({ data, base, manage }: Readonly<{ data: AllowanceSummary
               <tbody>
                 {data.items.map((it) => (
                   <tr key={it.id}>
-                    <td style={{ whiteSpace: "nowrap" }}>{it.as_of_date}</td>
+                    <td style={{ whiteSpace: "nowrap" }}>{formatDate(it.as_of_date, dateFmt)}</td>
                     <td>{it.description ?? "—"}</td>
                     <td className="muted">{it.category_name ?? "—"}</td>
                     <td className="num">{it.amount} {it.currency}</td>
@@ -153,6 +155,7 @@ function ChildHome() {
 function ParentManager({ canManage }: Readonly<{ canManage: boolean }>) {
   const qc = useQueryClient();
   const confirm = useConfirm();
+  const dateFmt = useDateFormat();
   const users = useQuery({ queryKey: ["users"], queryFn: listUsers });
   const categories = useQuery({ queryKey: ["categories"], queryFn: listCategories });
   const [childId, setChildId] = useState<number | null>(null);
@@ -317,7 +320,7 @@ function ParentManager({ canManage }: Readonly<{ canManage: boolean }>) {
           <ul className="kv" style={{ marginTop: 10 }}>
             {summary.data.items.map((it) => (
               <li key={it.id}>
-                <span>{it.as_of_date} · {it.description ?? "—"} <span className="muted">({it.category_name ?? "—"})</span></span>
+                <span>{formatDate(it.as_of_date, dateFmt)} · {it.description ?? "—"} <span className="muted">({it.category_name ?? "—"})</span></span>
                 <span>
                   {it.amount} {it.currency}{" "}
                   <button

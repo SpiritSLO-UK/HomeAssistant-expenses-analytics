@@ -17,6 +17,7 @@ import {
   type TransactionListResponse,
 } from "../api/client";
 import { useConfirm } from "../components/dialogs";
+import { formatDate, useDateFormat } from "../lib/date";
 import OverTimeChart from "../components/OverTimeChart";
 import ListRow from "../components/ListRow";
 import ProgressBar from "../components/ProgressBar";
@@ -183,6 +184,7 @@ function Forecast({ forecast, base }: Readonly<{ forecast: ProjectForecastView |
 }
 
 function ProjectDetail({ id, base, onError, onLoaded }: Readonly<{ id: number; base: string; onError: (e: string) => void; onLoaded: () => void }>) {
+  const dateFmt = useDateFormat();
   const summary = useQuery({ queryKey: ["project-summary", id], queryFn: () => getProjectSummary(id) });
   const txns = useQuery({
     queryKey: ["project-txns", id],
@@ -200,7 +202,7 @@ function ProjectDetail({ id, base, onError, onLoaded }: Readonly<{ id: number; b
     <div style={{ padding: "6px 0 14px 16px", background: "rgba(127,127,127,0.05)" }}>
       <p className="muted" style={{ margin: "4px 0" }}>
         {s.transaction_count} transaction(s)
-        {s.first_transaction && ` · ${s.first_transaction} → ${s.last_transaction}`}
+        {s.first_transaction && ` · ${formatDate(s.first_transaction, dateFmt)} → ${formatDate(s.last_transaction, dateFmt)}`}
         {s.budget && ` · budget ${s.budget} ${base} (${s.percent}% used, ${s.remaining} left)`}
       </p>
       <Forecast forecast={forecast} base={base} />
@@ -214,6 +216,7 @@ function ProjectDetail({ id, base, onError, onLoaded }: Readonly<{ id: number; b
 }
 
 function ProjectTxns({ data, projectId, isError }: Readonly<{ data?: TransactionListResponse; projectId: number; isError?: boolean }>) {
+  const dateFmt = useDateFormat();
   if (isError) return <p className="status status--error" style={{ margin: "8px 0 0" }}>Couldn’t load transactions.</p>;
   if (!data) return <p className="muted" style={{ margin: "8px 0 0" }}>Loading transactions…</p>;
   if (data.items.length === 0) {
@@ -230,7 +233,7 @@ function ProjectTxns({ data, projectId, isError }: Readonly<{ data?: Transaction
         {data.items.map((t) => (
           <li key={t.id}>
             <span>
-              <span className="muted">{t.transaction_date}</span> ·{" "}
+              <span className="muted">{formatDate(t.transaction_date, dateFmt)}</span> ·{" "}
               <Link to={`/transactions?focus=${t.id}`} title="Open this transaction">
                 {t.merchant_raw || t.description_raw}
               </Link>

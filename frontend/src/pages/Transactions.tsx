@@ -24,6 +24,7 @@ import {
   type Transaction,
   type TransactionFilters,
 } from "../api/client";
+import { formatDate, normaliseDateFormat } from "../lib/date";
 import SplitEditor from "../components/SplitEditor";
 import CountrySelect from "../components/CountrySelect";
 import AiBatchPanel from "../components/AiBatchPanel";
@@ -182,6 +183,7 @@ export default function Transactions() {
   const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
   const aiStatus = useQuery({ queryKey: ["ai-status"], queryFn: getAiStatus });
   const base = settings.data?.base_currency ?? "GBP";
+  const dateFmt = normaliseDateFormat(settings.data?.date_format);
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["transactions", filters],
     queryFn: () => listTransactions(filters),
@@ -799,7 +801,7 @@ export default function Transactions() {
                           onChange={() => toggleSelected(t.id)}
                         />
                       </td>
-                      <td>{t.transaction_date}</td>
+                      <td>{formatDate(t.transaction_date, dateFmt)}</td>
                       <td>
                         <button
                           className="link-btn txn-row__toggle"
