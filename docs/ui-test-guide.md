@@ -20,9 +20,17 @@ issues go into the private backlog tracker).
    sample transactions, categories, budgets, projects and savings, so most
    screens have data to work with already.
 2. AI features (the "AI categorise" panels and the per-row "suggest") need an AI
-   key in **Settings -> AI** (env `HAFI_AI_API_KEY`, or set one from the UI on a
-   standalone instance). If AI is off, skip the AI steps or configure a key first.
-3. Note: the app is a single-page app. If a screen looks stale after an action,
+   key in **Settings -> AI & privacy** sub-tab (env `HAFI_AI_API_KEY`, or set one
+   from the UI on a standalone instance). If AI is off, skip the AI steps or
+   configure a key first.
+3. **Navigation is now grouped.** The sidebar shows groups (Money, Library,
+   Wealth, Plans, System) plus standalone Dashboard / Search / Energy; open a
+   group to land on its first page, then use the **sub-tabs** at the top of the
+   page to reach the others. So e.g. Transactions is under **Money**, Categories
+   under **Library**, and **Settings** under **System** (and Settings itself is
+   split into General / AI & privacy / Security / Integrations / Data sub-tabs).
+   The steps below name the destination page; reach it via its group.
+4. Note: the app is a single-page app. If a screen looks stale after an action,
    it should refresh on its own; a manual reload should never be required. (After
    an *update*, an open tab auto-reloads once to pick up new assets.)
 
@@ -113,7 +121,7 @@ to every selected row.
 ## AI batch categorise panels
 
 **What changed:** there are **two** AI batch panels, and which one you see depends
-on your privacy mode (Settings -> AI). They differ by design:
+on your privacy mode (Settings -> AI & privacy sub-tab). They differ by design:
 
 - **Local** `✨ AI categorise…` (only in **`local_llm`** / on-device mode): a header
   **"select all"** checkbox (with indeterminate state) + **Export CSV** of the
@@ -128,7 +136,7 @@ on your privacy mode (Settings -> AI). They differ by design:
 > exports your filtered **transactions**, not AI suggestions. Don't confuse it
 > with the panel exports.
 
-**Local panel** (set Settings -> AI to `local_llm`; click `✨ AI categorise…`):
+**Local panel** (set Settings -> AI & privacy to `local_llm`; click `✨ AI categorise…`):
 - [ ] The header checkbox selects/clears every suggestion (indeterminate when some).
 - [ ] Export CSV downloads `ai-suggestions.csv` (description, suggested category, confidence).
 
@@ -234,14 +242,15 @@ key, so mouse users are not distracted by it.
 
 ## Settings: MFA backup codes
 
-**What changed:** with MFA enabled, Settings shows a backup-codes section to
-generate, copy and download one-time recovery codes.
+**What changed:** with MFA enabled, the **Settings -> Security** sub-tab shows a
+backup-codes section to generate, copy and download one-time recovery codes.
 
-> To test this, first enable MFA for your user in **Settings -> Security** (scan
-> the TOTP QR with an authenticator app and confirm a code). The backup-codes
-> section only appears once MFA is enabled. Skip this section if not testing MFA.
+> To test this, first enable MFA for your user on the **Settings -> Security**
+> sub-tab (scan the TOTP QR with an authenticator app and confirm a code). The
+> backup-codes section only appears once MFA is enabled. Skip this section if not
+> testing MFA.
 
-1. Go to **Settings**. Read the "N unused backup codes remaining" line.
+1. Go to **Settings -> Security** sub-tab. Read the "N unused backup codes remaining" line.
 2. Generate a new set, then copy to clipboard and download the `.txt`.
 
 - [ ] The section reports how many unused backup codes remain.
@@ -267,19 +276,20 @@ name/institution can also be edited (its currency stays read-only).
 ## Tags: dedicated page
 
 **What changed:** tag management moved out of Settings into its own **Tags** page
-in the sidebar (with its own icon); "Manage tags" links point there.
+(now under the **Library** group, alongside Categories / Vendors / Rules);
+"Manage tags" links point there.
 
-1. Click **Tags** in the sidebar (or a "Manage tags" link).
+1. Open the **Library** group and pick the **Tags** sub-tab (or click a "Manage tags" link).
 
 - [ ] Tags open on their own `/tags` page (not a Settings card), showing usage
       counts, merge and cleanup of unused tags.
 
 ## Settings: app-wide date format
 
-**What changed:** a Settings toggle picks how dates are shown everywhere - ISO
-(`2026-07-18`), US (`07/18/2026`) or UK (`18/07/2026`).
+**What changed:** a toggle on the **Settings -> General** sub-tab picks how dates
+are shown everywhere - ISO (`2026-07-18`), US (`07/18/2026`) or UK (`18/07/2026`).
 
-1. Go to **Settings**, find the date-format toggle, and switch it (e.g. to US).
+1. Go to **Settings -> General** sub-tab, find the date-format toggle, and switch it (e.g. to US).
 2. Visit **Transactions** and a couple of other pages (Dashboard, Travel).
 
 - [ ] Changing the format updates displayed dates consistently across pages.
