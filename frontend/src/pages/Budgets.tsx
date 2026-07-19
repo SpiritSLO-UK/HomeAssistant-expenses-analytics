@@ -34,9 +34,12 @@ const STATUS_COLOUR: Record<string, string> = {
 };
 
 // Prorated "pace" signal surfaced by the summary API (additive to over/warn/ok).
+// Direction-explicit wording: the API's "ahead" means spending FASTER than the
+// prorated budget (i.e. over pace), so "over pace"/"under pace" read correctly
+// and never contradict the over/under-budget status.
 const PACE_LABEL: Record<string, string> = {
-  ahead: "ahead of pace",
-  behind: "behind pace",
+  ahead: "over pace",
+  behind: "under pace",
   on_track: "on pace",
 };
 
@@ -158,9 +161,10 @@ function BudgetRow({
   const statusLabel = b.status === "over" ? "over budget" : warnOrOnTrack;
   const pace = b as WithPace;
   const paceLabel = pace.pace_status ? (PACE_LABEL[pace.pace_status] ?? pace.pace_status) : null;
-  // Keep the status tag as the primary signal; only add a single concise pace
-  // hint when it isn't already redundant with an over-budget status.
-  const showPace = paceLabel != null && b.status !== "over";
+  // Show a single concise pace hint on EVERY budget for a consistent list (some
+  // rows having it and others not read as a bug). The direction-explicit label
+  // ("over pace") is unambiguous, so it doesn't contradict the over-budget tag.
+  const showPace = paceLabel != null;
   const txns = useQuery({
     queryKey: ["budget-txns", b.budget_id, month, annual],
     queryFn: () => getBudgetTransactions(b.budget_id, { month, annual }),
