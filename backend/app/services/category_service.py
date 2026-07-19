@@ -22,6 +22,7 @@ from app.models import (
     ChildAllocation,
     ReceiptItem,
     Rule,
+    Subscription,
     Transaction,
     TransactionSplit,
     Vendor,
@@ -252,7 +253,7 @@ def merge_category(db: Session, source_id: int, target_id: int) -> Category | No
         return None
 
     opts = {"synchronize_session": False}
-    for model in (Transaction, TransactionSplit, Budget, ReceiptItem, ChildAllocation):
+    for model in (Transaction, TransactionSplit, Budget, ReceiptItem, ChildAllocation, Subscription):
         db.execute(
             update(model).where(model.category_id == source_id).values(category_id=target_id).execution_options(**opts)
         )

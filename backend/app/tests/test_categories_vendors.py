@@ -198,6 +198,29 @@ def test_category_merge_reassigns_references(db):
     assert budget.category_id == eating.id
 
 
+def test_category_merge_repoints_subscriptions(db):
+    """#12: merging re-points a subscription's ``category_id`` to the target rather
+    than letting the source-delete NULL it (FK ondelete=SET NULL); subscriptions in
+    other categories are left untouched."""
+    from decimal import Decimal
+
+    from app.models import Subscription
+
+    source = category_service.create_category(db, {"name": "Streaming"})
+    target = category_service.create_category(db, {"name": "Subscriptions"})
+    other = category_service.create_category(db, {"name": "Utilities"})
+    moved = Subscription(name="Netflix", amount=Decimal("10.99"), category_id=source.id)
+    untouched = Subscription(name="Water", amount=Decimal("30.00"), category_id=other.id)
+    db.add_all([moved, untouched])
+    db.commit()
+
+    category_service.merge_category(db, source.id, target.id)
+    db.refresh(moved)
+    db.refresh(untouched)
+    assert moved.category_id == target.id       # re-pointed, not NULLed
+    assert untouched.category_id == other.id     # unrelated subscription unaffected
+
+
 def test_category_merge_repoints_category_equals_rule_conditions(db):
     """SR-4: merging also re-points rules that *match on* the source category
     (`category_equals`), not just rules that *set* it — otherwise those rules would
