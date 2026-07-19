@@ -80,7 +80,7 @@ export default function SubTabs(props: SubTabsProps) {
 
   if (props.mode === "controlled") {
     return (
-      <div className="subtabs" role="tablist" aria-label={props.ariaLabel} ref={ref} onKeyDown={onKeyDown}>
+      <div className="subtabs" role="tablist" tabIndex={-1} aria-label={props.ariaLabel} ref={ref} onKeyDown={onKeyDown}>
         {props.tabs.map((t) => {
           const selected = t.key === props.active;
           return (
@@ -102,7 +102,7 @@ export default function SubTabs(props: SubTabsProps) {
   }
 
   return (
-    <div className="subtabs" role="tablist" aria-label={props.ariaLabel} ref={ref} onKeyDown={onKeyDown}>
+    <div className="subtabs" role="tablist" tabIndex={-1} aria-label={props.ariaLabel} ref={ref} onKeyDown={onKeyDown}>
       {props.tabs.map((t) => {
         const selected = pathMatches(t.to, location.pathname);
         return (

@@ -12,7 +12,7 @@ const DIGITS = 6;
 // Decode an unpadded RFC 4648 base32 secret (upper-case A-Z2-7) to bytes.
 function base32Decode(secret: string): Buffer {
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-  const clean = secret.toUpperCase().replace(/=+$/, "").replace(/\s+/g, "");
+  const clean = secret.toUpperCase().replace(/[^A-Z2-7]/g, "");
   let bits = 0;
   let value = 0;
   const out: number[] = [];
