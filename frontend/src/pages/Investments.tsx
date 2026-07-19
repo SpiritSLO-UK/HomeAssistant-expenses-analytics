@@ -23,6 +23,7 @@ import {
 } from "../api/client";
 import { isAmount, parseAmount } from "../lib/num";
 import { useServerState } from "../lib/useServerState";
+import { formatDate, useDateFormat } from "../lib/date";
 import { useConfirm } from "../components/dialogs";
 import { useOptimisticSelect } from "../hooks/useOptimisticSelect";
 
@@ -476,6 +477,7 @@ function ValueSection({
   onChange: () => void;
   onError: (e: unknown) => void;
 }>) {
+  const dateFmt = useDateFormat();
   const history = useQuery({
     queryKey: ["investment-values", account.id],
     queryFn: () => getValueHistory(account.id),
@@ -552,7 +554,7 @@ function ValueSection({
           <ul className="kv" style={{ margin: 0, maxWidth: 460 }}>
             {log.map((b) => (
               <li key={b.id}>
-                <span className="muted">{b.as_of_date}{b.note ? ` · ${b.note}` : ""}</span>
+                <span className="muted">{formatDate(b.as_of_date, dateFmt)}{b.note ? ` · ${b.note}` : ""}</span>
                 <span style={{ whiteSpace: "nowrap" }}>
                   {b.value} {account.currency}
                   {b.delta != null && b.delta !== 0 && (

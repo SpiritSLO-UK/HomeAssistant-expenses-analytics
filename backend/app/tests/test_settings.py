@@ -177,6 +177,23 @@ def test_get_values_matches_get_per_key(client):
         assert settings_service.get_values(db, []) == {}
 
 
+def test_date_format_round_trips_and_defaults_iso(client):
+    """The app-wide date display format defaults to ISO, accepts the allowed values
+    (case-insensitive), round-trips on GET, and rejects anything else."""
+    # Default before it's ever set.
+    assert client.get("/api/settings").json()["date_format"] == "iso"
+    # A valid value is normalised to lower-case and persisted.
+    ok = client.put("/api/settings", json={"date_format": "US"})
+    assert ok.status_code == 200
+    assert ok.json()["date_format"] == "us"
+    assert client.get("/api/settings").json()["date_format"] == "us"
+    # UK is also allowed.
+    assert client.put("/api/settings", json={"date_format": "uk"}).json()["date_format"] == "uk"
+    # An unknown value is rejected.
+    assert client.put("/api/settings", json={"date_format": "ymd"}).status_code == 400
+    client.put("/api/settings", json={"date_format": "iso"})  # restore default
+
+
 def test_base_currency_must_be_supported(client):
     # A curated code is accepted and recomputes conversions for display.
     ok = client.put("/api/settings", json={"base_currency": "USD"})

@@ -22,6 +22,7 @@ import { useServerState } from "../lib/useServerState";
 import { useConfirm, usePrompt } from "../components/dialogs";
 import ListRow from "../components/ListRow";
 import ProgressBar from "../components/ProgressBar";
+import { formatDate, useDateFormat } from "../lib/date";
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -127,6 +128,7 @@ function AccountCard({
   onError: (e: unknown) => void;
 }>) {
   const confirm = useConfirm();
+  const dateFmt = useDateFormat();
   const [open, setOpen] = useState(false);
   // Full snapshot history drives only the expanded panel (change log), so it's
   // fetched lazily on open. The collapsed sparkline reads the summary-provided
@@ -312,7 +314,7 @@ function AccountCard({
               <ul className="kv" style={{ margin: 0, maxWidth: 460 }}>
                 {log.map((b) => (
                   <li key={b.id}>
-                    <span className="muted">{b.as_of_date}{b.note ? ` · ${b.note}` : ""}</span>
+                    <span className="muted">{formatDate(b.as_of_date, dateFmt)}{b.note ? ` · ${b.note}` : ""}</span>
                     <span style={{ whiteSpace: "nowrap" }}>
                       {b.balance} {account.currency}
                       {b.delta != null && b.delta !== 0 && (
@@ -475,6 +477,7 @@ function GoalsCard({
 }>) {
   const confirm = useConfirm();
   const prompt = usePrompt();
+  const dateFmt = useDateFormat();
   const [editingId, setEditingId] = useState<number | null>(null);
 
   function goalPayload(v: GoalFormValues): Record<string, unknown> {
@@ -522,7 +525,7 @@ function GoalsCard({
                 <span>
                   <strong>{g.name}</strong>{" "}
                   {done && <span className="status status--ok" style={{ padding: "0 6px" }}>achieved</span>}
-                  {g.target_date && <span className="muted"> · by {g.target_date}</span>}
+                  {g.target_date && <span className="muted"> · by {formatDate(g.target_date, dateFmt)}</span>}
                   {g.account_id && <span className="muted"> · linked</span>}
                 </span>
                 <span className="muted">{g.current} / {g.target_amount} {base}</span>

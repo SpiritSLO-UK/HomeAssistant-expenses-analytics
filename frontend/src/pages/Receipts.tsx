@@ -6,6 +6,7 @@ import CameraCaptureButton from "../components/CameraCaptureButton";
 import ReceiptPreview from "../components/ReceiptPreview";
 import { useConfirm } from "../components/dialogs";
 import { useServerState } from "../lib/useServerState";
+import { formatDate, useDateFormat } from "../lib/date";
 import { isImageAiWarningDismissed, setImageAiWarningDismissed } from "../prefs";
 import {
   aiExtractReceipt,
@@ -104,6 +105,7 @@ export default function Receipts() {
 
 function PaperlessCard({ onError }: Readonly<{ onError: (e: unknown) => void }>) {
   const qc = useQueryClient();
+  const dateFmt = useDateFormat();
   const status = useQuery({ queryKey: ["paperless-status"], queryFn: getPaperlessStatus });
   const [query, setQuery] = useState("");
   const [submitted, setSubmitted] = useState<string | null>(null);
@@ -156,7 +158,7 @@ function PaperlessCard({ onError }: Readonly<{ onError: (e: unknown) => void }>)
         <ul className="kv" style={{ marginTop: 8 }}>
           {docs.data.map((d) => (
             <li key={d.id}>
-              <span>{d.title}{d.created && <span className="muted"> · {d.created.slice(0, 10)}</span>}</span>
+              <span>{d.title}{d.created && <span className="muted"> · {formatDate(d.created, dateFmt)}</span>}</span>
               <button
                 className="btn btn--sm btn--ghost"
                 disabled={importDoc.isPending}
@@ -183,6 +185,7 @@ function matchedByLabel(by: string): string {
 function ReceiptCard({ r, onError, focused = false }: Readonly<{ r: Receipt; onError: (e: string) => void; focused?: boolean }>) {
   const qc = useQueryClient();
   const confirmDialog = useConfirm();
+  const dateFmt = useDateFormat();
   // Re-sync from the server value when the receipts query refetches (e.g. after OCR
   // finishes, merchant/date/total arrive) — without clobbering an in-progress edit.
   const [merchant, setMerchant] = useServerState(r.merchant_raw ?? "");
@@ -355,7 +358,7 @@ function ReceiptCard({ r, onError, focused = false }: Readonly<{ r: Receipt; onE
               <tbody>
                 {result.candidates.map((c) => (
                   <tr key={c.transaction_id}>
-                    <td>{c.transaction_date}</td>
+                    <td>{formatDate(c.transaction_date, dateFmt)}</td>
                     <td>{c.description}</td>
                     <td className="num">{c.amount}</td>
                     <td className="num" title={JSON.stringify(c.breakdown)}>{c.score}</td>
@@ -383,7 +386,7 @@ function ReceiptCard({ r, onError, focused = false }: Readonly<{ r: Receipt; onE
           {rec ? (
             <p className="muted" style={{ marginTop: 0 }}>
               💡 <strong>No matching transaction.</strong> Add this one?{" "}
-              <strong>{rec.merchant}</strong> · {rec.transaction_date} ·{" "}
+              <strong>{rec.merchant}</strong> · {formatDate(rec.transaction_date, dateFmt)} ·{" "}
               <span className="amt--neg">{rec.amount} {rec.currency}</span>
               {rec.category_name ? <> · {rec.category_name}</> : null}
             </p>

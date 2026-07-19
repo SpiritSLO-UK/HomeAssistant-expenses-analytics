@@ -4,6 +4,7 @@ import { Link, useNavigate } from "react-router-dom";
 import AiImageWarningDialog from "../components/AiImageWarningDialog";
 import CameraCaptureButton from "../components/CameraCaptureButton";
 import { isImageAiWarningDismissed, setImageAiWarningDismissed } from "../prefs";
+import { formatDate, useDateFormat } from "../lib/date";
 import {
   aiExtractImport,
   ApiError,
@@ -421,6 +422,7 @@ function FundingLinkPanel({
 }
 
 function PreviewTable({ rows }: Readonly<{ rows: UploadResponse["preview"] }>) {
+  const dateFmt = useDateFormat();
   return (
     <div className="table-wrap">
       <table className="table">
@@ -437,7 +439,7 @@ function PreviewTable({ rows }: Readonly<{ rows: UploadResponse["preview"] }>) {
         <tbody>
           {rows.map((r) => (
             <tr key={`${r.transaction_date}|${r.description_raw}|${r.amount}|${r.currency}`} className={rowClass(r)}>
-              <td>{r.transaction_date}</td>
+              <td>{formatDate(r.transaction_date, dateFmt)}</td>
               <td>{r.description_raw}</td>
               <td className={"num " + (r.direction === "credit" ? "amt--pos" : "amt--neg")}>
                 {r.amount}

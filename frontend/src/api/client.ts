@@ -1866,6 +1866,7 @@ export async function importConfig(
 
 export interface AppSettings {
   base_currency: string;
+  date_format: string; // iso | us | uk (display-only)
   fx_mode: string; // manual | frankfurter
   [key: string]: string;
 }

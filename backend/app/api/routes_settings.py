@@ -27,6 +27,7 @@ router = APIRouter(prefix="/settings", tags=["settings"])
 
 class SettingsUpdate(BaseModel):
     base_currency: str | None = None
+    date_format: str | None = None  # iso | us | uk (display-only)
     fx_mode: str | None = None  # manual | frankfurter
     receipt_match_mode: str | None = None  # suggest | auto
     # AI (spec §22). privacy_mode gates AI entirely; off by default.
@@ -131,6 +132,19 @@ def services_status(db: Annotated[Session, Depends(get_db)]) -> dict:
             "detail": "Publishing to Home Assistant" if mqtt.get("enabled") else "Off — enable in the add-on options",
         },
     }
+
+
+def _apply_date_format(db: Session, payload: SettingsUpdate) -> None:
+    """Validate + persist the app-wide date display format (display-only)."""
+    if payload.date_format is None:
+        return
+    fmt = payload.date_format.strip().lower()
+    if fmt not in settings_service.DATE_FORMATS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"date_format must be one of {sorted(settings_service.DATE_FORMATS)}",
+        )
+    settings_service.set_value(db, settings_service.DATE_FORMAT, fmt)
 
 
 def _apply_fx_and_receipt(db: Session, payload: SettingsUpdate) -> None:
@@ -299,6 +313,7 @@ def update_settings(
     user: Annotated[User, Depends(auth_service.require_settings_manager)],
 ) -> dict:
     before = _privacy_posture(db)
+    _apply_date_format(db, payload)
     _apply_fx_and_receipt(db, payload)
     _apply_ai_settings(db, payload)
     _apply_ocr_and_price_source(db, payload)

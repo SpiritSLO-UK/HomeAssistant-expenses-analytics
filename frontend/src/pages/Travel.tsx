@@ -12,9 +12,11 @@ import {
 import { usePrompt } from "../components/dialogs";
 import CountrySelect from "../components/CountrySelect";
 import OverTimeChart from "../components/OverTimeChart";
+import { formatDate, useDateFormat, type DateFormat } from "../lib/date";
 
-function fmtRange(first: string, last: string): string {
-  return first === last ? first : `${first} → ${last}`;
+function fmtRange(first: string, last: string, fmt: DateFormat): string {
+  const from = formatDate(first, fmt);
+  return first === last ? from : `${from} → ${formatDate(last, fmt)}`;
 }
 
 // A tiny 2-letter country tagger for a trip (e.g. ES). Tags all the trip's
@@ -39,6 +41,7 @@ function TripCountry({ onSet, pending }: Readonly<{ onSet: (code: string) => voi
 export default function Travel() {
   const qc = useQueryClient();
   const prompt = usePrompt();
+  const dateFmt = useDateFormat();
   const [gapDays, setGapDays] = useState(14);
   const [months, setMonths] = useState(12);
   const [msg, setMsg] = useState<string | null>(null);   // success notice (green)
@@ -144,7 +147,7 @@ export default function Travel() {
                     <td className="num">{r.original_total} {r.currency}</td>
                     <td className="num">{r.base_total} {base}</td>
                     <td className="num">{r.count}</td>
-                    <td className="muted">{fmtRange(r.first, r.last)}</td>
+                    <td className="muted">{fmtRange(r.first, r.last, dateFmt)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -188,7 +191,7 @@ export default function Travel() {
                       <tr>
                         <td style={{ whiteSpace: "nowrap" }}>
                           <button className="link-btn" style={{ fontWeight: 600 }} onClick={() => setOpenTrip(open ? null : key)}>
-                            {open ? "▾ " : "▸ "}{fmtRange(trip.first, trip.last)}
+                            {open ? "▾ " : "▸ "}{fmtRange(trip.first, trip.last, dateFmt)}
                           </button>
                         </td>
                         <td>{trip.label} <span className="muted">({trip.currencies.join(", ")})</span></td>
@@ -217,7 +220,7 @@ export default function Travel() {
                               {trip.transactions.map((t) => (
                                 <li key={t.id}>
                                   <span>
-                                    <span className="muted">{t.transaction_date}</span> ·{" "}
+                                    <span className="muted">{formatDate(t.transaction_date, dateFmt)}</span> ·{" "}
                                     <Link to={`/transactions?focus=${t.id}`} title="Open this transaction">
                                       {t.description}
                                     </Link>

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type CSSProperties, type KeyboardEvent } 
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { searchAll } from "../api/client";
+import { formatDate, useDateFormat } from "../lib/date";
 
 // Highlight applied to the currently keyboard-selected result.
 const activeStyle: CSSProperties = { outline: "2px solid #3b82f6", outlineOffset: 2, borderRadius: 4 };
@@ -14,6 +15,7 @@ const activeStyle: CSSProperties = { outline: "2px solid #3b82f6", outlineOffset
 export default function Search() {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
+  const dateFmt = useDateFormat();
   const initial = params.get("q") ?? "";
   const [term, setTerm] = useState(initial);
   const [debounced, setDebounced] = useState(initial);
@@ -179,7 +181,7 @@ export default function Search() {
                       <Link id={`sr-tx-${t.id}`} style={styleFor(`sr-tx-${t.id}`)} to={`/transactions?focus=${t.id}`}>
                         {t.description}
                       </Link>{" "}
-                      <span className="muted">· {t.transaction_date}</span>
+                      <span className="muted">· {formatDate(t.transaction_date, dateFmt)}</span>
                     </span>
                     <span>{t.amount} {t.currency}</span>
                   </li>

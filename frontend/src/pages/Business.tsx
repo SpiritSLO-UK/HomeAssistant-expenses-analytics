@@ -9,6 +9,7 @@ import {
   type Transaction,
 } from "../api/client";
 import { money } from "../lib/money";
+import { formatDate, useDateFormat } from "../lib/date";
 
 const PERIODS: { key: string; label: string }[] = [
   { key: "day", label: "Day" },
@@ -197,6 +198,7 @@ export default function Business() {
 }
 
 function PeriodTxns({ row, cur }: Readonly<{ row: BusinessPeriodRow; cur: string }>) {
+  const dateFmt = useDateFormat();
   const q = useQuery({
     queryKey: ["business-period-txns", row.start, row.end],
     queryFn: () =>
@@ -212,7 +214,7 @@ function PeriodTxns({ row, cur }: Readonly<{ row: BusinessPeriodRow; cur: string
         {items.map((t) => (
           <li key={t.id}>
             <span>
-              <span className="muted">{t.transaction_date}</span> ·{" "}
+              <span className="muted">{formatDate(t.transaction_date, dateFmt)}</span> ·{" "}
               <Link to={`/transactions?focus=${t.id}`} title="Open this transaction">
                 {t.merchant_raw || t.description_raw}
               </Link>
