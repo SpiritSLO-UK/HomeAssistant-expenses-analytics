@@ -192,7 +192,7 @@ function QuickAddCard() {
             e.target.value = "";
           }}
         />
-        <button className="btn" disabled={upload.isPending} onClick={() => fileRef.current?.click()}>
+        <button type="button" className="btn" disabled={upload.isPending} onClick={() => fileRef.current?.click()}>
           {upload.isPending ? "Uploading…" : "🧾 Add receipt (file)"}
         </button>
         <CameraCaptureButton onCapture={send} disabled={upload.isPending} className="btn" />
@@ -356,6 +356,7 @@ export default function Dashboard() {
             <div className="form-row" style={{ gap: 4 }} title="Whose accounts to include">
               {VIEWS.map((v) => (
                 <button
+                  type="button"
                   key={v.key}
                   className={"btn btn--sm" + (view === v.key ? "" : " btn--ghost")}
                   onClick={() => chooseView(v.key)}
@@ -366,7 +367,7 @@ export default function Dashboard() {
             </div>
           )}
           <input type="month" aria-label="Month to view" value={month} onChange={(e) => setMonth(e.target.value)} />
-          <button className="btn btn--ghost" onClick={() => setCustomise((v) => !v)}>
+          <button type="button" className="btn btn--ghost" onClick={() => setCustomise((v) => !v)}>
             {customise ? "Done" : "⚙ Customise"}
           </button>
         </div>
@@ -388,6 +389,7 @@ export default function Dashboard() {
                   </label>
                   <span className="card-customise__move">
                     <button
+                      type="button"
                       className="btn btn--sm btn--ghost"
                       disabled={i === 0}
                       aria-label={`Move ${label} up`}
@@ -396,6 +398,7 @@ export default function Dashboard() {
                       ▲
                     </button>
                     <button
+                      type="button"
                       className="btn btn--sm btn--ghost"
                       disabled={i === order.length - 1}
                       aria-label={`Move ${label} down`}
@@ -539,7 +542,7 @@ function CategoriesCard({ monthDate, view, memberId }: Readonly<{ monthDate: str
     <div className="card">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
         <h2 className="card__title" style={{ margin: 0 }}>Spending by category</h2>
-        <button className="link-btn" onClick={() => downloadOrAlert(exportCategoriesCsv(monthDate))}>
+        <button type="button" className="link-btn" onClick={() => downloadOrAlert(exportCategoriesCsv(monthDate))}>
           ⬇ CSV
         </button>
       </div>
@@ -1023,6 +1026,7 @@ function TrendsCard({ monthDate, view, memberId }: Readonly<{ monthDate: string;
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
         <h2 className="card__title" style={{ margin: 0 }}>Trends · last {data.months.length} months</h2>
         <button
+          type="button"
           className="link-btn"
           onClick={() => downloadOrAlert(exportMonthlyCsv(data.months.length, monthDate))}
         >
@@ -1088,10 +1092,10 @@ function HeadsUpCard({ monthDate, memberId }: Readonly<{ monthDate: string; memb
         <h2 className="card__title" style={{ margin: 0 }}>Heads-up</h2>
         <span style={{ display: "flex", gap: 12, alignItems: "baseline" }}>
           {visible.length > 0 && (
-            <button className="link-btn" onClick={clearAll}>Clear all</button>
+            <button type="button" className="link-btn" onClick={clearAll}>Clear all</button>
           )}
           {clearedCount > 0 && (
-            <button className="link-btn" onClick={restore}>Restore ({clearedCount})</button>
+            <button type="button" className="link-btn" onClick={restore}>Restore ({clearedCount})</button>
           )}
         </span>
       </div>
@@ -1117,6 +1121,7 @@ function HeadsUpCard({ monthDate, memberId }: Readonly<{ monthDate: string; memb
                 <div className="muted" style={{ fontSize: "0.85rem" }}>{it.detail}</div>
               </div>
               <button
+                type="button"
                 className="link-btn"
                 title="Dismiss this heads-up"
                 aria-label={`Dismiss: ${it.title}`}
@@ -1177,7 +1182,7 @@ function DemoStalenessBanner() {
           ℹ️ Demo data was loaded {ageDays} day{ageDays === 1 ? "" : "s"} ago - its dates may look out
           of date. Reload it from <Link to="/settings">Settings</Link>, or remove demo data there.
         </span>
-        <button className="link-btn" onClick={() => setDismissed(true)}>Dismiss</button>
+        <button type="button" className="link-btn" onClick={() => setDismissed(true)}>Dismiss</button>
       </p>
     </div>
   );

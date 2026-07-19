@@ -90,6 +90,7 @@ function AppearanceCard() {
       <div className="form-row" style={{ flexWrap: "wrap" }}>
         {THEME_OPTIONS.map((o) => (
           <button
+            type="button"
             key={o.value}
             className={"btn btn--sm" + (pref === o.value ? "" : " btn--ghost")}
             onClick={() => choose(o.value)}
@@ -103,7 +104,7 @@ function AppearanceCard() {
         Reset this device's UI preferences — theme, dashboard card layout, hidden/ordered nav
         tabs and column widths — back to defaults. Doesn't touch your data.
       </p>
-      <button className="btn btn--sm btn--ghost" onClick={() => { clearAllPrefs(); globalThis.location.reload(); }}>
+      <button type="button" className="btn btn--sm btn--ghost" onClick={() => { clearAllPrefs(); globalThis.location.reload(); }}>
         Reset UI preferences
       </button>
     </div>
@@ -304,11 +305,12 @@ export default function Settings() {
         <h2 className="card__title">Demo data</h2>
         <p className="muted">Load a small fabricated dataset to explore the app. Safe to re-run — duplicates are skipped.</p>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button className="btn" disabled={demo.isPending} onClick={() => demo.mutate()}>
+          <button type="button" className="btn" disabled={demo.isPending} onClick={() => demo.mutate()}>
             {demo.isPending ? "Loading…" : "Load demo data"}
           </button>
           {me.data?.is_admin && demoStatus.data?.has_demo_data && (
             <button
+              type="button"
               className="btn btn--danger"
               disabled={removeDemo.isPending}
               onClick={async () => {
@@ -340,7 +342,7 @@ export default function Settings() {
         <h2 className="card__title">Backup &amp; restore</h2>
         <p className="muted">Download a full copy of your database, or restore one. Your data never leaves your device.</p>
         <div className="form-row">
-          <button className="btn" onClick={() => downloadDatabaseBackup().catch(fail)}>
+          <button type="button" className="btn" onClick={() => downloadDatabaseBackup().catch(fail)}>
             ⬇ Download database backup
           </button>
           <input
@@ -356,7 +358,7 @@ export default function Settings() {
               if (restoreInput.current) restoreInput.current.value = "";
             }}
           />
-          <button className="btn btn--ghost" onClick={() => restoreInput.current?.click()}>
+          <button type="button" className="btn btn--ghost" onClick={() => restoreInput.current?.click()}>
             ⬆ Restore from backup…
           </button>
         </div>
@@ -377,6 +379,7 @@ export default function Settings() {
             style={{ minWidth: 200 }}
           />
           <button
+            type="button"
             className="btn"
             disabled={!passphrase}
             onClick={() => downloadEncryptedBackup(passphrase).then(() => ok("Encrypted backup downloaded.")).catch(fail)}
@@ -390,7 +393,7 @@ export default function Settings() {
             style={{ display: "none" }}
             onChange={(e) => submitEncryptedRestore(e.target.files?.[0], e.target)}
           />
-          <button className="btn btn--ghost" disabled={!passphrase} onClick={() => encRestoreInput.current?.click()}>
+          <button type="button" className="btn btn--ghost" disabled={!passphrase} onClick={() => encRestoreInput.current?.click()}>
             ⬆ Restore encrypted…
           </button>
         </div>
@@ -400,7 +403,7 @@ export default function Settings() {
         <h2 className="card__title">Config &amp; library</h2>
         <p className="muted">Export or import your categories, vendor aliases and settings as JSON (import merges, never deletes).</p>
         <div className="form-row">
-          <button className="btn" onClick={() => exportConfig().catch(fail)}>⬇ Export config</button>
+          <button type="button" className="btn" onClick={() => exportConfig().catch(fail)}>⬇ Export config</button>
           <input
             ref={configInput}
             type="file"
@@ -412,7 +415,7 @@ export default function Settings() {
               if (configInput.current) configInput.current.value = "";
             }}
           />
-          <button className="btn btn--ghost" onClick={() => configInput.current?.click()}>⬆ Import config…</button>
+          <button type="button" className="btn btn--ghost" onClick={() => configInput.current?.click()}>⬆ Import config…</button>
         </div>
       </div>
       </>
@@ -509,7 +512,7 @@ function ServicesCard({
         <div className="service-grid">
           <ServicePanel title="AI assistant" detail={s.ai.detail} on={s.ai.enabled}>
             {s.ai.enabled ? (
-              <button className="btn btn--sm btn--ghost" disabled={set.isPending} onClick={() => set.mutate({ privacy_mode: "no_ai" })}>
+              <button type="button" className="btn btn--sm btn--ghost" disabled={set.isPending} onClick={() => set.mutate({ privacy_mode: "no_ai" })}>
                 Turn off
               </button>
             ) : (
@@ -613,6 +616,7 @@ function MqttCard({
             {s.sensor_count != null && <li><span>Sensors</span><span>{s.sensor_count}</span></li>}
           </ul>
           <button
+            type="button"
             className="btn"
             disabled={!s.enabled || publish.isPending}
             title={s.enabled ? "Publish sensors now" : "Enable MQTT in the add-on options first"}
@@ -829,7 +833,7 @@ function CurrencyFx({
               Switch online rates on/off in Settings → Services.
             </span>
           </span>
-          <button className="btn btn--sm" disabled={backfill.isPending} onClick={() => backfill.mutate()}>
+          <button type="button" className="btn btn--sm" disabled={backfill.isPending} onClick={() => backfill.mutate()}>
             {(() => {
               if (backfill.isPending) return "Syncing…";
               return mode === "frankfurter" ? "Sync from Frankfurter" : "Fill from manual rates";
@@ -854,6 +858,7 @@ function CurrencyFx({
           onChange={(e) => setRate(e.target.value)}
         />
         <button
+          type="button"
           className="btn"
           disabled={!rateDate || !quote || !rate || addRate.isPending}
           onClick={() => addRate.mutate()}
@@ -938,10 +943,10 @@ function IntegrationsCard({
             style={{ width: "100%" }}
           />
         </label>
-        <button className="btn" disabled={save.isPending || value.trim() === stored} onClick={() => save.mutate(value.trim())}>
+        <button type="button" className="btn" disabled={save.isPending || value.trim() === stored} onClick={() => save.mutate(value.trim())}>
           Save URL
         </button>
-        <button className="btn btn--ghost" disabled={test.isPending || !s?.configured} onClick={() => test.mutate()}>
+        <button type="button" className="btn btn--ghost" disabled={test.isPending || !s?.configured} onClick={() => test.mutate()}>
           {test.isPending ? "Testing…" : "Test connection"}
         </button>
       </div>
@@ -1085,10 +1090,11 @@ function AiCard({
           style={{ width: 140 }}
           onChange={(e) => setDraft((d) => ({ ...d, ai_model: e.target.value }))}
         />
-        <button className="btn" disabled={Object.keys(draft).length === 0 || save.isPending} onClick={handleSave}>
+        <button type="button" className="btn" disabled={Object.keys(draft).length === 0 || save.isPending} onClick={handleSave}>
           {save.isPending ? "Saving…" : "Save AI settings"}
         </button>
         <button
+          type="button"
           className="btn btn--ghost"
           disabled={test.isPending}
           title="Send a tiny test request to the configured AI endpoint"
@@ -1141,10 +1147,11 @@ function AiCard({
           style={{ minWidth: 240 }}
           onChange={(e) => setKeyInput(e.target.value)}
         />
-        <button className="btn btn--sm" disabled={!keyInput || saveKey.isPending} onClick={() => saveKey.mutate(keyInput)}>
+        <button type="button" className="btn btn--sm" disabled={!keyInput || saveKey.isPending} onClick={() => saveKey.mutate(keyInput)}>
           {saveKey.isPending ? "Saving…" : "Set API key"}
         </button>
         <button
+          type="button"
           className="btn btn--sm btn--ghost"
           disabled={saveKey.isPending || !st?.has_api_key || st?.key_source === "env"}
           title={st?.key_source === "env" ? "Set via the HAFI_AI_API_KEY environment variable" : "Remove the stored key"}
@@ -1242,7 +1249,7 @@ function MfaBackupCodesSection({
         One-time recovery codes to sign in if you lose your authenticator. Each works once.
         {" "}{remainingLabel()}
       </p>
-      <button className="btn btn--ghost" disabled={generate.isPending} onClick={() => generate.mutate()}>
+      <button type="button" className="btn btn--ghost" disabled={generate.isPending} onClick={() => generate.mutate()}>
         {generate.isPending ? "Generating…" : "Generate backup codes"}
       </button>
 
@@ -1264,9 +1271,9 @@ function MfaBackupCodesSection({
             style={{ width: "100%", fontFamily: "monospace", resize: "vertical", boxSizing: "border-box" }}
           />
           <div className="form-row" style={{ gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-            <button className="btn btn--ghost" onClick={copyCodes}>📋 Copy</button>
-            <button className="btn btn--ghost" onClick={downloadCodes}>⬇ Download .txt</button>
-            <button className="btn btn--ghost" onClick={() => setCodes(null)}>Done</button>
+            <button type="button" className="btn btn--ghost" onClick={copyCodes}>📋 Copy</button>
+            <button type="button" className="btn btn--ghost" onClick={downloadCodes}>⬇ Download .txt</button>
+            <button type="button" className="btn btn--ghost" onClick={() => setCodes(null)}>Done</button>
           </div>
         </div>
       )}
@@ -1388,7 +1395,7 @@ function MfaCard({
 
       {!enabled && !setup && (
         <>
-          <button className="btn" disabled={begin.isPending} onClick={() => begin.mutate()}>
+          <button type="button" className="btn" disabled={begin.isPending} onClick={() => begin.mutate()}>
             {begin.isPending ? "Preparing…" : "Set up two-factor"}
           </button>
           {mfaErr && <p className="status status--error">{mfaErr}</p>}
@@ -1438,10 +1445,10 @@ function MfaCard({
               onChange={(e) => { setMfaErr(null); setCode(e.target.value.replace(/\D/g, "")); }}
               style={{ width: 120 }}
             />
-            <button className="btn" disabled={!code || enable.isPending} onClick={() => enable.mutate()}>
+            <button type="button" className="btn" disabled={!code || enable.isPending} onClick={() => enable.mutate()}>
               {enable.isPending ? "Confirming…" : "Confirm & enable"}
             </button>
-            <button className="btn btn--ghost" onClick={() => { setSetup(null); setCode(""); setMfaErr(null); }}>
+            <button type="button" className="btn btn--ghost" onClick={() => { setSetup(null); setCode(""); setMfaErr(null); }}>
               Cancel
             </button>
           </div>
@@ -1458,7 +1465,7 @@ function MfaCard({
             {" "}To change the scope, disable and re-enable.
           </p>
           <div className="form-row" style={{ gap: 8, flexWrap: "wrap" }}>
-            <button className="btn btn--ghost" onClick={lockNow}>🔒 Lock now (require a code)</button>
+            <button type="button" className="btn btn--ghost" onClick={lockNow}>🔒 Lock now (require a code)</button>
           </div>
           {/* A required-MFA user can't turn it off (the server rejects it), so don't
               offer a disable control that would only fail. */}
@@ -1484,7 +1491,7 @@ function MfaCard({
                   onChange={(e) => { setMfaErr(null); setCode(e.target.value.replace(/\D/g, "")); }}
                   style={{ width: 150 }}
                 />
-                <button className="btn btn--ghost" disabled={!code || disable.isPending} onClick={() => disable.mutate()}>
+                <button type="button" className="btn btn--ghost" disabled={!code || disable.isPending} onClick={() => disable.mutate()}>
                   {disable.isPending ? "Disabling…" : "Disable two-factor"}
                 </button>
               </div>
@@ -1616,16 +1623,16 @@ function SecurityHealthCard({ onError }: Readonly<{ onError: (e: unknown) => voi
               {c.severity !== "ok" && (
                 <div style={{ marginTop: 4, fontSize: "0.85rem" }}>
                   {c.dismissed ? (
-                    <button className="link-btn" onClick={() => dismiss.mutate({ id: c.id, clear: true })}>
+                    <button type="button" className="link-btn" onClick={() => dismiss.mutate({ id: c.id, clear: true })}>
                       restore
                     </button>
                   ) : (
                     <>
-                      <button className="link-btn" onClick={() => dismiss.mutate({ id: c.id, snooze_days: 7 })}>
+                      <button type="button" className="link-btn" onClick={() => dismiss.mutate({ id: c.id, snooze_days: 7 })}>
                         remind me in 7 days
                       </button>
                       {" · "}
-                      <button className="link-btn" onClick={() => dismiss.mutate({ id: c.id })}>
+                      <button type="button" className="link-btn" onClick={() => dismiss.mutate({ id: c.id })}>
                         dismiss
                       </button>
                     </>
@@ -1705,7 +1712,7 @@ function SecurityCard({
                 <option value="stored">Use stored key (unattended)</option>
               </select>
             </label>
-            <button className="btn" disabled={!pass || enable.isPending} onClick={() => enable.mutate()}>
+            <button type="button" className="btn" disabled={!pass || enable.isPending} onClick={() => enable.mutate()}>
               {enable.isPending ? "Encrypting…" : "Encrypt database"}
             </button>
           </div>
@@ -1751,7 +1758,7 @@ function SecurityCard({
               onChange={(e) => setPass(e.target.value)}
               style={{ minWidth: 200 }}
             />
-            <button className="btn btn--ghost" disabled={!pass || disable.isPending} onClick={() => disable.mutate()}>
+            <button type="button" className="btn btn--ghost" disabled={!pass || disable.isPending} onClick={() => disable.mutate()}>
               {disable.isPending ? "Decrypting…" : "Disable encryption"}
             </button>
           </div>
@@ -1993,16 +2000,17 @@ function RetentionCard({
           </div>
 
           <div className="form-row" style={{ marginTop: 14, gap: 8 }}>
-            <button className="btn" disabled={save.isPending} onClick={doSave}>
+            <button type="button" className="btn" disabled={save.isPending} onClick={doSave}>
               {save.isPending ? "Saving…" : "Save retention settings"}
             </button>
             <button
+              type="button"
               className="btn btn--ghost"
               onClick={() => previewRetention().then(setPlan).catch(onError)}
             >
               Preview removal plan
             </button>
-            <button className="btn btn--danger" disabled={run.isPending} onClick={doRun}>
+            <button type="button" className="btn btn--danger" disabled={run.isPending} onClick={doRun}>
               {run.isPending ? "Running…" : "Run cleanup now"}
             </button>
           </div>

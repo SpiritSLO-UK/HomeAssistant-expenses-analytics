@@ -47,8 +47,8 @@ export default function AiImageWarningDialog({
         </label>
         <div className="form-row" style={{ justifyContent: "flex-end", gap: 8, marginTop: 8 }}>
           {/* Focus the safe (Cancel) action by default — this gates sending an image to AI. */}
-          <button className="btn btn--ghost" autoFocus onClick={onCancel}>Cancel</button>
-          <button className="btn" onClick={() => onConfirm(dontWarn)}>Send to AI</button>
+          <button type="button" className="btn btn--ghost" autoFocus onClick={onCancel}>Cancel</button>
+          <button type="button" className="btn" onClick={() => onConfirm(dontWarn)}>Send to AI</button>
         </div>
       </div>
     </dialog>

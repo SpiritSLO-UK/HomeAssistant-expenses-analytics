@@ -232,7 +232,6 @@ function DialogHost({
     <dialog
       ref={dialogRef}
       className="modal-dialog"
-      role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
       onCancel={(e) => {

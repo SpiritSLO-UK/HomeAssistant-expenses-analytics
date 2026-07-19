@@ -257,7 +257,7 @@ export default function Categories() {
             onChange={(e) => setColour(e.target.value)}
             title="Colour"
           />
-          <button className="btn" disabled={!name || create.isPending} onClick={submitCreate}>
+          <button type="button" className="btn" disabled={!name || create.isPending} onClick={submitCreate}>
             Add
           </button>
         </div>
@@ -292,6 +292,7 @@ export default function Categories() {
               )}
               {isAdmin && (
                 <button
+                  type="button"
                   className="chip__x"
                   aria-label={c.is_system ? `Delete built-in category ${c.name}` : `Delete category ${c.name}`}
                   title={c.is_system ? "Delete (built-in)" : "Delete"}
@@ -314,6 +315,7 @@ export default function Categories() {
             title="Colour to apply to selected categories"
           />
           <button
+            type="button"
             className="btn btn--sm"
             disabled={selected.size === 0 || bulkRecolour.isPending}
             onClick={() => bulkRecolour.mutate(Array.from(selected))}
@@ -321,7 +323,7 @@ export default function Categories() {
             {bulkRecolour.isPending ? "Applying…" : "Apply colour to selected"}
           </button>
           {selected.size > 0 && (
-            <button className="btn btn--sm btn--ghost" onClick={() => setSelected(new Set())}>
+            <button type="button" className="btn btn--sm btn--ghost" onClick={() => setSelected(new Set())}>
               Clear selection
             </button>
           )}
@@ -350,6 +352,7 @@ export default function Categories() {
           <span className="muted">Apply to all:</span>
           {PRIVACY_OPTIONS.map((o) => (
             <button
+              type="button"
               key={o.value}
               className={"btn btn--sm" + (privacyDefault.data?.level === o.value ? "" : " btn--ghost")}
               disabled={applyPrivacy.isPending}
@@ -397,6 +400,7 @@ export default function Categories() {
             ))}
           </select>
           <button
+            type="button"
             className="btn"
             disabled={!mergeSource || !mergeTarget || mergeSource === mergeTarget || merge.isPending}
             onClick={confirmMerge}
