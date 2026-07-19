@@ -552,3 +552,124 @@ def test_goal_forecast_surfaces_via_api(client):
     manual = next(g for g in client.get("/api/savings/goals").json() if g["id"] == manual_id)
     assert manual["forecast"]["state"] == "no_forecast"
     assert manual["forecast"]["monthly_deposit_rate"] is None
+
+
+# --- Forecast horizon overflow guard (findings #1/#6) -------------------------
+
+
+def test_forecast_tiny_positive_rate_is_bounded_not_overflow():
+    """A microscopic-but-positive net deposit yields an astronomically large horizon
+    that would overflow ``date`` arithmetic past ``date.max``; it must clamp to the
+    ``beyond_horizon`` state with no projected date rather than raise."""
+    from app.services import savings_service
+
+    # 0.01 saved over 30 days → 0.01/month against a billion target.
+    snaps = [(date(2026, 1, 1), Decimal("0")), (date(2026, 1, 31), Decimal("0.01"))]
+    fc = savings_service.forecast_goal(
+        current=Decimal("0.01"), target=Decimal("1000000000"), snapshots=snaps,
+        target_date=None, today=date(2026, 1, 31),
+    )
+    assert fc["state"] == "beyond_horizon"
+    assert fc["projected_date"] is None
+    assert fc["on_track"] is None
+    assert Decimal(fc["monthly_deposit_rate"]) == Decimal("0.01")
+
+    # With a target_date the goal is unambiguously behind it (but still no date).
+    with_deadline = savings_service.forecast_goal(
+        current=Decimal("0.01"), target=Decimal("1000000000"), snapshots=snaps,
+        target_date=date(2027, 1, 1), today=date(2026, 1, 31),
+    )
+    assert with_deadline["state"] == "beyond_horizon"
+    assert with_deadline["on_track"] is False
+    assert with_deadline["projected_date"] is None
+
+
+def test_goals_endpoint_survives_tiny_rate_goal(client):
+    """One goal with a tiny-but-positive deposit rate previously raised OverflowError
+    building its projected date, 500ing the WHOLE /savings/goals list. It must now
+    return 200 with a bounded beyond_horizon forecast."""
+    aid = _account(client)
+    _add_balance(client, aid, "2026-01-01", "0.00")
+    _add_balance(client, aid, "2026-01-31", "0.01")
+    client.post(
+        "/api/savings/goals",
+        json={"name": "Moonshot", "target_amount": "1000000000", "account_id": aid},
+    )
+
+    r = client.get("/api/savings/goals")
+    assert r.status_code == 200
+    goal = next(g for g in r.json() if g["name"] == "Moonshot")
+    assert goal["forecast"]["state"] == "beyond_horizon"
+    assert goal["forecast"]["projected_date"] is None
+
+
+# --- Goals list scopes out other members' private accounts (finding #4) -------
+
+
+def test_goals_list_excludes_out_of_scope_private_account(client):
+    """GET /savings/goals must not expose a goal linked to another member's private
+    account — its balance would leak via ``goal_current`` (matches summary())."""
+    from app.db.session import SessionLocal
+    from app.models import Account, SavingsBalance
+    from app.services import savings_service
+
+    def _member(uid, name):
+        hdr = {"X-Remote-User-Id": uid, "X-Remote-User-Display-Name": name}
+        client.get("/api/users/me", headers=hdr)
+        row = next(u["id"] for u in client.get("/api/users").json() if u["external_id"] == uid)
+        client.patch(f"/api/users/{row}", json={"role": "member", "status": "approved"})
+        return row
+
+    client.get("/api/users/me")  # headerless → local owner
+    bob = _member("ha-bob", "Bob")
+    _member("ha-alice", "Alice")
+    with SessionLocal() as db:
+        priv = Account(name="Bob Piggy", account_type="savings", currency="GBP",
+                       owner_user_id=bob, is_shared=False)
+        db.add(priv)
+        db.flush()
+        db.add(SavingsBalance(account_id=priv.id, as_of_date=date(2026, 5, 1),
+                              balance=Decimal("4200.00"), currency="GBP"))
+        db.commit()
+        savings_service.create_goal(
+            db, name="Bob Secret Goal", target_amount=Decimal("5000"), account_id=priv.id
+        )
+
+    alice_hdr = {"X-Remote-User-Id": "ha-alice", "X-Remote-User-Display-Name": "Alice"}
+    alice_goals = client.get("/api/savings/goals", headers=alice_hdr).json()
+    assert all(g["name"] != "Bob Secret Goal" for g in alice_goals)  # hidden, no balance leak
+
+    owner_goals = client.get("/api/savings/goals").json()  # owner is unrestricted
+    assert any(g["name"] == "Bob Secret Goal" for g in owner_goals)
+
+
+# --- Linked goal converts foreign account balance to goal currency (finding #5)
+
+
+def test_goal_linked_foreign_account_converts_to_goal_currency(db):
+    """A GBP goal linked to a USD account reports the balance/percent/forecast in the
+    goal's currency (converted via FX), not the raw account-currency figure 1:1."""
+    import pytest
+
+    from app.services import fx_service, savings_service
+
+    on_old, on_new = date(2026, 1, 1), date(2026, 1, 31)
+    # base-per-1-USD = 0.80 GBP, on every date the read touches.
+    for on in (on_old, on_new, date.today()):
+        fx_service.set_manual_rate(db, on, "GBP", "USD", Decimal("0.80"))
+
+    acct = savings_service.create_account(db, name="US Savings", currency="USD")
+    savings_service.record_balance(db, acct.id, as_of=on_old, balance=Decimal("0"))
+    savings_service.record_balance(db, acct.id, as_of=on_new, balance=Decimal("1000"))  # USD
+    goal = savings_service.create_goal(  # currency defaults to base GBP
+        db, name="House", target_amount=Decimal("1000"), account_id=acct.id
+    )
+
+    d = savings_service.goal_to_dict(db, goal)
+    assert d["currency"] == "GBP"
+    # 1000 USD * 0.80 = 800 GBP current against a 1000 GBP target.
+    assert Decimal(d["current"]) == Decimal("800.00")
+    assert Decimal(d["remaining"]) == Decimal("200.00")
+    assert d["percent"] == pytest.approx(80.0, abs=0.05)
+    # The deposit-rate forecast reads the CONVERTED (GBP) series: 800 GBP over 30 days.
+    assert Decimal(d["forecast"]["monthly_deposit_rate"]) == Decimal("800.00")
