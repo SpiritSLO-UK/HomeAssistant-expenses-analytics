@@ -433,7 +433,7 @@ imported and anything you added yourself are left untouched.
 cd backend && .venv/bin/python -m pytest # backend only (runs in parallel)
 ```
 
-The backend suite (**990+ tests**) runs across all CPU cores via `pytest-xdist`
+The backend suite (**1,100+ tests**) runs across all CPU cores via `pytest-xdist`
 (`-n auto`, in `pyproject.toml`); pass `-n0` to run serially under a debugger.
 Tests run against a throwaway temporary database and **refuse to start against a
 real one** - they can never read or modify your finance data, and each parallel

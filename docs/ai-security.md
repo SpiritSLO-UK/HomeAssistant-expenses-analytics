@@ -41,7 +41,11 @@ change data on its own.
   payload (`description`, `amount`, `currency`, `candidate_categories`) POSTed to
   the configured endpoint. For cloud modes the host must resolve to a public IP
   (an SSRF guard forbids loopback/LAN targets) and redirects are disabled so the
-  API key cannot be bounced to a different host.
+  API key cannot be bounced to a different host. The guard **resolves the host
+  once, requires every resolved A/AAAA address to be public, and then connects to
+  that single validated IP** (preserving the original Host header / TLS SNI), so
+  the name is never re-resolved between the check and the connection - closing the
+  resolve-then-connect (TOCTOU) DNS-rebinding gap.
 
 ## One redaction choke-point for anything cloud-bound
 
@@ -82,7 +86,10 @@ compromise:
    two vision routes.
 3. **A settings-manager can point the cloud base URL at any public endpoint.**
    This is by design (only a settings-manager can change it); the SSRF guard
-   forbids private/loopback hosts but does not pin against DNS rebinding.
+   forbids private/loopback hosts and now **pins a single DNS resolution** -
+   every resolved address must be public and the connection is made to that one
+   validated IP, so a fast DNS rebind can no longer answer "public" at check time
+   and "private/loopback" at connect time.
 4. **Plaintext key fallback** exists when `HAFI_DB_KEY` is not set, mirroring how
    the two-factor secret is handled. Set `HAFI_DB_KEY` (at-rest encryption) to
    encrypt stored secrets.

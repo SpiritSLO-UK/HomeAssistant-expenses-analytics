@@ -26,6 +26,26 @@ therefore no cookie to mark `Secure`/`HttpOnly` - but the token still travels ov
 the network on every request, so **TLS is what protects it in transit**. Serve the
 app over HTTPS whenever it's reachable beyond `localhost`.
 
+## Identity headers - strip inbound spoofs (or turn trust off)
+
+TLS is only half the job. The app derives identity from `X-Remote-User-*` headers
+and bootstraps the first caller as the household **owner**, so a proxy that
+forwards **client-supplied** `X-Remote-User-*` headers unfiltered lets any client
+impersonate a user. When you put a proxy in front to expose the app, do **one** of:
+
+- **Strip every inbound `X-Remote-User-*` header** at the proxy (and inject your
+  own trusted identity if the proxy authenticates users). The bundled `Caddyfile`
+  does not forward client identity headers; if you write your own nginx/Traefik
+  config, clear them explicitly - e.g. in nginx add
+  `proxy_set_header X-Remote-User-Id ""; proxy_set_header X-Remote-User-Name "";
+  proxy_set_header X-Remote-User-Display-Name "";` to the `location` block below.
+- **Or turn header trust off** - set `HAFI_TRUST_PROXY_HEADERS=false` (default
+  `true`; CR-SEC-4 / #370) so the app ignores all `X-Remote-User-*` headers and
+  resolves every request to the single `local` owner. This is the right switch
+  for a single-user standalone box whose proxy does not supply identity.
+
+See [security.md](security.md) for the full trust model.
+
 ## Quick start - Caddy (bundled)
 
 The repo ships a ready-to-use [`docker-compose.tls.yml`](../docker-compose.tls.yml)

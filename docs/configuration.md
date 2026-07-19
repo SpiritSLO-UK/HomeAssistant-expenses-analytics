@@ -47,6 +47,16 @@ committed. Anything not in the file falls back to the defaults below.
 | `HAFI_PORT` | `8099` | HTTP port. |
 | `HAFI_HOST` | `0.0.0.0` | Bind address. |
 
+### Reverse-proxy identity headers (standalone hardening)
+
+Who the app thinks you are comes from the `X-Remote-User-*` headers the trusted
+front (HA ingress) sets after it authenticates you. This flag controls whether
+those headers are trusted at all.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `HAFI_TRUST_PROXY_HEADERS` | `true` | Trust the inbound `X-Remote-User-Id` / `-Name` / `-Display-Name` identity headers. **Leave `true` under Home Assistant ingress** (HA authenticates the user and forwards their identity - turning it off there breaks login). Set it **`false`** for a standalone/compose deployment that exposes the port directly: the app then ignores those headers and resolves every request to the single `local` owner, so a peer on the network can't forge an identity by sending them. Defence in depth - see [security.md](security.md). |
+
 ### MQTT (publish sensors to Home Assistant)
 
 Off by default. Only used when `HAFI_MQTT_ENABLED=true`.

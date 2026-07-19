@@ -45,8 +45,9 @@ config carry over; database migrations run automatically on start.
   database connection pool, and fewer transient errors after the app has sat
   idle.
 - **More secure** - the container runs as a non-root user, AI calls are
-  rate-limited and budget-capped, stronger security headers, and a broad
-  hardening pass across the backend.
+  rate-limited and budget-capped, the SSRF guard on outbound URLs now resists
+  DNS rebinding, stronger security headers, and a broad hardening pass across
+  the backend.
 - **Better tested** - 1,067 backend tests plus a browser test suite that clicks
   through every page.
 
@@ -60,7 +61,9 @@ subscriptions and rules linked; a crafted receipt can no longer tie up OCR; and
 more actions surface an on-screen message when they fail.
 
 ### Upgrade notes
-- One new database migration (`mfa_backup_codes`) runs automatically on start.
+- Four new database migrations run automatically on start: a case-insensitive
+  unique index on tags, an import-profile date-format column, MFA backup codes,
+  and a per-user nav-layout column.
 - If at-rest encryption is enabled (`HAFI_DB_KEY` set), you may be asked to
   verify two-factor once after upgrading.
 - Upgrading from v1.0.1 or older also brings everything in v1.0.2 below,

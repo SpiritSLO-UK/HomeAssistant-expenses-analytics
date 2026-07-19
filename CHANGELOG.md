@@ -10,7 +10,7 @@ human-readable entries; versions follow semantic versioning.
 ### Highlights
 
 A wide-ranging hardening, insight and polish release on top of v1.0.2 - roughly
-230 pull requests. Two-factor gains single-use **backup/recovery codes**; the
+250 pull requests. Two-factor gains single-use **backup/recovery codes**; the
 container now runs as a **non-root user**; budgets, projects and savings goals
 get **forecasts** (pace, burn-down, time-to-goal) and can be **edited after
 creation**; US bank statements import correctly; dates display in your chosen
@@ -39,6 +39,11 @@ automatically on start.
   application-layer crypto as the two-factor secret); the `HAFI_AI_API_KEY`
   environment variable still takes precedence, and the key is never returned by
   the API or written to logs.
+- **SSRF guard hardened against DNS rebinding** - for outbound calls to
+  user-supplied URLs (AI providers, Paperless) the host is resolved once, every
+  resolved address must be public, and the connection is made to that validated
+  IP with the original host name preserved, so the name can't be re-resolved to
+  a private address between the check and the request.
 - **Proxy-header trust is opt-in** - reverse-proxy identity headers are only
   honoured behind an explicit flag, so a directly exposed port can't be
   identity-spoofed.
@@ -145,7 +150,7 @@ automatically on start.
   MQTT isn't live.
 
 ### Testing & docs
-- **1,095 backend tests**, plus a new **Playwright browser suite** (55+
+- **1,100+ backend tests**, plus a new **Playwright browser suite** (50+
   tests: a render smoke of every page and end-to-end task flows) with an HTML
   report attached to CI runs and releases, and a step-by-step UI test
   walkthrough. CI additionally guards the non-root container, encryption
@@ -155,6 +160,9 @@ automatically on start.
   standalone trust model (including the proxy header-spoof caveat).
 - Docs now state plainly that the database is plaintext unless `HAFI_DB_KEY`
   at-rest encryption is enabled.
+- Groundwork (API only, no UI yet) for a per-user customisable grouped nav
+  layout: a `nav_layout` column and `GET`/`PUT`/`DELETE /api/users/me/nav-layout`
+  endpoints; the interface arrives in a later release.
 
 ### Fixes (from a pre-release code-review pass)
 A systematic critical review before release found and fixed 30 issues; the
@@ -188,7 +196,9 @@ notable ones:
   in-app prompt field and split editor are more accessible.
 
 ### Upgrade notes
-- One new database migration (`mfa_backup_codes`) runs automatically on start.
+- Four new database migrations run automatically on start: a case-insensitive
+  unique index on tags, an import-profile date-format column, MFA backup codes,
+  and a per-user nav-layout column.
 - If at-rest encryption is enabled (`HAFI_DB_KEY` set), you may be asked to
   **verify two-factor once** after upgrading: the TOTP secret is re-wrapped
   with application-layer encryption.
