@@ -58,6 +58,21 @@ def _two_uncategorised(client):
     _import_rows(client, [("2026-05-02", "ZZQ MARKET", "-12.00"), ("2026-05-03", "QQX DEPOT", "-8.00")])
 
 
+@pytest.fixture(autouse=True)
+def _clear_inflight():
+    """Isolate the module-level in-flight guard between tests (it's process-global,
+    so a test that reserves ids must not bleed into the next)."""
+    ai_service._inflight_batch_ids.clear()
+    yield
+    ai_service._inflight_batch_ids.clear()
+
+
+def _prepare_ids(client, provider):
+    with SessionLocal() as db:
+        prepared = ai_service.cloud_batch_prepare(db, provider=provider)
+    return [i["ai_request_id"] for i in prepared["items"]]
+
+
 def test_prepare_audits_pending_and_sends_nothing(client):
     _two_uncategorised(client)
     _set_mode(client, "cloud_manual")
@@ -194,3 +209,148 @@ def test_full_flow_applies_after_send(client):
             t for t in db.scalars(select(Transaction)).all() if t.category_id is not None
         )
         assert groceries.confidence_score == pytest.approx(1.0)  # treated as a manual decision
+
+
+# --- non-blocking send: cloud_batch_start + run_cloud_batch + cloud_batch_status ---
+
+
+def test_start_returns_promptly_and_dispatches_nothing(client):
+    """The send kick-off returns an ack (how many queued) WITHOUT sending — the
+    provider is only touched once the background worker runs."""
+    _two_uncategorised(client)
+    _set_mode(client, "cloud_manual")
+    fake = FakeProvider()
+    ids = _prepare_ids(client, fake)
+
+    with SessionLocal() as db:
+        ack = ai_service.cloud_batch_start(db, approve_ids=ids)
+
+    assert ack["queued"] == 2
+    assert ack["rejected"] == 0
+    assert fake.calls == []  # nothing dispatched yet
+    with SessionLocal() as db:  # rows still pending, awaiting the worker
+        assert all(db.get(AIRequest, rid).status == "pending" for rid in ids)
+
+
+def test_background_worker_completes_and_status_reaches_done(client):
+    _two_uncategorised(client)
+    _set_mode(client, "cloud_manual")
+    fake = FakeProvider(category="Groceries", confidence=0.9)
+    ids = _prepare_ids(client, fake)
+
+    with SessionLocal() as db:
+        ack = ai_service.cloud_batch_start(db, approve_ids=ids)
+    # Mid-flight (before the worker runs): still pending, marked running.
+    with SessionLocal() as db:
+        mid = ai_service.cloud_batch_status(db, ids)
+    assert mid["done"] is False
+    assert mid["pending"] == 2
+    assert mid["sent"] == 0
+    assert mid["running"] is True
+
+    ai_service.run_cloud_batch(ack["queue"], provider=fake)
+
+    assert len(fake.calls) == 2
+    with SessionLocal() as db:
+        done = ai_service.cloud_batch_status(db, ids)
+    assert done["done"] is True
+    assert done["sent"] == 2
+    assert done["pending"] == 0
+    assert done["failed"] == 0
+    assert done["running"] is False
+    assert len(done["suggestions"]) == 2
+    assert done["suggestions"][0]["category_name"] == "Groceries"
+
+
+def test_no_double_send_while_batch_running(client):
+    """A second start for the same rows queues nothing (the ids are reserved
+    in-flight), and re-running the worker doesn't re-dispatch a sent row."""
+    _two_uncategorised(client)
+    _set_mode(client, "cloud_manual")
+    fake = FakeProvider()
+    ids = _prepare_ids(client, fake)
+
+    with SessionLocal() as db:
+        first = ai_service.cloud_batch_start(db, approve_ids=ids)
+    assert first["queued"] == 2
+    # Re-triggering while the ids are reserved queues nothing.
+    with SessionLocal() as db:
+        second = ai_service.cloud_batch_start(db, approve_ids=ids)
+    assert second["queued"] == 0
+
+    ai_service.run_cloud_batch(first["queue"], provider=fake)
+    assert len(fake.calls) == 2
+    # Re-running the worker over the same ids sends nothing more (already completed).
+    ai_service.run_cloud_batch(ids, provider=fake)
+    assert len(fake.calls) == 2
+
+
+def test_background_worker_reapplies_never_cloud_guard(client):
+    """Per-item send-time re-validation still fires in the background path: a txn
+    whose category became never-cloud after staging is recorded failed, not sent."""
+    from app.models import Category
+
+    _two_uncategorised(client)
+    _set_mode(client, "cloud_manual")
+    fake = FakeProvider()
+    ids = _prepare_ids(client, fake)
+    with SessionLocal() as db:
+        req0 = db.get(AIRequest, ids[0])
+        never = Category(name="Therapy", privacy_sensitivity="never_cloud", is_active=True)
+        db.add(never)
+        db.flush()
+        db.get(Transaction, req0.transaction_id).category_id = never.id
+        db.commit()
+
+    ai_service.run_cloud_batch(ids, provider=fake)
+
+    assert len(fake.calls) == 1  # only the still-safe request left the device
+    with SessionLocal() as db:
+        assert db.get(AIRequest, ids[0]).status == "failed"
+        status = ai_service.cloud_batch_status(db, ids)
+    assert status["failed"] == 1
+    assert status["sent"] == 1
+    assert status["done"] is True
+
+
+def test_background_worker_refused_when_mode_now_off(client):
+    """If AI is switched off after staging, the background worker sends nothing."""
+    _two_uncategorised(client)
+    _set_mode(client, "cloud_manual")
+    fake = FakeProvider()
+    ids = _prepare_ids(client, fake)
+
+    _set_mode(client, "strict_local")  # AI off between staging and sending
+    ai_service.run_cloud_batch(ids, provider=fake)
+
+    assert fake.calls == []
+    with SessionLocal() as db:
+        status = ai_service.cloud_batch_status(db, ids)
+    assert status["failed"] == 2
+    assert status["done"] is True
+
+
+def test_send_endpoint_returns_queued_without_blocking(client, monkeypatch):
+    """The /cloud-batch/send route returns the queued ack immediately and schedules
+    the background worker (stubbed here so no dispatch happens), and the status
+    route reports the in-flight batch."""
+    _two_uncategorised(client)
+    _set_mode(client, "cloud_manual")
+    fake = FakeProvider()
+    ids = _prepare_ids(client, fake)
+
+    scheduled: list[list[int]] = []
+    monkeypatch.setattr(ai_service, "run_cloud_batch", lambda queue, **_: scheduled.append(queue))
+
+    res = client.post("/api/ai/cloud-batch/send", json={"approve_ids": ids})
+    assert res.status_code == 200
+    body = res.json()
+    assert body == {"queued": 2, "rejected": 0}
+    assert scheduled == [ids]  # worker was scheduled with the queued ids
+
+    ids_qs = ",".join(str(i) for i in ids)
+    status = client.get(f"/api/ai/cloud-batch/status?ids={ids_qs}").json()
+    assert status["pending"] == 2
+    assert status["sent"] == 0
+    assert status["done"] is False
+    assert status["running"] is True

@@ -19,10 +19,11 @@ import base64
 import json
 from datetime import UTC, datetime
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.config import settings as env_settings
+from app.db.session import SessionLocal
 from app.logging import get_logger
 from app.models import AIRequest, Category, Transaction
 from app.services import ai_guard, redaction, review_service, settings_service
@@ -37,6 +38,12 @@ BATCH_SCOPES = {"uncategorised", "recheck"}
 OFF_MODES = {"strict_local", "no_ai"}
 
 _NO_AI_PROVIDER = "No AI provider configured"
+# Request ids currently being dispatched by a background cloud-batch worker. A
+# second "send" for the same rows is filtered against this so a batch can't be
+# re-triggered mid-run (double-send guard, on top of the per-item status check).
+# In-memory is sufficient: a single backend process owns the (SQLite) DB, and
+# nothing is ever in flight across a restart.
+_inflight_batch_ids: set[int] = set()
 # Hard cap on the raw image bytes we will send to a vision model. Mirrors the
 # route-level upload cap (uploads.AI_IMAGE_MAX = 15 MB) so a direct service /
 # API caller can't push an unbounded payload to the provider (SR-D1).
@@ -761,6 +768,147 @@ def cloud_batch_send(
 
     db.commit()
     return {"count": len(suggestions), "suggestions": suggestions, "failed": failed, "rejected": rejected}
+
+
+# --- non-blocking cloud batch send (background worker + polled status) ---------
+#
+# The synchronous ``cloud_batch_send`` above dispatches every approved request in
+# one request/response, which blocks the UI for a long batch. The pair below runs
+# the same per-item dispatch in the BACKGROUND instead: ``cloud_batch_start``
+# queues the approved ids (rejecting the rest synchronously) and returns at once;
+# ``run_cloud_batch`` is scheduled to send them one-by-one; the FE polls
+# ``cloud_batch_status`` (derived from the AIRequest rows — no new column) until
+# ``done`` and then reviews the suggestions it carries.
+
+
+def _dispatchable_ids(db: Session, approve_ids: list[int]) -> list[int]:
+    """The subset of ``approve_ids`` sendable right now: a still-``pending``
+    request that isn't already being dispatched by a running worker (double-send
+    guard). De-duplicated, order-preserving."""
+    seen: set[int] = set()
+    out: list[int] = []
+    for rid in approve_ids:
+        if rid in seen or rid in _inflight_batch_ids:
+            continue
+        seen.add(rid)
+        req = db.get(AIRequest, rid)
+        if req is not None and req.status == "pending":
+            out.append(rid)
+    return out
+
+
+def cloud_batch_start(
+    db: Session, *, approve_ids: list[int], reject_ids: list[int] | None = None
+) -> dict:
+    """Stage 2, non-blocking: queue the approved requests for a BACKGROUND send
+    and reject the rest, returning immediately with how many were queued.
+
+    Nothing is dispatched here — the caller schedules :func:`run_cloud_batch` on
+    the returned ``queue`` and the FE polls :func:`cloud_batch_status`. Rejecting
+    is cheap (no network) so it happens synchronously. The queued ids are reserved
+    in an in-flight set before returning, so a second call can't re-dispatch the
+    same rows while the worker is running."""
+    provider = get_provider(db)
+    if not provider.available():
+        raise AIDisabled(_NO_AI_PROVIDER)
+    queue = _dispatchable_ids(db, approve_ids)
+    _inflight_batch_ids.update(queue)  # reserve before returning (double-send guard)
+    rejected = sum(_reject_pending(db, rid) for rid in reject_ids or [])
+    db.commit()
+    return {"queued": len(queue), "rejected": rejected, "queue": queue}
+
+
+def run_cloud_batch(request_ids: list[int], *, provider: AIProvider | None = None) -> None:
+    """Background worker: dispatch each approved-pending request SEQUENTIALLY, but
+    on a FRESH short-lived session per item (committing per item), so one DB
+    connection is never pinned for the whole batch — SQLite's pool is bounded
+    (``db/session``). Wrapped so a failure on one item, or the run as a whole, can
+    never bubble up to crash the app; each outcome is recorded on its AIRequest
+    row and read back via :func:`cloud_batch_status`.
+
+    The per-item send re-runs every guard the synchronous path applies (the
+    send-time never-cloud / mode re-validation via ``_send_one_approved``); the
+    route-level rate-limit / daily-budget guards ran when the send was queued."""
+    try:
+        for rid in request_ids:
+            try:
+                with SessionLocal() as db:
+                    prov = provider or get_provider(db)
+                    # Throwaway result lists: outcomes live on the AIRequest rows.
+                    _send_one_approved(db, rid, prov, _candidate_categories(db), [], [])
+                    db.commit()
+            except Exception:  # noqa: BLE001 - isolate one item; keep the batch going
+                logger.exception("run_cloud_batch: error dispatching request %s", rid)
+            finally:
+                _inflight_batch_ids.discard(rid)
+    except Exception:  # noqa: BLE001 - a background task must never crash the server
+        logger.exception("run_cloud_batch: unexpected failure")
+    finally:
+        # Belt-and-braces: clear any ids still reserved (e.g. if the loop raised
+        # before reaching them) so a later batch isn't blocked.
+        _inflight_batch_ids.difference_update(request_ids)
+
+
+def _batch_status_counts(db: Session, ids: list[int]) -> dict[str, int]:
+    """AIRequest status → count for the rows named by ``ids`` (one grouped COUNT)."""
+    rows = db.execute(
+        select(AIRequest.status, func.count())
+        .where(AIRequest.id.in_(ids))
+        .group_by(AIRequest.status)
+    ).all()
+    return {status: int(n) for status, n in rows}
+
+
+def _suggestions_for(db: Session, ids: list[int]) -> list[dict]:
+    """Rebuild the review-stage suggestions from the COMPLETED requests among
+    ``ids`` — the async send stores each outcome on its AIRequest row, so the FE
+    review/apply stage is unchanged from the old synchronous return. Skips a
+    completed row whose category no longer resolves (same rule the send path
+    applied: only surface a matched category)."""
+    cats = _candidate_categories(db)
+    rows = db.scalars(
+        select(AIRequest).where(AIRequest.id.in_(ids), AIRequest.status == "completed")
+    ).all()
+    out: list[dict] = []
+    for req in rows:
+        result = json.loads(req.response_payload or "{}")
+        match = _match_category_name(result.get("category"), cats)
+        if match is None:
+            continue
+        txn = db.get(Transaction, req.transaction_id) if req.transaction_id else None
+        out.append({
+            "transaction_id": req.transaction_id,
+            "description": txn.description_raw if txn else "",
+            "amount": str(txn.amount) if txn else "",
+            "category_id": match.id,
+            "category_name": match.name,
+            "confidence": result.get("confidence"),
+            "rationale": result.get("rationale"),
+        })
+    return out
+
+
+def cloud_batch_status(db: Session, ids: list[int]) -> dict:
+    """Progress of a cloud batch, derived purely from the AIRequest rows named by
+    ``ids`` (the ids the FE queued) — a couple of COUNT queries, cheap enough to
+    poll. ``done`` is true once none are still pending; the ``suggestions`` (built
+    from the completed rows) are populated only then so the FE moves straight to
+    the review/apply stage."""
+    ids = list(dict.fromkeys(ids))  # de-dupe, keep order
+    if not ids:
+        return {"total": 0, "sent": 0, "pending": 0, "failed": 0,
+                "rejected": 0, "done": True, "running": False, "suggestions": []}
+    counts = _batch_status_counts(db, ids)
+    sent = counts.get("completed", 0)
+    failed = counts.get("failed", 0)
+    pending = counts.get("pending", 0)
+    rejected = counts.get("rejected", 0)
+    done = pending == 0
+    running = any(rid in _inflight_batch_ids for rid in ids)
+    suggestions = _suggestions_for(db, ids) if done else []
+    return {"total": sent + failed + pending + rejected, "sent": sent, "pending": pending,
+            "failed": failed, "rejected": rejected, "done": done, "running": running,
+            "suggestions": suggestions}
 
 
 def apply_suggestions(db: Session, items: list[dict], *, account_ids: set[int] | None = None) -> int:

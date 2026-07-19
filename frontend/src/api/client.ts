@@ -1064,11 +1064,23 @@ export interface CloudBatchPreview {
   items: CloudBatchItem[];
 }
 
-export interface CloudBatchSendResult {
-  count: number;
-  suggestions: BatchSuggestion[];
-  failed: number[];
+// Non-blocking send: the endpoint queues the approved requests for a background
+// worker and returns immediately with how many were queued. Progress (and the
+// eventual suggestions) come from polling cloudBatchStatus.
+export interface CloudBatchSendAck {
+  queued: number;
   rejected: number;
+}
+
+export interface CloudBatchStatus {
+  total: number;
+  sent: number;
+  pending: number;
+  failed: number;
+  rejected: number;
+  done: boolean;
+  running: boolean;
+  suggestions: BatchSuggestion[]; // populated once done
 }
 
 export function cloudBatchPrepare(limit = 25, scope: BatchScope = "uncategorised"): Promise<CloudBatchPreview> {
@@ -1078,11 +1090,18 @@ export function cloudBatchPrepare(limit = 25, scope: BatchScope = "uncategorised
 export function cloudBatchSend(
   approveIds: number[],
   rejectIds: number[] = [],
-): Promise<CloudBatchSendResult> {
-  return fetchJson<CloudBatchSendResult>("api/ai/cloud-batch/send", {
+): Promise<CloudBatchSendAck> {
+  return fetchJson<CloudBatchSendAck>("api/ai/cloud-batch/send", {
     method: "POST",
     body: JSON.stringify({ approve_ids: approveIds, reject_ids: rejectIds }),
   });
+}
+
+// Progress of a queued cloud batch, derived from the AIRequest rows. Poll this
+// (react-query refetchInterval) while sending; stop once `done` and read the
+// returned `suggestions` for the review/apply stage.
+export function cloudBatchStatus(ids: number[]): Promise<CloudBatchStatus> {
+  return fetchJson<CloudBatchStatus>(`api/ai/cloud-batch/status?ids=${ids.join(",")}`);
 }
 
 // --- Categories (spec §24.5) ---
