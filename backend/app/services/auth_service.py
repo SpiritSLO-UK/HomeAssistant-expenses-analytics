@@ -68,6 +68,90 @@ def blocked_api_prefixes(user: User) -> list[str]:
         return []
     return [BLOCKABLE_NAV[k] for k in user.blocked_nav_keys if k in BLOCKABLE_NAV]
 
+
+# --- per-user customisable grouped nav layout (grouped-nav PR1/4) ---
+
+# The full set of known sidebar paths a custom layout may reference. Mirrors
+# ``NAV_ITEMS`` in ``frontend/src/nav.ts`` (keep the two in sync). A layout item
+# whose ``path`` isn't in here is silently dropped so bad/stale data can't persist.
+KNOWN_NAV_PATHS: frozenset[str] = frozenset(
+    {
+        "/", "/search", "/import", "/transactions", "/categories", "/tags",
+        "/vendors", "/rules", "/projects", "/travel", "/business", "/budgets",
+        "/savings", "/investments", "/accounts", "/assets", "/energy",
+        "/allowance", "/subscriptions", "/receipts", "/review", "/users",
+        "/logs", "/settings",
+    }
+)
+
+# Guardrails on the persisted blob so a client can't store something unbounded.
+NAV_LAYOUT_MAX_GROUPS = 50
+NAV_LAYOUT_MAX_ITEMS_PER_GROUP = 100
+
+
+def _normalise_nav_item(item) -> dict | None:
+    """A single normalised layout item, or ``None`` to drop it (unknown path)."""
+    path = getattr(item, "path", None)
+    if not isinstance(path, str) or path not in KNOWN_NAV_PATHS:
+        return None
+    out: dict = {"path": path}
+    if item.label is not None:
+        out["label"] = str(item.label)
+    if item.icon is not None:
+        out["icon"] = str(item.icon)
+    if item.hidden is not None:
+        out["hidden"] = bool(item.hidden)
+    return out
+
+
+def _normalise_nav_group(group, seen_ids: set[str]) -> dict | None:
+    """A single normalised group, or ``None`` to drop it (blank/duplicate id)."""
+    gid = str(group.id).strip()
+    if not gid or gid in seen_ids:
+        return None
+    seen_ids.add(gid)
+    items: list[dict] = []
+    for item in group.items[:NAV_LAYOUT_MAX_ITEMS_PER_GROUP]:
+        normalised = _normalise_nav_item(item)
+        if normalised is not None:
+            items.append(normalised)
+    out: dict = {"id": gid, "items": items}
+    if group.label is not None:
+        out["label"] = str(group.label)
+    if group.icon is not None:
+        out["icon"] = str(group.icon)
+    return out
+
+
+def normalise_nav_layout(layout) -> dict:
+    """Validate + normalise a ``NavLayoutIn`` into the dict stored on the user.
+
+    Drops items whose path isn't a known nav path, groups with a blank/duplicate
+    id, and caps group/item counts. Returns ``{"v", "groups"}``."""
+    seen_ids: set[str] = set()
+    groups: list[dict] = []
+    for group in layout.groups[:NAV_LAYOUT_MAX_GROUPS]:
+        normalised = _normalise_nav_group(group, seen_ids)
+        if normalised is not None:
+            groups.append(normalised)
+    return {"v": int(layout.v), "groups": groups}
+
+
+def set_nav_layout(db: Session, *, user: User, layout) -> dict:
+    """Persist ``user``'s own custom nav layout (self-service) and return it."""
+    normalised = normalise_nav_layout(layout)
+    user.nav_layout = json.dumps(normalised)
+    db.commit()
+    db.refresh(user)
+    return normalised
+
+
+def clear_nav_layout(db: Session, *, user: User) -> None:
+    """Reset ``user``'s layout to the built-in default (NULL the column)."""
+    user.nav_layout = None
+    db.commit()
+    db.refresh(user)
+
 # HA ingress identity headers (lower-cased lookup; Starlette headers are
 # case-insensitive). ``X-Remote-User-Id`` is the stable key.
 HEADER_ID = "x-remote-user-id"

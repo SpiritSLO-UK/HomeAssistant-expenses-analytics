@@ -209,6 +209,88 @@ def test_owner_is_never_restricted(client):
     assert client.get("/api/users/me").json()["blocked_nav_keys"] == ["budgets"]
 
 
+# --- per-user customisable grouped nav layout (self-service, grouped-nav PR1/4) ---
+
+
+def _sample_layout() -> dict:
+    return {
+        "v": 1,
+        "groups": [
+            {
+                "id": "money",
+                "label": "Money",
+                "icon": "💰",
+                "items": [
+                    {"path": "/budgets", "label": "My budgets"},
+                    {"path": "/savings", "hidden": True},
+                ],
+            }
+        ],
+    }
+
+
+def test_me_nav_layout_defaults_to_null(client):
+    me = client.get("/api/users/me").json()
+    assert me["nav_layout"] is None
+
+
+def test_put_nav_layout_persists_and_me_returns_it(client):
+    stored = client.put("/api/users/me/nav-layout", json=_sample_layout())
+    assert stored.status_code == 200
+    body = stored.json()
+    assert body["v"] == 1
+    assert [g["id"] for g in body["groups"]] == ["money"]
+    assert [i["path"] for i in body["groups"][0]["items"]] == ["/budgets", "/savings"]
+
+    # /me now returns the stored layout for the same user.
+    me = client.get("/api/users/me").json()
+    assert me["nav_layout"] == body
+
+
+def test_put_nav_layout_drops_unknown_path(client):
+    payload = {
+        "v": 1,
+        "groups": [
+            {
+                "id": "grp",
+                "items": [
+                    {"path": "/budgets"},
+                    {"path": "/not-a-real-page"},
+                ],
+            }
+        ],
+    }
+    body = client.put("/api/users/me/nav-layout", json=payload).json()
+    # The bogus path is silently dropped; the valid one survives.
+    assert [i["path"] for i in body["groups"][0]["items"]] == ["/budgets"]
+
+
+def test_delete_nav_layout_resets_to_null(client):
+    client.put("/api/users/me/nav-layout", json=_sample_layout())
+    assert client.get("/api/users/me").json()["nav_layout"] is not None
+
+    deleted = client.delete("/api/users/me/nav-layout")
+    assert deleted.status_code == 204
+    assert client.get("/api/users/me").json()["nav_layout"] is None
+
+
+def test_nav_layout_is_per_user_scoped(client):
+    # Owner (header-less local) stores a layout…
+    client.put("/api/users/me/nav-layout", json=_sample_layout())
+    # …a second, approved user has their own independent (default) layout.
+    _approved_member(client, "ha-nina", "Nina")
+    nina = _hdr("ha-nina", "Nina")
+    assert client.get("/api/users/me", headers=nina).json()["nav_layout"] is None
+
+    # Nina sets her own without touching the owner's.
+    nina_layout = {"v": 1, "groups": [{"id": "n", "items": [{"path": "/savings"}]}]}
+    client.put("/api/users/me/nav-layout", headers=nina, json=nina_layout)
+    assert [g["id"] for g in client.get("/api/users/me", headers=nina).json()["nav_layout"]["groups"]] == ["n"]
+    # Owner's layout is unchanged.
+    owner_groups = client.get("/api/users/me").json()["nav_layout"]["groups"]
+    assert [g["id"] for g in owner_groups] == ["money"]
+
+
 def test_health_probe_does_not_create_local_user(client):
     """Regression: the container HEALTHCHECK hits /api/health with no HA ingress
     headers. Behind ingress (a real HA user is the owner) that must NOT spawn a

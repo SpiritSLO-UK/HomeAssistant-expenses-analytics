@@ -9,12 +9,12 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models import User
-from app.schemas.users import MemberOut, MeOut, UserOut, UserUpdate
+from app.schemas.users import MemberOut, MeOut, NavLayoutIn, UserOut, UserUpdate
 from app.services import auth_service, mfa_service
 from app.services.auth_service import get_current_user, require_owner, require_owner_step_up
 
@@ -42,7 +42,33 @@ def get_me(
         mfa_policy=user.mfa_policy,
         mfa_required=mfa_required,
         mfa_setup_required=user.mfa_policy == "required" and not user.mfa_enabled,
+        nav_layout=user.nav_layout_obj,
     )
+
+
+@router.put("/me/nav-layout")
+def set_my_nav_layout(
+    payload: NavLayoutIn,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> dict:
+    """Store the caller's own customised sidebar layout (grouped nav, PR1/4).
+
+    Self-service: any approved authenticated user may set their OWN layout — this
+    is deliberately NOT gated by ``can_manage_settings``/owner. The blob is
+    normalised (items with an unknown ``path`` are silently dropped, group/item
+    counts capped) and the stored layout is returned."""
+    return auth_service.set_nav_layout(db, user=user, layout=payload)
+
+
+@router.delete("/me/nav-layout", status_code=204)
+def reset_my_nav_layout(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> Response:
+    """Reset the caller's sidebar layout to the built-in default (self-service)."""
+    auth_service.clear_nav_layout(db, user=user)
+    return Response(status_code=204)
 
 
 def require_roster_reader(user: Annotated[User, Depends(get_current_user)]) -> User:

@@ -26,14 +26,18 @@ import pytest
 
 pytest.importorskip("sqlcipher3")  # noqa: E402
 
+from alembic.script import ScriptDirectory  # noqa: E402
 from sqlalchemy import text  # noqa: E402
 
 from app.config import settings  # noqa: E402
 from app.db import session as dbsession  # noqa: E402
-from app.db.migrations_runner import run_migrations  # noqa: E402
+from app.db.migrations_runner import _alembic_config, run_migrations  # noqa: E402
 from app.services import security_service  # noqa: E402
 
-HEAD_REVISION = "d3e4f5a6b7c8"
+# Derive the expected head from the migration scripts themselves, so adding a new
+# migration never breaks these tests (they assert that a restart migrates the DB
+# up to whatever the current head is - not to a hard-coded revision).
+HEAD_REVISION = ScriptDirectory.from_config(_alembic_config()).get_current_head()
 
 
 @pytest.fixture()

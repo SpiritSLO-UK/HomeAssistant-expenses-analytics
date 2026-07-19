@@ -2220,6 +2220,27 @@ export function getEnergyProductionHistory(period: string, count: number): Promi
 
 // --- Users & access control (spec §6, §28; backlog #82, #126) ---
 
+// Per-user customised sidebar layout (grouped nav, PR1/4). Null on Me = use the
+// built-in default layout. Stored + normalised server-side (unknown paths dropped).
+export interface NavLayoutItem {
+  path: string;
+  label?: string;
+  icon?: string;
+  hidden?: boolean;
+}
+
+export interface NavLayoutGroup {
+  id: string;
+  label?: string;
+  icon?: string;
+  items: NavLayoutItem[];
+}
+
+export interface NavLayout {
+  v: number;
+  groups: NavLayoutGroup[];
+}
+
 export interface Me {
   id: number;
   display_name: string;
@@ -2234,6 +2255,7 @@ export interface Me {
   mfa_policy: string; // optional | required (admin-set, #157)
   mfa_required: boolean;
   mfa_setup_required: boolean; // admin requires MFA but the user hasn't enrolled (#157)
+  nav_layout?: NavLayout | null; // custom sidebar layout, null = default (PR1/4)
 }
 
 export interface User {
@@ -2264,6 +2286,21 @@ export function getMe(): Promise<Me> {
 
 export function listUsers(): Promise<User[]> {
   return fetchJson<User[]>("api/users");
+}
+
+// Persist the current user's own customised sidebar layout (grouped nav, PR1/4).
+// The server normalises the blob (unknown paths dropped) and returns the stored
+// layout. Self-service: any authenticated user may set their OWN layout.
+export function saveNavLayout(layout: NavLayout): Promise<NavLayout> {
+  return fetchJson<NavLayout>("api/users/me/nav-layout", {
+    method: "PUT",
+    body: JSON.stringify(layout),
+  });
+}
+
+// Reset the current user's sidebar layout to the built-in default (204, no body).
+export function resetNavLayout(): Promise<void> {
+  return fetchJson<void>("api/users/me/nav-layout", { method: "DELETE" });
 }
 
 // Approved household members for the per-member spend filter (any approved user).
