@@ -6,8 +6,10 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from sqlalchemy import event, select
 
-from app.models import Budget, Transaction
+from app.db import session as dbsession
+from app.models import Budget, Category, Transaction, TransactionSplit
 from app.services import budget_service
 
 
@@ -340,3 +342,122 @@ def test_pace_period_ended():
     assert fields["elapsed_fraction"] == 1.0
     assert fields["pace_expected"] == "300.00"
     assert fields["pace_status"] == "on_track"  # spent == full-period expectation
+
+
+# --- N+1 / shared-window summary (backlog #16) ---
+
+def _category(db, name: str) -> Category:
+    cat = Category(name=name)
+    db.add(cat)
+    db.commit()
+    db.refresh(cat)
+    return cat
+
+
+def _debit(db, day: str, amount: str, *, category_id: int | None = None) -> Transaction:
+    txn = Transaction(
+        transaction_date=date.fromisoformat(day),
+        description_raw="SPEND",
+        amount=Decimal(amount),
+        base_amount=Decimal(amount),
+        currency="GBP",
+        direction="debit",
+        category_id=category_id,
+        fx_rate=Decimal("1"),
+    )
+    db.add(txn)
+    db.commit()
+    db.refresh(txn)
+    return txn
+
+
+def _split_debit(db, day: str, parts: list[tuple[str, int]]) -> Transaction:
+    """A split debit whose parts (amount, category_id) sum to base_amount."""
+    total = sum(Decimal(a) for a, _cid in parts)
+    txn = Transaction(
+        transaction_date=date.fromisoformat(day),
+        description_raw="SPLIT",
+        amount=total,
+        base_amount=total,
+        currency="GBP",
+        direction="debit",
+        fx_rate=Decimal("1"),
+        is_split=True,
+        splits=[TransactionSplit(amount=Decimal(a), category_id=cid) for a, cid in parts],
+    )
+    db.add(txn)
+    db.commit()
+    db.refresh(txn)
+    return txn
+
+
+def _make_budget(db, name: str, amount: str, *, category_id: int | None = None) -> Budget:
+    b = Budget(name=name, period="monthly", amount=Decimal(amount), currency="GBP", category_id=category_id)
+    db.add(b)
+    db.commit()
+    db.refresh(b)
+    return b
+
+
+def _count_transaction_scans(fn):
+    """Run ``fn`` and return (result, number of top-level ``FROM transactions``
+    statements executed) — the per-budget scan the N+1 fix collapses to one."""
+    engine = dbsession.require_engine()
+    statements: list[str] = []
+
+    def _before(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    event.listen(engine, "before_cursor_execute", _before)
+    try:
+        result = fn()
+    finally:
+        event.remove(engine, "before_cursor_execute", _before)
+    scans = sum(1 for s in statements if "from transactions" in s.lower())
+    return result, scans
+
+
+def _seed_mixed_budgets(db):
+    cat_a = _category(db, "Groceries")
+    cat_b = _category(db, "Transport")
+    _debit(db, "2026-05-03", "-120.00", category_id=cat_a.id)
+    _debit(db, "2026-05-07", "-40.00", category_id=cat_b.id)
+    # A split debit contributing 70 to A and 30 to B (split-aware allocation).
+    _split_debit(db, "2026-05-10", [("-70.00", cat_a.id), ("-30.00", cat_b.id)])
+    return [
+        _make_budget(db, "All", "1000.00"),
+        _make_budget(db, "A", "300.00", category_id=cat_a.id),
+        _make_budget(db, "B", "300.00", category_id=cat_b.id),
+    ]
+
+
+def test_summary_matches_per_budget_status_for(db):
+    """The batched ``summary`` must return the exact same figures as calling
+    ``status_for`` per budget (identical window, split allocation, currency)."""
+    _seed_mixed_budgets(db)
+    ref = date(2026, 5, 15)
+
+    rows = {r["budget_id"]: r for r in budget_service.summary(db, ref)}
+    budgets = db.scalars(select(Budget)).all()
+    for b in budgets:
+        expected = budget_service.status_for(db, b, ref)
+        assert rows[b.id] == expected
+
+    # Split allocation stays correct: A gets 120 + 70, B gets 40 + 30 (Decimal).
+    by_name = {r["name"]: r for r in rows.values()}
+    assert Decimal(by_name["A"]["spent"]) == Decimal("190.00")
+    assert Decimal(by_name["B"]["spent"]) == Decimal("70.00")
+    assert Decimal(by_name["All"]["spent"]) == Decimal("260.00")  # every debit counts
+
+
+def test_summary_scans_transactions_once_regardless_of_budget_count(db):
+    """``summary`` fetches the window's transactions ONCE instead of once per
+    budget (backlog #16 N+1), so the scan count does not grow with N budgets."""
+    _seed_mixed_budgets(db)  # 3 budgets
+    ref = date(2026, 5, 15)
+
+    (rows, scans) = _count_transaction_scans(lambda: budget_service.summary(db, ref))
+    assert len(rows) == 3
+    # One shared windowed scan, not one per budget (would be 3 pre-fix). The
+    # eager split load is a separate IN-query on transaction_splits, not counted.
+    assert scans == 1
