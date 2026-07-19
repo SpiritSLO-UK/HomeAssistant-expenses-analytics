@@ -1,13 +1,14 @@
 # UI test walkthrough (release QA)
 
 A click-by-click pass to verify the user-visible changes on `main` before cutting
-the next release. It covers the recently-touched features: in-app modals,
-optimistic select-on-change, the budget/project/savings forecasts, edit-after-
-creation, MFA backup codes, global search, the AI batch panels (incl. background
-cloud send), Rules clone and reorder, Categories accessibility and bulk recolour,
-the dedicated Tags page, the app-wide date format, opt-in security-event MQTT
-notifications, the Review Queue, CSV export (filtered + selected), and a US-format
-CSV import. Budget ~25-35 minutes for the whole list.
+the next release. It covers the recently-touched features: the grouped sidebar +
+Customise-navigation editor, in-app modals, optimistic select-on-change, the
+budget/project/savings forecasts, edit-after-creation, MFA backup codes, global
+search, the AI batch panels (incl. background cloud send), Rules clone and
+reorder, Categories accessibility and bulk recolour, the dedicated Tags page, the
+app-wide date format, the (config-only) security-event MQTT option, the Review
+Queue, CSV export (filtered + selected), and a US-format CSV import. Budget
+~25-35 minutes for the whole list.
 
 Each item has a short "What changed", numbered steps, and checkbox expected
 results. Tick as you go; anything that fails is a release blocker to note (open
@@ -26,6 +27,29 @@ issues go into the private backlog tracker).
    an *update*, an open tab auto-reloads once to pick up new assets.)
 
 - [ ] App loads at http://127.0.0.1:8099 with sample data visible on the Dashboard.
+
+## Grouped navigation and the Customise editor
+
+**What changed:** the sidebar's pages are organised into **groups** (Money,
+Library, Wealth, Plans, System, plus standalone Dashboard / Search / Energy).
+Opening a group lands on its first page and shows **sub-tabs** across the top to
+switch between the group's pages. A **Customise navigation** editor (sidebar
+footer) lets you rename / hide / reorder pages, move them between groups, and
+create your own groups; the layout is saved per user (server-side).
+
+1. In the sidebar, click a group header (e.g. **Library**) and use the sub-tabs
+   at the top to switch between Categories / Tags / Vendors / Rules.
+2. Click **Customise navigation** in the sidebar footer. Rename a group, hide a
+   page, drag (or use ▲▼ / "Move to…") to reorder and to move a page into another
+   group, then create a new group and drop a page into it.
+3. Reload the page, then click **Reset to default** in the editor.
+
+- [ ] Group headers open their first page; the sub-tab strip switches pages within
+      the group; standalone pages (Dashboard/Search/Energy) show no sub-tabs.
+- [ ] Editor changes (rename / hide / reorder / move / new group) apply to the
+      sidebar immediately and **survive a reload** (saved per user, not per device).
+- [ ] Hidden pages disappear from the sidebar but remain listed in the editor to
+      re-show; **Reset to default** restores the original layout.
 
 ## In-app modals (confirm / prompt / alert)
 
@@ -261,22 +285,22 @@ in the sidebar (with its own icon); "Manage tags" links point there.
 - [ ] Changing the format updates displayed dates consistently across pages.
 - [ ] The choice persists after a reload.
 
-## Settings: security-event MQTT notifications
+## Security-event MQTT notifications (add-on / config option)
 
-**What changed:** an opt-in setting publishes security events (failed unlock,
+**What changed:** an opt-in option publishes security events (failed unlock,
 failed two-factor, wrong passphrase) to MQTT so Home Assistant can alert on them.
-Off by default.
+It is an **add-on / environment configuration** option (`mqtt_security_events`,
+default off) - the same place MQTT itself is enabled - **not** a runtime Settings
+toggle. There is nothing to click in the UI for this one.
 
-> Only meaningful with MQTT configured (the Home Assistant add-on, or a broker on
-> a standalone install). If MQTT isn't set up, just confirm the toggle exists and
-> defaults to off; skip the publish check.
+> Config-driven and only meaningful with MQTT enabled. To exercise it: set
+> `mqtt_security_events: true` (add-on Configuration tab) or `HAFI_MQTT_SECURITY_EVENTS=1`
+> (standalone env), restart, then trigger a failed unlock / wrong passphrase and
+> watch for the event on the broker. If you are not testing MQTT, skip this section.
 
-1. Go to **Settings** and find the security-event MQTT toggle.
-2. (With MQTT configured) enable it, then trigger a failed unlock or wrong-passphrase.
-
-- [ ] The toggle exists and is **off** by default.
-- [ ] (With MQTT) enabling it publishes a security event on the next failed
-      unlock / failed MFA / wrong passphrase.
+- [ ] With `mqtt_security_events` enabled + MQTT on, a failed unlock / failed MFA /
+      wrong passphrase publishes a security event to the broker.
+- [ ] It defaults to **off** (no events published unless explicitly enabled).
 
 ## Import: custom CSV column mapping and US-format dates
 

@@ -23,6 +23,11 @@ config carry over; database migrations run automatically on start.
   formats are recognised, and each import profile can remember its date format.
 - **Smarter search** - category and date filter tokens, tag-name matches, and
   keyboard navigation of results.
+- **Customisable grouped navigation** - the sidebar is organised into groups
+  (Money, Library, Wealth, Plans, System...) with sub-tabs on each group page; a
+  "Customise navigation" editor lets each user rename, hide, reorder, regroup and
+  create their own groups (saved per user). Settings is likewise split into
+  sub-tabbed sections.
 - **Tag housekeeping** - merge tags, see usage counts and clean up unused tags
   from a dedicated Tags page; vendors get a merge tool too.
 - **Edit after creation** - projects, budgets, rules and savings goals can be
@@ -32,6 +37,8 @@ config carry over; database migrations run automatically on start.
   or the whole filtered set.
 - **Security events to MQTT (opt-in)** - publish failed unlocks, failed
   two-factor and wrong-passphrase events so Home Assistant can alert on them.
+  Turn on the `mqtt_security_events` option on the Configuration tab (off by
+  default; needs MQTT enabled).
 - **Cloud AI runs in the background** - sending a cloud AI categorisation batch
   no longer blocks and shows live progress.
 - **AI key from the UI** - set the AI provider key in Settings on a standalone

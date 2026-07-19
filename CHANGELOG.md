@@ -62,7 +62,9 @@ automatically on start.
   and settings managers without MFA.
 - **Security events to MQTT (opt-in)** - failed unlocks, failed two-factor
   attempts and wrong-passphrase events can be published to MQTT so Home
-  Assistant can alert on them; off by default, gated by a Settings toggle.
+  Assistant can alert on them; off by default, enabled via the
+  `mqtt_security_events` add-on / `HAFI_MQTT_SECURITY_EVENTS` env option (the
+  same place MQTT itself is turned on).
 - Broader PII redaction, OCR decompression-bomb and page-budget guards, capped
   audit-row size, and household-scoped audit queries.
 
@@ -102,6 +104,13 @@ automatically on start.
 - **Search** - `category:` and date filter tokens (advertised on the Search
   page), tag-name matches, deep-linked result chips, and keyboard navigation of
   grouped results with Enter-to-open.
+- **Customisable grouped navigation** - the sidebar's 24 pages are now organised
+  into groups (Money, Library, Wealth, Plans, System, plus standalone Dashboard /
+  Search / Energy), and each group page shows sub-tabs across the top to switch
+  between its members. A "Customise navigation" editor lets any (non-child) user
+  rename, show/hide, reorder, move pages between groups, and create their own
+  groups - saved per user. The long **Settings** page is likewise split into
+  General / AI & privacy / Security / Integrations / Data sub-tabs.
 - **Tag management** - merge tags, see usage counts and clean up unused tags
   from a dedicated **Tags** page in the sidebar.
 - **Edit after creation** - projects, budgets, rules and savings goals can be
@@ -160,9 +169,6 @@ automatically on start.
   standalone trust model (including the proxy header-spoof caveat).
 - Docs now state plainly that the database is plaintext unless `HAFI_DB_KEY`
   at-rest encryption is enabled.
-- Groundwork (API only, no UI yet) for a per-user customisable grouped nav
-  layout: a `nav_layout` column and `GET`/`PUT`/`DELETE /api/users/me/nav-layout`
-  endpoints; the interface arrives in a later release.
 
 ### Fixes (from a pre-release code-review pass)
 A systematic critical review before release found and fixed 30 issues; the
