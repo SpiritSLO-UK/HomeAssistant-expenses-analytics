@@ -292,6 +292,17 @@ def delete_rule(db: Session, rule_id: int) -> bool:
     return True
 
 
+def _reenable(db: Session, rule: Rule) -> Rule:
+    """Return a learned rule, re-enabling it first if it was disabled. A disabled
+    rule would report success while the correction silently never applies, so we
+    flip it back on (SR-A4)."""
+    if not rule.enabled:
+        rule.enabled = True
+        db.commit()
+        db.refresh(rule)
+    return rule
+
+
 def create_rule_from_correction(
     db: Session, txn: Transaction, category_id: int, match_value: str | None = None
 ) -> Rule:
@@ -306,27 +317,38 @@ def create_rule_from_correction(
         value = value.split()[0] if value.split() else value
     category = db.get(Category, category_id)
     cat_name = category.name if category else category_id
+    target_action = str(category_id)
 
-    # Idempotent: if an identical learned rule already exists, return it instead
-    # of piling up duplicates when the user clicks "+ rule" again (backlog bug).
-    existing = db.scalars(
-        select(Rule).where(
+    # Find every learned rule for this exact condition value (same normalisation
+    # as the stored condition). Lowest id first — that's the one apply_rules
+    # grants the set_category slot to (priority desc, id asc).
+    candidates = db.scalars(
+        select(Rule)
+        .where(
             Rule.condition_type == "description_contains",
             Rule.condition_value == value,
             Rule.action_type == "set_category",
-            Rule.action_value == str(category_id),
         )
-    ).first()
-    if existing is not None:
-        # An identical learned rule already exists — but if the user (or a
-        # previous run) had disabled it, returning it as-is would report success
-        # while the correction silently never applies. Re-enable it so teaching
-        # the same merchant→category actually takes effect (SR-A4).
-        if not existing.enabled:
-            existing.enabled = True
-            db.commit()
-            db.refresh(existing)
-        return existing
+        .order_by(Rule.id)
+    ).all()
+
+    # Exact match (same condition + same category) is a no-op: return it instead
+    # of piling up duplicates when the user clicks "+ rule" again (backlog bug).
+    exact = next((r for r in candidates if r.action_value == target_action), None)
+    if exact is not None:
+        return _reenable(db, exact)
+
+    # Re-teaching the same description to a DIFFERENT category: update the winning
+    # rule in place rather than inserting a lower-precedence duplicate that
+    # apply_rules would permanently shadow behind the older, lower-id rule (#8).
+    if candidates:
+        target = candidates[0]
+        target.action_value = target_action
+        target.name = f"{value} → {cat_name}"
+        target.enabled = True
+        db.commit()
+        db.refresh(target)
+        return target
 
     return create_rule(
         db,
@@ -337,7 +359,7 @@ def create_rule_from_correction(
             "condition_type": "description_contains",
             "condition_value": value,
             "action_type": "set_category",
-            "action_value": str(category_id),
+            "action_value": target_action,
             "created_from": "manual_correction",
         },
     )
