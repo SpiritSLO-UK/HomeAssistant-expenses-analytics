@@ -122,6 +122,26 @@ body {
   color: #6b7686;
 }
 
+/* "Customise navigation" trigger in the sidebar footer (grouped-nav PR3). */
+.sidebar__customise {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: var(--sidebar-fg);
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 7px 10px;
+  margin-bottom: 10px;
+  cursor: pointer;
+}
+.sidebar__customise:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+}
+
 /* A multi-item group's header row links to its first member; its members appear
    as page sub-tabs. Slightly emphasised over a plain link (grouped-nav PR2). */
 .sidebar__group {
@@ -1154,4 +1174,161 @@ code {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* --- Navigation editor (grouped-nav PR3) ---------------------------------- */
+/* Widen the shared modal shell for this editor; it holds a scrollable list. */
+dialog.modal-dialog.nav-editor {
+  max-width: 680px;
+  width: calc(100vw - 32px);
+}
+.nav-editor__card {
+  margin: 0;
+  max-width: none;
+  max-height: min(86vh, 760px);
+  display: flex;
+  flex-direction: column;
+}
+.nav-editor__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+.nav-editor__head .card__title {
+  flex: 1;
+}
+.nav-editor__groups {
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 2px;
+}
+.nav-editor__group {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--panel);
+}
+.nav-editor__group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.nav-editor__spacer {
+  flex: 1;
+}
+.nav-editor__items {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.nav-editor__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--surface);
+}
+.nav-editor__item--hidden {
+  opacity: 0.55;
+}
+.nav-editor__empty {
+  padding: 8px;
+  font-size: 0.85rem;
+}
+.nav-editor__grip {
+  cursor: grab;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 1rem;
+  padding: 2px 4px;
+  user-select: none;
+}
+.nav-editor__icon-input {
+  width: 3ch;
+  text-align: center;
+  padding: 6px 4px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+}
+.nav-editor__group-name,
+.nav-editor__item-name {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+  min-width: 120px;
+}
+.nav-editor__group-name {
+  font-weight: 600;
+}
+.nav-editor__item-icon {
+  width: 1.4em;
+  text-align: center;
+}
+.nav-editor__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+.nav-editor__moves {
+  display: inline-flex;
+  gap: 2px;
+}
+.nav-editor__move {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.75rem;
+  padding: 3px 7px;
+}
+.nav-editor__move:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.nav-editor__moveto select {
+  padding: 5px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 0.82rem;
+}
+.nav-editor__del {
+  padding: 4px 8px;
+}
+.nav-editor__add {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.nav-editor__add input:not(.nav-editor__icon-input) {
+  flex: 1;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+}
+.nav-editor__foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 14px;
 }
