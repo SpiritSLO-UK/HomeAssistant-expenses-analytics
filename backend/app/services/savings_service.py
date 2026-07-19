@@ -272,13 +272,33 @@ def project_balance(
 # --- Goals -------------------------------------------------------------------
 
 
+def _linked_account(db: Session, goal: SavingsGoal) -> Account | None:
+    """The savings account a linked goal tracks, or ``None`` for a manual goal."""
+    if goal.account_id is None:
+        return None
+    return db.get(Account, goal.account_id)
+
+
+def _to_goal_currency(
+    db: Session, amount: Decimal, currency: str, goal_currency: str, on: date
+) -> Decimal:
+    """Convert a linked account's balance into the goal's own currency so ``remaining``
+    / ``percent`` / status / forecast never compare two currencies 1:1 (like the rest
+    of the module — see ``total_savings`` / ``_month_total``). Falls back to the raw
+    amount only when no rate is available, so a value is always present rather than the
+    goal silently dropping to zero; same-currency and rate-available paths are exact."""
+    converted = fx_service.convert_amount(db, amount, currency, goal_currency, on)
+    return converted if converted is not None else amount
+
+
 def goal_current(db: Session, goal: SavingsGoal) -> Decimal:
-    """A linked goal tracks its account's latest balance; otherwise the manual
-    ``current_amount``."""
-    if goal.account_id is not None:
-        bal = latest_balance(db, goal.account_id)
+    """A linked goal tracks its account's latest balance, converted into the goal's
+    currency; otherwise the manual ``current_amount``."""
+    account = _linked_account(db, goal)
+    if account is not None:
+        bal = latest_balance(db, account.id)
         if bal is not None:
-            return bal
+            return _to_goal_currency(db, bal, account.currency, goal.currency, date.today())
     return Decimal(goal.current_amount or 0)
 
 
@@ -291,6 +311,12 @@ def goal_current(db: Session, goal: SavingsGoal) -> Decimal:
 # read ``forecast`` without changing existing fields.
 
 FORECAST_PERIOD_DAYS = Decimal("30")  # a "month" for the reported rate/horizon
+# Cap the projected horizon so a tiny-but-positive deposit/interest rate can't push
+# the completion date past ``date.max`` (year 9999) and raise ``OverflowError`` while
+# building it — which would 500 the whole /savings/goals endpoint (one bad goal takes
+# every goal down). ~100 years is "effectively never" for a savings goal and stays
+# comfortably below ``date.max``, so the clamped date never overflows.
+MAX_FORECAST_DAYS = 365 * 100
 
 
 def _monthly_deposit_rate(snapshots: list[tuple[date, Decimal]]) -> Decimal | None:
@@ -360,8 +386,19 @@ def _dated_forecast(months_remaining: Decimal, monthly_rate: Decimal | None,
                     target_date: date | None, today: date) -> dict:
     """Turn a months-to-target horizon into the dated forecast payload: a projected
     completion date and the on/behind/projected state (on/behind only when the goal
-    has a ``target_date``)."""
+    has a ``target_date``).
+
+    A horizon beyond ``MAX_FORECAST_DAYS`` (a tiny-but-positive rate can make one
+    astronomically large) yields the ``beyond_horizon`` state with no projected date,
+    rather than overflowing ``date`` arithmetic — the goal is effectively unreachable,
+    and if it has a ``target_date`` it is unambiguously behind it."""
     days = int((months_remaining * FORECAST_PERIOD_DAYS).to_integral_value(ROUND_CEILING))
+    if days > MAX_FORECAST_DAYS:
+        on_track = None if target_date is None else False
+        return _forecast_result(
+            "beyond_horizon", monthly_rate=monthly_rate,
+            months_remaining=months_remaining, on_track=on_track,
+        )
     projected = today + timedelta(days=days)
     on_track = None if target_date is None else projected <= target_date
     return _forecast_result(
@@ -404,11 +441,17 @@ def forecast_goal(*, current: Decimal, target: Decimal,
 
 
 def _goal_snapshots(db: Session, goal: SavingsGoal) -> list[tuple[date, Decimal]]:
-    """Dated balance history backing a goal's deposit rate. Only linked goals have
-    one; a manual goal tracks a single ``current_amount`` (no history → no rate)."""
-    if goal.account_id is None:
+    """Dated balance history backing a goal's deposit rate, each point converted into
+    the goal's currency so the inferred rate matches the goal's target units. Only
+    linked goals have one; a manual goal tracks a single ``current_amount`` (no history
+    → no rate)."""
+    account = _linked_account(db, goal)
+    if account is None:
         return []
-    return [(b.as_of_date, Decimal(b.balance)) for b in balance_history(db, goal.account_id)]
+    return [
+        (b.as_of_date, _to_goal_currency(db, Decimal(b.balance), account.currency, goal.currency, b.as_of_date))
+        for b in balance_history(db, account.id)
+    ]
 
 
 def _goal_annual_rate(db: Session, goal: SavingsGoal) -> Decimal | None:
@@ -493,16 +536,21 @@ def list_goals(db: Session) -> list[SavingsGoal]:
     return list(db.scalars(select(SavingsGoal).order_by(SavingsGoal.name)).all())
 
 
+def list_visible_goals(db: Session, scope: set[int] | None) -> list[SavingsGoal]:
+    """Goals visible under an account-visibility ``scope`` (``None`` = unrestricted).
+    A goal linked to an account the caller may not see is dropped — its balance would
+    otherwise leak via ``goal_current`` (the same reason both the summary and the goals
+    list must scope). Manual/unlinked goals (``account_id is None``) stay visible to
+    everyone. Shared helper so every goals read path filters identically."""
+    goals = list_goals(db)
+    if scope is None:
+        return goals
+    return [g for g in goals if g.account_id is None or g.account_id in scope]
+
+
 def summary(db: Session, *, account_ids: set[int] | None = None) -> dict:
     accounts = [account_to_dict(db, a) for a in list_accounts(db, account_ids=account_ids)]
-    visible_ids = {a["id"] for a in accounts}
-    # Drop goals linked to a now-hidden private account (its balance would leak via
-    # goal_current); manual/unlinked goals stay visible to everyone.
-    goals = [
-        goal_to_dict(db, g)
-        for g in list_goals(db)
-        if g.account_id is None or g.account_id in visible_ids
-    ]
+    goals = [goal_to_dict(db, g) for g in list_visible_goals(db, account_ids)]
     return {
         "currency": settings_service.get_base_currency(db),
         "total_savings": str(total_savings(db, account_ids=account_ids)),

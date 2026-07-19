@@ -132,8 +132,11 @@ def record_balance(account_id: int, payload: BalanceCreate, request: Request, db
 
 
 @router.get("/goals", response_model=list[GoalOut])
-def list_goals(db: Annotated[Session, Depends(get_db)]) -> list[dict]:
-    return [savings_service.goal_to_dict(db, g) for g in savings_service.list_goals(db)]
+def list_goals(request: Request, db: Annotated[Session, Depends(get_db)]) -> list[dict]:
+    # Scope to the caller's visible accounts so a goal linked to a hidden private
+    # account can't leak that account's balance via goal_current (matches summary()).
+    scope = auth_service.visible_account_scope(request, db)
+    return [savings_service.goal_to_dict(db, g) for g in savings_service.list_visible_goals(db, scope)]
 
 
 @router.post("/goals", response_model=GoalOut, status_code=201, responses={400: {"description": "Bad request"}})
