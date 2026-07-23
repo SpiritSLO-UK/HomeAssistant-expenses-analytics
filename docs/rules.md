@@ -129,11 +129,59 @@ catch-alls, so the specific one wins.
   upper-case letters. Per-transaction and per-vendor country overrides do the same
   thing by hand; this automates it on import.
 
+## Re-applying rules to existing transactions
+
+Rules run automatically as each statement is imported. When you add, edit or
+reorder rules *afterwards*, existing rows don't change on their own - use
+**Transactions → ↻ Re-apply rules…** to sweep them. The panel re-runs the full
+categorisation pass (rules → vendor default → keyword, the same precedence as
+import) over a set you choose, and shows a **dry-run preview** ("this will
+re-categorise N of M") before you commit.
+
+**Choices in the panel**
+
+- **Apply to** (shown when a filter is active): *Current filter* limits the sweep
+  to the rows currently listed (e.g. filter Category = Cash, or search a merchant);
+  *All transactions* sweeps everything. With no filter active it is always "all".
+- **Also replace existing auto-categories** - by default the sweep only fills rows
+  that have **no category yet**. Tick this to also re-run rules over rows that were
+  already auto-categorised (keyword/vendor guesses) so a matching rule can move
+  them. **This is the option you need to fix an existing pile** (e.g. rows the
+  keyword matcher dumped into *Cash*). Your manually-chosen categories are kept.
+- **Also replace my manual choices** (appears only once the option above is on) -
+  goes further and lets a matching rule overwrite even a category you set by hand.
+  Use with care: there is no bulk undo for the sweep.
+
+**Recipe: recategorise everything a rule should own (the "Cash pile" case)**
+
+1. Create the rule first - e.g. condition `description_contains` = `ATM`, action
+   `set_category` = *Cash withdrawals* (Rules page, or a row's **+ rule**).
+2. Transactions → **↻ Re-apply rules…**
+3. Tick **Also replace existing auto-categories**.
+4. Choose **Current filter** (after filtering to the rows you mean) or **All
+   transactions**.
+5. Check the preview count, then **Re-categorise N**.
+
+**Why the preview sometimes says "nothing would change"**
+
+- The rows already have a category and you have *not* ticked "also replace existing
+  auto-categories", so there are no blank rows to fill. Tick it.
+- No rule matches those rows. Re-apply only moves a row when a rule's condition
+  matches it - it is not a manual "set these to X" button. To set a specific
+  selection by hand, tick the rows and use **Set category…** in the selection bar,
+  or add a rule that matches them.
+
+Precedence during the sweep is unchanged (spec §15.1): **manual > rule > vendor
+default > keyword**. Vendor default and keyword only ever fill a blank; only a rule
+can override an existing lower-confidence category, and only "also replace my manual
+choices" lets it override a manual one.
+
 ## Tips
 
 - **Test before relying on it.** The Rules page lets you try a rule against your
   existing transactions before saving.
 - **Vendor defaults vs rules.** Setting a default category on a vendor (Vendors
   page) is often simpler than a rule for "this shop is always this category".
-- **Re-categorise** re-applies all rules to existing rows - handy after adding or
-  reordering rules.
+- **Re-apply rules to existing rows** after adding or reordering rules - see
+  [Re-applying rules to existing transactions](#re-applying-rules-to-existing-transactions)
+  above for the scope and replace options and the preview.

@@ -235,8 +235,6 @@ export default function Transactions() {
   const vendors = useQuery({ queryKey: ["vendors"], queryFn: listVendors });
   const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
   const aiStatus = useQuery({ queryKey: ["ai-status"], queryFn: getAiStatus });
-  const me = useQuery({ queryKey: ["me"], queryFn: getMe });
-  const step = useStepUp();
   const base = settings.data?.base_currency ?? "GBP";
   const dateFmt = normaliseDateFormat(settings.data?.date_format);
   const { data, isLoading, isError, error } = useQuery({
@@ -481,23 +479,6 @@ export default function Transactions() {
     onError: (e) => { alert({ message: String(e instanceof Error ? e.message : e) }); },
   });
 
-  // Delete EVERY transaction matching the current filter — not just the ticked
-  // page — for a selection that spans more pages than the list shows. Owner-only
-  // with an MFA step-up; the backend takes a safety backup first.
-  const deleteMatching = useMutation({
-    mutationFn: () => deleteTransactionsByFilter(filters),
-    onSuccess: (r) => {
-      setSelected(new Set());
-      invalidateAfterBulk();
-      qc.invalidateQueries({ queryKey: ["dash-categories"] });
-      alert({
-        message:
-          `Deleted ${r.deleted} transaction(s).` +
-          (r.backup_taken ? " A safety backup was taken first." : ""),
-      });
-    },
-    onError: step.guard((e) => { alert({ message: String(e instanceof Error ? e.message : e) }); }),
-  });
 
   // Undo a bulk value-change: group the affected ids by their captured prior
   // value and re-apply each distinct value in one bulkUpdate call.
@@ -615,23 +596,6 @@ export default function Transactions() {
       return next;
     });
 
-  // "Select all N matching the filter": offered once the whole page is ticked but
-  // more rows match than fit on it — the page-scoped bulk delete can't reach those.
-  // Owner-only (the delete-by-filter endpoint is owner + MFA step-up gated).
-  const canMassDelete = me.data?.is_admin === true;
-  async function doDeleteMatching() {
-    const where = anyFilterActive ? "matching the current filter" : "in your data";
-    if (
-      !(await confirm({
-        message: `Permanently delete all ${total} transaction(s) ${where}? A safety backup is taken first, but there's no other undo.`,
-        confirmLabel: `Delete ${total}`,
-        danger: true,
-      }))
-    )
-      return;
-    step.run(() => deleteMatching.mutate());
-  }
-
   return (
     <div className="page">
       <div className="page__head">
@@ -692,7 +656,6 @@ export default function Transactions() {
       {showReapply && !focusId && (
         <ReapplyRulesPanel filters={filters} anyFilterActive={anyFilterActive} onClose={() => setShowReapply(false)} />
       )}
-      <StepUpModal step={step} name="mfa-txn-delete-stepup-code" />
 
       {focusId && (
         <div className="card focus-banner">
@@ -897,19 +860,19 @@ export default function Transactions() {
                 <button type="button" className="link-btn" onClick={() => setSelected(new Set())}>Clear</button>
               </div>
             )}
-            {canMassDelete && pageAllSelected && total > pageCount && !focusId && (
-              <div className="bulk-bar">
-                <span>All {pageCount} on this page are selected — {total} match the current filter.</span>
-                <button
-                  type="button"
-                  className="btn btn--sm btn--danger"
-                  disabled={deleteMatching.isPending}
-                  onClick={doDeleteMatching}
-                >
-                  {deleteMatching.isPending ? "Deleting…" : `Delete all ${total} matching`}
-                </button>
-              </div>
-            )}
+            <DeleteMatchingBar
+              filters={filters}
+              anyFilterActive={anyFilterActive}
+              total={total}
+              pageCount={pageCount}
+              pageAllSelected={pageAllSelected}
+              focused={Boolean(focusId)}
+              onDeleted={() => {
+                setSelected(new Set());
+                invalidateAfterBulk();
+                qc.invalidateQueries({ queryKey: ["dash-categories"] });
+              }}
+            />
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 4 }}>
               <button type="button" className="link-btn" onClick={cols.reset} title="Reset column widths to default">
                 ↔ Reset columns
@@ -1229,6 +1192,84 @@ export default function Transactions() {
 // with a live "will change N" dry-run preview before committing. Extracted so the
 // Transactions component stays under its complexity budget. Rules override an
 // auto-assigned category (e.g. a keyword-guessed "Cash") but never a manual pick.
+// "Delete every transaction matching the current filter (or all)" affordance plus
+// its MFA step-up. Extracted from Transactions so the page component stays under the
+// cognitive-complexity budget. Owner-only; the backend takes a safety backup first.
+function DeleteMatchingBar({
+  filters,
+  anyFilterActive,
+  total,
+  pageCount,
+  pageAllSelected,
+  focused,
+  onDeleted,
+}: Readonly<{
+  filters: TransactionFilters;
+  anyFilterActive: boolean;
+  total: number;
+  pageCount: number;
+  pageAllSelected: boolean;
+  focused: boolean;
+  onDeleted: () => void;
+}>) {
+  const alert = useAlert();
+  const confirm = useConfirm();
+  const me = useQuery({ queryKey: ["me"], queryFn: getMe });
+  const step = useStepUp();
+  const del = useMutation({
+    mutationFn: () => deleteTransactionsByFilter(filters),
+    onSuccess: (r) => {
+      onDeleted();
+      alert({
+        message:
+          `Deleted ${r.deleted} transaction(s).` +
+          (r.backup_taken ? " A safety backup was taken first." : ""),
+      });
+    },
+    onError: step.guard((e) => { alert({ message: String(e instanceof Error ? e.message : e) }); }),
+  });
+
+  // Offered once the page is fully ticked and either more rows match than fit on
+  // it, or a filter is active (so you can wipe just the filtered subset, any size).
+  const show =
+    me.data?.is_admin === true && pageAllSelected && (total > pageCount || anyFilterActive) && !focused;
+
+  let label = `Delete all ${total}`;
+  if (del.isPending) label = "Deleting…";
+  else if (anyFilterActive) label = `Delete all ${total} matching`;
+
+  async function doDelete() {
+    const where = anyFilterActive ? "matching the current filter" : "in your data";
+    if (
+      !(await confirm({
+        message: `Permanently delete all ${total} transaction(s) ${where}? A safety backup is taken first, but there's no other undo.`,
+        confirmLabel: `Delete ${total}`,
+        danger: true,
+      }))
+    )
+      return;
+    step.run(() => del.mutate());
+  }
+
+  if (!show && !step.open) return null;
+  return (
+    <>
+      {show && (
+        <div className="bulk-bar">
+          <span>
+            All {pageCount} on this page selected
+            {anyFilterActive ? ` — ${total} match the current filter.` : ` — ${total} in total.`}
+          </span>
+          <button type="button" className="btn btn--sm btn--danger" disabled={del.isPending} onClick={doDelete}>
+            {label}
+          </button>
+        </div>
+      )}
+      <StepUpModal step={step} name="mfa-txn-delete-stepup-code" />
+    </>
+  );
+}
+
 function ReapplyRulesPanel({
   filters,
   anyFilterActive,
@@ -1244,17 +1285,21 @@ function ReapplyRulesPanel({
   // Safe default: only fill blanks. Turn on to re-apply rules over rows that
   // already have an auto-assigned category (the "fix my Cash pile" case).
   const [replaceExisting, setReplaceExisting] = useState(false);
+  // Only meaningful once "replace existing" is on: also override MANUAL picks.
+  const [includeManual, setIncludeManual] = useState(false);
 
   const effectiveFilters = scopeAll ? {} : filters;
   const onlyUncategorised = !replaceExisting;
+  const forceManual = replaceExisting && includeManual;
 
   const preview = useQuery({
-    queryKey: ["recat-preview", scopeAll, onlyUncategorised, scopeAll ? null : filters],
-    queryFn: () => recategorise({ filters: effectiveFilters, onlyUncategorised, dryRun: true }),
+    queryKey: ["recat-preview", scopeAll, onlyUncategorised, forceManual, scopeAll ? null : filters],
+    queryFn: () =>
+      recategorise({ filters: effectiveFilters, onlyUncategorised, includeManual: forceManual, dryRun: true }),
   });
   const apply = useMutation({
     mutationFn: (): Promise<RecategoriseResult> =>
-      recategorise({ filters: effectiveFilters, onlyUncategorised, dryRun: false }),
+      recategorise({ filters: effectiveFilters, onlyUncategorised, includeManual: forceManual, dryRun: false }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["transactions"] });
       qc.invalidateQueries({ queryKey: ["dash-categories"] });
@@ -1269,7 +1314,12 @@ function ReapplyRulesPanel({
   let previewMessage: string;
   if (preview.isError) previewMessage = "Couldn't preview the change.";
   else if (preview.isFetching || willChange == null) previewMessage = "Checking what would change…";
-  else if (nothingToDo) previewMessage = `No transactions would change (of ${considered} examined). Rules only move rows they match.`;
+  else if (nothingToDo && !replaceExisting)
+    previewMessage =
+      "Nothing here is uncategorised. Tick “Also replace existing auto-categories” below to re-apply your rules to rows that already have a category.";
+  else if (nothingToDo)
+    previewMessage =
+      "No transactions would change — no rule matches these rows. Add a matching rule on the Rules page, then try again.";
   else previewMessage = `This will re-categorise ${willChange} of ${considered} transaction(s).`;
 
   let applyLabel = "Re-categorise";
@@ -1285,7 +1335,7 @@ function ReapplyRulesPanel({
       <p className="muted" style={{ marginTop: 6 }}>
         Re-runs your rules (plus vendor and keyword matching) over the chosen transactions. A matching
         rule overrides an auto-assigned category (like a keyword-guessed “Cash”); your manual choices are
-        always kept. Add or edit rules on the <Link to="/rules">Rules</Link> page.
+        kept unless you opt in below. Add or edit rules on the <Link to="/rules">Rules</Link> page.
       </p>
 
       {anyFilterActive && (
@@ -1304,11 +1354,29 @@ function ReapplyRulesPanel({
 
       <label
         className="chip-toggle"
-        title="Rules override keyword/vendor guesses (e.g. Cash); your manual picks are always kept"
+        title="Rules override keyword/vendor guesses (e.g. Cash); manual picks are kept unless you also tick the option below"
       >
-        <input type="checkbox" checked={replaceExisting} onChange={(e) => setReplaceExisting(e.target.checked)} />
+        <input
+          type="checkbox"
+          checked={replaceExisting}
+          onChange={(e) => {
+            setReplaceExisting(e.target.checked);
+            if (!e.target.checked) setIncludeManual(false);
+          }}
+        />
         <span>Also replace existing auto-categories (needed to re-categorise rows already set, e.g. your Cash pile)</span>
       </label>
+
+      {replaceExisting && (
+        <label
+          className="chip-toggle"
+          style={{ marginLeft: 22 }}
+          title="Careful: a matching rule will overwrite categories you chose by hand"
+        >
+          <input type="checkbox" checked={includeManual} onChange={(e) => setIncludeManual(e.target.checked)} />
+          <span>⚠ Also replace my <strong>manual</strong> choices (a rule overrides even categories you set by hand)</span>
+        </label>
+      )}
 
       <p className="muted" style={{ marginTop: 8 }} aria-live="polite">{previewMessage}</p>
 

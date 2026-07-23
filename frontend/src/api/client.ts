@@ -404,9 +404,14 @@ export interface RecategoriseResult {
 // keyword/vendor guess like "Cash", but never a manual pick). `dryRun` returns
 // the count that WOULD change without persisting — for a preview.
 export function recategorise(
-  opts: { filters?: TransactionFilters; onlyUncategorised?: boolean; dryRun?: boolean } = {},
+  opts: {
+    filters?: TransactionFilters;
+    onlyUncategorised?: boolean;
+    dryRun?: boolean;
+    includeManual?: boolean;
+  } = {},
 ): Promise<RecategoriseResult> {
-  const { filters = {}, onlyUncategorised = false, dryRun = false } = opts;
+  const { filters = {}, onlyUncategorised = false, dryRun = false, includeManual = false } = opts;
   // Pagination isn't a filter; drop it so it doesn't ride along on the query.
   const clean: Record<string, unknown> = { ...filters };
   delete clean.limit;
@@ -417,6 +422,7 @@ export function recategorise(
   const params = new URLSearchParams(toQuery(clean));
   params.set("only_uncategorised", String(onlyUncategorised));
   params.set("dry_run", String(dryRun));
+  params.set("include_manual", String(includeManual));
   return fetchJson(`api/transactions/recategorise?${params.toString()}`, { method: "POST" });
 }
 

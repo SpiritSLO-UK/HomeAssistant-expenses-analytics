@@ -357,6 +357,13 @@ def test_recategorise_reapplies_rules_over_existing_and_dry_run(db):
     assert kw.category_id == groceries.id
     assert manual.category_id == cash.id
 
+    # include_manual=True forces the rule over the manual pick too (opt-in). Only
+    # the manual row changes now (the keyword row is already Groceries).
+    forced = imp.recategorise(db, only_uncategorised=False, include_manual=True)
+    assert forced == {"changed": 1, "considered": 2}
+    db.refresh(manual)
+    assert manual.category_id == groceries.id
+
 
 def test_statement_config_tolerates_malformed_notes():
     # confirm/delete read the parser config from statement.notes; a non-JSON or
