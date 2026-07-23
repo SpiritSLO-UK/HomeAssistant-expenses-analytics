@@ -27,8 +27,34 @@ permissions:
   contents: read
 
 jobs:
+  # Gate the image build on the version files matching the tag being released, so
+  # a tag can never publish images whose in-app version (sidebar badge / health
+  # endpoint) disagrees with the tag. The internal file-to-file consistency is
+  # already enforced on every PR by ci.yml; this adds the tag comparison.
+  verify-version:
+    name: Verify version matches tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: meta
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            version="${{ github.event.inputs.version }}"
+          else
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Check the version files match the tag
+        run: node scripts/check-version.mjs "${{ steps.meta.outputs.version }}"
+
   build-push:
     name: Build & push ${{ matrix.ha_arch }} image
+    needs: verify-version
     runs-on: ubuntu-latest
     permissions:
       contents: read # checkout
