@@ -22,7 +22,8 @@ for (const [file, version] of Object.entries(versions)) {
 }
 
 if (consistent && matchesTag) {
-  console.log(`\nVersion consistent: ${distinct[0]}${expected ? ` (matches tag v${expected})` : ""}`);
+  const tagNote = expected ? ` (matches tag v${expected})` : "";
+  console.log(`\nVersion consistent: ${distinct[0]}${tagNote}`);
   process.exit(0);
 }
 
