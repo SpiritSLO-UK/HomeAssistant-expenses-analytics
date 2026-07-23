@@ -391,11 +391,33 @@ export function categoriseTransaction(
   });
 }
 
-export function recategorise(onlyUncategorised = true): Promise<{ recategorised: number }> {
-  return fetchJson(`api/transactions/recategorise`, {
-    method: "POST",
-    body: JSON.stringify({ only_uncategorised: onlyUncategorised }),
-  });
+export interface RecategoriseResult {
+  recategorised: number; // rows whose category actually changed
+  considered: number; // rows examined
+  dry_run: boolean;
+}
+
+// Re-run rules + vendor + keyword categorisation. `filters` scopes it to a
+// subset (same filters as the list; omit for every transaction).
+// `onlyUncategorised` limits it to rows with no category; set it false to
+// re-apply rules over already-categorised rows too (a rule overrides a
+// keyword/vendor guess like "Cash", but never a manual pick). `dryRun` returns
+// the count that WOULD change without persisting — for a preview.
+export function recategorise(
+  opts: { filters?: TransactionFilters; onlyUncategorised?: boolean; dryRun?: boolean } = {},
+): Promise<RecategoriseResult> {
+  const { filters = {}, onlyUncategorised = false, dryRun = false } = opts;
+  // Pagination isn't a filter; drop it so it doesn't ride along on the query.
+  const clean: Record<string, unknown> = { ...filters };
+  delete clean.limit;
+  delete clean.offset;
+  delete clean.transaction_id;
+  // The flags go on the query string explicitly: toQuery drops `false`, but the
+  // backend must receive only_uncategorised=false to touch categorised rows.
+  const params = new URLSearchParams(toQuery(clean));
+  params.set("only_uncategorised", String(onlyUncategorised));
+  params.set("dry_run", String(dryRun));
+  return fetchJson(`api/transactions/recategorise?${params.toString()}`, { method: "POST" });
 }
 
 export function updateTransaction(id: number, patch: Record<string, unknown>): Promise<Transaction> {
