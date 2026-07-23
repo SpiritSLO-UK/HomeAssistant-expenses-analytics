@@ -638,27 +638,54 @@ def _to_transaction(
     )
 
 
-def recategorise(db: Session, only_uncategorised: bool = True) -> int:
-    """Re-run vendor + keyword categorisation across stored transactions.
+def recategorise(
+    db: Session,
+    *,
+    conditions: list | None = None,
+    only_uncategorised: bool = True,
+    dry_run: bool = False,
+) -> dict:
+    """Re-run categorisation across the matching stored transactions.
 
-    Never overwrites an existing category (auto-categorise only fills blanks),
-    so manual choices are preserved. Returns the number newly categorised.
+    Order matches import (spec §15.1): rule > vendor default > keyword. A rule's
+    ``set_category`` overrides a *lower-confidence* auto category (e.g. a keyword
+    "Cash" at 0.70) but never a manual choice (1.0); vendor default + keyword only
+    fill a blank. So ``only_uncategorised=False`` is what re-applies updated rules
+    to already-auto-categorised rows (the "fix my Cash pile" case), while
+    ``True`` (the default) touches only rows that have no category yet.
+
+    ``conditions`` restricts the set to a filtered subset (the same predicates the
+    list endpoint builds); ``None`` = every transaction. ``dry_run`` runs the pass
+    then rolls back so nothing persists — for a "will change N" preview.
+
+    Returns ``{"changed": n, "considered": m}``: ``changed`` counts rows whose
+    category actually changed (not just blanks filled, so an override is counted).
     """
     category_service.ensure_default_categories(db)
     stmt = select(Transaction)
+    conds = list(conditions or [])
     if only_uncategorised:
-        stmt = stmt.where(Transaction.category_id.is_(None))
+        conds.append(Transaction.category_id.is_(None))
+    if conds:
+        stmt = stmt.where(*conds)
     # Load the rule set + vendor aliases once, then thread the snapshot through every
     # row instead of re-querying them per transaction (#15, N+1 -> 1).
     categoriser = _load_categoriser_context(db)
-    count = 0
+    changed = 0
+    considered = 0
     for txn in db.scalars(stmt).all():
-        had_category = txn.category_id is not None
+        considered += 1
+        before = txn.category_id
         auto_categorise(db, txn, categoriser)
-        if not had_category and txn.category_id is not None:
-            count += 1
-    db.commit()
-    return count
+        if txn.category_id != before:
+            changed += 1
+    if dry_run:
+        # Discard the pass entirely (rules/vendor links/subscriptions it created)
+        # so a preview is side-effect free; the count was tallied above.
+        db.rollback()
+    else:
+        db.commit()
+    return {"changed": changed, "considered": considered}
 
 
 def _apply_rules_preloaded(db: Session, txn: Transaction, rules: list[Rule]) -> None:

@@ -83,10 +83,6 @@ class BulkUpdateRequest(BaseModel):
     delete: bool = False
 
 
-class RecategoriseRequest(BaseModel):
-    only_uncategorised: bool = True
-
-
 class CreateVendorRequest(BaseModel):
     # Recommended vendor name to create + link. Omitted → derive it from the
     # transaction's OCR/parsed merchant signature (the deterministic default).
@@ -193,11 +189,73 @@ def _serialise_with_country(db: Session, txns: list[Transaction]) -> list[Transa
     return items
 
 
+def resolve_transaction_filters(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    member_id: Annotated[int | None, Query(description="Narrow to a household member's own accounts")] = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    account_id: int | None = None,
+    category_id: int | None = None,
+    vendor_id: int | None = None,
+    project_id: int | None = None,
+    tag_id: int | None = None,
+    country: Annotated[str | None, Query(description="ISO alpha-2 country")] = None,
+    needs_review: bool | None = None,
+    uncategorised: Annotated[
+        bool | None, Query(description="True = only rows with no category; False = only categorised")
+    ] = None,
+    is_business: bool | None = None,
+    amount_min: Decimal | None = None,
+    amount_max: Decimal | None = None,
+    search: str | None = None,
+    include_archived: Annotated[bool, Query(description="Include archived (aged-out) transactions")] = False,
+) -> list:
+    """Build the SQLAlchemy filter list from the standard transaction filter
+    query-params, scoped to the caller's visible accounts. Shared by the endpoints
+    that act on a *filtered set* (recategorise, bulk delete-by-filter) so "what you
+    act on" always matches "what you see" in the list — same builder the list
+    endpoint and CSV export use."""
+    return export_service.build_transaction_filters(
+        date_from=date_from,
+        date_to=date_to,
+        account_id=account_id,
+        category_id=category_id,
+        vendor_id=vendor_id,
+        project_id=project_id,
+        tag_id=tag_id,
+        country=country,
+        needs_review=needs_review,
+        uncategorised=uncategorised,
+        is_business=is_business,
+        amount_min=amount_min,
+        amount_max=amount_max,
+        search=search,
+        account_ids=resolved_account_scope(db, get_current_user(request, db), member_id=member_id),
+        include_archived=include_archived,
+        default_country=settings_service.get_default_vendor_country(db) if country else None,
+    )
+
+
 @router.post("/recategorise")
-def recategorise(payload: RecategoriseRequest, db: Annotated[Session, Depends(get_db)]) -> dict:
-    """Re-run vendor + keyword categorisation (spec §15, §3.3 re-run rules)."""
-    count = import_service.recategorise(db, only_uncategorised=payload.only_uncategorised)
-    return {"recategorised": count}
+def recategorise(
+    conditions: Annotated[list, Depends(resolve_transaction_filters)],
+    db: Annotated[Session, Depends(get_db)],
+    only_uncategorised: bool = True,
+    dry_run: bool = False,
+) -> dict:
+    """Re-run rules + vendor + keyword categorisation (spec §15, §3.3 re-run rules).
+
+    With no filter query-params it covers every transaction; with any it covers
+    only the matching (filtered) set — so you can target, say, Category=Cash.
+    ``only_uncategorised=false`` re-applies rules to already-auto-categorised rows
+    as well (rules override a keyword/vendor guess but never a manual choice), which
+    is how you fix a keyword-assigned "Cash" pile after updating your rules.
+    ``dry_run=true`` returns the count that *would* change without persisting."""
+    result = import_service.recategorise(
+        db, conditions=conditions, only_uncategorised=only_uncategorised, dry_run=dry_run
+    )
+    return {"recategorised": result["changed"], "considered": result["considered"], "dry_run": dry_run}
 
 
 @router.post("/categorise-batch")

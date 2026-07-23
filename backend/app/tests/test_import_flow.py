@@ -286,11 +286,76 @@ def test_recategorise_loads_context_once(db, monkeypatch):
 
     monkeypatch.setattr(imp, "_load_categoriser_context", _counting)
 
-    count = imp.recategorise(db, only_uncategorised=True)
-    assert count == 5          # every row newly categorised
+    result = imp.recategorise(db, only_uncategorised=True)
+    assert result["changed"] == 5   # every row newly categorised
     assert calls["n"] == 1     # context built exactly once, not per row (N+1 -> 1)
     rows = db.scalars(select(Transaction).where(Transaction.account_id == acct.id)).all()
     assert all(r.category_id == groceries.id for r in rows)
+
+
+def test_recategorise_reapplies_rules_over_existing_and_dry_run(db):
+    """only_uncategorised=False re-applies rules to already-categorised rows: a
+    rule overrides a low-confidence keyword category ("Cash" 0.70) but never a
+    manual one (1.0). dry_run reports the count and persists nothing; conditions
+    scope the pass to a filtered subset."""
+    from datetime import date
+    from decimal import Decimal
+
+    from app.models import Account, Transaction
+    from app.services import category_service, rule_service
+    from app.services import import_service as imp
+
+    category_service.import_library(db)
+    cash = next(c for c in category_service.list_categories(db) if c.name == "Cash")
+    groceries = next(c for c in category_service.list_categories(db) if c.name == "Groceries")
+
+    acct = Account(name="A", account_type="current_account", currency="GBP")
+    db.add(acct)
+    db.flush()
+    # Two rows already sitting in "Cash": one keyword-assigned (0.70), one manual (1.0).
+    kw = Transaction(
+        account_id=acct.id, transaction_date=date(2026, 5, 1), description_raw="TESCO STORES 1",
+        amount=Decimal("-5.00"), currency="GBP", direction="debit",
+        category_id=cash.id, confidence_score=0.70,
+    )
+    manual = Transaction(
+        account_id=acct.id, transaction_date=date(2026, 5, 2), description_raw="TESCO STORES 2",
+        amount=Decimal("-6.00"), currency="GBP", direction="debit",
+        category_id=cash.id, confidence_score=1.0,
+    )
+    db.add_all([kw, manual])
+    db.commit()
+
+    # The user just added a rule: description contains TESCO -> Groceries.
+    rule_service.create_rule(db, {
+        "condition_type": "description_contains", "condition_value": "TESCO",
+        "action_type": "set_category", "action_value": str(groceries.id), "priority": 100,
+    })
+
+    # Dry-run over all rows: reports the one override (the keyword row), changes nothing.
+    preview = imp.recategorise(db, only_uncategorised=False, dry_run=True)
+    assert preview == {"changed": 1, "considered": 2}
+    db.refresh(kw)
+    db.refresh(manual)
+    assert kw.category_id == cash.id and manual.category_id == cash.id
+
+    # only_uncategorised=True (the default) leaves both alone — they already have a category.
+    assert imp.recategorise(db, only_uncategorised=True)["changed"] == 0
+    db.refresh(kw)
+    assert kw.category_id == cash.id
+
+    # Conditions scope the pass: restricting to the manual row alone changes nothing.
+    scoped = imp.recategorise(db, conditions=[Transaction.id == manual.id], only_uncategorised=False)
+    assert scoped == {"changed": 0, "considered": 1}
+
+    # Apply for real over all rows: the keyword "Cash" moves to Groceries; the
+    # manual pick is preserved.
+    result = imp.recategorise(db, only_uncategorised=False)
+    assert result == {"changed": 1, "considered": 2}
+    db.refresh(kw)
+    db.refresh(manual)
+    assert kw.category_id == groceries.id
+    assert manual.category_id == cash.id
 
 
 def test_statement_config_tolerates_malformed_notes():
