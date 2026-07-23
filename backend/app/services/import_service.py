@@ -644,6 +644,7 @@ def recategorise(
     conditions: list | None = None,
     only_uncategorised: bool = True,
     dry_run: bool = False,
+    include_manual: bool = False,
 ) -> dict:
     """Re-run categorisation across the matching stored transactions.
 
@@ -657,6 +658,10 @@ def recategorise(
     ``conditions`` restricts the set to a filtered subset (the same predicates the
     list endpoint builds); ``None`` = every transaction. ``dry_run`` runs the pass
     then rolls back so nothing persists — for a "will change N" preview.
+
+    ``include_manual`` additionally lets a matching ``set_category`` rule override
+    a *manual* choice (confidence 1.0) — the opt-in "also replace my manual
+    choices". Off by default, so manual picks are preserved.
 
     Returns ``{"changed": n, "considered": m}``: ``changed`` counts rows whose
     category actually changed (not just blanks filled, so an override is counted).
@@ -676,7 +681,7 @@ def recategorise(
     for txn in db.scalars(stmt).all():
         considered += 1
         before = txn.category_id
-        auto_categorise(db, txn, categoriser)
+        auto_categorise(db, txn, categoriser, force=include_manual)
         if txn.category_id != before:
             changed += 1
     if dry_run:
@@ -688,15 +693,16 @@ def recategorise(
     return {"changed": changed, "considered": considered}
 
 
-def _apply_rules_preloaded(db: Session, txn: Transaction, rules: list[Rule]) -> None:
+def _apply_rules_preloaded(db: Session, txn: Transaction, rules: list[Rule], force: bool = False) -> None:
     """Rule application against a preloaded rule set — mirrors
     ``rule_service.apply_rules`` (highest priority per action type wins) but without
-    re-querying the rules for every row."""
+    re-querying the rules for every row. ``force`` lets a ``set_category`` rule
+    override a manual choice (opt-in recategorise only)."""
     used_actions: set[str] = set()
     for rule in rules:
         if rule.action_type in used_actions:
             continue
-        if rule_service.matches(rule, txn) and rule_service.apply_action(rule, txn, db):
+        if rule_service.matches(rule, txn) and rule_service.apply_action(rule, txn, db, force=force):
             used_actions.add(rule.action_type)
 
 
@@ -733,7 +739,7 @@ def _normalise_preloaded(
 
 
 def auto_categorise(
-    db: Session, txn: Transaction, ctx: _CategoriserContext | None = None
+    db: Session, txn: Transaction, ctx: _CategoriserContext | None = None, force: bool = False
 ) -> bool:
     """Categorisation order (spec §15.1): manual > rule > vendor default >
     keyword. Returns True if the transaction ends up with a category.
@@ -743,14 +749,17 @@ def auto_categorise(
 
     ``ctx`` is an optional per-import snapshot (rules + vendor aliases loaded once)
     used by the confirm hot loop to avoid re-querying them per row (SR-A1 §2). When
-    omitted (ad-hoc single-row callers), the rules/aliases are queried live."""
+    omitted (ad-hoc single-row callers), the rules/aliases are queried live.
+
+    ``force`` lets a ``set_category`` rule override even a manual choice. It is off
+    for imports (manual always wins) and only set by the opt-in recategorise."""
     if ctx is None:
         # 1. Rules (highest precedence after manual; may also set vendor/flags).
-        rule_service.apply_rules(db, txn)
+        rule_service.apply_rules(db, txn, force=force)
         # 2. Vendor alias match (sets merchant; category only if still unset).
         vendor_service.normalise_transaction(db, txn)
     else:
-        _apply_rules_preloaded(db, txn, ctx.rules)
+        _apply_rules_preloaded(db, txn, ctx.rules, force=force)
         _normalise_preloaded(db, txn, ctx.alias_pairs)
     if txn.category_id is not None:
         return True

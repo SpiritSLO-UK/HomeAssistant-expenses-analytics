@@ -11,16 +11,19 @@ Toward v1.2.0. Migrations unchanged; data and config carry over.
 - **Re-apply rules to existing transactions** - the Transactions page gains a
   "Re-apply rules" panel that re-runs your rules (plus vendor and keyword
   matching) over all transactions or just the current filter, with a dry-run
-  preview of how many will change. A matching rule now overrides an auto-assigned
-  category (e.g. a keyword-guessed *Cash*); your manual picks are always kept.
-  Previously "Re-categorise" only ever touched rows that had no category yet.
+  preview of how many will change. A matching rule overrides an auto-assigned
+  category (e.g. a keyword-guessed *Cash*); your manual picks are kept unless you
+  opt in to "also replace my manual choices". Previously "Re-categorise" only ever
+  touched rows that had no category yet, and the panel now guides you to the
+  "replace existing" option when a filtered set is already categorised.
 - **Delete all / delete matching a filter** - remove every transaction matching
   the current filter (or all of them) in one action, instead of ticking 50 at a
   time page by page. Offered on the Transactions list once a whole page is
-  selected, and as a "Delete all transactions" card in Settings > Data. Owner
-  only, gated by a fresh two-factor code, and a timestamped safety backup is taken
-  first (restore it from Backup & restore); accounts, categories, rules and
-  settings are kept.
+  selected (for any active filter, so you can wipe just that subset, or the whole
+  set), and as a "Delete all transactions" card in Settings > Data. Owner only,
+  gated by a fresh two-factor code, and a timestamped safety backup is taken first
+  (restore it from Backup & restore); accounts, categories, rules and settings are
+  kept.
 
 ### Fixed
 - **In-app version no longer drifts** - the sidebar badge and `/api/health`

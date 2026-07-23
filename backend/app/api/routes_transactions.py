@@ -249,6 +249,7 @@ def recategorise(
     db: Annotated[Session, Depends(get_db)],
     only_uncategorised: bool = True,
     dry_run: bool = False,
+    include_manual: bool = False,
 ) -> dict:
     """Re-run rules + vendor + keyword categorisation (spec §15, §3.3 re-run rules).
 
@@ -257,9 +258,15 @@ def recategorise(
     ``only_uncategorised=false`` re-applies rules to already-auto-categorised rows
     as well (rules override a keyword/vendor guess but never a manual choice), which
     is how you fix a keyword-assigned "Cash" pile after updating your rules.
-    ``dry_run=true`` returns the count that *would* change without persisting."""
+    ``include_manual=true`` goes further and lets a matching rule override even a
+    manual choice (default off — manual picks are kept). ``dry_run=true`` returns
+    the count that *would* change without persisting."""
     result = import_service.recategorise(
-        db, conditions=conditions, only_uncategorised=only_uncategorised, dry_run=dry_run
+        db,
+        conditions=conditions,
+        only_uncategorised=only_uncategorised,
+        dry_run=dry_run,
+        include_manual=include_manual,
     )
     return {"recategorised": result["changed"], "considered": result["considered"], "dry_run": dry_run}
 

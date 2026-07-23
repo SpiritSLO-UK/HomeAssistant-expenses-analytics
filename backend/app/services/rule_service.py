@@ -116,9 +116,10 @@ def _int_action_value(av: str | None) -> int | None:
     return int(av) if av and av.isdigit() else None
 
 
-def _apply_set_category(txn: Transaction, av: str | None) -> bool:
-    # Don't override a manual choice (spec §15.1: manual > rule).
-    if txn.confidence_score is not None and txn.confidence_score >= MANUAL_CONFIDENCE:
+def _apply_set_category(txn: Transaction, av: str | None, force: bool = False) -> bool:
+    # Don't override a manual choice (spec §15.1: manual > rule) — unless the caller
+    # explicitly forces it (the opt-in "also replace my manual choices" recategorise).
+    if not force and txn.confidence_score is not None and txn.confidence_score >= MANUAL_CONFIDENCE:
         return False
     value = _int_action_value(av)
     if value is None:
@@ -173,7 +174,7 @@ def _apply_mark_subscription(db: Session, txn: Transaction) -> bool:
     return True
 
 
-def apply_action(rule: Rule, txn: Transaction, db: Session | None = None) -> bool:
+def apply_action(rule: Rule, txn: Transaction, db: Session | None = None, force: bool = False) -> bool:
     """Apply a single rule's action. Returns ``True`` when the action actually
     took effect, ``False`` when it was a no-op (e.g. ``set_category`` skipped
     because a manual choice already wins, or a value-setting action with an
@@ -183,12 +184,16 @@ def apply_action(rule: Rule, txn: Transaction, db: Session | None = None) -> boo
 
     ``db`` is only needed for actions that persist a related row
     (``mark_subscription``); when it's ``None`` those actions are treated as a
-    no-op so callers with no session (e.g. previews) stay side-effect free."""
+    no-op so callers with no session (e.g. previews) stay side-effect free.
+
+    ``force`` lets a ``set_category`` action override even a manual choice — used
+    only by the opt-in "also replace my manual choices" recategorise; it never
+    fires during import."""
     at = rule.action_type
     av = rule.action_value
 
     if at == "set_category":
-        return _apply_set_category(txn, av)
+        return _apply_set_category(txn, av, force=force)
     elif at == "set_vendor":
         value = _int_action_value(av)
         if value is None:
@@ -223,10 +228,11 @@ def apply_action(rule: Rule, txn: Transaction, db: Session | None = None) -> boo
     return False
 
 
-def apply_rules(db: Session, txn: Transaction) -> list[int]:
+def apply_rules(db: Session, txn: Transaction, force: bool = False) -> list[int]:
     """Apply all enabled rules to a transaction in priority order (highest
     first). For each action type, the highest-priority matching rule wins.
-    Returns the ids of rules that fired."""
+    Returns the ids of rules that fired. ``force`` lets a ``set_category`` rule
+    override a manual choice (opt-in recategorise only)."""
     rules = db.scalars(
         select(Rule).where(Rule.enabled.is_(True)).order_by(Rule.priority.desc(), Rule.id)
     ).all()
@@ -235,7 +241,7 @@ def apply_rules(db: Session, txn: Transaction) -> list[int]:
     for rule in rules:
         if rule.action_type in used_actions:
             continue
-        if matches(rule, txn) and apply_action(rule, txn, db):
+        if matches(rule, txn) and apply_action(rule, txn, db, force=force):
             # Only a rule that actually applied claims its action slot and is
             # reported as fired — a no-op leaves the slot open for the next rule.
             used_actions.add(rule.action_type)
