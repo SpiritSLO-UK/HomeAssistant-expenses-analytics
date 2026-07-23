@@ -271,6 +271,45 @@ def test_block_cloud_ai_is_documented_noop():
     assert rule_service.apply_action(rule, txn, None) is False
 
 
+def test_rule_action_ignores_deleted_reference(db):
+    """A set_vendor / set_category rule whose target was deleted must no-op instead
+    of writing a dangling foreign key — which used to fail on flush and could 500 a
+    later import or the demo seed (the pollution behind a real support report)."""
+    from datetime import date
+    from decimal import Decimal
+
+    from app.models import Account, Category, Transaction, Vendor
+    from app.services import rule_service
+
+    acct = Account(name="A", account_type="current_account", currency="GBP")
+    cat = Category(name="TempCat")
+    vendor = Vendor(canonical_name="TempVendor")
+    db.add_all([acct, cat, vendor])
+    db.flush()
+    cat_id, vendor_id = cat.id, vendor.id
+
+    rule_service.create_rule(db, {"condition_type": "description_contains", "condition_value": "ACME",
+                                  "action_type": "set_vendor", "action_value": str(vendor_id), "priority": 100})
+    rule_service.create_rule(db, {"condition_type": "description_contains", "condition_value": "ACME",
+                                  "action_type": "set_category", "action_value": str(cat_id), "priority": 90})
+
+    # The targets are removed after the rules were made — the rules are now stale.
+    db.delete(vendor)
+    db.delete(cat)
+    db.flush()
+
+    txn = Transaction(account_id=acct.id, transaction_date=date(2026, 5, 1), description_raw="ACME CORP",
+                      amount=Decimal("-5"), direction="debit", currency="GBP")
+    db.add(txn)
+    db.flush()
+
+    fired = rule_service.apply_rules(db, txn)
+    assert fired == []              # both stale actions no-op (nothing claims its slot)
+    assert txn.merchant_id is None  # no dangling vendor FK written
+    assert txn.category_id is None  # no dangling category FK written
+    db.flush()                      # raised FOREIGN KEY constraint failed before the fix
+
+
 def test_rule_test_endpoint(client):
     _import(client, _curve([("2026-05-02", "TESCO STORES 3142", "-42.18"),
                             ("2026-05-03", "COSTA COFFEE", "-3.85")]))
