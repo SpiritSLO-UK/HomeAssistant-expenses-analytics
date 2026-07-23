@@ -112,7 +112,10 @@ A quick look (on demo data) - the full tour is in **[docs/screenshots.md](docs/s
   actions can set the category, vendor, project or **country** (to tag a
   transaction's spend location for the map), flag transfers/income/subscriptions,
   send to review, or block cloud AI. The Rules page has a built-in **"How rules
-  work"** guide explaining every condition and action with worked examples.
+  work"** guide explaining every condition and action with worked examples. You
+  can **re-apply your rules** to existing transactions - all of them or just the
+  current filter (e.g. everything auto-filed as *Cash*) - with a dry-run preview
+  of how many will change; your manual picks are always kept.
 - **Manage categories** - add your own, recolour or rename any category, set its
   cloud-AI privacy level, **delete** one (its transactions fall back to
   uncategorised) or **merge** one into another. This now includes the built-in
@@ -120,6 +123,13 @@ A quick look (on demo data) - the full tour is in **[docs/screenshots.md](docs/s
   Set the **cloud-AI privacy level for every category at once** (it also becomes
   the default new categories inherit), with per-category fine-tuning behind an
   "Advanced" toggle.
+- **Bulk-manage transactions** - multi-select rows to set category, project or
+  country, add a tag, mark business, archive or delete. When a selection spans
+  more than one page you can **delete every transaction matching the current
+  filter** (or all of them, for a clean-slate reimport) in one go; that mass
+  delete is owner-only, needs a fresh two-factor code, and takes a timestamped
+  safety backup first. A **"Delete all transactions"** card in Settings › Data
+  does the same wipe while keeping your accounts, categories, rules and settings.
 - **Split** a transaction across several categories/projects; the dashboard uses
   the split parts.
 - **Projects & tags** - collect spend toward a goal (renovation, holiday, car)

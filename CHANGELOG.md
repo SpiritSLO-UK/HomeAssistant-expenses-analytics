@@ -3,6 +3,32 @@
 All notable changes to HA Finance Intelligence. This project uses date-stamped,
 human-readable entries; versions follow semantic versioning.
 
+## Unreleased
+
+Toward v1.2.0. Migrations unchanged; data and config carry over.
+
+### Added
+- **Re-apply rules to existing transactions** - the Transactions page gains a
+  "Re-apply rules" panel that re-runs your rules (plus vendor and keyword
+  matching) over all transactions or just the current filter, with a dry-run
+  preview of how many will change. A matching rule now overrides an auto-assigned
+  category (e.g. a keyword-guessed *Cash*); your manual picks are always kept.
+  Previously "Re-categorise" only ever touched rows that had no category yet.
+- **Delete all / delete matching a filter** - remove every transaction matching
+  the current filter (or all of them) in one action, instead of ticking 50 at a
+  time page by page. Offered on the Transactions list once a whole page is
+  selected, and as a "Delete all transactions" card in Settings > Data. Owner
+  only, gated by a fresh two-factor code, and a timestamped safety backup is taken
+  first (restore it from Backup & restore); accounts, categories, rules and
+  settings are kept.
+
+### Fixed
+- **In-app version no longer drifts** - the sidebar badge and `/api/health`
+  reported `v1.0.2` after v1.1.0 shipped, because the release bumped
+  `addon/config.yaml` but not the backend/frontend version files. They are back
+  in lockstep; a `bump-version` script now sets them together and a CI check fails
+  the build if they ever disagree (or don't match a release tag).
+
 ## v1.1.0 - 2026-07-19
 
 > Provided "as is", no warranty, not financial advice - keep your own backups.
