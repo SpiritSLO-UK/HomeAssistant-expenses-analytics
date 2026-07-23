@@ -21,6 +21,7 @@ import {
   unarchiveTransaction,
   updateTransaction,
   type BulkUpdate,
+  type RecategoriseResult,
   type Transaction,
   type TransactionFilters,
 } from "../api/client";
@@ -169,6 +170,7 @@ export default function Transactions() {
   const cols = useResizableColumns("transactions", COLUMNS);
   const [showAiBatch, setShowAiBatch] = useState(false);
   const [showCloudBatch, setShowCloudBatch] = useState(false);
+  const [showReapply, setShowReapply] = useState(false);
   const [ruleMsg, setRuleMsg] = useState<string | null>(null);
   // Undo affordance for the last bulk value-change (null when nothing to undo).
   const [undo, setUndo] = useState<BulkUndo | null>(null);
@@ -343,15 +345,6 @@ export default function Transactions() {
       qc.invalidateQueries({ queryKey: ["dash-vendors"] });
     },
     onError: (e) => setRuleMsg(`Couldn't save rule: ${e instanceof Error ? e.message : e}`),
-  });
-
-  const recat = useMutation({
-    mutationFn: () => recategorise(true),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["transactions"] });
-      qc.invalidateQueries({ queryKey: ["dash-categories"] });
-      qc.invalidateQueries({ queryKey: ["dash-vendors"] });
-    },
   });
 
   const unarchive = useMutation({
@@ -614,9 +607,11 @@ export default function Transactions() {
               {showCloudBatch ? "Hide cloud AI" : "☁️ AI categorise (cloud)…"}
             </button>
           )}
-          <button type="button" className="btn btn--ghost" disabled={recat.isPending} onClick={() => recat.mutate()}>
-            {recat.isPending ? "Re-categorising…" : "Re-categorise uncategorised"}
-          </button>
+          {!focusId && (
+            <button type="button" className="btn btn--ghost" onClick={() => setShowReapply((v) => !v)}>
+              {showReapply ? "Hide re-apply rules" : "↻ Re-apply rules…"}
+            </button>
+          )}
           <button
             type="button"
             className="btn btn--ghost"
@@ -635,9 +630,6 @@ export default function Transactions() {
           </Link>
         </div>
       </div>
-      {recat.isSuccess && (
-        <p className="muted">Re-categorised {recat.data.recategorised} transaction(s).</p>
-      )}
       {ruleMsg && <p className="status status--ok">{ruleMsg}</p>}
       {undo && (
         <p className="status status--ok" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -657,6 +649,9 @@ export default function Transactions() {
 
       {showAiBatch && <AiBatchPanel base={base} onClose={() => setShowAiBatch(false)} />}
       {showCloudBatch && <CloudAiBatchPanel base={base} onClose={() => setShowCloudBatch(false)} />}
+      {showReapply && !focusId && (
+        <ReapplyRulesPanel filters={filters} anyFilterActive={anyFilterActive} onClose={() => setShowReapply(false)} />
+      )}
 
       {focusId && (
         <div className="card focus-banner">
@@ -1172,6 +1167,120 @@ export default function Transactions() {
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+// Re-apply categorisation rules across a filtered subset (or all) transactions,
+// with a live "will change N" dry-run preview before committing. Extracted so the
+// Transactions component stays under its complexity budget. Rules override an
+// auto-assigned category (e.g. a keyword-guessed "Cash") but never a manual pick.
+function ReapplyRulesPanel({
+  filters,
+  anyFilterActive,
+  onClose,
+}: Readonly<{
+  filters: TransactionFilters;
+  anyFilterActive: boolean;
+  onClose: () => void;
+}>) {
+  const qc = useQueryClient();
+  // With a filter active, default to acting on just that filtered set.
+  const [scopeAll, setScopeAll] = useState(!anyFilterActive);
+  // Safe default: only fill blanks. Turn on to re-apply rules over rows that
+  // already have an auto-assigned category (the "fix my Cash pile" case).
+  const [replaceExisting, setReplaceExisting] = useState(false);
+
+  const effectiveFilters = scopeAll ? {} : filters;
+  const onlyUncategorised = !replaceExisting;
+
+  const preview = useQuery({
+    queryKey: ["recat-preview", scopeAll, onlyUncategorised, scopeAll ? null : filters],
+    queryFn: () => recategorise({ filters: effectiveFilters, onlyUncategorised, dryRun: true }),
+  });
+  const apply = useMutation({
+    mutationFn: (): Promise<RecategoriseResult> =>
+      recategorise({ filters: effectiveFilters, onlyUncategorised, dryRun: false }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["transactions"] });
+      qc.invalidateQueries({ queryKey: ["dash-categories"] });
+      qc.invalidateQueries({ queryKey: ["dash-vendors"] });
+    },
+  });
+
+  const willChange = preview.data?.recategorised;
+  const considered = preview.data?.considered;
+  const nothingToDo = willChange === 0;
+
+  let previewMessage: string;
+  if (preview.isError) previewMessage = "Couldn't preview the change.";
+  else if (preview.isFetching || willChange == null) previewMessage = "Checking what would change…";
+  else if (nothingToDo) previewMessage = `No transactions would change (of ${considered} examined). Rules only move rows they match.`;
+  else previewMessage = `This will re-categorise ${willChange} of ${considered} transaction(s).`;
+
+  let applyLabel = "Re-categorise";
+  if (apply.isPending) applyLabel = "Re-categorising…";
+  else if (willChange) applyLabel = `Re-categorise ${willChange}`;
+
+  return (
+    <div className="card">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+        <strong>↻ Re-apply categorisation rules</strong>
+        <button type="button" className="link-btn" onClick={onClose}>✕ Close</button>
+      </div>
+      <p className="muted" style={{ marginTop: 6 }}>
+        Re-runs your rules (plus vendor and keyword matching) over the chosen transactions. A matching
+        rule overrides an auto-assigned category (like a keyword-guessed “Cash”); your manual choices are
+        always kept. Add or edit rules on the <Link to="/rules">Rules</Link> page.
+      </p>
+
+      {anyFilterActive && (
+        <fieldset style={{ border: "none", padding: 0, margin: "6px 0", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <legend className="filter-toggles__label" style={{ float: "left", padding: 0 }}>Apply to</legend>
+          <label className="chip-toggle">
+            <input type="radio" name="reapply-scope" checked={!scopeAll} onChange={() => setScopeAll(false)} />
+            <span>Current filter</span>
+          </label>
+          <label className="chip-toggle">
+            <input type="radio" name="reapply-scope" checked={scopeAll} onChange={() => setScopeAll(true)} />
+            <span>All transactions</span>
+          </label>
+        </fieldset>
+      )}
+
+      <label
+        className="chip-toggle"
+        title="Rules override keyword/vendor guesses (e.g. Cash); your manual picks are always kept"
+      >
+        <input type="checkbox" checked={replaceExisting} onChange={(e) => setReplaceExisting(e.target.checked)} />
+        <span>Also replace existing auto-categories (needed to re-categorise rows already set, e.g. your Cash pile)</span>
+      </label>
+
+      <p className="muted" style={{ marginTop: 8 }} aria-live="polite">{previewMessage}</p>
+
+      {apply.isSuccess ? (
+        <p className="status status--ok">
+          Re-categorised {apply.data.recategorised} transaction(s).{" "}
+          <button type="button" className="link-btn" onClick={onClose}>Close</button>
+        </p>
+      ) : (
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <button
+            type="button"
+            className="btn"
+            disabled={apply.isPending || preview.isFetching || nothingToDo || willChange == null}
+            onClick={() => apply.mutate()}
+          >
+            {applyLabel}
+          </button>
+          <button type="button" className="btn btn--ghost" onClick={onClose}>Cancel</button>
+          {apply.isError && (
+            <span className="status status--error">
+              {String(apply.error instanceof Error ? apply.error.message : apply.error)}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

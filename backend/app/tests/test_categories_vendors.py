@@ -839,6 +839,37 @@ def test_batch_categorise(client, samples_dir):
     assert sum(1 for t in updated if t["category_id"] == cash) == 3
 
 
+def test_recategorise_endpoint_scope_and_dry_run(client):
+    """The recategorise endpoint honours the list filters (so you can target a
+    subset) and a dry_run preview that reports a count without persisting."""
+    client.post("/api/backup/demo")
+    all_txns = client.get("/api/transactions", params={"limit": 500}).json()
+    total = all_txns["total"]
+    some_cat = next(t["category_id"] for t in all_txns["items"] if t["category_id"])
+    in_cat = client.get("/api/transactions", params={"limit": 500, "category_id": some_cat}).json()["total"]
+    blanks = client.get("/api/transactions", params={"limit": 500, "uncategorised": "true"}).json()["total"]
+
+    # Unfiltered dry-run: considers every (non-archived) transaction, persists nothing.
+    r = client.post("/api/transactions/recategorise", params={"dry_run": "true", "only_uncategorised": "false"})
+    assert r.status_code == 200
+    assert r.json()["dry_run"] is True
+    assert r.json()["considered"] == total
+
+    # Filtered to one category → only those rows are in scope ("act on what you see").
+    r2 = client.post(
+        "/api/transactions/recategorise",
+        params={"dry_run": "true", "only_uncategorised": "false", "category_id": some_cat},
+    )
+    assert r2.json()["considered"] == in_cat
+
+    # only_uncategorised=true scopes to the blanks only.
+    r3 = client.post("/api/transactions/recategorise", params={"dry_run": "true", "only_uncategorised": "true"})
+    assert r3.json()["considered"] == blanks
+
+    # The dry-runs above changed nothing.
+    assert client.get("/api/transactions", params={"limit": 500}).json()["total"] == total
+
+
 # --- dashboard ---
 
 def test_dashboard_summary(client, samples_dir):
