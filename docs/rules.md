@@ -185,3 +185,6 @@ choices" lets it override a manual one.
 - **Re-apply rules to existing rows** after adding or reordering rules - see
   [Re-applying rules to existing transactions](#re-applying-rules-to-existing-transactions)
   above for the scope and replace options and the preview.
+- **Deleted targets are skipped.** If a rule sets a category, vendor or project
+  that you later delete, that action simply does nothing (it won't error or leave a
+  broken link on the transaction) - edit the rule to point at something else.
