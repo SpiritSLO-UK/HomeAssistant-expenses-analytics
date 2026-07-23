@@ -31,6 +31,12 @@ Toward v1.2.0. Migrations unchanged; data and config carry over.
   `addon/config.yaml` but not the backend/frontend version files. They are back
   in lockstep; a `bump-version` script now sets them together and a CI check fails
   the build if they ever disagree (or don't match a release tag).
+- **A stale rule no longer breaks a later import** - a rule whose target category,
+  vendor or project was deleted *after* the rule was created used to write a
+  dangling reference onto matching transactions, which failed on save and could
+  return a 500 on the next import or "Load demo data". Such a `set_category` /
+  `set_vendor` / `set_project` action now simply does nothing when its target is
+  gone, instead of erroring.
 
 ## v1.1.0 - 2026-07-19
 
