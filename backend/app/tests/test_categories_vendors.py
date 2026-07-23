@@ -988,6 +988,49 @@ def test_bulk_update_transactions(client):
     assert not (set(ids) & gone)
 
 
+def test_delete_by_filter_scoped_then_all(client):
+    """delete-by-filter removes just the filtered subset, taking a safety backup
+    first; with no filter it deletes everything. A no-op takes no backup."""
+    client.get("/api/users/me")  # bootstrap the local owner
+    client.post("/api/backup/demo")
+
+    total0 = client.get("/api/transactions", params={"limit": 500}).json()["total"]
+    assert total0 > 0
+    cat = next(t["category_id"] for t in client.get("/api/transactions", params={"limit": 500}).json()["items"] if t["category_id"])
+    in_cat = client.get("/api/transactions", params={"limit": 500, "category_id": cat}).json()["total"]
+    assert 0 < in_cat <= total0
+
+    # Delete only the rows in that one category (a safety backup is taken first).
+    r = client.post("/api/transactions/delete-by-filter", params={"category_id": cat})
+    assert r.status_code == 200
+    assert r.json() == {"deleted": in_cat, "backup_taken": True}
+    after = client.get("/api/transactions", params={"limit": 500}).json()
+    assert after["total"] == total0 - in_cat
+    assert all(t["category_id"] != cat for t in after["items"])
+
+    # Delete everything that's left (no filter = all).
+    r2 = client.post("/api/transactions/delete-by-filter")
+    assert r2.json()["deleted"] == total0 - in_cat
+    assert client.get("/api/transactions", params={"limit": 500}).json()["total"] == 0
+
+    # Nothing left → a no-op that takes no backup.
+    assert client.post("/api/transactions/delete-by-filter").json() == {"deleted": 0, "backup_taken": False}
+
+
+def test_delete_by_filter_is_owner_only(client):
+    """The mass delete is owner-gated: a member is refused (403) and no rows go."""
+    mem = {"X-Remote-User-Id": "mem", "X-Remote-User-Display-Name": "mem"}
+    client.get("/api/users/me")  # owner
+    client.post("/api/backup/demo")
+    client.get("/api/users/me", headers=mem)  # second user → pending
+    uid = next(u["id"] for u in client.get("/api/users").json() if u["external_id"] == "mem")
+    client.patch(f"/api/users/{uid}", json={"role": "member", "status": "approved"})
+
+    before = client.get("/api/transactions", params={"limit": 500}).json()["total"]
+    assert client.post("/api/transactions/delete-by-filter", headers=mem).status_code == 403
+    assert client.get("/api/transactions", params={"limit": 500}).json()["total"] == before
+
+
 def test_list_filters_drill_down(client):
     """The Dashboard/Vendors/Business links narrow the Transactions list by
     country, category and vendor — verify each filter returns matching rows."""

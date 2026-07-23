@@ -33,6 +33,7 @@ import {
   listFxRates,
   loadDemoData,
   removeDemoData,
+  deleteTransactionsByFilter,
   mfaDisable,
   mfaEnable,
   mfaSetup,
@@ -67,6 +68,7 @@ import { useConfirm } from "../components/dialogs";
 import CountrySelect from "../components/CountrySelect";
 import PaperlessSetupNote from "../components/PaperlessSetupNote";
 import SubTabs, { type ControlledSubTab } from "../components/SubTabs";
+import { StepUpModal, useStepUp } from "../components/StepUp";
 import { useOptimisticSelect } from "../hooks/useOptimisticSelect";
 
 const THEME_OPTIONS: { value: ThemePref; label: string }[] = [
@@ -348,6 +350,8 @@ export default function Settings() {
       {active === "security" && <SecurityCard onMessage={ok} onError={fail} />}
 
       {active === "data" && <RetentionCard onMessage={ok} onError={fail} />}
+
+      {active === "data" && <DeleteAllTransactionsCard onMessage={ok} onError={fail} />}
 
       {active === "general" && <LoggingCard onMessage={ok} onError={fail} />}
 
@@ -2104,6 +2108,62 @@ function RetentionCard({
           </form>
         </div>
       )}
+    </div>
+  );
+}
+
+// Owner-only "wipe every transaction" (e.g. to start a clean import). Mirrors the
+// retention purge's guardrails: an MFA step-up + a timestamped safety backup taken
+// server-side before anything is deleted. Accounts/categories/rules/settings stay.
+function DeleteAllTransactionsCard({
+  onMessage,
+  onError,
+}: Readonly<{ onMessage: (m: string) => void; onError: (e: unknown) => void }>) {
+  const qc = useQueryClient();
+  const confirm = useConfirm();
+  const me = useQuery({ queryKey: ["me"], queryFn: getMe });
+  const step = useStepUp();
+
+  const del = useMutation({
+    mutationFn: () => deleteTransactionsByFilter({}), // no filter = every transaction
+    onSuccess: (r) => {
+      onMessage(
+        `Deleted ${r.deleted} transaction(s).` +
+          (r.backup_taken ? " A safety backup was taken first (restore it from Backup & restore if needed)." : ""),
+      );
+      qc.invalidateQueries(); // a full wipe moves essentially every view
+    },
+    onError: step.guard(onError),
+  });
+
+  if (me.data && !me.data.is_admin) return null; // owner-only
+
+  const doDelete = async () => {
+    if (
+      !(await confirm({
+        message:
+          "Permanently delete ALL transactions? A timestamped safety backup is taken first, but there " +
+          "is no other undo. Your accounts, categories, rules and settings are kept.",
+        confirmLabel: "Delete all transactions",
+        danger: true,
+      }))
+    )
+      return;
+    step.run(() => del.mutate());
+  };
+
+  return (
+    <div className="card">
+      <h2 className="card__title">Delete all transactions</h2>
+      <p className="muted">
+        Remove every transaction in one go — handy to start over with a clean import. A timestamped
+        safety backup is taken first (restore it from <strong>Backup &amp; restore</strong> if needed).
+        Your accounts, categories, rules and settings stay.
+      </p>
+      <button type="button" className="btn btn--danger" disabled={del.isPending} onClick={doDelete}>
+        {del.isPending ? "Deleting…" : "Delete all transactions"}
+      </button>
+      <StepUpModal step={step} name="mfa-delete-all-stepup-code" />
     </div>
   );
 }

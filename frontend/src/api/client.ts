@@ -462,6 +462,23 @@ export function bulkUpdateTransactions(
   });
 }
 
+// Permanently delete every transaction matching `filters` (omit for ALL).
+// Owner-only + MFA step-up; the backend takes a safety backup first. This is the
+// whole-set counterpart to bulkUpdateTransactions({delete:true}), for a selection
+// that spans more pages than the list can show.
+export function deleteTransactionsByFilter(
+  filters: TransactionFilters = {},
+): Promise<{ deleted: number; backup_taken: boolean }> {
+  const clean: Record<string, unknown> = { ...filters };
+  delete clean.limit;
+  delete clean.offset;
+  delete clean.transaction_id;
+  const qs = toQuery(clean);
+  return fetchJson(qs ? `api/transactions/delete-by-filter?${qs}` : `api/transactions/delete-by-filter`, {
+    method: "POST",
+  });
+}
+
 export function setTransactionTags(id: number, tags: string[]): Promise<Transaction> {
   return fetchJson<Transaction>(`api/transactions/${id}/tags`, {
     method: "POST",

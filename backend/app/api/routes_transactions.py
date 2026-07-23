@@ -10,11 +10,11 @@ from typing import Annotated
 import anyio.to_thread
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.api import uploads
-from app.db.session import get_db
+from app.db.session import dml_rowcount, get_db
 from app.models import Category, Project, Transaction, User, Vendor
 from app.schemas.receipts import ReceiptOut
 from app.schemas.tags import SetTagsRequest
@@ -28,6 +28,7 @@ from app.schemas.transactions import (
 )
 from app.services import (
     audit_service,
+    backup_service,
     export_service,
     geo,
     import_service,
@@ -38,7 +39,12 @@ from app.services import (
     tag_service,
     vendor_service,
 )
-from app.services.auth_service import get_current_user, resolved_account_scope, visible_account_scope
+from app.services.auth_service import (
+    get_current_user,
+    require_owner_step_up,
+    resolved_account_scope,
+    visible_account_scope,
+)
 from app.services.split_service import SplitError, SplitInput
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
@@ -256,6 +262,53 @@ def recategorise(
         db, conditions=conditions, only_uncategorised=only_uncategorised, dry_run=dry_run
     )
     return {"recategorised": result["changed"], "considered": result["considered"], "dry_run": dry_run}
+
+
+@router.post("/delete-by-filter", responses={403: {"description": "Owner + MFA step-up required"}})
+def delete_by_filter(
+    conditions: Annotated[list, Depends(resolve_transaction_filters)],
+    db: Annotated[Session, Depends(get_db)],
+    owner: Annotated[User, Depends(require_owner_step_up)],
+) -> dict:
+    """Permanently delete every transaction matching the current filters. With no
+    filter query-params this deletes ALL transactions (the Settings "delete all
+    transactions"); with filters it deletes just the matching set — the whole-set
+    counterpart to the id-list ``POST /bulk`` delete, for when the selection spans
+    more pages than the UI can tick.
+
+    Owner-only with an MFA step-up (like the retention purge), and a timestamped
+    safety backup is taken first — so a mistake is recoverable by restoring it.
+    Otherwise irreversible; FK cascades drop each row's splits + receipt matches."""
+    count_stmt = select(func.count(Transaction.id))
+    if conditions:
+        count_stmt = count_stmt.where(*conditions)
+    total = db.scalar(count_stmt) or 0
+    if total == 0:
+        return {"deleted": 0, "backup_taken": False}
+
+    # Never delete without a safety backup first (mirrors retention_service).
+    try:
+        backup_service.create_safety_backup("delete_transactions")
+        backup_service.prune_backups(db)
+    except Exception as exc:  # pragma: no cover - defensive: never delete un-backed
+        raise HTTPException(status_code=500, detail="Safety backup failed; nothing was deleted.") from exc
+
+    # Delete via an id subquery so every filter predicate (incl. tag .any() /
+    # resolved-country / FTS-search subqueries) is expressed in a plain SELECT.
+    ids = select(Transaction.id)
+    if conditions:
+        ids = ids.where(*conditions)
+    res = db.execute(delete(Transaction).where(Transaction.id.in_(ids)))
+    deleted = dml_rowcount(res) or 0
+    audit_service.record(
+        db,
+        actor=owner.display_name,
+        action="delete_transactions_by_filter",
+        entity_type="transaction",
+        details={"count": deleted},
+    )
+    db.commit()
+    return {"deleted": deleted, "backup_taken": True}
 
 
 @router.post("/categorise-batch")

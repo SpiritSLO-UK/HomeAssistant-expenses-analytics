@@ -6,8 +6,10 @@ import {
   bulkUpdateTransactions,
   categoriseTransaction,
   createVendorFromTransaction,
+  deleteTransactionsByFilter,
   exportTransactionsCsv,
   getAiStatus,
+  getMe,
   getSettings,
   listCategories,
   listMembers,
@@ -33,6 +35,7 @@ import CloudAiBatchPanel from "../components/CloudAiBatchPanel";
 import AssignToChildButton from "../components/AssignToChildButton";
 import ReceiptPreview from "../components/ReceiptPreview";
 import { useAlert, useConfirm, usePrompt } from "../components/dialogs";
+import { StepUpModal, useStepUp } from "../components/StepUp";
 import { useResizableColumns, type ColumnDef } from "../useResizableColumns";
 import { suggestForTransaction } from "../lib/aiSuggest";
 import { recommendedVendorName } from "../lib/vendorSignature";
@@ -232,6 +235,8 @@ export default function Transactions() {
   const vendors = useQuery({ queryKey: ["vendors"], queryFn: listVendors });
   const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
   const aiStatus = useQuery({ queryKey: ["ai-status"], queryFn: getAiStatus });
+  const me = useQuery({ queryKey: ["me"], queryFn: getMe });
+  const step = useStepUp();
   const base = settings.data?.base_currency ?? "GBP";
   const dateFmt = normaliseDateFormat(settings.data?.date_format);
   const { data, isLoading, isError, error } = useQuery({
@@ -476,6 +481,24 @@ export default function Transactions() {
     onError: (e) => { alert({ message: String(e instanceof Error ? e.message : e) }); },
   });
 
+  // Delete EVERY transaction matching the current filter — not just the ticked
+  // page — for a selection that spans more pages than the list shows. Owner-only
+  // with an MFA step-up; the backend takes a safety backup first.
+  const deleteMatching = useMutation({
+    mutationFn: () => deleteTransactionsByFilter(filters),
+    onSuccess: (r) => {
+      setSelected(new Set());
+      invalidateAfterBulk();
+      qc.invalidateQueries({ queryKey: ["dash-categories"] });
+      alert({
+        message:
+          `Deleted ${r.deleted} transaction(s).` +
+          (r.backup_taken ? " A safety backup was taken first." : ""),
+      });
+    },
+    onError: step.guard((e) => { alert({ message: String(e instanceof Error ? e.message : e) }); }),
+  });
+
   // Undo a bulk value-change: group the affected ids by their captured prior
   // value and re-apply each distinct value in one bulkUpdate call.
   const undoBulk = useMutation({
@@ -592,6 +615,23 @@ export default function Transactions() {
       return next;
     });
 
+  // "Select all N matching the filter": offered once the whole page is ticked but
+  // more rows match than fit on it — the page-scoped bulk delete can't reach those.
+  // Owner-only (the delete-by-filter endpoint is owner + MFA step-up gated).
+  const canMassDelete = me.data?.is_admin === true;
+  async function doDeleteMatching() {
+    const where = anyFilterActive ? "matching the current filter" : "in your data";
+    if (
+      !(await confirm({
+        message: `Permanently delete all ${total} transaction(s) ${where}? A safety backup is taken first, but there's no other undo.`,
+        confirmLabel: `Delete ${total}`,
+        danger: true,
+      }))
+    )
+      return;
+    step.run(() => deleteMatching.mutate());
+  }
+
   return (
     <div className="page">
       <div className="page__head">
@@ -652,6 +692,7 @@ export default function Transactions() {
       {showReapply && !focusId && (
         <ReapplyRulesPanel filters={filters} anyFilterActive={anyFilterActive} onClose={() => setShowReapply(false)} />
       )}
+      <StepUpModal step={step} name="mfa-txn-delete-stepup-code" />
 
       {focusId && (
         <div className="card focus-banner">
@@ -854,6 +895,19 @@ export default function Transactions() {
                   Delete
                 </button>
                 <button type="button" className="link-btn" onClick={() => setSelected(new Set())}>Clear</button>
+              </div>
+            )}
+            {canMassDelete && pageAllSelected && total > pageCount && !focusId && (
+              <div className="bulk-bar">
+                <span>All {pageCount} on this page are selected — {total} match the current filter.</span>
+                <button
+                  type="button"
+                  className="btn btn--sm btn--danger"
+                  disabled={deleteMatching.isPending}
+                  onClick={doDeleteMatching}
+                >
+                  {deleteMatching.isPending ? "Deleting…" : `Delete all ${total} matching`}
+                </button>
               </div>
             )}
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 4 }}>
