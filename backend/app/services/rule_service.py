@@ -14,7 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.logging import get_logger
-from app.models import Category, Rule, Subscription, Transaction
+from app.models import Category, Project, Rule, Subscription, Transaction, Vendor
 from app.services.household_service import get_or_create_default_household
 from app.services.vendor_service import derive_vendor_signature
 
@@ -116,12 +116,29 @@ def _int_action_value(av: str | None) -> int | None:
     return int(av) if av and av.isdigit() else None
 
 
-def _apply_set_category(txn: Transaction, av: str | None, force: bool = False) -> bool:
+def _resolve_ref(db: Session | None, model: type, av: str | None) -> int | None:
+    """Parse an int action value AND confirm the referenced row still exists.
+
+    Returns the id, or ``None`` when it can't be parsed or the target was deleted.
+    A stale reference (e.g. a ``set_vendor`` rule whose vendor was later removed, or
+    a ``set_category`` rule for a deleted category) then no-ops instead of writing a
+    dangling foreign key — which used to fail on flush and could 500 a *later* import
+    or the demo seed. With no session (rule preview) we can't check, so we only parse
+    (previews never persist, so a stale ref there is harmless)."""
+    value = _int_action_value(av)
+    if value is None:
+        return None
+    if db is not None and db.get(model, value) is None:
+        return None
+    return value
+
+
+def _apply_set_category(txn: Transaction, av: str | None, db: Session | None = None, force: bool = False) -> bool:
     # Don't override a manual choice (spec §15.1: manual > rule) — unless the caller
     # explicitly forces it (the opt-in "also replace my manual choices" recategorise).
     if not force and txn.confidence_score is not None and txn.confidence_score >= MANUAL_CONFIDENCE:
         return False
-    value = _int_action_value(av)
+    value = _resolve_ref(db, Category, av)
     if value is None:
         return False
     txn.category_id = value
@@ -193,15 +210,15 @@ def apply_action(rule: Rule, txn: Transaction, db: Session | None = None, force:
     av = rule.action_value
 
     if at == "set_category":
-        return _apply_set_category(txn, av, force=force)
+        return _apply_set_category(txn, av, db, force=force)
     elif at == "set_vendor":
-        value = _int_action_value(av)
+        value = _resolve_ref(db, Vendor, av)
         if value is None:
             return False
         txn.merchant_id = value
         return True
     elif at == "set_project":
-        value = _int_action_value(av)
+        value = _resolve_ref(db, Project, av)
         if value is None:
             return False
         txn.project_id = value
