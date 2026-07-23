@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import functools
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Annotated
@@ -195,27 +196,34 @@ def _serialise_with_country(db: Session, txns: list[Transaction]) -> list[Transa
     return items
 
 
+@dataclass
+class TransactionFilters:
+    """The standard transaction filter query-params, grouped into one dependency so
+    the endpoints that reuse them stay under the parameter-count limit (S107). Same
+    fields the list endpoint accepts; FastAPI exposes each as its own query param."""
+
+    date_from: date | None = None
+    date_to: date | None = None
+    account_id: int | None = None
+    category_id: int | None = None
+    vendor_id: int | None = None
+    project_id: int | None = None
+    tag_id: int | None = None
+    country: str | None = None
+    needs_review: bool | None = None
+    uncategorised: bool | None = None
+    is_business: bool | None = None
+    amount_min: Decimal | None = None
+    amount_max: Decimal | None = None
+    search: str | None = None
+    include_archived: bool = False
+
+
 def resolve_transaction_filters(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
+    filters: Annotated[TransactionFilters, Depends()],
     member_id: Annotated[int | None, Query(description="Narrow to a household member's own accounts")] = None,
-    date_from: date | None = None,
-    date_to: date | None = None,
-    account_id: int | None = None,
-    category_id: int | None = None,
-    vendor_id: int | None = None,
-    project_id: int | None = None,
-    tag_id: int | None = None,
-    country: Annotated[str | None, Query(description="ISO alpha-2 country")] = None,
-    needs_review: bool | None = None,
-    uncategorised: Annotated[
-        bool | None, Query(description="True = only rows with no category; False = only categorised")
-    ] = None,
-    is_business: bool | None = None,
-    amount_min: Decimal | None = None,
-    amount_max: Decimal | None = None,
-    search: str | None = None,
-    include_archived: Annotated[bool, Query(description="Include archived (aged-out) transactions")] = False,
 ) -> list:
     """Build the SQLAlchemy filter list from the standard transaction filter
     query-params, scoped to the caller's visible accounts. Shared by the endpoints
@@ -223,23 +231,23 @@ def resolve_transaction_filters(
     act on" always matches "what you see" in the list — same builder the list
     endpoint and CSV export use."""
     return export_service.build_transaction_filters(
-        date_from=date_from,
-        date_to=date_to,
-        account_id=account_id,
-        category_id=category_id,
-        vendor_id=vendor_id,
-        project_id=project_id,
-        tag_id=tag_id,
-        country=country,
-        needs_review=needs_review,
-        uncategorised=uncategorised,
-        is_business=is_business,
-        amount_min=amount_min,
-        amount_max=amount_max,
-        search=search,
+        date_from=filters.date_from,
+        date_to=filters.date_to,
+        account_id=filters.account_id,
+        category_id=filters.category_id,
+        vendor_id=filters.vendor_id,
+        project_id=filters.project_id,
+        tag_id=filters.tag_id,
+        country=filters.country,
+        needs_review=filters.needs_review,
+        uncategorised=filters.uncategorised,
+        is_business=filters.is_business,
+        amount_min=filters.amount_min,
+        amount_max=filters.amount_max,
+        search=filters.search,
         account_ids=resolved_account_scope(db, get_current_user(request, db), member_id=member_id),
-        include_archived=include_archived,
-        default_country=settings_service.get_default_vendor_country(db) if country else None,
+        include_archived=filters.include_archived,
+        default_country=settings_service.get_default_vendor_country(db) if filters.country else None,
     )
 
 
@@ -271,7 +279,13 @@ def recategorise(
     return {"recategorised": result["changed"], "considered": result["considered"], "dry_run": dry_run}
 
 
-@router.post("/delete-by-filter", responses={403: {"description": "Owner + MFA step-up required"}})
+@router.post(
+    "/delete-by-filter",
+    responses={
+        403: {"description": "Owner + MFA step-up required"},
+        500: {"description": "Safety backup failed; nothing was deleted"},
+    },
+)
 def delete_by_filter(
     conditions: Annotated[list, Depends(resolve_transaction_filters)],
     db: Annotated[Session, Depends(get_db)],

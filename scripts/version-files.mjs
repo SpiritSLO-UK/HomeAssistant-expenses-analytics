@@ -31,8 +31,10 @@ function bumpJson(source, version, extra) {
 // write a new one back, touching only the version so the rest is untouched.
 const FILES = {
   "addon/config.yaml": {
-    read: (s) => s.match(/^version:\s*"?([^"\n]+?)"?\s*$/m)?.[1],
-    write: (s, v) => s.replace(/^(version:\s*).*$/m, `$1"${v}"`),
+    // Linear patterns (no lazy quantifier between optional quotes / no \s*.* overlap)
+    // to avoid the super-linear backtracking Sonar flags (S5852).
+    read: (s) => s.match(/^version:\s*"?([^\s"]+)/m)?.[1],
+    write: (s, v) => s.replace(/^version:[^\n]*$/m, `version: "${v}"`),
   },
   "backend/app/__init__.py": {
     read: (s) => s.match(/__version__\s*=\s*"([^"]+)"/)?.[1],
