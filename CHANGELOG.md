@@ -3,9 +3,12 @@
 All notable changes to HA Finance Intelligence. This project uses date-stamped,
 human-readable entries; versions follow semantic versioning.
 
-## Unreleased
+## v1.2.1 - 2026-07-23
 
-Toward v1.2.0. Migrations unchanged; data and config carry over.
+> Provided "as is", no warranty, not financial advice - keep your own backups.
+
+A small feature + fix release on top of v1.1.0. Migrations unchanged; data and
+config carry over.
 
 ### Added
 - **Re-apply rules to existing transactions** - the Transactions page gains a
