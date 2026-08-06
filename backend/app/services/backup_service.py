@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.db import session as dbsession
 from app.logging import get_logger
-from app.models import Category, Setting, Vendor, VendorAlias
+from app.models import Category, Project, Rule, Setting, Vendor, VendorAlias
 from app.services import settings_service
 
 logger = get_logger(__name__)
@@ -306,19 +306,86 @@ def prune_backups(db: Session) -> dict:
 
 
 # --- Config / library export-import (portable JSON) ---
+#
+# The export keys every entity by a PORTABLE name (category by ``name``, vendor by
+# ``canonical_name``, project by ``name``) rather than by its local integer id,
+# which is meaningless on another instance. The two maps below name the rule
+# condition/action types whose stored value is a local row id that must therefore
+# be translated to a name on export and back to a local id on import. Everything
+# else (merchant_contains, amount_between, set_country, mark_transfer, ...) carries
+# a literal value that is already portable, so it passes through untouched. Keeping
+# them as one discriminator each keeps export and import symmetric.
+_RULE_REF_CONDITIONS: dict[str, str] = {
+    "vendor_equals": "vendor",
+    "category_equals": "category",
+}
+_RULE_REF_ACTIONS: dict[str, str] = {
+    "set_vendor": "vendor",
+    "set_category": "category",
+    "set_project": "project",
+}
+
+
+def _ref_id_to_name(name_by_id: dict[int, str], value: str | None) -> str | None:
+    """Translate a stored local-id reference to its portable name for export.
+
+    Returns ``None`` when the value is unset or its target no longer exists (a
+    stale reference), and carries a non-integer value through unchanged. A rule
+    whose reference resolves to ``None`` will simply be skipped on import.
+    """
+    if value is None:
+        return None
+    try:
+        return name_by_id.get(int(value))
+    except (TypeError, ValueError):
+        return value
+
+
+def _export_rule(rule: Rule, ref_names: dict[str, dict[int, str]]) -> dict:
+    """Serialise a rule, translating any referential id to a portable name."""
+    condition_value = rule.condition_value
+    cond_kind = _RULE_REF_CONDITIONS.get(rule.condition_type)
+    if cond_kind is not None:
+        condition_value = _ref_id_to_name(ref_names[cond_kind], rule.condition_value)
+
+    action_value = rule.action_value
+    act_kind = _RULE_REF_ACTIONS.get(rule.action_type)
+    if act_kind is not None:
+        action_value = _ref_id_to_name(ref_names[act_kind], rule.action_value)
+
+    return {
+        "name": rule.name,
+        "priority": rule.priority,
+        "enabled": rule.enabled,
+        "condition_type": rule.condition_type,
+        "condition_value": condition_value,
+        "action_type": rule.action_type,
+        "action_value": action_value,
+        "created_from": rule.created_from,
+    }
+
 
 def export_config(db: Session) -> dict:
-    """Export settings + category/vendor library as a portable JSON document."""
+    """Export settings + category/vendor/rule library as a portable JSON document."""
     categories = db.scalars(select(Category)).all()
     vendors = db.scalars(select(Vendor)).all()
     aliases = db.scalars(select(VendorAlias)).all()
+    rules = db.scalars(select(Rule)).all()
     aliases_by_vendor: dict[int, list[dict]] = {}
     for a in aliases:
         aliases_by_vendor.setdefault(a.vendor_id, []).append(
             {"alias": a.alias, "match_type": a.match_type, "source": a.source}
         )
+    # id -> portable-name lookups so a vendor's default category and every rule's
+    # referential value export as names (built once, so no N+1 per row).
+    category_name_by_id = {c.id: c.name for c in categories}
+    ref_names: dict[str, dict[int, str]] = {
+        "category": category_name_by_id,
+        "vendor": {v.id: v.canonical_name for v in vendors},
+        "project": {p.id: p.name for p in db.scalars(select(Project)).all()},
+    }
     return {
-        "version": "0.1",
+        "version": "0.2",
         # The AI API key is a secret stored (encrypted) in a settings row — never
         # include it in a portable export (it wouldn't decrypt elsewhere anyway,
         # and would leak the raw key on an instance with no HAFI_DB_KEY set).
@@ -346,10 +413,14 @@ def export_config(db: Session) -> dict:
                 "service_type": v.service_type,
                 "website": v.website,
                 "notes": v.notes,
+                # Portable name of the vendor's default category (or null when unset)
+                # so the local FK id is not carried across instances.
+                "default_category": category_name_by_id.get(v.default_category_id),
                 "aliases": aliases_by_vendor.get(v.id, []),
             }
             for v in vendors
         ],
+        "rules": [_export_rule(r, ref_names) for r in rules],
     }
 
 
@@ -378,16 +449,27 @@ def _import_categories(db: Session, data: dict, household_id: int) -> int:
 
 
 def _import_vendors(db: Session, data: dict, household_id: int) -> int:
-    """Upsert vendors (and their aliases) by canonical name; return count added."""
+    """Upsert vendors (and their aliases) by canonical name; return count added.
+
+    Categories are imported before vendors, so a vendor's ``default_category`` name
+    can be resolved to a local category id here. An absent name leaves the FK NULL
+    rather than writing a dangling reference. Vendors that already exist by canonical
+    name are left untouched (only newly-added vendors get the default-category link).
+    """
     added = 0
     existing_vendors = {v.canonical_name: v for v in db.scalars(select(Vendor)).all()}
+    categories_by_name = {c.name: c.id for c in db.scalars(select(Category)).all()}
     for entry in data.get("vendors", []):
         if entry["canonical_name"] in existing_vendors:
             continue
+        default_category_name = entry.get("default_category")
         vendor = Vendor(
             household_id=household_id,
             canonical_name=entry["canonical_name"],
             display_name=entry.get("display_name"),
+            default_category_id=categories_by_name.get(default_category_name)
+            if default_category_name
+            else None,
             service_type=entry.get("service_type"),
             website=entry.get("website"),
             notes=entry.get("notes"),
@@ -408,6 +490,70 @@ def _import_vendors(db: Session, data: dict, household_id: int) -> int:
     return added
 
 
+def _import_rules(
+    db: Session, data: dict, household_id: int
+) -> tuple[int, list[str]]:
+    """Upsert rules by name; return ``(added, sorted_skipped_names)``.
+
+    Categories, vendors and projects are already present (categories/vendors were
+    imported first; projects are matched against whatever exists locally), so each
+    rule's referential value can be resolved from its portable name back to a local
+    id. A rule whose referenced entity is absent locally is skipped entirely and
+    reported rather than written with a dangling foreign key (mirrors the #558
+    stale-rule guard). Existing rules with the same name are left untouched.
+    """
+    added = 0
+    skipped_names: list[str] = []
+    existing_names = {r.name for r in db.scalars(select(Rule)).all()}
+    ref_ids: dict[str, dict[str, int]] = {
+        "category": {c.name: c.id for c in db.scalars(select(Category)).all()},
+        "vendor": {v.canonical_name: v.id for v in db.scalars(select(Vendor)).all()},
+        "project": {p.name: p.id for p in db.scalars(select(Project)).all()},
+    }
+
+    for entry in data.get("rules", []):
+        name = entry["name"]
+        if name in existing_names:
+            continue
+
+        condition_value = entry.get("condition_value")
+        cond_kind = _RULE_REF_CONDITIONS.get(entry["condition_type"])
+        if cond_kind is not None:
+            resolved = ref_ids[cond_kind].get(condition_value)
+            if resolved is None:
+                skipped_names.append(name)
+                continue
+            condition_value = str(resolved)
+
+        action_value = entry.get("action_value")
+        act_kind = _RULE_REF_ACTIONS.get(entry["action_type"])
+        if act_kind is not None:
+            resolved = ref_ids[act_kind].get(action_value)
+            if resolved is None:
+                skipped_names.append(name)
+                continue
+            action_value = str(resolved)
+
+        db.add(
+            Rule(
+                household_id=household_id,
+                name=name,
+                priority=entry.get("priority", 100),
+                enabled=entry.get("enabled", True),
+                condition_type=entry["condition_type"],
+                condition_value=condition_value,
+                action_type=entry["action_type"],
+                action_value=action_value,
+                created_from="import",
+            )
+        )
+        # Guard against a duplicate name appearing twice within the same document.
+        existing_names.add(name)
+        added += 1
+
+    return added, sorted(skipped_names)
+
+
 def import_config(db: Session, data: dict) -> dict:
     """Merge a config export back in (non-destructive upsert by name/key).
 
@@ -421,7 +567,14 @@ def import_config(db: Session, data: dict) -> dict:
 
     try:
         cats_added = _import_categories(db, data, household.id)
+        # Flush so the just-added categories are visible to the vendor default-category
+        # and rule reference lookups (the session runs with autoflush off).
+        db.flush()
         vendors_added = _import_vendors(db, data, household.id)
+        db.flush()
+        # Rules after vendors/categories (and projects) so their referential values
+        # can be resolved to local ids; a v0.1 document simply has no "rules" key.
+        rules_added, skipped_rule_names = _import_rules(db, data, household.id)
         # Settings: only allowlisted, validated keys are applied (CR-SEC-2). An
         # import must not be able to flip privacy_mode, set an internal AI/Paperless
         # URL, or write arbitrary keys — see settings_service.IMPORTABLE_SETTINGS.
@@ -434,6 +587,9 @@ def import_config(db: Session, data: dict) -> dict:
     return {
         "categories_added": cats_added,
         "vendors_added": vendors_added,
+        "rules_added": rules_added,
+        "rules_skipped": len(skipped_rule_names),
+        "skipped_rule_names": skipped_rule_names,
         "settings_set": settings_result["settings_set"],
         "settings_skipped": settings_result["settings_skipped"],
         "skipped_setting_keys": settings_result["skipped_setting_keys"],

@@ -600,3 +600,202 @@ def test_config_import_only_allowlisted_settings(client):
     assert s["ai_base_url"] == ""               # NOT pointed at the internal host
     assert s["paperless_url"] == ""             # NOT set
     assert s["base_currency"] == "GBP"          # unchanged
+
+
+# --- Config export/import v0.2: vendor default category + rules (#562) ---
+#
+# These build a library directly in an empty DB (the ``db`` fixture) and drive the
+# service functions. The suite resets the schema per test rather than offering a
+# second independent database, so the round-trip test uses the sanctioned
+# alternative: export, drop the referential rows, re-import into the same DB. New
+# rows get fresh ids, so faithful reconstruction proves the name<->id translation
+# runs correctly in both directions.
+
+def _seed_config_library(db):
+    """Create a small category/vendor/project/rule library and return the rows.
+
+    Covers every referential rule shape (``set_category``/``set_vendor``/
+    ``set_project`` actions and ``vendor_equals``/``category_equals`` conditions)
+    plus a rule that carries a purely literal action value.
+    """
+    from app.models import Category, Project, Rule, Vendor
+
+    groceries = Category(name="Groceries", path="Groceries")
+    utilities = Category(name="Utilities", path="Utilities")
+    db.add_all([groceries, utilities])
+    db.flush()
+
+    tesco = Vendor(canonical_name="Tesco", default_category_id=groceries.id)
+    octopus = Vendor(canonical_name="Octopus Energy")  # deliberately no default category
+    db.add_all([tesco, octopus])
+    db.flush()
+
+    reno = Project(name="Kitchen Reno")
+    db.add(reno)
+    db.flush()
+
+    db.add_all([
+        Rule(name="Tesco -> Groceries", condition_type="merchant_contains",
+             condition_value="TESCO", action_type="set_category",
+             action_value=str(groceries.id)),
+        Rule(name="Octopus vendor match", condition_type="vendor_equals",
+             condition_value=str(octopus.id), action_type="set_country",
+             action_value="GB"),
+        Rule(name="Utilities -> Reno", condition_type="category_equals",
+             condition_value=str(utilities.id), action_type="set_project",
+             action_value=str(reno.id)),
+        Rule(name="Text -> Octopus", condition_type="description_contains",
+             condition_value="OCTO", action_type="set_vendor",
+             action_value=str(octopus.id)),
+    ])
+    db.flush()
+    return {"groceries": groceries, "utilities": utilities,
+            "tesco": tesco, "octopus": octopus, "reno": reno}
+
+
+def test_config_export_includes_vendor_default_category(db):
+    """A vendor's default category is exported as the category NAME (or null)."""
+    from app.services import backup_service
+
+    _seed_config_library(db)
+    export = backup_service.export_config(db)
+
+    assert export["version"] == "0.2"
+    by_name = {v["canonical_name"]: v for v in export["vendors"]}
+    assert by_name["Tesco"]["default_category"] == "Groceries"
+    assert by_name["Octopus Energy"]["default_category"] is None
+
+
+def test_config_export_rules_use_portable_names(db):
+    """Referential rule values export as names, never local integer ids; literal
+    values pass through unchanged."""
+    from app.services import backup_service
+
+    _seed_config_library(db)
+    export = backup_service.export_config(db)
+
+    rules = {r["name"]: r for r in export["rules"]}
+    # set_category action -> category name (not a numeric id)
+    assert rules["Tesco -> Groceries"]["action_value"] == "Groceries"
+    assert not rules["Tesco -> Groceries"]["action_value"].isdigit()
+    # vendor_equals condition + set_vendor action -> vendor canonical name
+    assert rules["Octopus vendor match"]["condition_value"] == "Octopus Energy"
+    assert rules["Text -> Octopus"]["action_value"] == "Octopus Energy"
+    # category_equals condition + set_project action -> names
+    assert rules["Utilities -> Reno"]["condition_value"] == "Utilities"
+    assert rules["Utilities -> Reno"]["action_value"] == "Kitchen Reno"
+    # A literal action value (set_country) is carried through untouched.
+    assert rules["Octopus vendor match"]["action_value"] == "GB"
+
+
+def test_config_round_trip_reconstructs_local_fks(db):
+    """Export, drop the referential rows, re-import: the vendor default category
+    and every rule reference resolve to the correct NEW local ids."""
+    from sqlalchemy import select
+
+    from app.models import Category, Project, Rule, Vendor
+    from app.services import backup_service
+
+    _seed_config_library(db)
+    export = backup_service.export_config(db)
+
+    # Simulate importing onto another instance: delete rules + vendors (keep the
+    # categories and project), so re-inserted rows get brand-new ids.
+    for rule in db.scalars(select(Rule)).all():
+        db.delete(rule)
+    for vendor in db.scalars(select(Vendor)).all():
+        db.delete(vendor)
+    db.commit()
+
+    result = backup_service.import_config(db, export)
+    assert result["categories_added"] == 0  # already present
+    assert result["vendors_added"] == 2
+    assert result["rules_added"] == 4
+    assert result["rules_skipped"] == 0
+    assert result["skipped_rule_names"] == []
+
+    cats = {c.name: c.id for c in db.scalars(select(Category)).all()}
+    vendors = {v.canonical_name: v for v in db.scalars(select(Vendor)).all()}
+    reno_id = db.scalars(select(Project.id).where(Project.name == "Kitchen Reno")).one()
+
+    assert vendors["Tesco"].default_category_id == cats["Groceries"]
+    assert vendors["Octopus Energy"].default_category_id is None
+
+    rules = {r.name: r for r in db.scalars(select(Rule)).all()}
+    assert rules["Tesco -> Groceries"].action_value == str(cats["Groceries"])
+    assert rules["Utilities -> Reno"].condition_value == str(cats["Utilities"])
+    assert rules["Utilities -> Reno"].action_value == str(reno_id)
+    assert rules["Octopus vendor match"].condition_value == str(vendors["Octopus Energy"].id)
+    assert rules["Text -> Octopus"].action_value == str(vendors["Octopus Energy"].id)
+    # Literal value survives the round trip; imported rules are tagged as such.
+    assert rules["Octopus vendor match"].action_value == "GB"
+    assert all(r.created_from == "import" for r in rules.values())
+
+
+def test_config_import_skips_rules_with_unresolvable_refs(db):
+    """A rule referencing a category/vendor/project name absent locally is skipped
+    and reported; no rule row with a dangling FK is written."""
+    from sqlalchemy import select
+
+    from app.models import Rule
+    from app.services import backup_service
+
+    doc = {
+        "version": "0.2",
+        "categories": [{"name": "Groceries"}],
+        "vendors": [],
+        "rules": [
+            {"name": "good", "condition_type": "merchant_contains",
+             "condition_value": "X", "action_type": "set_category",
+             "action_value": "Groceries"},
+            {"name": "bad-category", "condition_type": "merchant_contains",
+             "condition_value": "Y", "action_type": "set_category",
+             "action_value": "Nonexistent"},
+            {"name": "bad-vendor", "condition_type": "vendor_equals",
+             "condition_value": "Ghost Vendor", "action_type": "set_country",
+             "action_value": "GB"},
+            {"name": "bad-project", "condition_type": "merchant_contains",
+             "condition_value": "Z", "action_type": "set_project",
+             "action_value": "Ghost Project"},
+        ],
+    }
+
+    result = backup_service.import_config(db, doc)
+    assert result["rules_added"] == 1
+    assert result["rules_skipped"] == 3
+    assert result["skipped_rule_names"] == ["bad-category", "bad-project", "bad-vendor"]
+
+    names = {r.name for r in db.scalars(select(Rule)).all()}
+    assert names == {"good"}
+    # The rule that WAS written points at a real local category id.
+    good = db.scalars(select(Rule).where(Rule.name == "good")).one()
+    assert good.action_value.isdigit()
+
+
+def test_config_import_accepts_v0_1_document(db):
+    """A legacy v0.1 export (no ``rules`` key, vendors without ``default_category``)
+    still imports cleanly and leaves the new FK NULL."""
+    from sqlalchemy import select
+
+    from app.models import Vendor
+    from app.services import backup_service
+
+    doc = {
+        "version": "0.1",
+        "categories": [{"name": "Legacy Cat"}],
+        "vendors": [{"canonical_name": "Legacy Vendor",
+                     "aliases": [{"alias": "LEG", "match_type": "contains"}]}],
+        "settings": [],
+    }
+
+    result = backup_service.import_config(db, doc)
+    assert result["categories_added"] == 1
+    assert result["vendors_added"] == 1
+    assert result["rules_added"] == 0
+    assert result["rules_skipped"] == 0
+    assert result["skipped_rule_names"] == []
+
+    vendor = db.scalars(
+        select(Vendor).where(Vendor.canonical_name == "Legacy Vendor")
+    ).one()
+    assert vendor.default_category_id is None
