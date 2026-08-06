@@ -188,3 +188,8 @@ choices" lets it override a manual one.
 - **Deleted targets are skipped.** If a rule sets a category, vendor or project
   that you later delete, that action simply does nothing (it won't error or leave a
   broken link on the transaction) - edit the rule to point at something else.
+- **Rules travel with your config.** Settings → Data → **Config & library** exports
+  your rules (and each vendor's default category) as JSON and imports them on
+  another instance. References are stored by name, not internal id, so they resolve
+  on the target; a rule whose category, vendor or project is missing there is
+  skipped rather than imported with a broken link.

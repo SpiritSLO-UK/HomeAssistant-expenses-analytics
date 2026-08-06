@@ -484,7 +484,8 @@ you can verify it. Duplicate rows (and re-uploaded files) are detected and skipp
   lives in the add-on's private `/data` volume; file permissions, AppArmor, and
   the honest limits of isolation inside Home Assistant.
 - **Backup/restore & encryption:** Settings page - download/restore the
-  database, export/import your config + library as JSON, **encrypted backups**
+  database, export/import your config + library as JSON (categories, vendors with
+  their aliases and default category, rules, and settings), **encrypted backups**
   (passphrase, AES-256-GCM), and optional **at-rest database encryption**
   (SQLCipher; Linux / the add-on). Cloud backup *destinations* (G-Drive/S3/
   Backblaze) are still on the roadmap (backlog #15).
