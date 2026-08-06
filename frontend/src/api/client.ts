@@ -1917,6 +1917,9 @@ export async function importConfig(
 ): Promise<{
   categories_added: number;
   vendors_added: number;
+  rules_added: number;
+  rules_skipped?: number;
+  skipped_rule_names?: string[];
   settings_set: number;
   settings_skipped?: number;
   skipped_setting_keys?: string[];

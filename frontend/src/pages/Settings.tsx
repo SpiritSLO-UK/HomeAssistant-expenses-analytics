@@ -264,7 +264,8 @@ export default function Settings() {
     onSuccess: (r) =>
       ok(
         `Imported config: ${r.categories_added} categories, ${r.vendors_added} vendors, ` +
-          `${r.settings_set} settings added.` +
+          `${r.rules_added} rules, ${r.settings_set} settings added.` +
+          (r.rules_skipped ? ` (${r.rules_skipped} rule(s) skipped — referenced category/vendor/project missing.)` : "") +
           (r.settings_skipped ? ` (${r.settings_skipped} setting(s) skipped — not importable.)` : ""),
       ),
     onError: fail,
@@ -457,7 +458,7 @@ export default function Settings() {
 
       <div className="card">
         <h2 className="card__title">Config &amp; library</h2>
-        <p className="muted">Export or import your categories, vendor aliases and settings as JSON (import merges, never deletes).</p>
+        <p className="muted">Export or import your categories, vendors (with their aliases and default category), rules and settings as JSON (import merges, never deletes; a rule whose category, vendor or project is missing on import is skipped).</p>
         <div className="form-row">
           <button type="button" className="btn" onClick={() => exportConfig().catch(fail)}>⬇ Export config</button>
           <input
