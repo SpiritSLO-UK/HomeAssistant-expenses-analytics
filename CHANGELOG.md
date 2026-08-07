@@ -3,6 +3,19 @@
 All notable changes to HA Finance Intelligence. This project uses date-stamped,
 human-readable entries; versions follow semantic versioning.
 
+## Unreleased
+
+### Added
+- **Config & library export now includes vendor default categories and rules.**
+  Settings → Data → **Config & library** previously exported only your categories,
+  vendor aliases and settings, so moving to another instance lost each vendor's
+  default category and every rule you had built. The export (now v0.2) also carries
+  each vendor's **default category** and your entire **rules** list. References are
+  stored by name rather than internal id, so they resolve correctly on the target;
+  a rule whose category, vendor or project is absent there is skipped and reported
+  rather than imported with a broken link. Older (v0.1) exports still import
+  unchanged, and import stays a non-destructive merge that never deletes.
+
 ## v1.2.1 - 2026-07-23
 
 > Provided "as is", no warranty, not financial advice - keep your own backups.
