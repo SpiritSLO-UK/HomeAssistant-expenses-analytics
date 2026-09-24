@@ -107,6 +107,14 @@ A quick look (on demo data) - the full tour is in **[docs/screenshots.md](docs/s
 - **Import** bank statements (Curve, Barclays, Lloyds, Monzo, or a generic CSV
   mapper) with duplicate detection on re-upload. PDF statements import
   best-effort, with each extracted row flagged for review.
+- **Add a transaction by hand** - for what the imports and receipts don't reach:
+  cash you spent with no receipt, or income that never lands on a statement.
+  Amount, date, description, category and account, from the Transactions page or
+  the Dashboard's Quick add. Type the amount as a positive number and pick
+  **Expense** or **Income**; the app handles the sign. With no bank account set up
+  yet it files the entry under a shared *Cash & receipts* account, and the row is
+  converted to your base currency and auto-categorised exactly like an imported
+  one, so it can be edited, split, tagged and counted everywhere else.
 - **Categorise** automatically (priority order: manual > rule > vendor default >
   keyword); correct one transaction and optionally turn it into a **rule**. Rule
   actions can set the category, vendor, project or **country** (to tag a

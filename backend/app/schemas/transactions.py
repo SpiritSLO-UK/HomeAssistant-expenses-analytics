@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -113,3 +114,24 @@ class SplitsResponse(BaseModel):
     currency: str
     total: Decimal
     splits: list[SplitOut]
+
+
+# --- Manual entry (spec §24.4 POST /transactions) ---
+
+
+class TransactionCreate(BaseModel):
+    """A hand-typed transaction: cash spend, income, or anything the statement
+    and receipt paths can't reach. ``amount`` is always a positive magnitude; the
+    sign comes from ``direction`` so the caller never has to guess the convention.
+    """
+
+    description: str = Field(min_length=1, max_length=300)
+    amount: Decimal = Field(gt=0, description="Positive magnitude; direction decides the sign")
+    direction: Literal["debit", "credit"] = "debit"
+    transaction_date: date | None = None  # defaults to today
+    currency: str | None = Field(default=None, min_length=3, max_length=3)  # defaults to base
+    category_id: int | None = None
+    account_id: int | None = None
+    # Use (or create) the shared "Cash & receipts" account, like the receipt path,
+    # so someone with no imported statement can still record a cash spend.
+    new_account: bool = False

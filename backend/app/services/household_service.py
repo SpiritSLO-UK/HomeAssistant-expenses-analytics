@@ -20,6 +20,11 @@ INSTITUTION_ACCOUNT_TYPES: dict[str, str] = {
 }
 DEFAULT_ACCOUNT_TYPE = "current_account"
 
+# Dedicated account for transactions that belong to no real bank account: those
+# materialised from a receipt, and hand-typed cash entries. Shared by the
+# receipts and transactions routers so both land in the same place.
+CASH_RECEIPTS_ACCOUNT = "Cash & receipts"
+
 
 def get_or_create_default_household(db: Session) -> Household:
     household = db.scalars(

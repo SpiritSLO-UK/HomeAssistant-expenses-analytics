@@ -31,13 +31,13 @@ from app.services import ai_service, audit_service, ocr_service, receipt_service
 from app.services.ai_provider import AIError
 from app.services.ai_service import AIDisabled, AIRateLimited
 from app.services.auth_service import get_current_user, visible_account_scope
-from app.services.household_service import get_or_create_account, get_or_create_default_household
+from app.services.household_service import (
+    CASH_RECEIPTS_ACCOUNT,
+    get_or_create_account,
+    get_or_create_default_household,
+)
 
 router = APIRouter(prefix="/receipts", tags=["receipts"])
-
-# Dedicated account for transactions materialised from receipts (cash / un-imported
-# purchases), when the user doesn't want to attribute them to a real bank account.
-CASH_RECEIPTS_ACCOUNT = "Cash & receipts"
 
 
 @router.get("/status")
