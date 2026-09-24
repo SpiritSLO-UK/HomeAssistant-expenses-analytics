@@ -45,6 +45,11 @@ Near-term improvements we intend to build on top of what's here:
   subscription price-change detection with annualised totals, and cost-per-mile
   for cars.
 - **Import breadth** - more bank formats and cleaner column mapping.
+- **Currencies beyond the ECB list** - the base-currency dropdown covers the 30
+  currencies our online rate source (Frankfurter/ECB) can fetch. We'd like to let
+  you add any other currency as your base too - for example AED, SAR, VND or COP -
+  with its rates kept manually, clearly marked in the app so it's obvious which
+  currencies update themselves and which you maintain.
 
 ## Exploring - the bigger picture
 

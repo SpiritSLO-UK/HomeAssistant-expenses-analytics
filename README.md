@@ -215,7 +215,11 @@ A quick look (on demo data) - the full tour is in **[docs/screenshots.md](docs/s
   and **online exchange rates** on/off. MQTT is shown read-only (it's configured
   in the add-on options). Owner/settings-manager only.
 - **Multi-currency** - original amount kept and converted to your base currency;
-  manual rates by default, opt-in online ECB rates (Frankfurter).
+  manual rates by default, opt-in online ECB rates (Frankfurter). Your base can
+  be any of the 30 currencies that source covers (GBP, USD, EUR, JPY, CNY, AUD,
+  CAD, CHF, HKD, SGD, BRL, CZK, DKK, HUF, IDR, ILS, INR, ISK, KRW, MXN, MYR,
+  NOK, NZD, PHP, PLN, RON, SEK, THB, TRY, ZAR), and a transaction may be in any
+  currency at all.
 - **Multi-user & roles** - identity comes from Home Assistant (the first person
   becomes the **owner/administrator**); anyone new appears **pending** and has no
   access until the owner approves them. Roles are *owner* (admin), *member*

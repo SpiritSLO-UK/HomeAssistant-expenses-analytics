@@ -95,10 +95,12 @@ ENERGY_SEMANTICS = {"cumulative", "interval"}
 INVESTMENT_PRICE_SOURCES = {"manual", "stooq", "alphavantage"}
 RECEIPT_MATCH_MODES = {"suggest", "auto"}
 
-# Curated base-currency choices for the Settings dropdown (the top-10 world
-# currencies by usage). The base currency is display-only — amounts are stored in
-# their original currency; changing it just re-converts for display. (code, name,
-# symbol); order = how they appear in the dropdown.
+# Base-currency choices for the Settings dropdown: every currency the Frankfurter
+# (ECB) online FX source supports, so any base can have its rates fetched
+# automatically in ``frankfurter`` mode rather than being manual-rate only. The
+# base currency is display-only — amounts are stored in their original currency;
+# changing it just re-converts for display. (code, name, symbol); order = how they
+# appear in the dropdown: the ten most-used first, then the rest by code.
 SUPPORTED_CURRENCIES: list[dict[str, str]] = [
     {"code": "GBP", "name": "British Pound", "symbol": "£"},
     {"code": "USD", "name": "US Dollar", "symbol": "$"},
@@ -110,6 +112,26 @@ SUPPORTED_CURRENCIES: list[dict[str, str]] = [
     {"code": "CHF", "name": "Swiss Franc", "symbol": "CHF"},
     {"code": "HKD", "name": "Hong Kong Dollar", "symbol": "HK$"},
     {"code": "SGD", "name": "Singapore Dollar", "symbol": "S$"},
+    {"code": "BRL", "name": "Brazilian Real", "symbol": "R$"},
+    {"code": "CZK", "name": "Czech Koruna", "symbol": "Kč"},
+    {"code": "DKK", "name": "Danish Krone", "symbol": "kr"},
+    {"code": "HUF", "name": "Hungarian Forint", "symbol": "Ft"},
+    {"code": "IDR", "name": "Indonesian Rupiah", "symbol": "Rp"},
+    {"code": "ILS", "name": "Israeli New Shekel", "symbol": "₪"},
+    {"code": "INR", "name": "Indian Rupee", "symbol": "₹"},
+    {"code": "ISK", "name": "Icelandic Króna", "symbol": "kr"},
+    {"code": "KRW", "name": "South Korean Won", "symbol": "₩"},
+    {"code": "MXN", "name": "Mexican Peso", "symbol": "Mex$"},
+    {"code": "MYR", "name": "Malaysian Ringgit", "symbol": "RM"},
+    {"code": "NOK", "name": "Norwegian Krone", "symbol": "kr"},
+    {"code": "NZD", "name": "New Zealand Dollar", "symbol": "NZ$"},
+    {"code": "PHP", "name": "Philippine Peso", "symbol": "₱"},
+    {"code": "PLN", "name": "Polish Złoty", "symbol": "zł"},
+    {"code": "RON", "name": "Romanian Leu", "symbol": "lei"},
+    {"code": "SEK", "name": "Swedish Krona", "symbol": "kr"},
+    {"code": "THB", "name": "Thai Baht", "symbol": "฿"},
+    {"code": "TRY", "name": "Turkish Lira", "symbol": "₺"},
+    {"code": "ZAR", "name": "South African Rand", "symbol": "R"},
 ]
 SUPPORTED_CURRENCY_CODES = {c["code"] for c in SUPPORTED_CURRENCIES}
 PRIVACY_MODES = {"strict_local", "local_llm", "cloud_manual", "cloud_auto", "no_ai"}

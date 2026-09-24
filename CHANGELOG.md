@@ -3,6 +3,21 @@
 All notable changes to HA Finance Intelligence. This project uses date-stamped,
 human-readable entries; versions follow semantic versioning.
 
+## Unreleased
+
+### Added
+- **20 more base currencies.** The base-currency dropdown offered ten choices, so
+  a household whose money is in zloty, rand, rupees or won had to run the whole
+  app in someone else's currency. It now lists all 30 currencies the Frankfurter
+  (ECB) rate source covers: the previous ten plus BRL, CZK, DKK, HUF, IDR, ILS,
+  INR, ISK, KRW, MXN, MYR, NOK, NZD, PHP, PLN, RON, SEK, THB, TRY and ZAR. The
+  list matches that source deliberately, so **online exchange rates keep working
+  whichever base you pick** rather than quietly falling back to rates you have to
+  type in yourself. Spend in any of the new currencies also now resolves to the
+  right country on the spending map. Nothing changes for existing households:
+  your base currency, stored amounts and saved rates are untouched, and a
+  transaction could already be in any currency at all.
+
 ## v1.2.3 - 2026-09-24
 
 > Provided "as is", no warranty, not financial advice - keep your own backups.

@@ -26,14 +26,37 @@ def test_invalid_log_level_rejected(client):
     assert r.status_code == 400
 
 
+# Every currency the Frankfurter (ECB) FX source supports, as of api.frankfurter.dev
+# /v1/currencies — the dropdown offers exactly these so any base currency can have
+# its rates fetched automatically in ``frankfurter`` mode.
+FRANKFURTER_CURRENCIES = {
+    "AUD", "BRL", "CAD", "CHF", "CNY", "CZK", "DKK", "EUR", "GBP", "HKD",
+    "HUF", "IDR", "ILS", "INR", "ISK", "JPY", "KRW", "MXN", "MYR", "NOK",
+    "NZD", "PHP", "PLN", "RON", "SEK", "SGD", "THB", "TRY", "USD", "ZAR",
+}
+
+
 def test_supported_currencies_listed(client):
-    """The curated top-10 base-currency choices power the Settings dropdown."""
+    """The base-currency choices power the Settings dropdown, and are exactly the
+    set Frankfurter can fetch rates for — so picking any of them keeps online FX
+    working rather than silently falling back to manual rates."""
     rows = client.get("/api/settings/currencies").json()
     codes = [c["code"] for c in rows]
-    assert len(rows) >= 10
-    assert {"GBP", "USD", "EUR", "JPY", "SGD"} <= set(codes)
+    assert set(codes) == FRANKFURTER_CURRENCIES
+    assert len(codes) == len(set(codes))  # no duplicate entries
+    assert codes[:3] == ["GBP", "USD", "EUR"]  # most-used first in the dropdown
     gbp = next(c for c in rows if c["code"] == "GBP")
     assert gbp["symbol"] == "£" and gbp["name"]
+    assert all(c["name"] and c["symbol"] for c in rows)
+
+
+def test_any_supported_currency_can_be_set_as_base(client):
+    """A newly-added code is a valid base, not just a dropdown label."""
+    r = client.put("/api/settings", json={"base_currency": "PLN"})
+    assert r.status_code == 200
+    assert client.get("/api/settings").json()["base_currency"] == "PLN"
+    r = client.put("/api/settings", json={"base_currency": "ZZZ"})
+    assert r.status_code == 400
 
 
 def test_supported_countries_listed(client):

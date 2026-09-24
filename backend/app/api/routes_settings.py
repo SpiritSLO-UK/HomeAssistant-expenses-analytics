@@ -53,7 +53,11 @@ def get_settings(db: Annotated[Session, Depends(get_db)]) -> dict:
 
 @router.get("/currencies")
 def supported_currencies() -> list[dict]:
-    """The curated base-currency choices for the Settings dropdown (top-10)."""
+    """The base-currency choices for the Settings dropdown.
+
+    Every currency the Frankfurter (ECB) source can fetch rates for, so online FX
+    keeps working whichever base the household picks.
+    """
     return settings_service.SUPPORTED_CURRENCIES
 
 

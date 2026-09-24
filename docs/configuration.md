@@ -202,7 +202,9 @@ add-on options as those integrations graduate.
 
 Editable on the **Settings** page (some are owner- or settings-manager-only):
 
-- **Base currency** - curated top-10 dropdown; recomputes display conversions.
+- **Base currency** - a dropdown of the 30 currencies the Frankfurter (ECB)
+  rate source covers, so online FX works whichever you pick; recomputes display
+  conversions.
 - **Services** - AI on/off + status, OCR on/off, online FX (manual ↔ Frankfurter),
   MQTT (read-only status).
 - **AI** - provider (`none` / OpenAI-compatible), base URL, model.
