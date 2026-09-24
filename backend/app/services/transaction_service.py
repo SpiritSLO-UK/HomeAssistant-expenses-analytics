@@ -12,7 +12,8 @@ aggregate.
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, date as date_type, datetime
+from datetime import UTC, datetime
+from datetime import date as date_type
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
