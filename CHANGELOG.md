@@ -3,7 +3,12 @@
 All notable changes to HA Finance Intelligence. This project uses date-stamped,
 human-readable entries; versions follow semantic versioning.
 
-## Unreleased
+## v1.2.3 - 2026-09-24
+
+> Provided "as is", no warranty, not financial advice - keep your own backups.
+
+A small feature release on top of v1.2.2, from a user request. Migrations
+unchanged; data and config carry over.
 
 ### Added
 - **Add a transaction by hand.** Until now every transaction needed a document

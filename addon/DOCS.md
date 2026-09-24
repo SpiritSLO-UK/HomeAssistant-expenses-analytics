@@ -85,9 +85,10 @@ New versions ship as prebuilt images. When one is available, the add-on shows an
 **Update** button (**Settings → Add-ons → HA Finance Intelligence**) - click it and
 the Supervisor pulls the new image. Your data in `/data` is untouched and
 **database migrations run automatically on start**, so config and data carry over.
-Back up first if you like - `/data` is included in Home Assistant backups. See the
-[changelog](https://github.com/SpiritSLO-UK/HomeAssistant-expenses-analytics/blob/main/addon/CHANGELOG.md)
-for what each release changes.
+Back up first if you like - `/data` is included in Home Assistant backups. The
+add-on page shows what the current release changed; the
+[full changelog](https://github.com/SpiritSLO-UK/HomeAssistant-expenses-analytics/blob/main/CHANGELOG.md)
+on GitHub covers every release.
 
 ## Privacy & security
 
