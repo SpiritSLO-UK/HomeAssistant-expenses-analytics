@@ -25,6 +25,7 @@ CURRENCY_COUNTRY = {
     # credits the actual country instead of "Unknown" (SR-F4).
     "CZK": "CZ", "HUF": "HU", "TRY": "TR", "BRL": "BR", "ISK": "IS",
     "KRW": "KR", "ILS": "IL", "MYR": "MY", "PHP": "PH", "IDR": "ID",
+    "RON": "RO",
 }
 
 # Display names for every ISO-3166-1 alpha-2 code (generated — see

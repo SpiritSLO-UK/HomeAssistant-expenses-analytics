@@ -6,7 +6,7 @@ from datetime import date
 from decimal import Decimal
 
 from app.models import Transaction, Vendor
-from app.services import dashboard_service, geo
+from app.services import dashboard_service, geo, settings_service
 
 # --- geo helpers (pure) ---
 
@@ -48,6 +48,16 @@ def test_more_single_country_currencies_resolve():
     for cur, code in {"CZK": "CZ", "HUF": "HU", "TRY": "TR", "BRL": "BR",
                       "ISK": "IS", "KRW": "KR", "ILS": "IL"}.items():
         assert geo.country_for(cur, None) == code, cur
+        assert geo.name(code) != code  # has a real display name
+
+
+def test_every_supported_currency_maps_to_a_country():
+    """Every base-currency choice resolves on the map — a currency offered in the
+    dropdown must never leave its spend in "Unknown". EUR is the one multi-country
+    case and buckets to the "EU" pseudo-code."""
+    for row in settings_service.SUPPORTED_CURRENCIES:
+        code = geo.country_for(row["code"], None)
+        assert code is not None, row["code"]
         assert geo.name(code) != code  # has a real display name
 
 

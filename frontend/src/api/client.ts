@@ -1966,7 +1966,8 @@ export interface Currency {
   symbol: string;
 }
 
-// Curated base-currency choices for the Settings dropdown (top-10).
+// Base-currency choices for the Settings dropdown: every currency the Frankfurter
+// (ECB) FX source supports, so online rates work whichever base is chosen.
 export function getSupportedCurrencies(): Promise<Currency[]> {
   return fetchJson<Currency[]>("api/settings/currencies");
 }
