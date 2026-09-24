@@ -5,12 +5,15 @@ import {
   attachTransactionReceipt,
   bulkUpdateTransactions,
   categoriseTransaction,
+  createTransaction,
   createVendorFromTransaction,
   deleteTransactionsByFilter,
   exportTransactionsCsv,
   getAiStatus,
   getMe,
   getSettings,
+  getSupportedCurrencies,
+  listAccounts,
   listCategories,
   listMembers,
   listProjects,
@@ -23,6 +26,7 @@ import {
   unarchiveTransaction,
   updateTransaction,
   type BulkUpdate,
+  type Category,
   type RecategoriseResult,
   type Transaction,
   type TransactionFilters,
@@ -174,6 +178,8 @@ export default function Transactions() {
   const [showAiBatch, setShowAiBatch] = useState(false);
   const [showCloudBatch, setShowCloudBatch] = useState(false);
   const [showReapply, setShowReapply] = useState(false);
+  // Also opened by the Dashboard's "Add transaction" quick-add link (?add=1).
+  const [showAddTxn, setShowAddTxn] = useState(() => searchParams.get("add") === "1");
   const [ruleMsg, setRuleMsg] = useState<string | null>(null);
   // Undo affordance for the last bulk value-change (null when nothing to undo).
   const [undo, setUndo] = useState<BulkUndo | null>(null);
@@ -601,6 +607,14 @@ export default function Transactions() {
       <div className="page__head">
         <h1 className="page__title">Transactions</h1>
         <div style={{ display: "flex", gap: 8 }}>
+          <button
+            type="button"
+            className="btn"
+            title="Record a cash spend or an income that no statement or receipt covers"
+            onClick={() => setShowAddTxn((v) => !v)}
+          >
+            {showAddTxn ? "Hide add transaction" : "➕ Add transaction"}
+          </button>
           {aiStatus.data?.enabled && aiStatus.data?.privacy_mode === "local_llm" && (
             <button type="button" className="btn btn--ghost" onClick={() => setShowAiBatch((v) => !v)}>
               {showAiBatch ? "Hide AI categorise" : "✨ AI categorise…"}
@@ -651,6 +665,13 @@ export default function Transactions() {
       )}
       {undoError && <p className="status status--error">Couldn't undo: {undoError}</p>}
 
+      {showAddTxn && (
+        <AddTransactionPanel
+          base={base}
+          categories={categories.data ?? []}
+          onClose={() => setShowAddTxn(false)}
+        />
+      )}
       {showAiBatch && <AiBatchPanel base={base} onClose={() => setShowAiBatch(false)} />}
       {showCloudBatch && <CloudAiBatchPanel base={base} onClose={() => setShowCloudBatch(false)} />}
       {showReapply && !focusId && (
@@ -1267,6 +1288,169 @@ function DeleteMatchingBar({
       )}
       <StepUpModal step={step} name="mfa-txn-delete-stepup-code" />
     </>
+  );
+}
+
+// Manual entry: the third way a transaction can exist, alongside a statement
+// import and a receipt. Covers what neither reaches: a cash spend with no
+// receipt, and income that never lands on an imported statement. Amount is always
+// typed as a positive number; the expense/income choice decides the sign, so the
+// user never has to know the negative-is-spend convention.
+function AddTransactionPanel({
+  base,
+  categories,
+  onClose,
+}: Readonly<{
+  base: string;
+  categories: Category[];
+  onClose: () => void;
+}>) {
+  const qc = useQueryClient();
+  const accounts = useQuery({ queryKey: ["accounts"], queryFn: listAccounts });
+  const currencies = useQuery({ queryKey: ["currencies"], queryFn: getSupportedCurrencies });
+  const [direction, setDirection] = useState<"debit" | "credit">("debit");
+  const [amount, setAmount] = useState("");
+  // Follows the household base until the user picks something else. `base` starts
+  // as a fallback and settles once the settings query resolves, which can happen
+  // after this panel mounts (the ?add=1 deep link renders it immediately).
+  const [currency, setCurrency] = useState(base);
+  const [currencyPicked, setCurrencyPicked] = useState(false);
+  const [txnDate, setTxnDate] = useState(() => isoDay(new Date()));
+  const [description, setDescription] = useState("");
+  const [categoryId, setCategoryId] = useState("");
+  // "new" = the shared "Cash & receipts" account, so someone with no imported
+  // statement can still record something on day one.
+  const [account, setAccount] = useState("new");
+  const [added, setAdded] = useState<string | null>(null);
+
+  useEffect(() => { if (!currencyPicked) setCurrency(base); }, [base, currencyPicked]);
+
+  const create = useMutation({
+    mutationFn: () =>
+      createTransaction({
+        description: description.trim(),
+        amount: amount.trim().replace(",", "."),
+        direction,
+        transaction_date: txnDate,
+        currency,
+        category_id: categoryId ? Number(categoryId) : null,
+        ...(account === "new" ? { new_account: true } : { account_id: Number(account) }),
+      }),
+    onSuccess: (txn) => {
+      qc.invalidateQueries({ queryKey: ["transactions"] });
+      qc.invalidateQueries({ queryKey: ["summary"] });
+      qc.invalidateQueries({ queryKey: ["dash-categories"] });
+      qc.invalidateQueries({ queryKey: ["dash-vendors"] });
+      qc.invalidateQueries({ queryKey: ["dashboard-projects"] });
+      qc.invalidateQueries({ queryKey: ["accounts"] });
+      setAdded(`${txn.description_raw} · ${txn.amount} ${txn.currency}`);
+      // Keep the panel open with the date, account and type intact: entering a
+      // stack of receipts one after another is the common case.
+      setAmount("");
+      setDescription("");
+    },
+  });
+
+  const amountValid = /^\d+([.,]\d{1,2})?$/.test(amount.trim()) && Number(amount.trim().replace(",", ".")) > 0;
+  const canSubmit = Boolean(description.trim()) && amountValid && Boolean(txnDate) && !create.isPending;
+  // The same curated list Settings offers, with the household base pinned first so
+  // it is always present even when it isn't one of the curated codes.
+  const currencyOptions = [base, ...(currencies.data ?? []).map((c) => c.code).filter((c) => c !== base)];
+
+  return (
+    <div className="card">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+        <strong>➕ Add a transaction</strong>
+        <button type="button" className="link-btn" onClick={onClose}>✕ Close</button>
+      </div>
+      <p className="muted" style={{ marginTop: 6 }}>
+        For what the imports and receipts don't cover: cash you spent, or money that came in.
+        Type the amount as a positive number; “Expense” or “Income” decides the rest.
+      </p>
+
+      <fieldset style={{ border: "none", padding: 0, margin: "6px 0", display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <legend className="filter-toggles__label" style={{ float: "left", padding: 0 }}>Type</legend>
+        <label className="chip-toggle">
+          <input
+            type="radio"
+            name="add-txn-direction"
+            checked={direction === "debit"}
+            onChange={() => setDirection("debit")}
+          />
+          <span>Expense (money out)</span>
+        </label>
+        <label className="chip-toggle">
+          <input
+            type="radio"
+            name="add-txn-direction"
+            checked={direction === "credit"}
+            onChange={() => setDirection("credit")}
+          />
+          <span>Income (money in)</span>
+        </label>
+      </fieldset>
+
+      <div className="form-row" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <label>
+          Amount{" "}
+          <input
+            inputMode="decimal"
+            placeholder="120.25"
+            aria-label="Amount"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            style={{ width: 110 }}
+          />
+        </label>
+        <select
+          value={currency}
+          aria-label="Currency"
+          onChange={(e) => { setCurrency(e.target.value); setCurrencyPicked(true); }}
+        >
+          {currencyOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <label>
+          Date{" "}
+          <input type="date" aria-label="Date" value={txnDate} onChange={(e) => setTxnDate(e.target.value)} />
+        </label>
+      </div>
+
+      <div className="form-row" style={{ gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 8 }}>
+        <input
+          placeholder="Description (e.g. Groceries, market stall)"
+          aria-label="Description"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          style={{ minWidth: 240 }}
+        />
+        <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} aria-label="Category">
+          <option value="">Category: let the rules decide</option>
+          {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        <select value={account} onChange={(e) => setAccount(e.target.value)} aria-label="Account">
+          <option value="new">Account: Cash &amp; receipts</option>
+          {accounts.data?.map((a) => <option key={a.id} value={String(a.id)}>{a.name}</option>)}
+        </select>
+      </div>
+
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 10 }}>
+        <button type="button" className="btn" disabled={!canSubmit} onClick={() => create.mutate()}>
+          {create.isPending ? "Adding…" : "Add transaction"}
+        </button>
+        <button type="button" className="btn btn--ghost" onClick={onClose}>Cancel</button>
+        {create.isError && (
+          <span className="status status--error">
+            {String(create.error instanceof Error ? create.error.message : create.error)}
+          </span>
+        )}
+      </div>
+
+      {added && !create.isError && (
+        <p className="status status--ok" aria-live="polite" style={{ marginTop: 8 }}>
+          Added {added}. Edit or categorise it in the list below.
+        </p>
+      )}
+    </div>
   );
 }
 

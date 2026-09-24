@@ -196,6 +196,13 @@ function QuickAddCard() {
           {upload.isPending ? "Uploading…" : "🧾 Add receipt (file)"}
         </button>
         <CameraCaptureButton onCapture={send} disabled={upload.isPending} className="btn" />
+        <Link
+          className="btn btn--ghost"
+          to="/transactions?add=1"
+          title="Type in a cash spend or an income that no statement or receipt covers"
+        >
+          ✍️ Add transaction by hand →
+        </Link>
         <Link className="btn btn--ghost" to="/import">📄 Import bank statement →</Link>
         {msg && <span className="muted">{msg}</span>}
         {lastReceiptId != null && (

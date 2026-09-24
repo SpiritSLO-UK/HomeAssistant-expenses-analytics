@@ -376,6 +376,24 @@ export function listTransactions(filters: TransactionFilters = {}): Promise<Tran
   return fetchJson<TransactionListResponse>(qs ? `api/transactions?${qs}` : "api/transactions");
 }
 
+/** A hand-typed transaction: cash spend, or income that no statement carries.
+ *  `amount` is a positive magnitude either way; `direction` decides the sign. */
+export interface NewTransaction {
+  description: string;
+  amount: string;
+  direction: "debit" | "credit";
+  transaction_date?: string;
+  currency?: string;
+  category_id?: number | null;
+  account_id?: number | null;
+  /** Use (or create) the shared "Cash & receipts" account. */
+  new_account?: boolean;
+}
+
+export function createTransaction(payload: NewTransaction): Promise<Transaction> {
+  return fetchJson<Transaction>("api/transactions", { method: "POST", body: JSON.stringify(payload) });
+}
+
 export function categoriseTransaction(
   id: number,
   categoryId: number | null,

@@ -115,6 +115,31 @@ location for the map) · `mark_transfer`/`mark_income`/`mark_subscription` ·
 `require_review` · `block_cloud_ai`. The in-app "How rules work" guide
 (docs/rules.md) documents every condition + action with worked examples.
 
+## Manual transaction entry (backlog: user request, "no manual input?")
+
+`transaction_service.create_manual` is the third way a transaction is created,
+alongside a statement import and `receipt_service.create_transaction_from_receipt`.
+It exists because both of the others need a document first, which left cash spend
+with no receipt, and income that never reaches an imported statement, with no way
+in. API: `POST /api/transactions`.
+
+`amount` is always a **positive magnitude** and `direction` decides the sign
+(`debit` stores negative, `credit` stores positive + `is_income`), so no caller has
+to know the negative-is-spend convention; the dashboard's spend/income split reads
+the sign of `base_amount`. Account selection mirrors the receipt path exactly,
+including the shared `CASH_RECEIPTS_ACCOUNT` fallback (now in `household_service`,
+used by both routers) and the pre-write `visible_account_scope` IDOR guard (#18,
+404 not 403). After the insert the row runs the same `fx_service.convert_transaction`
+then `import_service.auto_categorise` pipeline as an imported one, so it is an
+ordinary transaction afterwards; `auto_categorise` is skipped when the user picked
+a category, which is stored at confidence 1.0 as a manual choice (spec §15.2).
+
+**`source_hash` is deliberately unique per entry** (`manual-txn:<uuid4>`, like the
+receipt path's `receipt-txn:<id>`) rather than content-derived. The import dedup key
+is `sha256(account|date|amount|currency|description|posted_date)`, so hashing the
+content would collapse two identical cash spends on one day and could later mask a
+real statement row as a duplicate of a hand-typed one.
+
 ## Splits (Stage 4 - spec §17)
 
 `split_service` divides one transaction across categories/projects. Validation

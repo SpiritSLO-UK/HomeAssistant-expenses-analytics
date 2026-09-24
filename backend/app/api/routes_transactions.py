@@ -22,6 +22,7 @@ from app.schemas.tags import SetTagsRequest
 from app.schemas.transactions import (
     SetSplitsRequest,
     SplitsResponse,
+    TransactionCreate,
     TransactionDetailOut,
     TransactionListResponse,
     TransactionOut,
@@ -38,6 +39,7 @@ from app.services import (
     settings_service,
     split_service,
     tag_service,
+    transaction_service,
     vendor_service,
 )
 from app.services.auth_service import (
@@ -45,6 +47,11 @@ from app.services.auth_service import (
     require_owner_step_up,
     resolved_account_scope,
     visible_account_scope,
+)
+from app.services.household_service import (
+    CASH_RECEIPTS_ACCOUNT,
+    get_or_create_account,
+    get_or_create_default_household,
 )
 from app.services.split_service import SplitError, SplitInput
 
@@ -249,6 +256,55 @@ def resolve_transaction_filters(
         include_archived=filters.include_archived,
         default_country=settings_service.get_default_vendor_country(db) if filters.country else None,
     )
+
+
+@router.post(
+    "",
+    response_model=TransactionOut,
+    status_code=201,
+    responses={400: {"description": "Bad request"}, 404: {"description": "Not found"}},
+)
+def create_transaction(
+    payload: TransactionCreate,
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+) -> Transaction:
+    """Record a transaction by hand: a cash spend with no receipt, or income that
+    never lands on an imported statement. ``direction`` decides the sign, so send a
+    positive ``amount`` either way. Either pick an ``account_id`` or set
+    ``new_account`` to use the shared "Cash & receipts" account.
+
+    The row is converted to base currency and auto-categorised (when no category is
+    given) exactly like an imported one, so it behaves as an ordinary transaction
+    from here on.
+    """
+    if payload.new_account:
+        household = get_or_create_default_household(db)
+        account_id = get_or_create_account(db, household, CASH_RECEIPTS_ACCOUNT).id
+    elif payload.account_id is not None:
+        account_id = payload.account_id
+        # IDOR guard (#18), same as the receipt path: reject an account the caller
+        # can't see BEFORE writing, so a member can't inject a transaction into
+        # another member's private account. scope=None (owner/admin) is
+        # unrestricted. 404 rather than 403 so existence isn't leaked.
+        scope = visible_account_scope(request, db)
+        if scope is not None and account_id not in scope:
+            raise HTTPException(status_code=404, detail="Account not found")
+    else:
+        raise HTTPException(status_code=400, detail="Choose an account or create a dedicated one.")
+    try:
+        return transaction_service.create_manual(
+            db,
+            account_id=account_id,
+            description=payload.description,
+            amount=payload.amount,
+            direction=payload.direction,
+            transaction_date=payload.transaction_date,
+            currency=payload.currency,
+            category_id=payload.category_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/recategorise")

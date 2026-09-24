@@ -3,6 +3,23 @@
 All notable changes to HA Finance Intelligence. This project uses date-stamped,
 human-readable entries; versions follow semantic versioning.
 
+## Unreleased
+
+### Added
+- **Add a transaction by hand.** Until now every transaction needed a document
+  first: a statement to import, or a receipt to photograph. That left no way to
+  record a cash spend with no receipt, or income that never appears on an
+  imported statement. The Transactions page (and the Dashboard's Quick add) now
+  has an **Add transaction** form: amount, date, description, category and
+  account. Type the amount as a positive number and choose **Expense** or
+  **Income**; the app applies the sign, so a manual salary counts as income and a
+  cash coffee counts as spend. With no account chosen it uses the shared
+  *Cash & receipts* account the receipt path already creates. New rows go through
+  the same currency conversion and auto-categorisation as imported ones (a
+  category you pick yourself is kept as a manual choice), so they behave as
+  ordinary transactions afterwards and can be edited, split, tagged and exported.
+  New endpoint: `POST /api/transactions`.
+
 ## v1.2.2 - 2026-08-07
 
 > Provided "as is", no warranty, not financial advice - keep your own backups.
