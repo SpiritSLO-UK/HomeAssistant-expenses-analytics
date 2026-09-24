@@ -21,20 +21,17 @@ vendor/category library), splits charges, tracks projects, budgets,
 subscriptions, savings, investments and assets, scans receipts with optional
 local OCR, handles multiple currencies, and publishes finance sensors to Home
 Assistant over MQTT - with optional, opt-in local or cloud AI for category
-suggestions. Recent releases added forecasts (budget pace, project burn-down,
-savings time-to-goal), a customisable grouped sidebar, two-factor backup codes,
-and a hardened, non-root container. The [CHANGELOG](CHANGELOG.md) has the detail.
+suggestions. Recent releases added entering a transaction by hand (cash spend or
+income, with no document needed), a base currency you can set to any of the 30
+currencies our online rate source covers, forecasts (budget pace, project
+burn-down, savings time-to-goal), a customisable grouped sidebar, two-factor
+backup codes, and a hardened, non-root container. The
+[CHANGELOG](CHANGELOG.md) has the detail.
 
 ## Next up
 
 Near-term improvements we intend to build on top of what's here:
 
-- **Add a transaction by hand** *(requested 2026-09-24)* - record a cash spend or
-  an income event directly, for everything statement, CSV and photo import can't
-  reach: cash with no receipt, and money in that never lands on a statement. Type
-  a positive amount and pick Expense or Income; the entry is then an ordinary
-  transaction that can be categorised, split, tagged and exported. **Built and
-  merged; ships in the next release.**
 - **Faster corrections** - undo for bulk edits, choosing which category survives
   a merge, and re-running rules/matches on an already-imported statement.
 - **Smarter categorisation** - weighted and per-household keyword rules, vendor
