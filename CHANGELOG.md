@@ -3,7 +3,13 @@
 All notable changes to HA Finance Intelligence. This project uses date-stamped,
 human-readable entries; versions follow semantic versioning.
 
-## Unreleased
+## v1.2.4 - 2026-09-24
+
+> Provided "as is", no warranty, not financial advice - keep your own backups.
+
+A small feature release on top of v1.2.3. Migrations unchanged; data and config
+carry over. Your existing base currency, stored amounts and saved exchange rates
+are untouched.
 
 ### Added
 - **20 more base currencies.** The base-currency dropdown offered ten choices, so

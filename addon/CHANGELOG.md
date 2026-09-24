@@ -5,28 +5,33 @@
      replace the entry below with the new version's user-facing notes. -->
 # Changelog
 
-## v1.2.3 - 2026-09-24
+## v1.2.4 - 2026-09-24
 
 > Provided "as is", no warranty, not financial advice - keep your own backups.
 
-A small feature release on top of v1.2.2, from a user request. Data and config
-carry over; no new database migrations.
+A small feature release on top of v1.2.3. Data and config carry over; no new
+database migrations.
 
 ### What's new
 
-- **Add a transaction by hand.** Until now, every transaction needed a document
-  first: a bank statement to import, or a receipt to photograph. That left no way
-  to record cash you spent with no receipt, or income that never appears on a
-  statement. The **Transactions** page now has an **Add transaction** form
-  (amount, date, description, category and account), and the Dashboard's
-  **Quick add** links straight to it.
+- **20 more base currencies to choose from.** Settings offered ten base
+  currencies, so if your money is in zloty, rand, rupees or won you had to run
+  the whole app in someone else's currency. The list now holds all 30 currencies
+  our online rate source (Frankfurter, which publishes European Central Bank
+  rates) covers: the previous ten plus Brazilian real, Czech koruna, Danish
+  krone, Hungarian forint, Indonesian rupiah, Israeli new shekel, Indian rupee,
+  Icelandic krona, South Korean won, Mexican peso, Malaysian ringgit, Norwegian
+  krone, New Zealand dollar, Philippine peso, Polish zloty, Romanian leu, Swedish
+  krona, Thai baht, Turkish lira and South African rand.
 
-  Type the amount as a positive number and choose **Expense** or **Income** - the
-  app applies the sign, so a salary you enter counts as income and a cash coffee
-  counts as spend. If you haven't set up a bank account yet, the entry is filed
-  under the shared *Cash & receipts* account. New entries are converted to your
-  base currency and auto-categorised exactly like imported ones, so they can be
-  edited, split, tagged, exported and counted in every total afterwards.
+  The list matches that source on purpose: whichever base you pick, **turning on
+  online exchange rates keeps working** instead of leaving you to type rates in
+  by hand. Spend in any of the new currencies now also shows against the right
+  country on the spending map.
+
+  Nothing changes if you're happy where you are - your base currency, your stored
+  amounts and any exchange rates you've saved are all untouched, and a
+  transaction could already be in any currency at all.
 
 ---
 
